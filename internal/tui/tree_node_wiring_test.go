@@ -39,6 +39,7 @@ var filterableFolderSet = map[NodeType]bool{
 	NodeSystemProcedures:            true,
 	NodeFunctions:                   true,
 	NodeSystemFunctions:             true,
+	NodeExternalFunctions:           true,
 	NodeLogins:                      true,
 	NodeServerRoles:                 true,
 	NodeCredentials:                 true,

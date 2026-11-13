@@ -429,6 +429,7 @@ var detailLoaders = map[NodeType]detailLoader{
 	NodeStoredProcedure: nodeDetail(moduleDetail),
 	NodeFunction:        nodeDetail(moduleDetail),
 	NodeTrigger:         nodeDetail(moduleDetail),
+	NodeStatistic:       nodeDetail(statisticDetail),
 }
 
 func systemDatabasesDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {

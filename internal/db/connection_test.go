@@ -11,6 +11,7 @@ import (
 
 	"github.com/microsoft/go-mssqldb/azuread"
 	"github.com/microsoft/go-mssqldb/msdsn"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 )
 
@@ -315,6 +316,45 @@ func TestRoleSetsTheApplicationName(t *testing.T) {
 		if co.ApplicationName != want {
 			t.Errorf("role %d: ApplicationName = %q, want %q", role, co.ApplicationName, want)
 		}
+	}
+}
+
+func TestNewServerConnDetectsFabricDWFromHostname(t *testing.T) {
+	for _, tc := range []struct {
+		server string
+		want   bool
+	}{
+		{"warehouse.datawarehouse.fabric.microsoft.com", true},
+		{"WAREHOUSE.DATAWAREHOUSE.FABRIC.MICROSOFT.COM", true},
+		{" warehouse.datawarehouse.fabric.microsoft.com ", true},
+		{"warehouse.datawarehouse.fabric.microsoft.com,1433", true},
+		{"warehouse.datawarehouse.fabric.microsoft.com:1433", true},
+		{"tcp:warehouse.datawarehouse.fabric.microsoft.com,1433", true},
+		{"warehouse.datawarehouse.fabric.microsoft.com.", true},
+		{"datawarehouse.fabric.microsoft.com", true},
+		{"warehouse.msit-datawarehouse.fabric.microsoft.com", true},
+		{"WAREHOUSE.MSIT-DATAWAREHOUSE.FABRIC.MICROSOFT.COM", true},
+		{"tcp:warehouse.msit-datawarehouse.fabric.microsoft.com,1433", true},
+		{"warehouse.msit-datawarehouse.fabric.microsoft.com.", true},
+		{"msit-datawarehouse.fabric.microsoft.com", true},
+		{"warehouse.other-datawarehouse.fabric.microsoft.com", true},
+		{"sql.database.windows.net", false},
+		{"localhost", false},
+		{"", false},
+		{"warehouse.datawarehouse.fabric.microsoft.com.example.org", false},
+		{"warehouse.datawarehouse.fabric.microsoft.com:invalid", false},
+		{"warehouse.msit-datawarehouse.fabric.microsoft.com.example.org", false},
+	} {
+		t.Run(tc.server, func(t *testing.T) {
+			srv := &gosmo.Server{}
+			sc := newServerConn(context.Background(), config.Connection{Server: tc.server}, srv, RoleQuery)
+			if sc.IsFabricDW != tc.want {
+				t.Errorf("IsFabricDW = %v for %q, want %v", sc.IsFabricDW, tc.server, tc.want)
+			}
+			if srv.IsFabricDW != tc.want {
+				t.Errorf("gosmo IsFabricDW = %v for %q, want %v", srv.IsFabricDW, tc.server, tc.want)
+			}
+		})
 	}
 }
 

@@ -20,6 +20,11 @@ import (
 // serverMajor) is treated as newest and gets the folder.
 func loadExternalResourcesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbName := node.data.DBName
+	if l.sc != nil && l.sc.IsFabricDW {
+		return []*explorerNode{
+			l.node("External Data Sources", NodeExternalDataSources, "", "", dbName),
+		}, nil
+	}
 	out := []*explorerNode{
 		l.node("External Data Sources", NodeExternalDataSources, "", "", dbName),
 		l.node("External File Formats", NodeExternalFileFormats, "", "", dbName),

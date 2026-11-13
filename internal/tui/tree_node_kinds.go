@@ -137,6 +137,7 @@ var nodeKinds = [nodeTypeCount]nodeKind{
 	NodeFunctions:                   {kindFolder, "Functions", 0, 0},
 	NodeFunction:                    {kindLeaf, "Function", 'ƒ', 'λ'},
 	NodeSystemFunctions:             {kindFolder, "System Functions", 0, 0},
+	NodeExternalFunctions:           {kindFolder, "External Functions", 0, 0},
 	NodeSecurity:                    {kindFolder, "Security", 0, 0},
 	NodeLogins:                      {kindFolder, "Logins", 0, 0},
 	NodeLogin:                       {kindLeaf, "Login", '🔐', '⚿'},
