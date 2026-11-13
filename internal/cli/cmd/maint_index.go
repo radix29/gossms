@@ -348,9 +348,9 @@ func (tv tableOrView) reorganizeAll(ctx context.Context) error {
 // updateStatistics is UPDATE STATISTICS on tv, every statistic.
 func (tv tableOrView) updateStatistics(ctx context.Context, opts gosmo.StatisticsUpdateOptions) error {
 	if tv.view != nil {
-		return tv.view.UpdateStatisticsWith(ctx, opts)
+		return tv.view.UpdateStatistics(ctx, opts)
 	}
-	return tv.table.UpdateStatisticsWith(ctx, opts)
+	return tv.table.UpdateStatistics(ctx, opts)
 }
 
 // --- maint index-rebuild ------------------------------------------------------
@@ -701,7 +701,7 @@ func (d Deps) maintUpdateStats(ctx context.Context, inv *spec.Invocation) (*outp
 	}
 	write := func(ctx context.Context) error {
 		if r.statistic != "" {
-			return deniedOnResolved(targets[0].UpdateWith(ctx, r.opts))
+			return deniedOnResolved(targets[0].Update(ctx, r.opts))
 		}
 		return deniedOnResolved(tv.updateStatistics(ctx, r.opts))
 	}

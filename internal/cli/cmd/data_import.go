@@ -18,6 +18,7 @@ import (
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/gossms/internal/textenc"
 )
 
 // data import's options.
@@ -138,6 +139,7 @@ func openImportFile(inv *spec.Invocation, in importInput) (importFile, io.Closer
 		}
 		r, closer = f, f
 	}
+	r = textenc.SkipUTF8BOM(r)
 	var file importFile
 	var err error
 	switch in.format {

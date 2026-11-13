@@ -426,10 +426,6 @@ func leaderRule(st *Statement, toks []token, first bool) {
 		st.Class, st.Leader, st.Object = spec.ClassDDL, "TRUNCATE TABLE", objectName(toks, 2)
 	case "DISABLE", "ENABLE":
 		st.Class, st.Leader = spec.ClassDDL, w+" TRIGGER"
-	case "ADD":
-		st.Class, st.Leader = spec.ClassDDL, "ADD SIGNATURE" // ADD [COUNTER]SIGNATURE
-	case "GRANT", "DENY", "REVOKE":
-		st.Class = spec.ClassAdmin
 	case "BACKUP", "RESTORE":
 		st.Class, st.Flags = spec.ClassAdmin, FlagNotInTransaction
 		if n := next(1); n.kind == sqltext.KindWord {
@@ -438,8 +434,6 @@ func leaderRule(st *Statement, toks []token, first bool) {
 		}
 	case "RECONFIGURE":
 		st.Class, st.Flags = spec.ClassAdmin, FlagNotInTransaction
-	case "KILL", "SHUTDOWN", "CHECKPOINT", "SETUSER":
-		st.Class = spec.ClassAdmin
 	case "DBCC":
 		dbcc(st, toks)
 	case "EXEC", "EXECUTE":
@@ -453,23 +447,21 @@ func leaderRule(st *Statement, toks []token, first bool) {
 		switch n := next(1); {
 		case n.is("TRAN") || n.is("TRANSACTION") || n.is("DISTRIBUTED"):
 			st.Class, st.Leader, st.Flags = spec.ClassWrite, "BEGIN TRAN", FlagTranControl
-		case n.is("DIALOG") || n.is("CONVERSATION"):
-			st.Class, st.Leader = spec.ClassWrite, "BEGIN "+n.word
 		default:
 			st.Class = spec.ClassRead // a block, TRY, CATCH
+			verbLeader(st, toks)      // BEGIN DIALOG, BEGIN CONVERSATION TIMER
 		}
 	case "COMMIT", "ROLLBACK", "SAVE":
 		st.Class, st.Flags = spec.ClassWrite, FlagTranControl
 	case "END":
 		st.Class = spec.ClassRead
-		if next(1).is("CONVERSATION") {
-			st.Class, st.Leader = spec.ClassWrite, "END CONVERSATION"
-		}
+		verbLeader(st, toks) // END CONVERSATION
 	case "SET":
 		setStatement(st, toks)
-	case "WRITETEXT", "UPDATETEXT", "RECEIVE", "SEND", "MOVE", "GET":
-		st.Class = spec.ClassWrite
 	default:
+		if verbLeader(st, toks) { // GRANT, KILL, SEND ON CONVERSATION, …
+			return
+		}
 		if readLeaders[w] {
 			st.Class = spec.ClassRead
 			return
@@ -480,6 +472,38 @@ func leaderRule(st *Statement, toks []token, first bool) {
 		}
 		st.Reason = "not a statement the classifier knows"
 	}
+}
+
+// verbLeader gives st the class and leader of the verbs entry toks opens with,
+// reporting whether there is one.
+func verbLeader(st *Statement, toks []token) bool {
+	v, ok := verbAt(toks, 0)
+	if ok {
+		st.Class, st.Leader = v.class, v.name
+	}
+	return ok
+}
+
+// verbAt returns the longest verbs entry whose words start at toks[i].
+func verbAt(toks []token, i int) (verbForm, bool) {
+	var best verbForm
+	found := false
+	if toks[i].kind != sqltext.KindWord {
+		return best, false
+	}
+forms:
+	for _, v := range verbsByFirst[toks[i].word] {
+		if i+len(v.words) > len(toks) || found && len(v.words) <= len(best.words) {
+			continue
+		}
+		for k, w := range v.words {
+			if !toks[i+k].is(w) {
+				continue forms
+			}
+		}
+		best, found = v, true
+	}
+	return best, found
 }
 
 // selectInto makes a SELECT with a top-level INTO ddl: it creates the table.
@@ -651,8 +675,9 @@ func setStatement(st *Statement, toks []token) {
 	}
 }
 
-// floor raises st to the class of any keyword in it (docs/cli.md § Safety), so a
-// statement the splitter merged into this one still counts, and classifies every
+// floor raises st to the class of any verb in it (verbs; docs/cli.md § Safety),
+// so a statement the splitter merged into this one, or nested behind IF, ELSE,
+// WHILE or BEGIN, still counts, and classifies every
 // EXEC inside it (INSERT … EXEC). NEXT VALUE FOR is write: a SELECT of it
 // advances the sequence, for good. The floor is the three-word phrase, so a
 // column named next stays read. Read contexts are exempt: FOR UPDATE, a
@@ -698,10 +723,11 @@ func floor(st *Statement, toks []token) {
 			st.raise(spec.ClassWrite, "NEXT VALUE FOR advances a sequence, which no rollback undoes"+at)
 			continue
 		}
-		c, ok := floorWords[w]
+		v, ok := verbAt(toks, i)
 		if !ok {
 			continue
 		}
+		c := v.class
 		switch {
 		case prev.is("FOR") && w == "UPDATE": // a cursor's FOR UPDATE [OF]
 			continue
@@ -725,6 +751,6 @@ func floor(st *Statement, toks []token) {
 				continue
 			}
 		}
-		st.raise(c, "keyword "+w+at)
+		st.raise(c, "keyword "+v.name+at)
 	}
 }

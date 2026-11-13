@@ -115,7 +115,7 @@ func TestSQLInput(t *testing.T) {
 		{[]string{"-Q", "x", "--file", "plain.sql"}, "--sql and --file both given"},
 		{[]string{"--file", "missing.sql"}, "--file missing.sql:"},
 		{[]string{"--file", "bad.sql"}, "not valid UTF-8"},
-		{[]string{"--file", "odd.sql"}, "not valid UTF-8"},
+		{[]string{"--file", "odd.sql"}, "not valid UTF-16"},
 		{[]string{"--sql-base64", "!!!"}, "not Base64"},
 	} {
 		r := runWith(t, "", files, append([]string{"query", "classify"}, tt.argv...)...)

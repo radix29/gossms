@@ -1,21 +1,20 @@
 package showplan
 
 import (
-	"encoding/binary"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
-	"unicode/utf16"
 
 	"github.com/radix29/gosmo/tsql"
+	"github.com/radix29/gossms/internal/textenc"
 )
 
 // Parse decodes a ShowPlanXML document, UTF-8 or UTF-16 with BOM.
 func Parse(data []byte) (*Plan, error) {
-	text := decodeText(data)
+	text, _, _ := textenc.Decode(data)
 	dec := xml.NewDecoder(strings.NewReader(text))
 	// The text is already UTF-8; accept whatever the XML declaration says.
 	dec.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
@@ -500,26 +499,4 @@ func attrBool(el xml.StartElement, name string) bool {
 	default:
 		return false
 	}
-}
-
-// decodeText converts plan bytes to UTF-8, honouring a UTF-16 or UTF-8 BOM.
-func decodeText(data []byte) string {
-	switch {
-	case len(data) >= 2 && data[0] == 0xFF && data[1] == 0xFE:
-		return decodeUTF16(data[2:], binary.LittleEndian)
-	case len(data) >= 2 && data[0] == 0xFE && data[1] == 0xFF:
-		return decodeUTF16(data[2:], binary.BigEndian)
-	case len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF:
-		return string(data[3:])
-	}
-	return string(data)
-}
-
-// decodeUTF16 converts UTF-16 bytes (BOM already stripped) to a string.
-func decodeUTF16(b []byte, order binary.ByteOrder) string {
-	u := make([]uint16, 0, len(b)/2)
-	for i := 0; i+1 < len(b); i += 2 {
-		u = append(u, order.Uint16(b[i:]))
-	}
-	return string(utf16.Decode(u))
 }

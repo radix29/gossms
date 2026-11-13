@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"go/build"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +20,15 @@ import (
 // Each variable is the one os.UserConfigDir reads on some OS (XDG_CONFIG_HOME
 // on Linux/BSD, HOME on macOS, AppData on Windows); setting all three keeps the
 // one build free of runtime.GOOS.
+//
+// GOPATH is pinned to its real value first (go/build resolved it from the
+// real HOME at init): a test that runs `go list` would otherwise fill a fresh
+// module cache under dir, whose read-only files RemoveAll cannot delete — 92 MB
+// left in the temp dir per run until /tmp filled.
 func TestMain(m *testing.M) {
+	if os.Getenv("GOPATH") == "" {
+		os.Setenv("GOPATH", build.Default.GOPATH)
+	}
 	dir, err := os.MkdirTemp("", "gossms-test-config")
 	if err != nil {
 		panic(err)

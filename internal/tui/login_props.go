@@ -358,11 +358,11 @@ func pageLoginServerRoles(sc *db.ServerConn, loginName *string) propPage {
 						continue
 					}
 					if member {
-						if err := l.AddToServerRole(ctx, roles[i].Name); err != nil {
+						if err := l.Server().ServerRoleRef(roles[i].Name).AddMember(ctx, l.Name); err != nil {
 							return err
 						}
 					} else {
-						if err := l.RemoveFromServerRole(ctx, roles[i].Name); err != nil {
+						if err := l.Server().ServerRoleRef(roles[i].Name).RemoveMember(ctx, l.Name); err != nil {
 							return err
 						}
 					}

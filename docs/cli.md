@@ -620,7 +620,7 @@ second Ctrl+C kills the process.
 | `maint checkdb [<database>] [--physical-only] [--no-index] [--extended-logical-checks] [--data-purity] [--maxdop <n>] --allow admin [--dry-run] [-p <profile>] [connection options]` | Class `admin` (query run classes DBCC CHECKDB so too). `<database>` defaults to the connection's. `DBCC CHECKDB (N'db'[, NOINDEX]) WITH NO_INFOMSGS, ALL_ERRORMSGS, TABLERESULTS[, …]` through gosmo, never retried. Before connecting: `--physical-only` with `--data-purity` or `--extended-logical-checks`, `--maxdop` outside 1–64 → exit 2. Missing → 8; not ONLINE → 2. Record `database physicalOnly noIndex extendedLogicalChecks dataPurity maxdop dryRun` (+ `tsql`); a real run adds `allocationErrors consistencyErrors` (from the 8989 summary row; without one, the rows counted) and `minimumRepair` (the heaviest `repair_level` named: `repair_rebuild` < `repair_allow_data_loss`; NULL when clean). Set `errors` (`error level state message repair_level object_id index_id partition_id alloc_unit_id file page slot`, the 8990/8989 summaries left out; ids NULL where zero); empty = clean. **Corruption is not a failure:** `STATUS: ok`, exit 0, and a warning with the counts and the least repair. No repair option, ever (D2: SINGLE_USER, and `REPAIR_ALLOW_DATA_LOSS` deletes what it cannot fix). Msg 7983 (neither sysadmin nor db_owner) → `PERMISSION_DENIED`, exit 9 |
 | `maint index-fragmentation [--min-percent 10] [--min-pages 1000] [--mode limited\|sampled\|detailed] [--schema <s>] [--top 50] [-p <profile>] [connection options]` | Class `read`, the connection's database (`-d`). One `sys.dm_db_index_physical_stats(db, NULL, …)` read, thresholds filtered on the server (gosmo `Database.FragmentationStats`): user tables' and indexed views' indexes, heaps and disabled indexes out, partitions folded. Set `indexes`, most fragmented first: `schema object object_type (table\|view) index index_id type partitions avg_fragmentation_pct page_count fragment_count avg_page_space_used_pct suggestion`; `avg_page_space_used_pct` NULL under `limited` (no leaf read); `suggestion` = `none` under 5 %, `reorganize` to 30 %, `rebuild` above — Microsoft's guideline, advice only. `--schema` case-insensitive, after the read; `--top` 0 keeps all (`truncated` when cut). Record `mode minPercent minPages`. Without VIEW DATABASE STATE → exit 9 with a hint |
 | `maint index-rebuild <schema.table> [--index <name>] [--reorganize] [--online] [--maxdop <n>] [--fill-factor <n>] --allow ddl [--dry-run] [-p <profile>] [connection options]` | Class `ddl` (ALTER INDEX). A table or indexed view in the connection's database (another kind → 2). `ALTER INDEX <index>\|ALL ON … REBUILD [WITH (FILLFACTOR, ONLINE = ON, MAXDOP)]` or `REORGANIZE`. Before connecting: `--reorganize` with `--online`/`--maxdop`/`--fill-factor`, `--maxdop` outside 1–64, `--fill-factor` outside 1–100 → 2. Before sending: `--online` on an edition without online index operations (gosmo `SupportsOnlineIndexOperations`: Enterprise/Developer, Azure SQL Database, Managed Instance) → exit 11, dry run too; no index (a heap) → 2; `--index` missing → 8 listing the indexes (exact name, else case-insensitive); `--reorganize` of a disabled index → 2. Record `schema name type index (NULL = all) operation (rebuild\|reorganize) online maxdop fillFactor dryRun` (+ `tsql`). Set `indexes`: `index index_id type disabled fragmentation_before_pct fragmentation_after_pct page_count` — a LIMITED read before (dry run too; disabled indexes NULL) and after a real run (`page_count` the newer read's); a failed read is a warning and NULLs. A rebuild of a disabled index enables it (warning). Msg 1088 on the write (the object was just read) → `PERMISSION_DENIED`, exit 9 (ALTER on the object); 1712 → 11; 1222, 1973, 2552 → 5 with a hint |
-| `maint update-stats <schema.table>\|--all [--statistic <name>] [--fullscan\|--sample-percent <n>\|--resample] --allow ddl [--dry-run] [-p <profile>] [connection options]` | Class `ddl` (UPDATE STATISTICS; the classifier puts `sp_updatestats`/`sp_createstats` in `ddl` too). Exactly one of `<object>` or `--all` (exit 2). `<object>` (table or indexed view): `UPDATE STATISTICS <object> [<statistic>] [WITH FULLSCAN\|SAMPLE n PERCENT\|RESAMPLE]`; none of the three = the server's sample (gosmo `UpdateStatisticsWith`/`UpdateWith`, whose zero value sends no WITH). `--statistic` any statistic (an index's has the index's name), missing → 8 listing them. Record `schema name type statistic sampling (default\|fullscan\|sample n percent\|resample) dryRun` (+ `tsql`); set `statistics` `statistic origin last_updated [previous_update] rows rows_sampled modifications` — as read before a dry run, read back after a real run with `previous_update` beside. `--all`: `EXEC sys.sp_updatestats [@resample = 'resample']` in the connection's database (stale statistics only); with `--fullscan`/`--sample-percent`/`--statistic` → 2; a read-only database or snapshot → 2; record `database sampling dryRun`. Two sampling options → 2. Msg 1088 → 9 (ALTER on the object); 15247 from `sp_updatestats` → 9 (db_owner or sysadmin) |
+| `maint update-stats <schema.table>\|--all [--statistic <name>] [--fullscan\|--sample-percent <n>\|--resample] --allow ddl [--dry-run] [-p <profile>] [connection options]` | Class `ddl` (UPDATE STATISTICS; the classifier puts `sp_updatestats`/`sp_createstats` in `ddl` too). Exactly one of `<object>` or `--all` (exit 2). `<object>` (table or indexed view): `UPDATE STATISTICS <object> [<statistic>] [WITH FULLSCAN\|SAMPLE n PERCENT\|RESAMPLE]`; none of the three = the server's sample (gosmo `UpdateStatistics`/`Statistic.Update`, whose zero value sends no WITH). `--statistic` any statistic (an index's has the index's name), missing → 8 listing them. Record `schema name type statistic sampling (default\|fullscan\|sample n percent\|resample) dryRun` (+ `tsql`); set `statistics` `statistic origin last_updated [previous_update] rows rows_sampled modifications` — as read before a dry run, read back after a real run with `previous_update` beside. `--all`: `EXEC sys.sp_updatestats [@resample = 'resample']` in the connection's database (stale statistics only); with `--fullscan`/`--sample-percent`/`--statistic` → 2; a read-only database or snapshot → 2; record `database sampling dryRun`. Two sampling options → 2. Msg 1088 → 9 (ALTER on the object); 15247 from `sp_updatestats` → 9 (db_owner or sysadmin) |
 | `query classify` (T-SQL input) `[--allow <class>]` | Record: `detectedClass`, `allowedClass` (with `--allow`), `flags`, `statementCount`, and `statements` when blocked; then a set, one row per statement: `batch`, `repeat` (`GO n`), `line`, `class`, `leader`, `object`, `reason` (why the class is above the leader's), `flags`. Needs no connection. With `--allow`, a script it would refuse is `BLOCKED`, exit 7 (§ Safety) |
 
 No command ever prints a password or secret.
@@ -636,7 +636,7 @@ Every `query` command takes its script from exactly one of:
 | `--sql-base64 <b64>` | | Base64 of the UTF-8 text, padded or not |
 
 None, or more than one, is `USAGE_ERROR`; so are an unreadable file, text
-that is not valid UTF-8 (or UTF-16 with an unpaired surrogate), and a script
+that is not valid UTF-8 (or, behind a UTF-16 mark, not valid UTF-16), and a script
 over 64 MB. `--file -` with `--password-stdin` is refused: both read stdin.
 Prefer `--file -` or `--sql-base64` to `--sql` for anything but one line — no
 shell quoting can damage them.
@@ -1121,10 +1121,11 @@ names its base object).
   (`--allow write`, gated before connecting as § Writes); `--truncate-first`
   makes it `ddl`. The file is what `data export` writes, one result set:
   `.csv`/`.tsv` with a header row, read with the writer's NULL convention (an
-  empty field NULL, `""` the empty string, a bare `NULL` the string; a UTF-8
-  byte order mark before the header is dropped), or gossms's `.jsonl` (the
-  `_resultSet` line names the columns and their keys; numbers are taken as
-  written, `true`/`false` as a bit; `_summary` ends the rows). `.json` is
+  empty field NULL, `""` the empty string, a bare `NULL` the string), or
+  gossms's `.jsonl` (the `_resultSet` line names the columns and their keys;
+  numbers are taken as written, `true`/`false` as a bit; `_summary` ends the
+  rows). A UTF-8 byte order mark at the start of any of them is dropped, so
+  Excel's quoted header loads. `.json` is
   refused: export to `.jsonl`. `--in-format` names the format for `--in-file
   -` (stdin, not with `--password-stdin`) or another extension. A blank line
   followed by more rows (a second set), a row with the wrong field count, or
@@ -1503,9 +1504,9 @@ leading keywords:
 | Class | Examples | Needs |
 |---|---|---|
 | `read` | `SELECT`, `USE`, `SET` session options, `DECLARE`, `PRINT`, `EXECUTE AS`, catalog procedures on the read allow-list (`sp_help`, `sp_helptext`, `sp_spaceused`, `sp_who2`, …), `DBCC SHOW_STATISTICS`/`SQLPERF`/`OPENTRAN`/`INPUTBUFFER`/`TRACESTATUS`/`USEROPTIONS` | nothing (the default) |
-| `write` | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, transaction control (`BEGIN TRAN`, `COMMIT`, …), `NEXT VALUE FOR` (even in a `SELECT`: it advances the sequence), a procedure not on the read allow-list, dynamic SQL, `OPENQUERY`/`OPENROWSET` | `--allow write` |
-| `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `UPDATE STATISTICS`, `sp_updatestats`, `sp_createstats` | `--allow ddl` |
-| `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `sp_configure`, `xp_` and msdb procedures not on the read list, `DBCC` not on the read list | `--allow admin` |
+| `write` | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, transaction control (`BEGIN TRAN`, `COMMIT`, …), Service Broker (`SEND`, `RECEIVE`, `BEGIN DIALOG`, `MOVE`/`GET`/`END CONVERSATION`), `WRITETEXT`/`UPDATETEXT`, `NEXT VALUE FOR` (even in a `SELECT`: it advances the sequence), a procedure not on the read allow-list, dynamic SQL, `OPENQUERY`/`OPENROWSET` | `--allow write` |
+| `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `ADD [COUNTER] SIGNATURE`, `UPDATE STATISTICS`, `sp_updatestats`, `sp_createstats` | `--allow ddl` |
+| `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `CHECKPOINT`, `SETUSER`, `sp_configure`, `xp_` and msdb procedures not on the read list, `DBCC` not on the read list | `--allow admin` |
 
 `query classify --file <path>` shows each statement's class and why. The
 classifier reads the script with gossms's one lexer (`internal/sqltext`), so a
@@ -1514,7 +1515,13 @@ means nothing. It fails closed: an unrecognised statement, dynamic SQL and a
 procedure not on the read allow-list are `write` at least, and a class keyword
 anywhere in a statement raises it (`SELECT 1` followed by `DISABLE TRIGGER`
 on the next line, which the statement splitter merges, is `ddl`; so is a
-merged `UPDATE STATISTICS`, never `UPDATE`'s `write`). It is a
+merged `UPDATE STATISTICS`, never `UPDATE`'s `write`). The verbs and their
+classes are one table that both the leading-keyword rule and the floor read,
+so a statement nested behind `IF`, `ELSE`, `WHILE` or `BEGIN` keeps the class
+it has alone (`IF @x = 1 SETUSER 'u'` is `admin`). A verb that is also a
+common name is matched only as its phrase (`SEND ON CONVERSATION`, `ADD
+SIGNATURE`, as `NEXT VALUE FOR`), so a column named `send` or `add` stays
+`read`. It is a
 guardrail, not the security boundary: that is the login's permissions.
 
 A run's check refuses, in this order, the first of:

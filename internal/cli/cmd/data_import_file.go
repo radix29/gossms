@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/radix29/gossms/internal/export"
 )
@@ -67,11 +66,6 @@ func recordError(err error) error {
 	return err
 }
 
-// utf8BOM is the byte order mark a file saved by Excel or Notepad starts
-// with. RecordReader keeps it (a cell may begin with U+FEFF), so the header
-// drops it here: it would make the first column's name unknown.
-const utf8BOM = "\uFEFF"
-
 // csvImport reads a .csv or .tsv: a header row naming the columns, then the
 // rows, with RecordReader's NULL convention (an empty field NULL, "" the
 // empty string).
@@ -91,7 +85,6 @@ func newCSVImport(r io.Reader, sep rune) (*csvImport, error) {
 	case len(cells) == 0:
 		return nil, fileErrorf(1, "a blank line where the header row naming the columns belongs")
 	}
-	cells[0] = strings.TrimPrefix(cells[0], utf8BOM)
 	for i, c := range cells {
 		if c == "" {
 			return nil, fileErrorf(1, "header field %d is empty: every column needs a name", i+1)

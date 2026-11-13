@@ -46,7 +46,8 @@ which owns them; the entries here say how goSSMS applies them.
   U+FFFD), so seeding from the source marks the panel dirty on open and the
   prompted save rewrites the file — `File > Open` once turned a UTF-16 script
   into U+FFFD-laden UTF-8. Text files go through `decodeTextFile`/
-  `encodeTextFile` (`text_encoding.go`): encoding **from a BOM only** (never
+  `encodeTextFile` (`text_encoding.go`, over `internal/textenc`, the decoder
+  the command line's `--file` shares): encoding **from a BOM only** (never
   guessed), and the *majority* line ending preserved (`majorityCRLF`) — the
   editor folds CRLF on load, and testing mere CRLF presence rewrote a mostly-LF
   file over one stray CR.

@@ -206,6 +206,32 @@ func TestDataImportJSONLAndOptions(t *testing.T) {
 	}
 }
 
+func TestDataImportByteOrderMark(t *testing.T) {
+	// The mark comes off the bytes before any reader: Excel writes it before
+	// a quoted header, which the CSV reader would refuse as a quote in an
+	// unquoted field, and before jsonl's _resultSet line it is not JSON. A
+	// U+FEFF inside a cell is data and stays.
+	for _, tc := range []struct{ name, content string }{
+		{"quoted.csv", "\uFEFF\"id\",\"Name\"\r\n1,\"\uFEFFa\"\r\n"},
+		{"c.tsv", "\uFEFFid\tName\n1\t\uFEFFa\n"},
+		{"c.jsonl", "\uFEFF" + `{"_resultSet":{"index":1,"name":null,"columns":[` +
+			`{"name":"id","key":"id"},{"name":"Name","key":"Name"}]}}` + "\n" + `{"id":1,"Name":"\uFEFFa"}` + "\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeFile(t, tc.name, tc.content)
+			cat := newImportFake(t)
+			d, _ := importDeps(t, cat)
+			r := runData(t, d, "import", "Sales.Customer", "--in-file", path, "--allow", "write")
+			if r.exit != 0 {
+				t.Fatalf("exit %d\n%s", r.exit, r.stdout)
+			}
+			if want := [][]any{{int64(1), "\uFEFFa"}}; !reflect.DeepEqual(cat.rows, want) {
+				t.Errorf("rows %#v, want %#v", cat.rows, want)
+			}
+		})
+	}
+}
+
 func TestDataImportDryRunLoadsNothing(t *testing.T) {
 	path := writeFile(t, "c.tsv", "id\tName\n1\ta\n2\tb\n3\t\n")
 	cat := newImportFake(t)

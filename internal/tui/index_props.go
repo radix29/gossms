@@ -546,7 +546,7 @@ func pageIndexFragmentation(d *PropDialog, sc *db.ServerConn, dbName, schema, ta
 				return "Reorganize complete", nil
 			})
 			updateStatsBtn := d.asyncStatusButton("Update Statistics", statusRow, "Updating statistics...", func(ctx context.Context) (string, error) {
-				if err := idx.UpdateStatistics(ctx, 0); err != nil {
+				if err := idx.UpdateStatistics(ctx, gosmo.StatisticsUpdateOptions{FullScan: true}); err != nil {
 					return "", err
 				}
 				return "Statistics updated", nil

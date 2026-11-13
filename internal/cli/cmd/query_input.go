@@ -1,17 +1,15 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/radix29/gossms/internal/cli/audit"
 	"github.com/radix29/gossms/internal/cli/connect"
 	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/textenc"
 )
 
 // maxScriptBytes bounds a script read from a file or stdin, so a wrong path
@@ -94,52 +92,16 @@ func readSQLSource(inv *spec.Invocation) (string, error) {
 			return "", usageError(fmt.Sprintf("%s: the script is over %d MB", what, maxScriptBytes>>20), "")
 		}
 	}
-	text, ok := decodeScript(data)
-	if !ok {
-		return "", usageError(what+": the T-SQL is not valid UTF-8", "Save the file as UTF-8, or UTF-16 with a byte-order mark.")
+	// The text is refused whole when it is lossy: running a script with
+	// U+FFFD where the file had bytes it could not decode is a silent change
+	// to the script, where the TUI's File > Open only warns.
+	text, enc, lossy := textenc.Decode(data)
+	if lossy {
+		as := "UTF-8"
+		if enc == textenc.UTF16LE || enc == textenc.UTF16BE {
+			as = "UTF-16 (its byte-order mark says so)"
+		}
+		return "", usageError(what+": the T-SQL is not valid "+as, "Save the file as UTF-8, or UTF-16 with a byte-order mark.")
 	}
 	return text, nil
-}
-
-// decodeScript is a script's bytes as text: a UTF-8 byte-order mark is dropped
-// and UTF-16 (which SSMS saved by default) decoded by its mark; anything else
-// must be valid UTF-8. A mark is the only evidence read, as the TUI's File >
-// Open does (internal/tui/text_encoding.go): a guessed encoding would run a
-// script the caller never wrote. A leading U+FEFF would otherwise reach the
-// server and fail as "Incorrect syntax near" an invisible character.
-func decodeScript(data []byte) (string, bool) {
-	var order func([]byte) uint16
-	switch {
-	case bytes.HasPrefix(data, []byte{0xEF, 0xBB, 0xBF}):
-		data = data[3:]
-	case bytes.HasPrefix(data, []byte{0xFF, 0xFE}):
-		order = func(b []byte) uint16 { return uint16(b[0]) | uint16(b[1])<<8 }
-	case bytes.HasPrefix(data, []byte{0xFE, 0xFF}):
-		order = func(b []byte) uint16 { return uint16(b[1]) | uint16(b[0])<<8 }
-	}
-	if order == nil {
-		return string(data), utf8.Valid(data)
-	}
-	data = data[2:]
-	if len(data)%2 != 0 {
-		return "", false
-	}
-	var b strings.Builder
-	b.Grow(len(data))
-	for i := 0; i < len(data); i += 2 {
-		r := rune(order(data[i:]))
-		if utf16.IsSurrogate(r) {
-			// A pair, or the file is not UTF-16: an unpaired surrogate would
-			// become U+FFFD, a silent change to the script.
-			if i+3 >= len(data) {
-				return "", false
-			}
-			if r = utf16.DecodeRune(r, rune(order(data[i+2:]))); r == utf8.RuneError {
-				return "", false
-			}
-			i += 2
-		}
-		b.WriteRune(r)
-	}
-	return b.String(), true
 }
