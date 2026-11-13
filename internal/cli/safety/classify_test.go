@@ -216,6 +216,66 @@ func TestClassifyMsdbReadProcedure(t *testing.T) {
 	}
 }
 
+// A read allow-list name is read only where the server resolves it to the
+// system procedure: a system one with no schema, dbo or sys; an Agent one as
+// msdb.dbo. Anywhere else it is the user's own procedure, and sp_WhoIsActive,
+// sp_block and sp_monitor are not reads at all. sp_spaceused asking for
+// @updateusage runs DBCC UPDATEUSAGE.
+func TestClassifyReadProcedureQualification(t *testing.T) {
+	for _, tt := range []struct {
+		script string
+		want   spec.Class
+	}{
+		{"EXEC evil.sp_who", write},
+		{"EXEC db.evil.sp_who", write},
+		{"EXEC [evil].[sp_help]", write},
+		{"EXEC srv.db.evil.sp_who", write},
+		{"INSERT #t EXEC evil.sp_who2", write},
+		{"EXEC sp_who", read},
+		{"EXEC dbo.sp_who", read},
+		{"EXEC db.dbo.sp_who", read},
+		{"EXEC ..sp_who", read},
+		{"EXEC sys.sp_who", read},
+		{"EXEC srv.master.sys.sp_who", read},
+		{"EXEC [sys].[sp_spaceused]", read},
+
+		{"EXEC sp_help_job", write},
+		{"EXEC dbo.sp_help_job", write},
+		{"EXEC userdb.dbo.sp_help_job", write},
+		{"EXEC sys.sp_help_job", write},
+		{"EXEC msdb.dbo.sp_help_job", read},
+		{"EXEC msdb..sp_help_job", read},
+		{"EXEC [MSDB].[DBO].[SP_HELP_JOB]", read},
+		{"EXEC msdb.evil.sp_help_job", admin}, // every other msdb sp_ is admin
+
+		{"sp_whoisactive", write},
+		{"EXEC sp_WhoIsActive @destination_table = 'log'", write},
+		{"EXEC sp_block", write},
+		{"EXEC sp_monitor", write},
+
+		{"EXEC sp_spaceused", read},
+		{"EXEC sp_spaceused N't'", read},
+		{"EXEC sp_spaceused N't', 'false'", read},
+		{"EXEC sp_spaceused N't', N'FALSE'", read},
+		{"EXEC sp_spaceused @updateusage = 'false'", read},
+		{"EXEC sp_spaceused @objname = N't', @mode = 'ALL'", read},
+		{"EXEC sp_spaceused @updateusage = 'true'", admin},
+		{"EXEC sp_spaceused N't', 'true'", admin},
+		{"EXEC sp_spaceused @updateusage = @x", admin},
+		{"EXEC sp_spaceused @UpdateUsage = N'TRUE'", admin},
+		{"INSERT #t EXEC sp_spaceused N't', 'true'", admin},
+	} {
+		if got := Classify(tt.script).Class; got != tt.want {
+			t.Errorf("Classify(%q) = %s, want %s\n%+v", tt.script, got, tt.want, Classify(tt.script).Statements)
+		}
+	}
+	for _, s := range []string{"EXEC evil.sp_who", "sp_whoisactive", "EXEC sp_help_job"} {
+		if got := Classify(s).Flags; !got.Has(FlagExec) {
+			t.Errorf("Classify(%q).Flags = %v, want exec", s, got.Names())
+		}
+	}
+}
+
 // P2-9: StatementCutter cuts only at its leader verbs, so a statement led by
 // another word is merged into the one before it. The keyword floor keeps the
 // merged statement from hiding behind a read leader.
@@ -413,6 +473,9 @@ func TestClassifyReasons(t *testing.T) {
 		{"EXEC (@x)", "dynamic SQL is not classified"},
 		{"SELECT 1\nDISABLE TRIGGER t ON x", "keyword DISABLE (line 2)"},
 		{"INSERT #t EXEC sp_configure", "procedure sp_configure is administration (line 1)"},
+		{"EXEC evil.sp_who", "procedure evil.sp_who is not on the read allow-list"},
+		{"EXEC sp_help_job", "procedure sp_help_job is read only as msdb.dbo.sp_help_job: elsewhere the name is the current database's own procedure"},
+		{"EXEC sp_spaceused @updateusage = 'true'", "sp_spaceused @updateusage runs DBCC UPDATEUSAGE"},
 	} {
 		if got := Classify(tt.script).Statements[0].Reason; got != tt.want {
 			t.Errorf("Classify(%q) reason = %q, want %q", tt.script, got, tt.want)
