@@ -85,14 +85,22 @@ func liveReplicaExec(t *testing.T, stmt string) {
 	}
 }
 
+// dropLivePeerLogin kills the throwaway login's sessions, then drops it.
+// Cleanups run last-registered first, so the drop runs before liveParent's
+// Close: a peer the test opened is still logged in, and a bare DROP LOGIN
+// fails with Msg 15434 and leaves the login behind.
+const dropLivePeerLogin = "DECLARE @k nvarchar(max) = N'';" +
+	" SELECT @k += N'KILL ' + CAST(session_id AS nvarchar(10)) + N';' FROM sys.dm_exec_sessions" +
+	" WHERE login_name = N'" + livePeerLogin + "';" +
+	" EXEC (@k);" +
+	" IF SUSER_ID(N'" + livePeerLogin + "') IS NOT NULL DROP LOGIN [" + livePeerLogin + "]"
+
 // createLivePeerLogin creates the throwaway login and drops it after the test.
 func createLivePeerLogin(t *testing.T) {
 	t.Helper()
-	liveReplicaExec(t, "IF SUSER_ID('"+livePeerLogin+"') IS NOT NULL DROP LOGIN ["+livePeerLogin+"]")
+	liveReplicaExec(t, dropLivePeerLogin)
 	liveReplicaExec(t, "CREATE LOGIN ["+livePeerLogin+"] WITH PASSWORD = 'g0ssms-Peer-Probe!', CHECK_POLICY = OFF")
-	t.Cleanup(func() {
-		liveReplicaExec(t, "IF SUSER_ID('"+livePeerLogin+"') IS NOT NULL DROP LOGIN ["+livePeerLogin+"]")
-	})
+	t.Cleanup(func() { liveReplicaExec(t, dropLivePeerLogin) })
 }
 
 func TestLivePeerDoesNotFallBackToTheParentCredentials(t *testing.T) {

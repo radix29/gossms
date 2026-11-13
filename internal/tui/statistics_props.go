@@ -211,7 +211,7 @@ func pageStatisticDetails(d *PropDialog, sc *db.ServerConn, dbName, schema, tabl
 
 			statusRow := propsheet.Static("Last action", "")
 			updateBtn := d.asyncStatusButton("Update Statistics", statusRow, "Updating...", func(ctx context.Context) (string, error) {
-				if err := st.Update(ctx, 0); err != nil {
+				if err := st.Update(ctx, gosmo.StatisticsUpdateOptions{FullScan: true}); err != nil {
 					return "", err
 				}
 				return "Statistics updated (full scan)", nil

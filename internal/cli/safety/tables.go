@@ -1,6 +1,10 @@
 package safety
 
-import "github.com/radix29/gossms/internal/cli/spec"
+import (
+	"strings"
+
+	"github.com/radix29/gossms/internal/cli/spec"
+)
 
 // readLeaders are statement leaders that change nothing: control flow, local
 // variables, cursors over a query (the query itself is floored), messages,
@@ -13,25 +17,59 @@ var readLeaders = map[string]bool{
 	"REVERT": true, "READTEXT": true,
 }
 
-// floorWords raise a statement containing them, anywhere outside literals,
-// comments and quoted identifiers, to their class (docs/cli.md § Safety). A
-// column named after one over-classifies; the reason names the word.
+// verbs are the statement verbs, a word or a phrase, and the class each gives
+// (docs/cli.md § Safety). It is the one table both rules read, so a verb
+// cannot be known to one and missing from the other: the leader rule gives a
+// statement that opens with one its class, and the floor raises a statement
+// containing one anywhere outside literals, comments and quoted identifiers —
+// so one nested behind IF, ELSE, WHILE or BEGIN, where the statement splitter
+// does not cut, still counts. A verb that is also a common name (SEND, MOVE,
+// GET, END, ADD) is listed only as the phrase it begins, as NEXT VALUE FOR is,
+// so a column named after it stays read; a single word that is a column name
+// over-classifies, and the reason names the word. The longest phrase at a
+// position wins.
 //
-// LOGIN is not a floor word on its own: CREATE/ALTER/DROP before an
-// administration object (adminObjects) raises to admin wherever it stands,
-// and a bare login is a common column name.
-var floorWords = map[string]spec.Class{
+// Verbs the leader rule handles itself (UPDATE STATISTICS, CREATE/ALTER/DROP
+// of an administration object, BEGIN TRAN, …) are listed at the class the
+// floor gives them.
+//
+// LOGIN is not a verb on its own: CREATE/ALTER/DROP before an administration
+// object (adminObjects) raises to admin wherever it stands, and a bare login
+// is a common column name.
+var verbs = map[string]spec.Class{
 	"INSERT": spec.ClassWrite, "UPDATE": spec.ClassWrite, "DELETE": spec.ClassWrite,
 	"MERGE": spec.ClassWrite, "INTO": spec.ClassWrite, "RECEIVE": spec.ClassWrite,
 	"WRITETEXT": spec.ClassWrite, "UPDATETEXT": spec.ClassWrite,
+	"SEND ON CONVERSATION": spec.ClassWrite, "MOVE CONVERSATION": spec.ClassWrite,
+	"GET CONVERSATION": spec.ClassWrite, "END CONVERSATION": spec.ClassWrite,
+	"BEGIN DIALOG": spec.ClassWrite, "BEGIN CONVERSATION": spec.ClassWrite,
 
 	"CREATE": spec.ClassDDL, "ALTER": spec.ClassDDL, "DROP": spec.ClassDDL,
 	"TRUNCATE": spec.ClassDDL, "DISABLE": spec.ClassDDL, "ENABLE": spec.ClassDDL,
+	"ADD SIGNATURE": spec.ClassDDL, "ADD COUNTER SIGNATURE": spec.ClassDDL,
 
 	"KILL": spec.ClassAdmin, "SHUTDOWN": spec.ClassAdmin, "BACKUP": spec.ClassAdmin,
 	"RESTORE": spec.ClassAdmin, "GRANT": spec.ClassAdmin, "DENY": spec.ClassAdmin,
-	"REVOKE": spec.ClassAdmin, "RECONFIGURE": spec.ClassAdmin,
+	"REVOKE": spec.ClassAdmin, "RECONFIGURE": spec.ClassAdmin, "CHECKPOINT": spec.ClassAdmin,
+	"SETUSER": spec.ClassAdmin,
 }
+
+// verbForm is one verbs entry split into its words.
+type verbForm struct {
+	name  string
+	words []string
+	class spec.Class
+}
+
+// verbsByFirst indexes verbs by their first word.
+var verbsByFirst = func() map[string][]verbForm {
+	m := map[string][]verbForm{}
+	for name, c := range verbs {
+		words := strings.Fields(name)
+		m[words[0]] = append(m[words[0]], verbForm{name, words, c})
+	}
+	return m
+}()
 
 // moduleTypes are the objects CREATE/ALTER of which must be alone in their
 // batch: everything after the header is the body.

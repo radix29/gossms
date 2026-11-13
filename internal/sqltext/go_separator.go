@@ -18,7 +18,7 @@ import (
 // not a count: "GO -- step 2" runs the batch once.
 //
 // A count too large for an int saturates at math.MaxInt. "GO 0" runs the batch
-// no times.
+// no times, silently, as SSMS does (docs/decisions.md § T-SQL lexing).
 //
 // The scan bails on the first rune that can't be part of a separator:
 // IntelliSense runs this per line of the whole prefix on every keystroke while

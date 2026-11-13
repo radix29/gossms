@@ -1,7 +1,11 @@
 package safety
 
 import (
+	"go/ast"
+	"go/parser"
+	gotoken "go/token"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -60,6 +64,10 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"SELECT [next] value FOR XML PATH", read},
 		{"SELECT 'NEXT VALUE FOR s' -- NEXT VALUE FOR s", read},
 		{"FETCH NEXT FROM c INTO @v", read},
+		// Words that begin a verb phrase stay read as names.
+		{"SELECT send, move, get, [add], add_date FROM t", read},
+		{"SELECT 1 AS [end] ORDER BY send", read},
+		{"IF 1 = 1 SELECT send FROM t ELSE SELECT get FROM t", read},
 		{"", read},
 		{"-- only a comment", read},
 
@@ -175,6 +183,21 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"EXEC master.dbo.xp_regwrite 'x'", admin},
 		{"EXEC sp_trace_setstatus 2, 0", admin},
 		{"CHECKPOINT", admin},
+		// R1 (review 2026-11-13): verbs the splitter does not cut at keep their
+		// class nested behind IF, ELSE, WHILE and BEGIN.
+		{"IF 1=1 SETUSER 'x'", admin},
+		{"IF 1=1 CHECKPOINT", admin},
+		{"IF 1=1 SEND ON CONVERSATION @h ('x')", write},
+		{"IF 1=1 MOVE CONVERSATION @a TO @b", write},
+		{"IF 1=1 ADD SIGNATURE TO dbo.p BY CERTIFICATE c", ddl},
+		{"IF 1=1 ADD COUNTER SIGNATURE TO dbo.p BY CERTIFICATE c", ddl},
+		{"IF 1=1 GET CONVERSATION GROUP @g FROM q", write},
+		{"WAITFOR (GET CONVERSATION GROUP @g FROM q)", write},
+		{"IF 1=1 END CONVERSATION @h", write},
+		{"IF 1=1 PRINT 1 ELSE SEND ON CONVERSATION @h", write},
+		{"WHILE 1=1 SETUSER", admin},
+		{"BEGIN TRY MOVE CONVERSATION @a TO @b END TRY BEGIN CATCH END CATCH", write},
+		{"SEND ON CONVERSATION @h ('x')", write},
 		{"CREATE TRIGGER tr ON ALL SERVER FOR CREATE_DATABASE AS PRINT 1", admin},
 		{"INSERT #t EXEC sp_configure", admin},
 	} {
@@ -421,4 +444,95 @@ func TestUnquote(t *testing.T) {
 			t.Errorf("unquote(%q) = %q, want %q", c.raw, got, c.want)
 		}
 	}
+}
+
+// leaderSamples is, per verb leaderRule's switch names, a statement it opens
+// whose class is above read. TestClassifyNestedVerbsKeepTheirClass checks that
+// every case has one, so a verb added to the switch is covered.
+var leaderSamples = map[string]string{
+	"SELECT": "SELECT a INTO t FROM s", "WITH": "WITH c AS (SELECT 1 AS n) DELETE FROM c",
+	"INSERT": "INSERT t VALUES (1)", "UPDATE": "UPDATE t SET a = 1", "DELETE": "DELETE t",
+	"MERGE": "MERGE t USING s ON 1 = 1 WHEN MATCHED THEN DELETE;",
+	"BULK":  "BULK INSERT t FROM 'x'", "CREATE": "CREATE TABLE t (a int)",
+	"ALTER": "ALTER TABLE t ADD c int", "DROP": "DROP TABLE t", "TRUNCATE": "TRUNCATE TABLE t",
+	"DISABLE": "DISABLE TRIGGER tr ON t", "ENABLE": "ENABLE TRIGGER tr ON t",
+	"BACKUP": "BACKUP DATABASE d TO DISK = 'x'", "RESTORE": "RESTORE DATABASE d FROM DISK = 'x'",
+	"RECONFIGURE": "RECONFIGURE", "DBCC": "DBCC CHECKDB", "EXEC": "EXEC dbo.p",
+	"EXECUTE": "EXECUTE dbo.p", "BEGIN": "BEGIN TRAN", "COMMIT": "COMMIT",
+	"ROLLBACK": "ROLLBACK", "SAVE": "SAVE TRAN s", "END": "END CONVERSATION @h",
+	"SET": "SET IMPLICIT_TRANSACTIONS ON",
+}
+
+// R1 of the 2026-11-13 review: a verb only the leader rule knew (SETUSER, SEND
+// ON CONVERSATION, ADD SIGNATURE, …) classified as read behind IF, ELSE, WHILE
+// or BEGIN, which the splitter does not cut at, so --allow read sent it. Every
+// leader-rule verb and every verbs entry keeps its class nested.
+func TestClassifyNestedVerbsKeepTheirClass(t *testing.T) {
+	samples := map[string]string{}
+	for name := range verbs {
+		samples[name] = name + " x"
+	}
+	for _, name := range leaderSwitchCases(t) {
+		s, ok := leaderSamples[name]
+		if !ok {
+			t.Errorf("leaderRule case %q has no leaderSamples entry", name)
+			continue
+		}
+		samples[name] = s
+	}
+	for name, s := range samples {
+		want := Classify(s).Class
+		if want == read {
+			t.Errorf("sample for %s, %q, is read: give one above read", name, s)
+			continue
+		}
+		for _, nested := range []string{
+			"IF 1 = 1 " + s, "IF 1 = 1 PRINT 1 ELSE " + s, "WHILE 1 = 1 " + s,
+			"BEGIN " + s + " END", "BEGIN TRY " + s + " END TRY BEGIN CATCH END CATCH",
+			"IF 1 = 1 BEGIN " + s + " END",
+		} {
+			if got := Classify(nested).Class; Rank(got) < Rank(want) {
+				t.Errorf("Classify(%q) = %s, below %s alone (%s)", nested, got, s, want)
+			}
+		}
+	}
+}
+
+// leaderSwitchCases reads the verbs leaderRule's `switch w := t.word` names
+// from classify.go.
+func leaderSwitchCases(t *testing.T) []string {
+	t.Helper()
+	f, err := parser.ParseFile(gotoken.NewFileSet(), "classify.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "leaderRule" {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			sw, ok := n.(*ast.SwitchStmt)
+			if !ok || sw.Init == nil {
+				return true
+			}
+			if as, ok := sw.Init.(*ast.AssignStmt); !ok || as.Lhs[0].(*ast.Ident).Name != "w" {
+				return true
+			}
+			for _, c := range sw.Body.List {
+				for _, e := range c.(*ast.CaseClause).List {
+					if lit, ok := e.(*ast.BasicLit); ok {
+						s, _ := strconv.Unquote(lit.Value)
+						out = append(out, s)
+					}
+				}
+			}
+			return false
+		})
+	}
+	if len(out) < 10 {
+		t.Fatalf("found %d leaderRule cases; has the switch changed shape?", len(out))
+	}
+	return out
 }

@@ -258,12 +258,12 @@ func buildNewLoginServerRolesPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 	)
 
 	apply := func(ctx context.Context) error {
-		l := sc.Server.LoginRef(loginName())
+		name := loginName()
 		for i, v := range rolesGrid.Values() {
 			if !v[0] {
 				continue
 			}
-			if err := l.AddToServerRole(ctx, toggleable[i].Name); err != nil {
+			if err := sc.Server.ServerRoleRef(toggleable[i].Name).AddMember(ctx, name); err != nil {
 				return err
 			}
 		}
@@ -543,7 +543,7 @@ func buildNewLoginStatusPage(sc *db.ServerConn, loginName func() string) (*props
 			}
 		}
 		if enabledRow.Dirty() && enabledRow.Selected() == 1 {
-			if err := sc.Server.LoginRef(name).Disable(ctx); err != nil {
+			if err := sc.Server.LoginRef(name).SetEnabled(ctx, false); err != nil {
 				return err
 			}
 		}

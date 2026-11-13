@@ -296,7 +296,8 @@ func BackupInfoRows(b *gosmo.BackupInfo, id int64) [][]any {
 		rows = append(rows, []any{b.DatabaseName, b.BackupSetName, b.Description, historyTypes[b.SetType],
 			b.BackupStart, b.BackupFinish, b.BackupSize, dev, b.UserName, b.ServerName,
 			b.DatabaseVersion, int(b.CompatibilityLevel), b.Position, id, id, 1, b.IsCopyOnly,
-			b.FirstLSN, b.LastLSN, "", ""})
+			b.FirstLSN, b.LastLSN, "", "",
+			b.FirstRecoveryForkGUID, b.LastRecoveryForkGUID, b.ForkPointLSN})
 	}
 	return rows
 }

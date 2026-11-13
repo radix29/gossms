@@ -315,7 +315,7 @@ func fullTextEnableOp() fullTextIndexOp {
 			}
 			return ""
 		},
-		run: func(ctx context.Context, i *gosmo.FullTextIndex) error { return i.Enable(ctx) },
+		run: func(ctx context.Context, i *gosmo.FullTextIndex) error { return i.SetEnabled(ctx, true) },
 		// With change tracking on, ENABLE starts a full population.
 		watch: "Population", maybe: true,
 	}
@@ -336,7 +336,7 @@ func fullTextDisableOp() fullTextIndexOp {
 			return "Disable the full-text index on " + table + "?\n\n" +
 				"It keeps its data and full-text queries still read it, but changes to the table stop reaching it until it is enabled again, and a running population ends."
 		},
-		run: func(ctx context.Context, i *gosmo.FullTextIndex) error { return i.Disable(ctx) },
+		run: func(ctx context.Context, i *gosmo.FullTextIndex) error { return i.SetEnabled(ctx, false) },
 	}
 }
 

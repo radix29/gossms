@@ -9,6 +9,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/gossms/internal/textenc"
 	"github.com/radix29/gossms/internal/tui/planview"
 	"github.com/radix29/gossms/internal/tui/sqledit"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
@@ -94,7 +95,7 @@ type QueryPanel struct {
 	// fileEnc and fileCRLF are how the opened file was encoded on disk, so Save
 	// writes it back in the same shape rather than converting to LF-separated UTF-8.
 	// Zero values suit a panel with no file. See decodeTextFile.
-	fileEnc  fileEncoding
+	fileEnc  textenc.Encoding
 	fileCRLF bool
 
 	// runMode is the resultsMode the in-flight or most recent execution started

@@ -610,7 +610,7 @@ var indexMaintenanceVerbs = []verbGen{
 		return idx.Reorganize(ctx)
 	})},
 	{UpdateStatistics, indexMaintenance(func(ctx context.Context, idx *gosmo.Index) error {
-		return idx.UpdateStatistics(ctx, 0)
+		return idx.UpdateStatistics(ctx, gosmo.StatisticsUpdateOptions{FullScan: true})
 	})},
 }
 
@@ -625,7 +625,7 @@ var statisticUpdateVerb = verbGen{UpdateStatistics, func(ctx context.Context, sr
 	if err != nil {
 		return "", err
 	}
-	return Collect(ctx, func(ctx context.Context) error { return st.Update(ctx, 0) })
+	return Collect(ctx, func(ctx context.Context) error { return st.Update(ctx, gosmo.StatisticsUpdateOptions{FullScan: true}) })
 }}
 
 // indexMaintenance binds one of gosmo's index maintenance methods as a script

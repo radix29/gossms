@@ -4,8 +4,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/radix29/gossms/internal/textenc"
 	"github.com/radix29/tuikit/controls/editor"
 )
+
+// The decoding itself (lossy input, surrogates, odd lengths) is tested in
+// internal/textenc; these pin what the TUI adds: line endings, and the round
+// trip File > Open → File > Save.
 
 // TestDecodeEncodeRoundTripsEveryEncodingWeDetect pins the property the whole
 // feature exists for: opening a file and saving it back unchanged leaves the
@@ -16,16 +21,16 @@ func TestDecodeEncodeRoundTripsEveryEncodingWeDetect(t *testing.T) {
 		name string
 		data []byte
 		want string // the decoded text
-		enc  fileEncoding
+		enc  textenc.Encoding
 		crlf bool
 	}{
-		{"plain utf-8", []byte("SELECT 1;\n"), "SELECT 1;\n", encUTF8, false},
-		{"utf-8 crlf", []byte("SELECT 1;\r\nGO\r\n"), "SELECT 1;\r\nGO\r\n", encUTF8, true},
-		{"utf-8 bom", []byte(bomUTF8 + "SELECT 1;\n"), "SELECT 1;\n", encUTF8BOM, false},
-		{"utf-8 bom crlf", []byte(bomUTF8 + "SELECT 1;\r\n"), "SELECT 1;\r\n", encUTF8BOM, true},
-		{"utf-16le bom", encodeUTF16("SELECT N'café';\n", false), "SELECT N'café';\n", encUTF16LE, false},
-		{"utf-16be bom", encodeUTF16("SELECT N'café';\r\n", true), "SELECT N'café';\r\n", encUTF16BE, true},
-		{"non-bmp", encodeUTF16("PRINT N'😀';\n", false), "PRINT N'😀';\n", encUTF16LE, false},
+		{"plain utf-8", []byte("SELECT 1;\n"), "SELECT 1;\n", textenc.UTF8, false},
+		{"utf-8 crlf", []byte("SELECT 1;\r\nGO\r\n"), "SELECT 1;\r\nGO\r\n", textenc.UTF8, true},
+		{"utf-8 bom", []byte(textenc.BOMUTF8 + "SELECT 1;\n"), "SELECT 1;\n", textenc.UTF8BOM, false},
+		{"utf-8 bom crlf", []byte(textenc.BOMUTF8 + "SELECT 1;\r\n"), "SELECT 1;\r\n", textenc.UTF8BOM, true},
+		{"utf-16le bom", textenc.Encode("SELECT N'café';\n", textenc.UTF16LE), "SELECT N'café';\n", textenc.UTF16LE, false},
+		{"utf-16be bom", textenc.Encode("SELECT N'café';\r\n", textenc.UTF16BE), "SELECT N'café';\r\n", textenc.UTF16BE, true},
+		{"non-bmp", textenc.Encode("PRINT N'😀';\n", textenc.UTF16LE), "PRINT N'😀';\n", textenc.UTF16LE, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,78 +92,9 @@ func TestMixedLineEndingsSaveAsTheMajority(t *testing.T) {
 // unstripped U+FEFF reaches the server inside the first batch and SQL Server
 // answers "Incorrect syntax near" pointing at an invisible character.
 func TestDecodeStripsTheUTF8BOM(t *testing.T) {
-	text, _, _, _ := decodeTextFile([]byte(bomUTF8 + "SELECT 1"))
+	text, _, _, _ := decodeTextFile([]byte(textenc.BOMUTF8 + "SELECT 1"))
 	if text != "SELECT 1" {
 		t.Fatalf("text = %q, want %q", text, "SELECT 1")
-	}
-}
-
-// TestDecodeReportsUndecodableBytes covers the one case that cannot be
-// round-tripped: a file in some non-UTF-8 single-byte encoding, which has no
-// BOM to detect and so is read as UTF-8. It still loads, but the caller has to
-// be told, because saving it replaces the bad bytes for good.
-func TestDecodeReportsUndecodableBytes(t *testing.T) {
-	// latin-1 "café"
-	text, enc, _, lossy := decodeTextFile([]byte("caf\xe9"))
-	if !lossy {
-		t.Error("lossy = false, want true for invalid UTF-8")
-	}
-	if enc != encUTF8 {
-		t.Errorf("enc = %v, want encUTF8", enc)
-	}
-	if text != "caf\xe9" {
-		t.Errorf("text = %q — decode must not alter the bytes it could not decode", text)
-	}
-}
-
-// TestDecodeUTF16WithATrailingOddByteIsLossy pins the truncated-file case:
-// the dangling byte is dropped rather than decoded as half a code unit.
-func TestDecodeUTF16WithATrailingOddByteIsLossy(t *testing.T) {
-	data := append(encodeUTF16("AB", false), 0x41)
-	text, enc, _, lossy := decodeTextFile(data)
-	if text != "AB" || enc != encUTF16LE || !lossy {
-		t.Errorf("got %q/%v/%v, want \"AB\"/encUTF16LE/true", text, enc, lossy)
-	}
-}
-
-// TestDecodeUTF16UnpairedSurrogateYieldsValidText pins that a malformed
-// UTF-16 file cannot produce invalid UTF-8 downstream.
-func TestDecodeUTF16UnpairedSurrogateYieldsValidText(t *testing.T) {
-	data := []byte{0xFF, 0xFE, 0x00, 0xD8} // BOM + a lone high surrogate
-	text, _, _, _ := decodeTextFile(data)
-	if text != "�" {
-		t.Errorf("text = %q, want the replacement character", text)
-	}
-}
-
-// ...and that it is reported as lossy, which is the half that matters to the
-// user: an unflagged U+FFFD opens looking fine and Save writes it back over
-// the original bytes for good. Byte length is even here, so nothing but the
-// surrogate scan can catch it.
-func TestDecodeUTF16UnpairedSurrogateIsLossy(t *testing.T) {
-	cases := map[string][]byte{
-		"lone high surrogate":       {0xFF, 0xFE, 0x00, 0xD8},
-		"lone low surrogate":        {0xFF, 0xFE, 0x00, 0xDC},
-		"high surrogate then plain": {0xFF, 0xFE, 0x00, 0xD8, 0x41, 0x00},
-		"big-endian lone high":      {0xFE, 0xFF, 0xD8, 0x00},
-	}
-	for name, data := range cases {
-		if _, _, _, lossy := decodeTextFile(data); !lossy {
-			t.Errorf("%s: lossy = false, want true", name)
-		}
-	}
-}
-
-// A well-formed surrogate pair is not lossy — the scan must not flag every
-// astral character (an emoji in a comment) as a damaged file.
-func TestDecodeUTF16SurrogatePairIsNotLossy(t *testing.T) {
-	data := encodeUTF16("SELECT '🚀';", false)
-	text, _, _, lossy := decodeTextFile(data)
-	if lossy {
-		t.Error("lossy = true for a well-formed surrogate pair")
-	}
-	if text != "SELECT '🚀';" {
-		t.Errorf("text = %q, want the original", text)
 	}
 }
 

@@ -152,7 +152,7 @@ func TestLogViewerDeletesMailLogEntriesBeforeTheSelectedRow(t *testing.T) {
 	answerConfirm(t, a, true)
 	drainUntil(t, a, func() bool { return !lv.busy && len(inst.Statements()) > 0 }, "the purge to finish")
 
-	want := "EXEC msdb.dbo.sysmail_delete_log_sp @logged_before = '2026-10-01T08:00:00.000'"
+	want := "EXEC msdb.dbo.sysmail_delete_log_sp @logged_before = '2026-10-01T08:00:00'"
 	if got := inst.Statements(); len(got) != 1 || got[0] != want {
 		t.Fatalf("statements = %q, want exactly [%q]", got, want)
 	}

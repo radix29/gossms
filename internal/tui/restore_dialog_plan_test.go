@@ -19,9 +19,9 @@ func planHistoryRows() fakeResponse {
 	at := func(h int) time.Time { return time.Date(2026, 10, 27, h, 0, 0, 0, time.UTC) }
 	row := func(typ string, h int, device string, setID int64, first, last, guid, base string) []driver.Value {
 		return []driver.Value{"AppDB", "", "", typ, at(h), at(h), int64(1024), device, "sa", "SRV",
-			int64(957), int64(160), int64(1), setID, setID, int64(1), false, first, last, guid, base}
+			int64(957), int64(160), int64(1), setID, setID, int64(1), false, first, last, guid, base, "", "", ""}
 	}
-	return fakeResponse{match: "msdb.dbo.backupset", cols: 21, rows: [][]driver.Value{
+	return fakeResponse{match: "msdb.dbo.backupset", cols: 24, rows: [][]driver.Value{
 		row("L", 4, `E:\b\log2.trn`, 4, "200", "400", "g4", ""),
 		row("I", 3, `E:\b\diff.bak`, 3, "300", "320", "g3", "g1"),
 		row("L", 2, `E:\b\log1.trn`, 2, "90", "200", "g2", ""),
@@ -139,7 +139,7 @@ func TestRestorePlanScriptStopAt(t *testing.T) {
 	if len(stmts) != 3 || !strings.Contains(stmts[0], "full.bak") || !strings.Contains(stmts[1], "log1.trn") {
 		t.Fatalf("script is not the full then log1:\n%s", script)
 	}
-	if strings.Contains(stmts[0], "STOPAT") || !strings.Contains(stmts[1], "STOPAT = '2026-10-27T01:30:00.000'") {
+	if strings.Contains(stmts[0], "STOPAT") || !strings.Contains(stmts[1], "STOPAT = '2026-10-27T01:30:00'") {
 		t.Errorf("STOPAT is not on the log alone:\n%s", script)
 	}
 }
@@ -218,6 +218,122 @@ func TestRestorePlanReadsHistoryBeforeTheTailLog(t *testing.T) {
 	}
 }
 
+// runPlanTask runs d's plan as the Restore button does, into AppDB, and waits
+// for the task to finish.
+func runPlanTask(t *testing.T, d *RestoreDialog) {
+	t.Helper()
+	app := newTestApp()
+	d.app = app
+	d.beginRestore(d.sourceForRestore(), "AppDB")
+	deadline := time.Now().Add(5 * time.Second)
+	for !d.task.Done {
+		if time.Now().After(deadline) {
+			t.Fatal("the restore task never finished")
+		}
+		app.drainPending()
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// assertNoTailLog fails the test when inst saw the tail-log backup.
+func assertNoTailLog(t *testing.T, inst *gFake) {
+	t.Helper()
+	for _, q := range inst.Queries() {
+		if strings.Contains(q.Text, "BACKUP LOG") {
+			t.Errorf("the tail log was backed up although the plan was refused: %s", q.Text)
+		}
+	}
+}
+
+// B1: every set's header is read before the tail-log backup. A backup file
+// deleted since the history recorded it must refuse the plan while the
+// database is still online, not after the tail log has left it RESTORING.
+func TestRestorePlanReadsEverySetBeforeTheTailLog(t *testing.T) {
+	gone := errors.New("Cannot open backup device 'E:\\b\\diff.bak'")
+	sc, inst := newGConn(t,
+		planHistoryRows(),
+		headerOn(`E:\b\full.bak`, 1),
+		fakeResponse{match: `RESTORE HEADERONLY FROM DISK = N'E:\b\diff.bak'`, err: gone},
+		headerOn(`E:\b\log2.trn`, 2),
+	)
+	d := planForm(t)
+	d.sc = sc
+	d.cbTail.SetChecked(true)
+	runPlanTask(t, d)
+	if d.task.Err == nil || !strings.Contains(d.task.Err.Error(), "Cannot open backup device") {
+		t.Errorf("task error = %v, want the header failure", d.task.Err)
+	}
+	assertNoTailLog(t, inst)
+}
+
+// B1: with Verify ticked, every history set is verified before the tail-log
+// backup, so a set that fails verification refuses the plan with the database
+// still online.
+func TestRestorePlanVerifiesEverySetBeforeTheTailLog(t *testing.T) {
+	bad := errors.New("the backup set on file 1 is not valid")
+	sc, inst := newGConn(t,
+		planHistoryRows(),
+		headerOn(`E:\b\full.bak`, 1),
+		headerOn(`E:\b\diff.bak`, 5),
+		headerOn(`E:\b\log2.trn`, 2),
+		fakeResponse{match: `RESTORE VERIFYONLY FROM DISK = N'E:\b\diff.bak'`, err: bad},
+		fakeResponse{match: "RESTORE VERIFYONLY"},
+	)
+	d := planForm(t)
+	d.sc = sc
+	d.cbTail.SetChecked(true)
+	d.cbVerify.SetChecked(true)
+	runPlanTask(t, d)
+	if d.task.Err == nil || !strings.Contains(d.task.Err.Error(), "not valid") {
+		t.Errorf("task error = %v, want the verify failure", d.task.Err)
+	}
+	assertNoTailLog(t, inst)
+}
+
+// B1: a plan that runs reads and verifies every history set, then backs up the
+// tail, then restores — and verifies the tail only once its file exists, just
+// before restoring it.
+func TestRestorePlanRunsInOrder(t *testing.T) {
+	sc, inst := newGConn(t,
+		planHistoryRows(),
+		headerOn(`E:\b\full.bak`, 1),
+		headerOn(`E:\b\diff.bak`, 5),
+		headerOn(`E:\b\log2.trn`, 2),
+		fakeResponse{match: "RESTORE VERIFYONLY"},
+		fakeResponse{match: "BACKUP LOG"},
+		fakeResponse{match: "RESTORE DATABASE"},
+		fakeResponse{match: "RESTORE LOG"},
+		fakeResponse{match: "ALTER DATABASE"},
+		detachAccessResponse(),
+	)
+	d := planForm(t)
+	d.sc = sc
+	d.cbTail.SetChecked(true)
+	d.cbVerify.SetChecked(true)
+	runPlanTask(t, d)
+	if d.task.Err != nil {
+		t.Fatalf("task error = %v", d.task.Err)
+	}
+	var order []string
+	for _, q := range inst.Queries() {
+		for _, k := range []string{"RESTORE HEADERONLY", "RESTORE VERIFYONLY", "BACKUP LOG", "RESTORE DATABASE", "RESTORE LOG"} {
+			if strings.Contains(q.Text, k) {
+				order = append(order, k)
+			}
+		}
+	}
+	want := []string{
+		"RESTORE HEADERONLY", "RESTORE HEADERONLY", "RESTORE HEADERONLY",
+		"RESTORE VERIFYONLY", "RESTORE VERIFYONLY", "RESTORE VERIFYONLY",
+		"BACKUP LOG",
+		"RESTORE DATABASE", "RESTORE DATABASE", "RESTORE LOG",
+		"RESTORE VERIFYONLY", "RESTORE LOG", // the tail, once its file exists
+	}
+	if strings.Join(order, "|") != strings.Join(want, "|") {
+		t.Errorf("order =\n  %q\nwant\n  %q", order, want)
+	}
+}
+
 // A point past the newest log in history is the tail log's: the plan runs to
 // the end of the chain and the tail is restored to the point.
 func TestRestorePlanScriptStopAtInTheTail(t *testing.T) {
@@ -239,7 +355,7 @@ func TestRestorePlanScriptStopAtInTheTail(t *testing.T) {
 	stmts := strings.Split(script, "\nGO\n")
 	tail := stmts[len(stmts)-2]
 	if !strings.Contains(tail, "RESTORE LOG") || !strings.Contains(tail, req.plan.tailDevice) ||
-		!strings.Contains(tail, "STOPAT = '2026-10-27T05:00:00.000'") {
+		!strings.Contains(tail, "STOPAT = '2026-10-27T05:00:00'") {
 		t.Errorf("the tail log is not restored to the point:\n%s", tail)
 	}
 }
