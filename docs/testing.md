@@ -106,7 +106,13 @@ with no rules, its read failed the test only when it beat the test's end:
 `TestMain`** (`internal/tui/main_test.go` sets `XDG_CONFIG_HOME`, `HOME`,
 `AppData` to a temp dir). Without it, any `saveConfig` writes the developer's
 real `config.json`. `TestOptionsApplySwitchesColorTheme` flipped the user's
-theme to Light on every `go test ./...`.
+theme to Light on every `go test ./...`. A per-test redirect sets all three
+too — `scratchConfigDir` (`internal/config`), `scratchConfigHome`
+(`internal/tui`), never `t.Setenv("XDG_CONFIG_HOME", …)` alone: that redirects
+Linux only, and on Windows the `internal/config` tests saved synthetic
+connections into the user's `%APPDATA%` config (issue #23). Find the config
+directory through them, not by joining `"gossms"` onto the temp dir (macOS
+nests it under `Library/Application Support`).
 
 **A timing test over pure channels and timers runs in `synctest.Test`.** The
 bubble's clock is fake, so a window holds exactly the ticks the schedule

@@ -25,7 +25,7 @@ func serversOf(conns []Connection) []string {
 }
 
 func TestSaveKeepsAConnectionAnotherInstanceSaved(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	a, b := Load(), Load()
 
 	a.AddOrUpdate(Connection{Server: "from-a", User: "sa", Password: "pa", RememberPassword: true})
@@ -58,7 +58,7 @@ func TestSaveKeepsAConnectionAnotherInstanceSaved(t *testing.T) {
 }
 
 func TestSaveDoesNotResurrectAConnectionAnotherInstanceRemoved(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	seed := Load()
 	seed.AddOrUpdate(Connection{Server: "doomed", User: "sa"})
 	if err := seed.Save(); err != nil {
@@ -83,7 +83,7 @@ func TestSaveDoesNotResurrectAConnectionAnotherInstanceRemoved(t *testing.T) {
 }
 
 func TestSaveKeepsASettingAnotherInstanceChanged(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	a, b := Load(), Load()
 
 	a.IconStyle = IconStylePortable
@@ -111,18 +111,17 @@ func TestSaveKeepsASettingAnotherInstanceChanged(t *testing.T) {
 
 // A failed save keeps the pending operations for the next one.
 func TestSaveFailureKeepsPendingChanges(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	dir := scratchConfigDir(t)
 	a := Load()
 	a.AddOrUpdate(Connection{Server: "pending"})
 	// A directory where config.json should be makes the write fail.
-	if err := os.MkdirAll(filepath.Join(dir, "gossms", "config.json"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "config.json"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Save(); err == nil {
 		t.Fatal("Save over a directory succeeded")
 	}
-	if err := os.Remove(filepath.Join(dir, "gossms", "config.json")); err != nil {
+	if err := os.Remove(filepath.Join(dir, "config.json")); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Save(); err != nil {
@@ -196,7 +195,7 @@ func TestTrackedSaveKeepsAnotherInstancesPins(t *testing.T) {
 // on disk. Without the file lock the other instance's re-read can predate
 // this write and its own write then drops it.
 func TestConcurrentSavesDoNotLoseEachOther(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	const rounds = 200
 	errs := make([]error, 2)
 	var wg sync.WaitGroup
@@ -267,7 +266,7 @@ func TestConcurrentTrackedSavesDoNotLoseEachOther(t *testing.T) {
 // slice inside one — still differs from it and is saved. A shallow snapshot
 // shares the map, compares equal to itself, and drops the change.
 func TestSaveKeepsASettingChangedInPlace(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	c := Load()
 	c.XEventHiddenColumns = map[string][]string{"s": {"name"}}
 	c.XEventViewSettings = map[string]XEventViewSetting{"v": {Hidden: []string{"a"}}}

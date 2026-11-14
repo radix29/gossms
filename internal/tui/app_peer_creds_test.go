@@ -211,11 +211,7 @@ func TestShortHostKeyOnlyAliasesADottedHost(t *testing.T) {
 // Driven through config.Load rather than a hand-built Connection: the sealed
 // ciphertext that marks the state is unexported, and Load is what produces it.
 func TestPeerCredentialsSkipAPasswordThisSessionCannotRead(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("APPDATA", dir)
-	waitForSavesAtCleanup(t)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigHome(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}

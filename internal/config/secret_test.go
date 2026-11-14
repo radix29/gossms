@@ -297,9 +297,7 @@ func TestEmptyEncryptModeSealsAsOptional(t *testing.T) {
 // transplantable blob. A ciphertext that fails to open does not count and is
 // written back verbatim; a config already current does not ask for a save.
 func TestLoadFlagsLegacyPasswordsAndOneSaveResealsThem(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}

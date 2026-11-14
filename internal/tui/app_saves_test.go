@@ -22,12 +22,11 @@ func waitForSaves(t *testing.T, a *App) {
 // seconds.
 func holdConfigLock(t *testing.T) (release func()) {
 	t.Helper()
-	scratchConfigHome(t)
-	dir := os.Getenv("XDG_CONFIG_HOME")
-	if err := os.MkdirAll(filepath.Join(dir, "gossms"), 0o700); err != nil {
+	dir := scratchConfigHome(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	lock := filepath.Join(dir, "gossms", "config.json.lock")
+	lock := filepath.Join(dir, "config.json.lock")
 	if err := os.WriteFile(lock, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
