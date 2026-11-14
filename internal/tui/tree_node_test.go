@@ -43,6 +43,7 @@ func TestGroupedFolderTypes(t *testing.T) {
 		NodeSystemProcedures:      true,
 		NodeFunctions:             true,
 		NodeSystemFunctions:       true,
+		NodeExternalFunctions:     true,
 		NodeSequences:             true,
 		NodeUserDefinedDataTypes:  true,
 		NodeUserDefinedTableTypes: true,

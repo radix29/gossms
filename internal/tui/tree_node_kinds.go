@@ -56,10 +56,11 @@ func hasChildren(t NodeType) bool {
 
 // groupedFolderTypes are the folders Group by Schema regroups into one
 // NodeSchemaGroup per schema: the main object families, the Tables
-// sub-folders, the System Views/Procedures/Functions folders, Sequences and
-// the four schema-scoped Types folders. Each one's loader and Details listing
-// carry every object's schema (rowsInSchema). System Data Types (no schema),
-// Rules, Defaults, Service Broker queues and the rest stay flat.
+// sub-folders, the System Views/Procedures/Functions folders, External
+// Functions (Fabric DW), Sequences and the four schema-scoped Types folders.
+// Each one's loader and Details listing carry every object's schema
+// (rowsInSchema). System Data Types (no schema), Rules, Defaults, Service
+// Broker queues and the rest stay flat.
 var groupedFolderTypes = map[NodeType]bool{
 	NodeTables:                true,
 	NodeSystemTables:          true,
@@ -73,6 +74,7 @@ var groupedFolderTypes = map[NodeType]bool{
 	NodeSystemProcedures:      true,
 	NodeFunctions:             true,
 	NodeSystemFunctions:       true,
+	NodeExternalFunctions:     true,
 	NodeSequences:             true,
 	NodeUserDefinedDataTypes:  true,
 	NodeUserDefinedTableTypes: true,
