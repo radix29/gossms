@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/core"
 )
 
 // log_viewer_input.go holds the Log File Viewer's keyboard and mouse
@@ -180,6 +181,13 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
+	// A right-click on the filter box focuses it and opens its Cut/Copy/Paste
+	// menu. Held-button resends never come back here: the open menu takes them.
+	if ev.Buttons() == tcell.Button2 && lv.filterVisible() && lv.filter.HitTest(mx, my) {
+		lv.setFilterFocused(true)
+		lv.app.showClipboardMenu(lv.filter, mx, my)
+		return true
+	}
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {
 		beforeRow := lv.grid.SelectedRow()
 		if lv.grid.HandleMouse(ev) {
@@ -211,4 +219,15 @@ func (lv *LogViewer) routeDrag(ev *tcell.EventMouse, zone logDragZone) {
 	case lZoneFilter:
 		lv.filter.HandleMouse(ev)
 	}
+}
+
+// FocusedClipboardTarget implements core.ClipboardHost for App.activeClipboardTarget:
+// the filter box while it has the keyboard, so Ctrl+C/X/V and a terminal paste
+// reach it (before, they reached nothing and a paste was dropped). The explicit
+// nil otherwise: the grid copies through its own menu.
+func (lv *LogViewer) FocusedClipboardTarget() core.ClipboardTarget {
+	if lv.filterFocused && lv.filterVisible() {
+		return lv.filter
+	}
+	return nil
 }

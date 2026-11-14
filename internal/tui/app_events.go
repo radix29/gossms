@@ -279,6 +279,13 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	if a.contextMenu.OverlayActive() && (a.contextMenu.HandleMouse(ev) || a.contextMenu.OverlayActive()) {
 		return
 	}
+	// A fresh right-click on a dialog's text field opens its Cut/Copy/Paste menu
+	// (openDialogClipboardMenu) ahead of the dialog's own routing, which mostly
+	// answers Button1 alone. Only the press: a held right button resends Button2
+	// on every motion, and the menu, once open, takes those above.
+	if ev.Buttons() == tcell.Button2 && a.lastButtons != tcell.Button2 && a.openDialogClipboardMenu(mx, my) {
+		return
+	}
 	if a.modals.HandleMouse(ev) {
 		return
 	}

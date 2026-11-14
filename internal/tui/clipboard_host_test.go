@@ -32,6 +32,9 @@ func textEntryTypes() []reflect.Type {
 // its focused field. A dialog that owns a text widget but does not implement
 // core.ClipboardHost therefore has a clipboard that does nothing at all.
 //
+// A host is also a core.ClipboardFocuser, so a right-click on one of its fields
+// opens the same Cut/Copy/Paste menu (App.openDialogClipboardMenu).
+//
 // It used to be worse than nothing: the resolver named three dialogs and let
 // every other one fall through to the query panel behind it, so Ctrl+X in the
 // Find dialog cut the query editor's selection — invisibly, behind the dialog,
@@ -46,6 +49,7 @@ func TestEveryDialogWithTextEntryIsAClipboardHost(t *testing.T) {
 	a.buildUI()
 
 	hostType := reflect.TypeFor[core.ClipboardHost]()
+	focuserType := reflect.TypeFor[core.ClipboardFocuser]()
 	checked, withText := 0, 0
 	for _, d := range a.modals.Registered() {
 		dt := reflect.TypeOf(d)
@@ -57,6 +61,10 @@ func TestEveryDialogWithTextEntryIsAClipboardHost(t *testing.T) {
 		if !dt.Implements(hostType) {
 			t.Errorf("%s owns a text-entry widget but is not a core.ClipboardHost — "+
 				"Ctrl+C/X/V will do nothing while it is open", dt)
+		}
+		if !dt.Implements(focuserType) {
+			t.Errorf("%s owns a text-entry widget but is not a core.ClipboardFocuser — "+
+				"a right-click on its fields opens no Cut/Copy/Paste menu", dt)
 		}
 	}
 

@@ -105,6 +105,10 @@ type PlanView struct {
 	// the host's plan menu (Compare Showplan...). Elsewhere a right-click keeps
 	// its own meaning: the operator summary's cell menu, the XML editor's.
 	OnContextMenu func(x, y int)
+	// OnTextContextMenu, when set, is called with the pointer's screen position
+	// on a right-click in the XML tab's text: the host's Copy / Select All menu,
+	// acting on this view as its clipboard target.
+	OnTextContextMenu func(x, y int)
 
 	// mouseDragging distinguishes a fresh Button1 press on the tab bar or
 	// statement selector from a continued hold (as Toolbar/TreeView/MenuBar).
@@ -119,6 +123,11 @@ func New() *PlanView {
 	v := new(PlanView{activeTab: TabPlan, selectedID: -1})
 	v.xml = editor.NewEditor(editor.XMLHighlighter(theme.Active()))
 	v.xml.SetReadOnly(true)
+	v.xml.OnRightClick = func(x, y int) {
+		if v.OnTextContextMenu != nil {
+			v.OnTextContextMenu(x, y)
+		}
+	}
 	v.treeSplit = layout.NewSplitter(layout.SplitterVertical, 0.55) // tree gets more room than the details pane
 	v.treeSplit.SetLimits(0.1, 0.8)
 	v.treeSt.collapsed = make(map[int]bool)

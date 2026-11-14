@@ -308,6 +308,18 @@ func formatLogSearchTime(t time.Time) string {
 	return t.Format(logSearchTimeLayouts[0])
 }
 
+// FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
+// search field focuses it.
+func (d *LogSearchDialog) FocusClipboardTargetAt(x, y int) bool {
+	i := clipboardFieldAt(d.fields(), x, y)
+	if i < 0 {
+		return false
+	}
+	d.focusIdx = i
+	d.syncFocus()
+	return true
+}
+
 // FocusedClipboardTarget implements core.ClipboardHost — every field here is
 // text the user pastes into.
 func (d *LogSearchDialog) FocusedClipboardTarget() core.ClipboardTarget {

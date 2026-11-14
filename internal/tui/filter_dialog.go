@@ -509,6 +509,19 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
+// FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
+// row's value field focuses it; an operator dropdown is not a text field.
+func (d *FilterDialog) FocusClipboardTargetAt(x, y int) bool {
+	for i := range d.rows {
+		if d.rows[i].value.HitTest(x, y) {
+			d.focusIdx = i*2 + 1
+			d.syncFocus()
+			return true
+		}
+	}
+	return false
+}
+
 // FocusedClipboardTarget implements core.ClipboardHost: the focused row's value
 // field. widgetAt answers nil past the rows, and an operator dropdown is not a
 // clipboard target, so both fall through to nil.

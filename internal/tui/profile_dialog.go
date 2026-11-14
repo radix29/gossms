@@ -256,6 +256,16 @@ func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
+// FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on the
+// name field focuses it.
+func (d *ProfileDialog) FocusClipboardTargetAt(x, y int) bool {
+	if !d.fName.HitTest(x, y) {
+		return false
+	}
+	d.setFocus(indexOfFocusable(d.focusable, d.fName))
+	return true
+}
+
 // FocusedClipboardTarget implements core.ClipboardHost: the name field while
 // it has focus.
 func (d *ProfileDialog) FocusedClipboardTarget() core.ClipboardTarget {

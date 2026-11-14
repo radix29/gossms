@@ -39,6 +39,18 @@ func (v *PlanView) SelectedText() string {
 func (v *PlanView) Cut() string       { return "" } // read-only: nothing cut (Copy takes the text)
 func (v *PlanView) Paste(text string) {}
 
+// CanCopy, CanCut and CanPaste implement core.ClipboardAccess: the view is
+// read-only throughout, copied from wherever HasSelection finds something.
+func (v *PlanView) CanCopy() bool  { return v.HasSelection() }
+func (v *PlanView) CanCut() bool   { return false }
+func (v *PlanView) CanPaste() bool { return false }
+
+// CanSelectAll follows SelectAll below: the summary's open value popup, or the
+// XML tab's text.
+func (v *PlanView) CanSelectAll() bool {
+	return (v.summaryVisible() && v.summarySt.grid.OverlayActive()) || v.activeTab == TabXML
+}
+
 // SelectAll gates on OverlayActive, not the HasSelection its siblings use:
 // nothing is selected yet when Select All is invoked, so HasSelection is false
 // exactly when this must route to the popup. DataGrid.SelectAll is a no-op
