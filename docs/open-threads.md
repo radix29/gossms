@@ -73,6 +73,14 @@ support); this section covers only the environment.
 
 Settled design: `docs/decisions.md` § Format Document.
 
+- **`FuzzFormatSQL` finds a refused format** (found 2026-11-14, not fixed):
+  `(seleCt()CAse''seleCt end As A)` fails the safety check ("SQL differs at
+  token 3") with `IndentWidth: 0`, so Format Document refuses it — nothing is
+  corrupted. Unrelated to line endings. Seed kept out of `testdata/` so
+  `go test ./...` stays green; restore it as
+  `internal/format/testdata/fuzz/FuzzFormatSQL/1a90800885e3d06b` with the fix
+  (`go test fuzz v1` / `string("(seleCt()CAse''seleCt end As A)")`).
+
 - **Keyword case on a case-sensitive *server* is untried.** Run live in a
   `Latin1_General_CS_AS` database only, where INT, VARCHAR, XML, SYSNAME and
   the built-ins resolve case-insensitively; `sysname` and the CLR types are

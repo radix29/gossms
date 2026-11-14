@@ -4,8 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/radix29/gossms/internal/cli/audit"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 // --file - and --password-stdin both want stdin: refused on a command that
@@ -53,5 +55,28 @@ func TestReadSQLDecodesAndRefusesLossy(t *testing.T) {
 		if (err == nil) != tt.ok || (err == nil && got != tt.want) {
 			t.Errorf("readSQL(% x) = %q, %v; want %q, ok=%v", tt.in, got, err, tt.want, tt.ok)
 		}
+	}
+}
+
+// A CR-only (classic Mac) script's GO is a separator: readSQL folds line
+// endings to LF, which sqltext.SplitBatches needs. Unfolded, GO reached the
+// server as T-SQL ("Incorrect syntax near 'GO'"). The audit hash is still of
+// the script as read.
+func TestReadSQLFoldsLoneCR(t *testing.T) {
+	in := "select 1\rGO\rselect 2"
+	inv := &spec.Invocation{
+		Values:   map[string]any{optFile: "x.sql", optSQL: "", optSQLBase64: ""},
+		Given:    map[string]bool{optFile: true},
+		ReadFile: func(string) ([]byte, error) { return []byte(in), nil },
+	}
+	got, err := readSQL(inv)
+	if err != nil || got != "select 1\nGO\nselect 2" {
+		t.Fatalf("readSQL = %q, %v", got, err)
+	}
+	if n := len(sqltext.SplitBatches(got)); n != 2 {
+		t.Errorf("%d batches, want 2", n)
+	}
+	if inv.Audit.SQLSha256 != audit.Hash(in) {
+		t.Error("audit hash is not of the script as read")
 	}
 }

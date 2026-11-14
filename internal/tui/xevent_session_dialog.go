@@ -123,7 +123,8 @@ type xeColumnsView struct {
 // name, and shows it only if the page still has that object selected — the
 // selection may have moved on, and run drops the result outright if a newer
 // read started since (ARCHITECTURE.md § Latest-only loads). A failed read is
-// the hint's error and is not cached, so selecting the object again retries.
+// the hint's error, shown only while the object is still selected, and is not
+// cached, so selecting the object again retries.
 func (h xeHost) columns(run *latest, cache map[string][]gosmo.XEObjectColumn, pkg, name string, v xeColumnsView) {
 	key := pkg + "." + name
 	v.hint.Set("Reading " + key + "'s " + v.noun + "...")
@@ -140,7 +141,9 @@ func (h xeHost) columns(run *latest, cache map[string][]gosmo.XEObjectColumn, pk
 				return
 			}
 			if err != nil {
-				v.hint.SetError("Could not read " + key + "'s " + v.noun + ": " + err.Error())
+				if strings.EqualFold(v.current(), key) {
+					v.hint.SetError("Could not read " + key + "'s " + v.noun + ": " + err.Error())
+				}
 				return
 			}
 			cache[strings.ToLower(key)] = cols

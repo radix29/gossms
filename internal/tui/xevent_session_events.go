@@ -367,11 +367,13 @@ func (e *xeEventsEditor) reset() {
 }
 
 // syncConfigure shows the selected event's configuration, reading its columns
-// first if they are not in hand.
+// first if they are not in hand. A path that starts no read abandons the one
+// in flight, whose error would otherwise land on this selection's hint.
 func (e *xeEventsEditor) syncConfigure() {
 	e.hint.Clear()
 	ev := e.current()
 	if ev == nil {
+		e.colRun.Abandon()
 		e.configure.SetTitle("Configure (no event selected)")
 		e.pred.SetValue("")
 		e.pred.SetEnabled(false)
@@ -404,6 +406,7 @@ func (e *xeEventsEditor) syncConfigure() {
 
 	key := ev.QualifiedName()
 	if cols, ok := e.cols[strings.ToLower(key)]; ok {
+		e.colRun.Abandon()
 		e.showColumns(cols)
 		return
 	}

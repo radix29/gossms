@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/sqltext"
+	"github.com/radix29/gossms/internal/textenc"
 )
 
 // FuzzFormatSQL checks the SQL formatter on arbitrary text: it never panics,
@@ -85,9 +86,12 @@ func fuzzCorpusString(b string) (string, bool) {
 	return s, err == nil
 }
 
+// batchCounts is s's GO batches as gossms runs them: line endings folded to
+// LF first (the editor on load, the CLI on --file), so a lone CR ends a GO
+// line here as it does in the formatter's lexer.
 func batchCounts(s string) string {
 	var b strings.Builder
-	for _, bt := range sqltext.SplitBatches(s) {
+	for _, bt := range sqltext.SplitBatches(textenc.NormalizeEOL(s)) {
 		b.WriteString(strconv.Itoa(bt.Count) + ",")
 	}
 	return b.String()
@@ -193,6 +197,27 @@ func TestFormatSQLGoLines(t *testing.T) {
 	}
 	if a, b := batchCounts("select go, x from t"), batchCounts(got); b != "2,1," || a != "1," {
 		t.Errorf("batches %s / %s", a, b)
+	}
+}
+
+// A lone CR (classic Mac line ending) is a line break, as it is to SQL
+// Server and the lexer: counted as white space, the second of two -- comments
+// was laid out on the first one's line — inside it — and the format refused.
+// The case FuzzFormatSQL found ("--\r--") is also its saved seed. A GO line
+// ended by a lone CR is a separator, as it is once the editor or the CLI has
+// folded the CR; "GO 0\r0" (also found by the fuzzer) pins that a layout
+// line break and a GO line agree on where a lone CR ends a line.
+func TestFormatSQLLoneCRIsALineBreak(t *testing.T) {
+	for src, want := range map[string]string{
+		"--\r--":                 "--\n--",
+		"select a --c\r--d":      "SELECT a --c\n--d",
+		"select a --c\rfrom t":   "SELECT a --c\nFROM t",
+		"GO 0\r0":                "GO 0\n\n0",
+		"select 1\rGO\rselect 2": "SELECT 1\nGO\n\nSELECT 2",
+	} {
+		if got := formatSQLOrFail(t, src); got != want {
+			t.Errorf("Format(%q) = %q, want %q", src, got, want)
+		}
 	}
 }
 

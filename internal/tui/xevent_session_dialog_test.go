@@ -3,9 +3,11 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
@@ -532,4 +534,106 @@ func sectionTitles(f *propsheet.Form) string {
 		}
 	}
 	return strings.Join(out, " | ")
+}
+
+// xeStaleReadCase drives one B3 case: the columns read of an uncached object
+// (object, the fixture's arg) is held and then fails, after act moved the
+// selection somewhere that starts no read. The failed read must not report
+// on the hint of what is selected now.
+func xeStaleReadCase(t *testing.T, page func(xeHost) propPage, object string, start, act func(f *propsheet.Form)) {
+	t.Helper()
+	sc, inst := xePropsConn(t, "zz_trace")
+	gate := make(chan struct{})
+	inst.Rescript(append([]fakeResponse{{match: "FROM   sys.dm_xe_object_columns c", arg: object,
+		err: errors.New("read timed out"), block: gate}}, inst.responses...))
+	h := xeTestHost(sc)
+	f, _ := loadPageG(t, page(h), inst)
+	start(f)
+	drainUntil(t, h.app, func() bool {
+		n := 0
+		for _, q := range inst.Queries() {
+			if !q.Exec && strings.Contains(q.Text, "sys.dm_xe_object_columns") && gHasArg(q.Args, object) {
+				n++
+			}
+		}
+		return n == 1
+	}, object+"'s columns read to reach the server")
+	act(f)
+	before := hintTexts(f)
+	close(gate)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		h.app.wake.mu.Lock()
+		n := len(h.app.wake.pending)
+		h.app.wake.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the columns read never completed")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	h.app.drainPending()
+	if after := hintTexts(f); !slices.Equal(after, before) {
+		t.Errorf("the outdated read changed the hints:\nbefore %q\nafter  %q", before, after)
+	}
+}
+
+func hintTexts(f *propsheet.Form) []string {
+	var out []string
+	for _, r := range f.Rows() {
+		if h, ok := r.(*propsheet.HintRow); ok {
+			out = append(out, h.Text())
+		}
+	}
+	return out
+}
+
+// An event's columns read that fails after the selection moved to a cached
+// event, or to none, reports nothing: its error is not the new selection's.
+func TestXEEventsPageDropsAnOutdatedColumnsReadError(t *testing.T) {
+	addAttention := func(f *propsheet.Form) {
+		lib := formGrids(f)[0]
+		textRow(t, f, "Search events").Edit("atten")
+		activateGridCell(t, lib, 1, "attention", 1)
+	}
+	t.Run("cached", func(t *testing.T) {
+		xeStaleReadCase(t, func(h xeHost) propPage { return pageXESessionEvents(h, "zz_trace") }, "attention",
+			addAttention, func(f *propsheet.Form) {
+				selectGridRow(t, formGrids(f)[1], 0, "sqlserver.rpc_completed")
+			})
+	})
+	t.Run("none", func(t *testing.T) {
+		xeStaleReadCase(t, func(h xeHost) propPage { return pageXESessionEvents(h, "zz_trace") }, "attention",
+			addAttention, func(f *propsheet.Form) {
+				for formGrids(f)[1].Row(0) != nil {
+					clickFormButton(t, f, "Remove Event")
+				}
+			})
+	})
+}
+
+// The same for a target's parameters on the Data Storage page.
+func TestXEStoragePageDropsAnOutdatedColumnsReadError(t *testing.T) {
+	addHistogram := func(f *propsheet.Form) {
+		sr := selectRow(t, f, "Target type")
+		sr.Edit(slices.Index(sr.Items(), "package0.histogram"))
+		clickFormButton(t, f, "Add Target")
+	}
+	t.Run("cached", func(t *testing.T) {
+		xeStaleReadCase(t, func(h xeHost) propPage { return pageXESessionStorage(h, "zz_trace") }, "histogram",
+			addHistogram, func(f *propsheet.Form) {
+				selectGridRow(t, formGrids(f)[0], 0, "package0.event_file")
+			})
+	})
+	t.Run("none", func(t *testing.T) {
+		xeStaleReadCase(t, func(h xeHost) propPage { return pageXESessionStorage(h, "zz_trace") }, "histogram",
+			addHistogram, func(f *propsheet.Form) {
+				for formGrids(f)[0].Row(0) != nil {
+					selectGridRow(t, formGrids(f)[0], 0, formGrids(f)[0].Row(0)[0])
+					clickFormButton(t, f, "Remove Target")
+				}
+			})
+	})
 }

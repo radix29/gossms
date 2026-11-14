@@ -75,3 +75,39 @@ func TestSkipUTF8BOM(t *testing.T) {
 		}
 	}
 }
+
+// TestDetectEOL: the majority decides, so one stray ending does not rewrite
+// the file on Save; ties go CRLF, then LF, then CR.
+func TestDetectEOL(t *testing.T) {
+	for in, want := range map[string]EOL{
+		"":               LF,
+		"SELECT 1":       LF,
+		"a\nb\n":         LF,
+		"a\r\nb\r\n":     CRLF,
+		"a\rb\r":         CR,
+		"a\nb\r\nc\nd\n": LF,
+		"a\r\nb\nc\r\n":  CRLF,
+		"a\r\nb\n":       CRLF, // tie
+		"a\r\nb\r":       CRLF, // tie
+		"a\nb\r":         LF,   // tie
+		"a\rb\rc\nd\r\n": CR,
+		"a\r\rb\r\nc":    CR, // 2 lone CR, 1 CRLF
+	} {
+		if got := DetectEOL(in); got != want {
+			t.Errorf("DetectEOL(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// TestNormalizeEOLRoundTrips: every ending becomes LF, and WithEOL writes a
+// pure file back byte for byte.
+func TestNormalizeEOLRoundTrips(t *testing.T) {
+	if got := NormalizeEOL("a\r\nb\rc\nd\r\r\n"); got != "a\nb\nc\nd\n\n" {
+		t.Errorf("NormalizeEOL = %q", got)
+	}
+	for _, in := range []string{"a\nb\n", "a\r\nb\r\n", "a\rb\r", "a"} {
+		if got := WithEOL(NormalizeEOL(in), DetectEOL(in)); got != in {
+			t.Errorf("round trip of %q = %q", in, got)
+		}
+	}
+}

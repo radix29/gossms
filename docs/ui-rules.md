@@ -48,9 +48,9 @@ which owns them; the entries here say how goSSMS applies them.
   into U+FFFD-laden UTF-8. Text files go through `decodeTextFile`/
   `encodeTextFile` (`text_encoding.go`, over `internal/textenc`, the decoder
   the command line's `--file` shares): encoding **from a BOM only** (never
-  guessed), and the *majority* line ending preserved (`majorityCRLF`) — the
-  editor folds CRLF on load, and testing mere CRLF presence rewrote a mostly-LF
-  file over one stray CR.
+  guessed), and the *majority* line ending preserved (`textenc.DetectEOL`:
+  LF, CRLF or CR) — the editor folds CRLF and lone CR on load, and testing
+  mere CRLF presence rewrote a mostly-LF file over one stray CR.
 - **Auto-indent lives in the `KeyEnter` branch of `editor_input.go`, never in
   `insertNewline`** — `Paste`/`blockPaste` call `insertNewline` per line, so
   indenting there staircases a paste. The branch reads `blockEditing()`

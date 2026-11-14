@@ -15,6 +15,8 @@ import (
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/xevent"
 	"github.com/radix29/tuikit/controls"
+
+	"github.com/gdamore/tcell/v3"
 )
 
 // The Extended Events viewer: what a read's batch does to the grid (append,
@@ -102,6 +104,77 @@ func TestXEventViewerTrimKeepsTheCursorOnItsEvent(t *testing.T) {
 	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("e", 5), xeTestEvent("f", 6)}})
 	if selectedName(v) != "c" {
 		t.Errorf("selected %q, want c still", selectedName(v))
+	}
+}
+
+func selectedNames(v *XEventViewer) []string {
+	var out []string
+	for _, e := range v.selectedEvents() {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+func shiftKey(t *testing.T, v *XEventViewer, k tcell.Key) {
+	t.Helper()
+	if !v.grid.HandleKey(tcell.NewEventKey(k, "", tcell.ModShift)) {
+		t.Fatalf("DataGrid refused Shift+%v", k)
+	}
+}
+
+// A Shift-extended selection stays on its events when the full store pushes
+// old ones out. The trim moved the cursor with SetSelectedCell and left the
+// block anchor on its old index — a newer event — so Copy Rows copied events
+// the user never selected.
+func TestXEventViewerTrimKeepsABlockSelectionOnItsEvents(t *testing.T) {
+	v := newTestXEventViewer(t, 5)
+	v.feed.autoScroll = false
+	v.applyBatch(xeBatch{events: []xevent.Event{
+		xeTestEvent("a", 1), xeTestEvent("b", 2), xeTestEvent("c", 3), xeTestEvent("d", 4), xeTestEvent("e", 5)}})
+	v.grid.SetSelectedRow(2) // c
+	shiftKey(t, v, tcell.KeyDown)
+	if got := selectedNames(v); !slices.Equal(got, []string{"c", "d"}) {
+		t.Fatalf("before the trim: selected %v, want [c d]", got)
+	}
+	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("f", 6), xeTestEvent("g", 7)}})
+	if got := shownNames(v); !slices.Equal(got, []string{"c", "d", "e", "f", "g"}) {
+		t.Fatalf("shown %v", got)
+	}
+	if got := selectedNames(v); !slices.Equal(got, []string{"c", "d"}) {
+		t.Errorf("after the trim: selected %v, want [c d]", got)
+	}
+}
+
+// A selection Shift-extended up from the last row stops Auto Scroll's
+// following, as moving the cursor up does: following moved the cursor to the
+// new tail and stretched (now: collapsed) the selection the user was about to
+// copy.
+func TestXEventViewerBlockSelectionStopsFollowingTheTail(t *testing.T) {
+	v := newTestXEventViewer(t, 100)
+	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("a", 1), xeTestEvent("b", 2), xeTestEvent("c", 3)}})
+	if selectedName(v) != "c" {
+		t.Fatalf("auto scroll: selected %q, want c", selectedName(v))
+	}
+	// Anchor b, cursor c: the cursor is still on the last row, so only the
+	// block can stop the following.
+	v.grid.SetSelectedRow(1)
+	shiftKey(t, v, tcell.KeyDown)
+	if got := selectedNames(v); !slices.Equal(got, []string{"b", "c"}) {
+		t.Fatalf("before the batch: selected %v, want [b c]", got)
+	}
+	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("d", 4)}})
+	if got := selectedNames(v); !slices.Equal(got, []string{"b", "c"}) {
+		t.Errorf("after the batch: selected %v, want [b c]", got)
+	}
+	if selectedName(v) != "c" {
+		t.Errorf("cursor on %q, want c (not following the tail)", selectedName(v))
+	}
+
+	// Collapsed back to one row on the last one, following resumes.
+	v.grid.SetSelectedRow(len(v.shown) - 1)
+	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("e", 5)}})
+	if selectedName(v) != "e" {
+		t.Errorf("single row on the tail: selected %q, want e", selectedName(v))
 	}
 }
 

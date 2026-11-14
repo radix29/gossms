@@ -335,13 +335,15 @@ func (s *xeStorageEditor) reset() {
 }
 
 // syncParams shows the selected target's parameters, reading its columns
-// first if they are not in hand.
+// first if they are not in hand. A path that starts no read abandons the one
+// in flight, whose error would otherwise land on this selection's hint.
 func (s *xeStorageEditor) syncParams() {
 	t := s.current()
 	s.params, s.paramSel = nil, -1
 	resetGrid(s.paramGrid, xeParamColumns, nil, 0)
 	s.syncValue()
 	if t == nil {
+		s.colRun.Abandon()
 		s.section.SetTitle("Target properties (no target selected)")
 		s.paramHint.Clear()
 		return
@@ -349,6 +351,7 @@ func (s *xeStorageEditor) syncParams() {
 	key := t.QualifiedName()
 	s.section.SetTitle("Properties of " + key)
 	if cols, ok := s.cols[strings.ToLower(key)]; ok {
+		s.colRun.Abandon()
 		s.showParams(cols)
 		return
 	}

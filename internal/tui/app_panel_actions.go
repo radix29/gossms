@@ -84,7 +84,7 @@ func (a *App) openQueryFile() {
 		}
 		a.queryPanelCnt++
 		qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
-		text, enc, crlf, lossy := decodeTextFile(data)
+		text, enc, eol, lossy := decodeTextFile(data)
 		qp.editor.SetText(text)
 		// Read back from the editor, never from text: SetText expands tabs, so
 		// seeding savedText from the source marks a file with one tab in it
@@ -92,7 +92,7 @@ func (a *App) openQueryFile() {
 		// rewriting a file the user never touched.
 		qp.markSaved()
 		qp.filePath = path
-		qp.fileEnc, qp.fileCRLF = enc, crlf
+		qp.fileEnc, qp.fileEOL = enc, eol
 		if l, ok := format.LanguageForExt(filepath.Ext(path)); ok && l != format.LangSQL {
 			qp.setLanguage(l)
 		}
