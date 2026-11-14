@@ -123,6 +123,9 @@ history entry and its saved password; **Profile...** names it for the
 [command line](#command-line). Tab reaches the buttons after the last field;
 Left/Right move along them.
 
+On the next tree rebuild, a saved profile name also prefixes its Object Explorer
+root label. The status bar keeps the original server and login description.
+
 Choose SQL Server, Windows Integrated, or a Microsoft Entra ID method. Fields the
 method does not use are greyed out.
 

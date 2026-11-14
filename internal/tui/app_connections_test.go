@@ -58,6 +58,92 @@ func TestAddRootSelectsNewNode(t *testing.T) {
 	}
 }
 
+func TestExplorerRootShowsSavedProfile(t *testing.T) {
+	saved := config.Connection{Server: "long-server.example.com", Database: "app", User: "sa"}
+	for _, tc := range []struct {
+		name    string
+		opts    config.Connection
+		profile bool
+	}{
+		{"matching connection", saved, true},
+		{"different server", config.Connection{Server: "other", Database: "app", User: "sa"}, false},
+		{"different database", config.Connection{Server: saved.Server, Database: "other", User: "sa"}, false},
+		{"different login", config.Connection{Server: saved.Server, Database: "app", User: "other"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestApp()
+			a.cfg.AddOrUpdate(saved)
+			if err := a.cfg.SetProfile(saved.GeneratedName(), "finance-prod", config.AllowRead); err != nil {
+				t.Fatal(err)
+			}
+			sc := &db.ServerConn{Opts: tc.opts}
+			fullLabel := sc.Label()
+			root := a.explorer.AddRoot(fullLabel, sc)
+			want := fullLabel
+			if tc.profile {
+				want = "finance-prod (" + fullLabel + ")"
+			}
+			if got := a.explorer.view.SelectedNode().Label; got != want {
+				t.Errorf("tree root label = %q, want %q", got, want)
+			}
+			if root.label != fullLabel || FormatNodePath(root) != fullLabel {
+				t.Errorf("underlying label or status changed: %q, %q", root.label, FormatNodePath(root))
+			}
+			if !tc.profile {
+				return
+			}
+			details := NewDetailBrowser("Details")
+			details.cache[root] = &detailResult{cols: []string{"Property", "Value"}}
+			details.ShowNodeDetails(a, root)
+			wantTitle := "Object Explorer Details \u2014 " + fullLabel
+			if got := details.Title(); got != wantTitle {
+				t.Errorf("Details title = %q, want unchanged %q", got, wantTitle)
+			}
+			details.Retitle(root)
+			if got := details.Title(); got != wantTitle {
+				t.Errorf("retitled Details = %q, want unchanged %q", got, wantTitle)
+			}
+			child := &explorerNode{label: "Databases", parent: root}
+			if got := FormatNodePath(child); got != fullLabel+" > Databases" {
+				t.Errorf("child status = %q, want full connection breadcrumb", got)
+			}
+			if sc.Opts != tc.opts {
+				t.Error("displaying a profile changed the active connection options")
+			}
+			profile, err := a.cfg.ProfileByName("finance-prod")
+			if err != nil || profile.MaxAllow != config.AllowRead {
+				t.Errorf("displaying a profile changed its saved ceiling: %v, %v", profile.MaxAllow, err)
+			}
+		})
+	}
+}
+
+func TestExplorerRootWithoutProfileKeepsOriginalLabel(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		conn  *db.ServerConn
+		saved bool
+	}{
+		{name: "unsaved connection", conn: &db.ServerConn{Opts: config.Connection{Server: "srv", User: "sa"}}},
+		{name: "saved connection without profile", conn: &db.ServerConn{Opts: config.Connection{Server: "srv", User: "sa"}}, saved: true},
+		{name: "no connection"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestApp()
+			if tc.saved {
+				a.cfg.AddOrUpdate(tc.conn.Opts)
+			}
+			root := a.explorer.AddRoot("original root label", tc.conn)
+			if root.label != "original root label" || FormatNodePath(root) != "original root label" {
+				t.Errorf("an unprofiled root changed: label %q, status %q", root.label, FormatNodePath(root))
+			}
+			if got := a.explorer.view.SelectedNode().Label; got != "original root label" {
+				t.Errorf("unprofiled tree label = %q, want original root label", got)
+			}
+		})
+	}
+}
+
 // Panels hold a pointer, not an index, so disconnecting one connection can't
 // rebind another's panels.
 func TestDisconnectKeepsOtherPanelsBound(t *testing.T) {
