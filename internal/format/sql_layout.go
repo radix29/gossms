@@ -466,7 +466,10 @@ func (l *sqlLayout) flush(ind, nl int) *sqlTok {
 // there, else held until the next code token decides its line.
 func (l *sqlLayout) comment(i int) {
 	t := &l.t[i]
-	if t.nl > 0 || !l.wrote || len(l.pending) > 0 {
+	// After an inline -- comment nothing can share its line, whatever the
+	// source's line count says: written there, this comment would be inside
+	// that one.
+	if t.nl > 0 || !l.wrote || len(l.pending) > 0 || l.afterLC {
 		l.pending = append(l.pending, i)
 		return
 	}

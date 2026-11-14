@@ -335,13 +335,15 @@ func (s *xeStorageEditor) reset() {
 }
 
 // syncParams shows the selected target's parameters, reading its columns
-// first if they are not in hand.
+// first if they are not in hand. A path that starts no read abandons the one
+// in flight, whose error would otherwise land on this selection's hint.
 func (s *xeStorageEditor) syncParams() {
 	t := s.current()
 	s.params, s.paramSel = nil, -1
 	resetGrid(s.paramGrid, xeParamColumns, nil, 0)
 	s.syncValue()
 	if t == nil {
+		s.colRun.Abandon()
 		s.section.SetTitle("Target properties (no target selected)")
 		s.paramHint.Clear()
 		return
@@ -349,20 +351,17 @@ func (s *xeStorageEditor) syncParams() {
 	key := t.QualifiedName()
 	s.section.SetTitle("Properties of " + key)
 	if cols, ok := s.cols[strings.ToLower(key)]; ok {
+		s.colRun.Abandon()
 		s.showParams(cols)
 		return
 	}
-	s.paramHint.Set("Reading " + key + "'s parameters...")
-	s.h.columns(&s.colRun, t.Package, t.Name, func(cols []gosmo.XEObjectColumn, err error) {
-		if err != nil {
-			s.paramHint.SetError("Could not read " + key + "'s parameters: " + err.Error())
-			return
-		}
-		s.cols[strings.ToLower(key)] = cols
-		if cur := s.current(); cur != nil && strings.EqualFold(cur.QualifiedName(), key) {
-			s.showParams(cols)
-		}
-	})
+	s.h.columns(&s.colRun, s.cols, t.Package, t.Name, xeColumnsView{noun: "parameters", hint: s.paramHint,
+		current: func() string {
+			if cur := s.current(); cur != nil {
+				return cur.QualifiedName()
+			}
+			return ""
+		}, show: s.showParams})
 }
 
 func (s *xeStorageEditor) showParams(cols []gosmo.XEObjectColumn) {

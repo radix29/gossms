@@ -55,11 +55,13 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		return false
 	}
 
-	if a.modals.HandleKey(ev) {
-		return false
-	}
+	// The context menu is above the dialogs: one opened from a dialog's field
+	// (the Connect dialog's connection string) must get its keys first.
 	if a.contextMenu.OverlayActive() {
 		a.contextMenu.HandleKey(ev)
+		return false
+	}
+	if a.modals.HandleKey(ev) {
 		return false
 	}
 	if a.menuBar.OverlayActive() {
@@ -269,14 +271,15 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 
-	if a.modals.HandleMouse(ev) {
-		return
-	}
-	// An open menu gets first refusal on every mouse event and decides what
+	// An open context menu gets first refusal on every mouse event — ahead of the
+	// dialogs too, since one can open over a dialog's field — and decides what
 	// closes it: any press outside. A right-click that closed it falls through
 	// (core.MouseHandler), so it opens the next menu where it landed instead of
 	// needing a second right-click.
 	if a.contextMenu.OverlayActive() && (a.contextMenu.HandleMouse(ev) || a.contextMenu.OverlayActive()) {
+		return
+	}
+	if a.modals.HandleMouse(ev) {
 		return
 	}
 	if a.menuBar.OverlayActive() && (a.menuBar.HandleMouse(ev) || a.menuBar.OverlayActive()) {
@@ -393,9 +396,16 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	// (dialogs.Stack.HandleMouse): a dialog that opened a nested one from a button
 	// press never saw its release while the child was up, so the Connect dialog
 	// ignored the first click after a Delete confirmation.
-	if !a.modals.HandleMouse(ev) && a.contextMenu.OverlayActive() {
+	//
+	// An open context menu is above the dialogs and takes the event first; the
+	// dialogs then get an off-screen release, which resets their latches without
+	// lighting hover under the menu.
+	modalEv := ev
+	if a.contextMenu.OverlayActive() {
 		a.contextMenu.HandleMouse(ev)
+		modalEv = tcell.NewEventMouse(-1, -1, tcell.ButtonNone, ev.Modifiers())
 	}
+	a.modals.HandleMouse(modalEv)
 
 	// Complete a pending Object Explorer drop only if the drag started (moved past
 	// dragThreshold) and nothing modal opened mid-drag. drag.node is disarmed

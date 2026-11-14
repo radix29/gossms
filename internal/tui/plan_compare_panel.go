@@ -6,6 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/showplan"
+	"github.com/radix29/gossms/internal/textutil"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/layout"
@@ -188,7 +189,7 @@ func (p *PlanComparePanel) refreshPickerLabels() {
 		plan, idx := p.side(i)
 		label := fmt.Sprintf("%s: statement %d/%d", name, *idx+1, statementCount(plan))
 		if st := statementAt(plan, *idx); st != nil {
-			label += " " + core.Truncate(oneLineText(st.Text), 30)
+			label += " " + core.Truncate(textutil.Collapse(st.Text), 30)
 		}
 		if p.toolRect.H == 1 {
 			label = core.Truncate(label, max(limit, 1))
@@ -197,10 +198,6 @@ func (p *PlanComparePanel) refreshPickerLabels() {
 	}
 	p.layoutPickers()
 }
-
-// oneLineText folds a statement's text onto one line for a toolbar cell or a
-// menu entry.
-func oneLineText(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // statementMenuItems lists plan's statements for a picker, marking the one in
 // force. A statement with no operator tree (a SET, a DECLARE) is listed but
@@ -211,7 +208,7 @@ func statementMenuItems(plan *showplan.Plan, current int, choose func(int)) []co
 	}
 	items := make([]controls.MenuItem, 0, len(plan.Statements))
 	for i, st := range plan.Statements {
-		text := fmt.Sprintf("%d. %s", i+1, core.Truncate(oneLineText(st.Text), 60))
+		text := fmt.Sprintf("%d. %s", i+1, core.Truncate(textutil.Collapse(st.Text), 60))
 		if i == current {
 			text = "• " + text
 		}

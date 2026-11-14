@@ -307,3 +307,63 @@ func TestConnectDialogOpensOnTheMostRecentConnection(t *testing.T) {
 		t.Errorf("reopening replaced a typed server name with %q", got)
 	}
 }
+
+// Every click or drag motion in the preview runs setFocus, which refreshed the
+// preview with SetText and so wiped the selection on each event: a mouse drag
+// never selected anything and the connection string could not be copied.
+func TestConnectDialogPreviewKeepsAMouseSelection(t *testing.T) {
+	d := twoPaneConnectDialog(t)
+	d.fServer.SetValue("myhost")
+	d.setTab(connectTabString)
+	d.layoutFields()
+	r := d.fConnStrPreview.Bounds()
+	mouse := func(x, y int, b tcell.ButtonMask) {
+		d.HandleMouse(tcell.NewEventMouse(x, y, b, tcell.ModNone))
+	}
+	mouse(r.X, r.Y, tcell.Button1)
+	mouse(r.X+5, r.Y, tcell.Button1)
+	mouse(r.X+12, r.Y, tcell.Button1)
+	mouse(r.X+12, r.Y, tcell.ButtonNone)
+	if got, want := d.fConnStrPreview.SelectedText(), "sqlserver://"; got != want {
+		t.Errorf("dragged selection = %q, want %q", got, want)
+	}
+	if d.focusedWidget() != d.fConnStrPreview {
+		t.Errorf("focus = %T, want the preview", d.focusedWidget())
+	}
+}
+
+// A right-click in the preview focuses it and opens a menu whose Copy needs a
+// selection and whose Copy Connection String takes the whole text.
+func TestConnectDialogPreviewRightClickMenu(t *testing.T) {
+	d := twoPaneConnectDialog(t)
+	d.fServer.SetValue("myhost")
+	d.setTab(connectTabString)
+	d.layoutFields()
+	r := d.fConnStrPreview.Bounds()
+	d.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y, tcell.Button2, tcell.ModNone))
+	d.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y, tcell.ButtonNone, tcell.ModNone))
+
+	if !d.app.contextMenu.OverlayActive() {
+		t.Fatal("right-click in the preview opened no menu")
+	}
+	if d.focusedWidget() != d.fConnStrPreview {
+		t.Errorf("focus = %T, want the preview", d.focusedWidget())
+	}
+	enabled := map[string]bool{}
+	for _, it := range d.app.contextMenu.Items() {
+		enabled[it.Label] = it.Enabled == nil || it.Enabled()
+	}
+	if enabled["Copy"] {
+		t.Error("Copy is enabled with nothing selected")
+	}
+	if !enabled["Copy Connection String"] || !enabled["Select All"] {
+		t.Errorf("menu enablement = %v, want Copy Connection String and Select All on", enabled)
+	}
+
+	d.fConnStrPreview.SelectAll()
+	for _, it := range d.app.contextMenu.Items() {
+		if it.Label == "Copy" && !it.Enabled() {
+			t.Error("Copy is disabled with the preview selected")
+		}
+	}
+}

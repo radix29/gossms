@@ -209,6 +209,13 @@ func folderOf(dbName string, types ...NodeType) func(nodeData) bool {
 	}
 }
 
+// reloadDatabasesFolder reloads sc's Databases folder: what every write that
+// adds, removes or replaces a database ends with (New Database, Attach,
+// Detach, New Snapshot, a restore, a revert to a snapshot).
+func (a *App) reloadDatabasesFolder(sc *db.ServerConn) {
+	a.explorer.ReloadFolders(sc, folderOf("", NodeDatabases))
+}
+
 // nodeKey is what names a node: equal keys stand for the same server object or
 // folder. TableName, AGName, XESession and RGPool each tell apart folders of one
 // type and database with different parents; AgentScheduleID tells apart schedules

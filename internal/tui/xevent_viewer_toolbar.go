@@ -346,7 +346,7 @@ func (v *XEventViewer) toggleColumn(key string) {
 // columnsChanged rebuilds the grid for the new column choice and saves it
 // under the session's name.
 func (v *XEventViewer) columnsChanged() {
-	v.rebuildRows()
+	v.rebuildColumns()
 	saveXEHiddenColumns(v.app, v.columnsKey(), v.hiddenCols)
 }
 

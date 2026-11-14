@@ -4,10 +4,7 @@ import (
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/xevent"
-	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/layout"
-	"github.com/radix29/tuikit/theme"
 )
 
 // xevent_viewer.go is SSMS's Extended Events viewer: Watch Live Data on a
@@ -30,6 +27,8 @@ import (
 // big event_file set runs for seconds, neither of which may queue ahead of
 // Object Explorer on the host connection.
 type XEventViewer struct {
+	viewerPanel
+
 	app *App
 	// host is the Object Explorer connection the panel was opened from: the
 	// server it reads, the connection a query window it opens attaches to,
@@ -53,9 +52,6 @@ type XEventViewer struct {
 	// profiler marks a viewer the XEvent Profiler opened: closing it offers
 	// to stop the session, which the Profiler started (D2).
 	profiler bool
-
-	rect   core.Rect
-	active bool
 
 	store *xevent.Store
 	// filter is the client-side filter in force, nil for none.
@@ -85,16 +81,8 @@ type XEventViewer struct {
 	bookmarks map[uint64]bool
 	find      string
 
-	grid     *controls.DataGrid
-	splitter *layout.Splitter
+	toolIDs []xeTool // what each of tools.Cells is; the cells differ by mode
 
-	toolRect   core.Rect
-	gridRect   core.Rect
-	detailRect core.Rect
-	tools      controls.ToolRow
-	toolIDs    []xeTool // what each of tools.Cells is; the cells differ by mode
-
-	detailScroll     int
 	detailCache      []string
 	detailCacheEvent *xevent.Event
 	detailCacheWidth int
@@ -119,28 +107,21 @@ const (
 // is View Target Data on target. Nothing is read until connectXEventViewer
 // has opened the panel's connection.
 func NewXEventViewer(app *App, host *db.ServerConn, session, target string, live bool) *XEventViewer {
-	grid := controls.NewDataGrid()
-	grid.SetCellCursor(true)
-	grid.SetStatusStyle(theme.StyleGridStatus)
-	grid.OnCopyRequest = app.copyWithStatus
-	grid.SetMaxCellWidth(app.cfg.MaxCellLength + 2)
 	v := new(XEventViewer{
-		app:        app,
-		host:       host,
-		session:    session,
-		target:     target,
-		live:       live,
-		store:      xevent.NewStore(config.ClampXEventStoreCapacity(app.cfg.XEventStoreCapacity)),
-		hiddenCols: loadXEHiddenColumns(app, session),
-		expanded:   map[string]bool{},
-		bookmarks:  map[uint64]bool{},
-		grid:       grid,
-		splitter:   newHorizontalSplitter("─── Event details ─── (drag or Ctrl+Up/Down to resize)"),
+		viewerPanel: newViewerPanel(app, "─── Event details ─── (drag or Ctrl+Up/Down to resize)", 0.65),
+		app:         app,
+		host:        host,
+		session:     session,
+		target:      target,
+		live:        live,
+		store:       xevent.NewStore(config.ClampXEventStoreCapacity(app.cfg.XEventStoreCapacity)),
+		hiddenCols:  loadXEHiddenColumns(app, session),
+		expanded:    map[string]bool{},
+		bookmarks:   map[uint64]bool{},
 	})
 	v.feed.autoScroll = live
-	grid.OnShowValue = v.showValue
-	grid.OnMenuItems = v.cellMenuItems
-	v.splitter.SetRatio(0.65)
+	v.grid.OnShowValue = v.showValue
+	v.grid.OnMenuItems = v.cellMenuItems
 	v.buildTools()
 	v.rebuildRows()
 	return v
@@ -182,23 +163,8 @@ func (v *XEventViewer) Close() {
 // SetBounds positions the panel: the toolbar row, then the grid and the
 // details pane either side of the splitter.
 func (v *XEventViewer) SetBounds(x, y, w, h int) {
-	v.rect = core.Rect{X: x, Y: y, W: w, H: h}
-	if h >= 1 {
-		v.toolRect = core.Rect{X: x, Y: y, W: w, H: 1}
-	} else {
-		v.toolRect = core.Rect{}
-	}
+	v.setShellBounds(x, y, w, h)
 	v.layoutTools()
-	v.splitter.SetBounds(x, y+1, w, h-1)
-	v.layoutChildren()
-}
-
-// layoutChildren gives the grid and the details pane their halves, on every
-// resize and after every splitter drag.
-func (v *XEventViewer) layoutChildren() {
-	v.gridRect = v.splitter.FirstRect()
-	v.detailRect = v.splitter.SecondRect()
-	v.grid.SetBounds(v.gridRect.X, v.gridRect.Y, v.gridRect.W, v.gridRect.H)
 }
 
 // layoutTools places the toolbar cells, folding whatever doesn't fit into

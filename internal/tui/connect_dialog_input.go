@@ -192,6 +192,15 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
+	// A right-click in the connection string preview focuses it and opens its
+	// Copy menu (Editor.OnRightClick, showConnStrMenu).
+	if ev.Buttons() == tcell.Button2 {
+		if !d.connecting && d.tab == connectTabString && d.fConnStrPreview.HandleMouse(ev) {
+			d.setFocus(indexOfFocusable(d.focusable, d.fConnStrPreview))
+		}
+		return true
+	}
+
 	if ev.Buttons() != tcell.Button1 {
 		return false
 	}

@@ -126,16 +126,39 @@ func (v *XEventViewer) headers() []string {
 }
 
 // rebuildRows rebuilds shown from the whole store and hands the grid the new
-// column set, keeping its cursor and scroll: after a filter change, a column
-// change, a Clear or a Resume.
-func (v *XEventViewer) rebuildRows() {
+// column set, keeping its cursor and scroll: after a filter change, a Clear or
+// a Resume.
+func (v *XEventViewer) rebuildRows() { v.rebuild(v.selectionAnchor(), false) }
+
+// rebuildColumns is rebuildRows for a change of the column choice alone: the
+// rows stay where they are, so a Shift-extended block or Ctrl+click marks
+// stay on them.
+func (v *XEventViewer) rebuildColumns() { v.rebuild(v.selectionAnchor(), true) }
+
+// rebuild is rebuildRows with the cursor's anchor taken by the caller —
+// setGrouping takes it while the old grouping still lays out the rows.
+// Ungrouped and not sameRows, the selection collapses onto anchor's event, or
+// onto the cursor's old index when that event is gone: kept by index, a block
+// covered other events once a filter or a Resume moved them, and Copy Rows
+// copied events the user never selected.
+func (v *XEventViewer) rebuild(anchor xeAnchor, sameRows bool) {
 	v.feed.overlayHeld = false
 	v.columns = v.visibleColumns()
+	var first uint64
+	if len(v.shown) > 0 {
+		first = v.shown[0].ID
+	}
 	v.shown = v.shown[:0:0]
 	for i := range v.store.Len() {
 		if e := v.store.At(i); v.filter.Match(e) {
 			v.shown = append(v.shown, e)
 		}
+	}
+	// Paused, or held behind an overlay, shown lagged the store: the rebuild
+	// takes in what arrived meanwhile, and what aged out of the front moves
+	// every row up. Only appended rows leave them where they were.
+	if first != 0 && (len(v.shown) == 0 || v.shown[0].ID != first) {
+		sameRows = false
 	}
 	if v.grouped() {
 		v.regroup()
@@ -143,7 +166,18 @@ func (v *XEventViewer) rebuildRows() {
 		return
 	}
 	v.invalidateDetailCache()
-	v.grid.SetSourcePreservingView(v.headers(), xeRowSource{v})
+	if sameRows {
+		v.grid.SetSourceKeepingSelection(v.headers(), xeRowSource{v})
+	} else {
+		// Collapses onto the clamped old index; then onto anchor's event.
+		v.grid.SetSourcePreservingView(v.headers(), xeRowSource{v})
+		if anchor.event != 0 {
+			if i := slices.IndexFunc(v.shown, func(e *xevent.Event) bool { return e.ID == anchor.event }); i >= 0 {
+				_, col := v.grid.SelectedCell()
+				v.grid.SetSelectedCell(i, col)
+			}
+		}
+	}
 	v.followTail(true)
 	v.updateStatus()
 }
@@ -198,8 +232,10 @@ func (v *XEventViewer) applyBatch(b xeBatch) {
 	case grew && v.grid.OverlayActive():
 		v.feed.overlayHeld = true
 	case grew:
+		// Same rows plus appended ones (trimShown already shifted the
+		// selection), so a multi-row selection stays on them.
 		v.columns = v.visibleColumns()
-		v.grid.SetSourcePreservingView(v.headers(), xeRowSource{v})
+		v.grid.SetSourceKeepingSelection(v.headers(), xeRowSource{v})
 	case before < 200:
 		// Column widths are sized from the first rows; past those, a new row
 		// changes nothing.
@@ -221,34 +257,45 @@ func (v *XEventViewer) catchUpAfterOverlay() {
 		v.dropAged()
 		v.regroup()
 	} else {
-		v.grid.SetSourcePreservingView(v.headers(), xeRowSource{v})
+		// Rows only appended while the overlay was up: same rows.
+		v.grid.SetSourceKeepingSelection(v.headers(), xeRowSource{v})
 	}
 	v.updateStatus()
 }
 
 // followTail keeps the newest event selected while Auto Scroll is on and the
 // cursor was on the last row: moving up to read an event stops the following,
-// going back to the bottom resumes it.
+// going back to the bottom resumes it. So does holding a multi-row selection
+// (Shift-extended up from the last row, or Ctrl+click marks): following would
+// move the cursor, and SetSelectedCell collapses the selection the user was
+// about to copy.
 func (v *XEventViewer) followTail(atEnd bool) {
-	if v.feed.autoScroll && atEnd && len(v.shown) > 0 {
-		_, col := v.grid.SelectedCell()
-		v.grid.SetSelectedCell(len(v.shown)-1, col)
+	if !v.feed.autoScroll || !atEnd || len(v.shown) == 0 || !v.singleRowSelected() {
+		return
 	}
+	_, col := v.grid.SelectedCell()
+	v.grid.SetSelectedCell(len(v.shown)-1, col)
+}
+
+// singleRowSelected reports whether the grid's selection is just the cursor
+// row: no Shift-extended rows, no Ctrl+click marks elsewhere.
+func (v *XEventViewer) singleRowSelected() bool {
+	if v.grid.SelectedRowCount() != 1 {
+		return false
+	}
+	row, _ := v.grid.SelectedCell()
+	return v.grid.SelectedRows()[0] == row
 }
 
 // trimShown drops from the front of shown the events the store has pushed
-// out, moving the grid's cursor and scroll up with the rows so they stay on
-// the event they were on.
+// out. DropLeadingRows moves the grid's cursor, block anchor, Ctrl+click marks
+// and scroll up with the rows, so the selection stays on the events it was
+// on: moved with SetSelectedCell, the anchor stayed on its old index — a newer
+// event — and Copy copied events the user never selected.
 func (v *XEventViewer) trimShown() {
-	row, col := v.grid.SelectedCell()
-	scroll := v.grid.ScrollRow()
-	k := v.dropAged()
-	if k == 0 {
-		return
+	if k := v.dropAged(); k > 0 {
+		v.grid.DropLeadingRows(k)
 	}
-	v.grid.ClearMarkedRows()
-	v.grid.SetScroll(scroll-k, v.grid.ScrollCol())
-	v.grid.SetSelectedCell(max(0, row-k), col)
 }
 
 // dropAged drops from the front of shown, and from the bookmarks, the events

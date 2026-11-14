@@ -19,12 +19,11 @@ import (
 // either.
 func newTestLogViewer() *LogViewer {
 	lv := &LogViewer{
-		logType:  gosmo.ErrorLogSQLServer,
-		sel:      []logFileRef{{Type: gosmo.ErrorLogSQLServer, Num: 0}},
-		files:    make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
-		grid:     controls.NewDataGrid(),
-		filter:   widgets.NewInputField(logFilterLabel, logFilterWidth, false),
-		splitter: newHorizontalSplitter(""),
+		viewerPanel: viewerPanel{grid: controls.NewDataGrid(), splitter: newHorizontalSplitter("")},
+		logType:     gosmo.ErrorLogSQLServer,
+		sel:         []logFileRef{{Type: gosmo.ErrorLogSQLServer, Num: 0}},
+		files:       make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
+		filter:      widgets.NewInputField(logFilterLabel, logFilterWidth, false),
 	}
 	lv.buildTools()
 	return lv

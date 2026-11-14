@@ -2,9 +2,9 @@ package planview
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/textutil"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
 )
@@ -169,16 +169,9 @@ func (v *PlanView) drawStatementBar(s tcell.Screen) {
 		fmt.Sprintf(" Statement %d/%d ", v.stmtIdx+1, len(v.plan.Statements)))
 	core.DrawText(s, next.X, next.Y, st, "▶")
 
-	rest := fmt.Sprintf("  %.0f%%  %s", v.statementCostPct(v.stmtIdx), oneLine(stmt.Text))
+	rest := fmt.Sprintf("  %.0f%%  %s", v.statementCostPct(v.stmtIdx), textutil.Collapse(stmt.Text))
 	restX := next.X + next.W
 	if w := v.stmtRect.Right() - restX; w > 0 {
 		core.DrawTextClipped(s, restX, v.stmtRect.Y, w, st, rest)
 	}
-}
-
-// oneLine collapses line breaks and repeated whitespace to a single display line.
-func oneLine(s string) string {
-	s = strings.ReplaceAll(s, "\r\n", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	return strings.Join(strings.Fields(s), " ")
 }

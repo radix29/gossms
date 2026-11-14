@@ -5,10 +5,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/layout"
-	"github.com/radix29/tuikit/theme"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -87,11 +84,10 @@ type logFileError struct {
 // a one-shot query bounded by logReadTimeout, so no background traffic queues
 // behind the shared connection.
 type LogViewer struct {
+	viewerPanel
+
 	app  *App
 	conn *db.ServerConn
-
-	rect   core.Rect
-	active bool
 
 	// logType is the family the two selectors address: the one whose files the
 	// file selector lists and the one Recycle acts on. It is *not* a constraint on
@@ -134,29 +130,20 @@ type LogViewer struct {
 	// Asked only when the selection holds the Database Mail log.
 	mailOwnOnly bool
 
-	grid     *controls.DataGrid
-	filter   *widgets.InputField
-	splitter *layout.Splitter
+	filter *widgets.InputField
 
 	// filterFocused sends keys to the filter field instead of the grid. Tab
 	// toggles it, a click in either claims it (like QueryPanel's resultsFocused).
 	filterFocused bool
 
-	toolRect   core.Rect
-	gridRect   core.Rect
-	detailRect core.Rect
-
-	// tools is the toolbar row. Its More cell matters: the row wants 121 columns
-	// once both selectors carry a real file label and the pane gets 70% of the
-	// terminal, so without it Export and Recycle (no key bindings) are unreachable.
-	tools controls.ToolRow
+	// The toolbar row's More cell (viewerPanel.tools) matters: the row wants 121
+	// columns once both selectors carry a real file label and the pane gets 70%
+	// of the terminal, so without it Export and Recycle (no key bindings) are
+	// unreachable.
+	//
 	// toolsEnd is the column just past the last laid-out cell, where the filter
 	// field starts (cf. ActivityMonitor.toolsEnd).
 	toolsEnd int
-
-	// detailScroll is the first drawn line of the details pane, so a long message
-	// can be read past the pane's height.
-	detailScroll int
 
 	// detailCache is the last detailLines result, valid for the entry and width it
 	// was built at. The wrap is the panel's only sizeable per-frame allocation (a
@@ -194,25 +181,18 @@ const (
 // NewLogViewer creates the panel for one server connection, pointed at the
 // given log file. Nothing is read until Load runs.
 func NewLogViewer(app *App, sc *db.ServerConn, logType gosmo.ErrorLogType, logNum int) *LogViewer {
-	grid := controls.NewDataGrid()
-	grid.SetCellCursor(true)
+	lv := new(LogViewer{
+		viewerPanel: newViewerPanel(app, "─── Selected row details ─── (drag or Ctrl+Up/Down to resize)", 0.7),
+		app:         app,
+		conn:        sc,
+		logType:     logType,
+		sel:         []logFileRef{{Type: logType, Num: logNum}},
+		files:       make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
+		filter:      widgets.NewInputField(logFilterLabel, logFilterWidth, false),
+	})
 	// Message takes whatever Date and Source leave rather than its own longest
 	// entry.
-	grid.SetFillLastColumn(true)
-	grid.SetStatusStyle(theme.StyleGridStatus)
-	grid.OnCopyRequest = app.copyWithStatus
-	grid.SetMaxCellWidth(app.cfg.MaxCellLength + 2)
-	lv := new(LogViewer{
-		app:      app,
-		conn:     sc,
-		logType:  logType,
-		sel:      []logFileRef{{Type: logType, Num: logNum}},
-		files:    make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
-		grid:     grid,
-		filter:   widgets.NewInputField(logFilterLabel, logFilterWidth, false),
-		splitter: newHorizontalSplitter("─── Selected row details ─── (drag or Ctrl+Up/Down to resize)"),
-	})
-	lv.splitter.SetRatio(0.7)
+	lv.grid.SetFillLastColumn(true)
 	lv.buildTools()
 	return lv
 }
@@ -236,23 +216,8 @@ func (lv *LogViewer) Close() { lv.read.Cancel() }
 // SetBounds positions the panel: toolbar row, then grid and details pane
 // either side of the splitter.
 func (lv *LogViewer) SetBounds(x, y, w, h int) {
-	lv.rect = core.Rect{X: x, Y: y, W: w, H: h}
-	if h >= 1 {
-		lv.toolRect = core.Rect{X: x, Y: y, W: w, H: 1}
-	} else {
-		lv.toolRect = core.Rect{}
-	}
+	lv.setShellBounds(x, y, w, h)
 	lv.layoutTools()
-	lv.splitter.SetBounds(x, y+1, w, h-1)
-	lv.layoutChildren()
-}
-
-// layoutChildren gives the grid and details pane their halves of the area
-// below the toolbar, on every resize and splitter drag.
-func (lv *LogViewer) layoutChildren() {
-	lv.gridRect = lv.splitter.FirstRect()
-	lv.detailRect = lv.splitter.SecondRect()
-	lv.grid.SetBounds(lv.gridRect.X, lv.gridRect.Y, lv.gridRect.W, lv.gridRect.H)
 }
 
 // layoutTools places the toolbar cells, collapsing what does not fit into the

@@ -86,6 +86,20 @@ var sqlCompound = wordSet(`<> != !< !> >= <= += -= *= /= %= &= |= ^= ::`)
 // and exponent numbers (1e+5, which the lexer splits at the sign) joined.
 func lexSQL(src string) (*sqlLexed, error) {
 	buf := []rune(src)
+	// A lone CR is a line break — to SQL Server, and to the lexer, which ends
+	// a -- comment there — so it is lexed as an LF, everywhere at once: line
+	// counts, and GO lines (sqltext.GoSeparatorAt ends a line only at LF).
+	// Left as white space, the second of "--a\r--b" was laid out on the
+	// first one's line, inside it; counted as a break by the layout alone,
+	// "GO 0\r0" came out with a GO line the source did not have. The editor
+	// folds CR to LF on load, but text reaches the formatter from elsewhere
+	// too. Only buf changes, rune for rune, so positions hold and token text
+	// (sliced from src) keeps the source's own bytes.
+	for k, r := range buf {
+		if r == '\r' && (k+1 == len(buf) || buf[k+1] != '\n') {
+			buf[k] = '\n'
+		}
+	}
 	// About one token per three runes in typical T-SQL; sized up front, a
 	// 20 000-line script spent a third of its time growing these.
 	lx := &sqlLexed{buf: buf, toks: make([]sqlTok, 0, len(buf)/3+16), parts: make([]sqltext.Token, 0, len(buf)/3+16)}

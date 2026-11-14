@@ -1736,6 +1736,38 @@ it from the string 'NULL'.
   `ARCHITECTURE.md` § Package map), it unquotes closed identifiers only (the
   unclosed one at the cursor is no token), and the function is a dozen lines
   over runes: widening the leaf rule for it does not pay.
+- **What the 2026-11-14 duplication review left duplicated, on purpose**
+  (`dupl -t 90` over gossms, gosmo, tuikit, 2026-11-14). Re-flagging any of
+  these costs a re-read for the same answer:
+  - *View vs stored-procedure Object Explorer menus*
+    (`explorer_objects.go`) differ in one item; the `…MenuItems` builders
+    already take `newQuery`/`refresh`. Merge only if a third kind lands.
+  - *Dashboard chart sections* (`dashboard/history.go`, `tempdb.go`,
+    `instance.go`): the shared part is the two-line `TimeLabel`/`Interval`
+    pair. Sections split 3 or 2 ways, CPU is conditional, one column is a bar
+    panel, charts mix stacked/overlaid with their own `Scale`/`LegendRows`, and
+    a table would detach the "why stacked" comments from their charts.
+  - *Max-size text*: the CLI's (`cli/cmd/db_files.go`, unit-aware, says
+    "unlimited") and Database Properties › Files' (whole-MB-else-KB,
+    "Unlimited") are different formats, not one.
+  - *The remaining A7 near-twins*: full-text list pages and rule/default pages
+    already share their form builder; the key-signature pair shares
+    `keySignaturesPage`; the detail-browser pairs are the `filterObjects` +
+    rows loop used ~45 times with different columns. Each helper would need
+    more than 4 parameters (the user-mapping precedent above).
+  - *LogViewer vs XEventViewer beyond `viewerPanel`*: key/mouse handling, drag
+    zones, `SetActive`, details text and cache, More-cell dimming all diverge.
+  - *gosmo*: the struct scans around `scanRows` (Resource Governor, Service
+    Broker, activity/config) list distinct columns — a reflection scanner would
+    cost type safety; the Add/Drop twins (`symmetric_key.go`,
+    `database_mail_service.go`, `fulltext_write.go`, `scripter_module_clr.go`,
+    index/statistics) differ in statement *and* error wording; each `Create*`'s
+    exec + error wrap stays at its call site (six exec forms, ~6 message
+    shapes), only the read-back is shared (`createdByName`).
+  - *tuikit*: the Default vs Light palettes and `vgaColors`/`tangoColors` are
+    RGB data tables (the latter already share `mcSkin`); a builder would hide
+    the table. `newTestEditor` stays in both repos: tuikittest importing
+    `controls/editor` is an import cycle.
 
 ### Distribution
 

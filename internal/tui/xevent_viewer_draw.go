@@ -42,27 +42,7 @@ func (v *XEventViewer) Draw(s tcell.Screen) {
 
 // drawToolbar paints the toolbar row in Activity Monitor's tooltip scheme.
 func (v *XEventViewer) drawToolbar(s tcell.Screen) {
-	if v.toolRect.H != 1 {
-		return
-	}
-	pal := theme.Active()
-	core.FillRect(s, v.toolRect, ' ', theme.StyleMenuBar())
-	for i, t := range v.tools.Cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if v.toolDisabled(i) {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
-	if !v.tools.More.Rect.IsZero() {
-		style := theme.StyleTooltip()
-		core.FillRect(s, v.tools.More.Rect, ' ', style)
-		core.DrawText(s, v.tools.More.Rect.X+1, v.tools.More.Rect.Y, style, v.tools.More.Label)
-	}
+	v.drawToolCells(s, v.toolDisabled, false)
 }
 
 // drawDetails paints the selected event below the splitter.

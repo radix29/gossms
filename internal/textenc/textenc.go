@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -159,4 +160,61 @@ func encodeUTF16(text string, bigEndian bool) []byte {
 		put(u)
 	}
 	return out
+}
+
+// EOL is the line ending a text file was written with, so it can be written
+// back the same way. The zero value, LF, suits text with no file.
+type EOL int
+
+const (
+	LF   EOL = iota // Unix, and what the editor holds
+	CRLF            // Windows; SSMS's own
+	CR              // classic Mac
+)
+
+// DetectEOL reports the line ending most of s's line breaks use, which is
+// what Save writes the whole file back as.
+//
+// Presence is the wrong test: one stray CRLF in an otherwise LF file made Save
+// convert every line ending in it, a whole-file rewrite of something the user
+// never touched. Exact preservation is not available — the editor folds every
+// ending to LF when the text is set, so which lines had which is gone long
+// before Save — so the majority is the choice that leaves the fewest lines
+// rewritten. Pure LF, pure CRLF and pure CR, the cases that actually occur,
+// are unaffected. A tie keeps CRLF, on the grounds that a file with any CRLF
+// at all came from Windows, then LF over CR; text with no line break is LF.
+func DetectEOL(s string) EOL {
+	crlf := strings.Count(s, "\r\n")
+	lf := strings.Count(s, "\n") - crlf
+	cr := strings.Count(s, "\r") - crlf
+	switch {
+	case crlf > 0 && crlf >= lf && crlf >= cr:
+		return CRLF
+	case cr > lf:
+		return CR
+	}
+	return LF
+}
+
+// NormalizeEOL turns every line ending in s — CRLF, and a lone CR, which SQL
+// Server and gossms's lexer both treat as a line break — into LF, the form the
+// editor holds and the batch splitter (sqltext.SplitBatches) expects: left as
+// CR, a CR-only script's GO is not a separator and reaches the server.
+func NormalizeEOL(s string) string {
+	if !strings.Contains(s, "\r") {
+		return s
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
+// WithEOL is NormalizeEOL's inverse: LF-separated text with every LF written
+// as eol.
+func WithEOL(s string, eol EOL) string {
+	switch eol {
+	case CRLF:
+		return strings.ReplaceAll(s, "\n", "\r\n")
+	case CR:
+		return strings.ReplaceAll(s, "\n", "\r")
+	}
+	return s
 }

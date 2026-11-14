@@ -22,32 +22,31 @@ func TestDecodeEncodeRoundTripsEveryEncodingWeDetect(t *testing.T) {
 		data []byte
 		want string // the decoded text
 		enc  textenc.Encoding
-		crlf bool
+		eol  textenc.EOL
 	}{
-		{"plain utf-8", []byte("SELECT 1;\n"), "SELECT 1;\n", textenc.UTF8, false},
-		{"utf-8 crlf", []byte("SELECT 1;\r\nGO\r\n"), "SELECT 1;\r\nGO\r\n", textenc.UTF8, true},
-		{"utf-8 bom", []byte(textenc.BOMUTF8 + "SELECT 1;\n"), "SELECT 1;\n", textenc.UTF8BOM, false},
-		{"utf-8 bom crlf", []byte(textenc.BOMUTF8 + "SELECT 1;\r\n"), "SELECT 1;\r\n", textenc.UTF8BOM, true},
-		{"utf-16le bom", textenc.Encode("SELECT N'café';\n", textenc.UTF16LE), "SELECT N'café';\n", textenc.UTF16LE, false},
-		{"utf-16be bom", textenc.Encode("SELECT N'café';\r\n", textenc.UTF16BE), "SELECT N'café';\r\n", textenc.UTF16BE, true},
-		{"non-bmp", textenc.Encode("PRINT N'😀';\n", textenc.UTF16LE), "PRINT N'😀';\n", textenc.UTF16LE, false},
+		{"plain utf-8", []byte("SELECT 1;\n"), "SELECT 1;\n", textenc.UTF8, textenc.LF},
+		{"utf-8 crlf", []byte("SELECT 1;\r\nGO\r\n"), "SELECT 1;\r\nGO\r\n", textenc.UTF8, textenc.CRLF},
+		{"utf-8 cr", []byte("SELECT 1;\rGO\r"), "SELECT 1;\rGO\r", textenc.UTF8, textenc.CR},
+		{"utf-8 bom", []byte(textenc.BOMUTF8 + "SELECT 1;\n"), "SELECT 1;\n", textenc.UTF8BOM, textenc.LF},
+		{"utf-8 bom crlf", []byte(textenc.BOMUTF8 + "SELECT 1;\r\n"), "SELECT 1;\r\n", textenc.UTF8BOM, textenc.CRLF},
+		{"utf-16le bom", textenc.Encode("SELECT N'café';\n", textenc.UTF16LE), "SELECT N'café';\n", textenc.UTF16LE, textenc.LF},
+		{"utf-16be bom", textenc.Encode("SELECT N'café';\r\n", textenc.UTF16BE), "SELECT N'café';\r\n", textenc.UTF16BE, textenc.CRLF},
+		{"non-bmp", textenc.Encode("PRINT N'😀';\n", textenc.UTF16LE), "PRINT N'😀';\n", textenc.UTF16LE, textenc.LF},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			text, enc, crlf, lossy := decodeTextFile(tc.data)
+			text, enc, eol, lossy := decodeTextFile(tc.data)
 			if text != tc.want {
 				t.Errorf("text = %q, want %q", text, tc.want)
 			}
-			if enc != tc.enc || crlf != tc.crlf || lossy {
-				t.Errorf("enc/crlf/lossy = %v/%v/%v, want %v/%v/false", enc, crlf, lossy, tc.enc, tc.crlf)
+			if enc != tc.enc || eol != tc.eol || lossy {
+				t.Errorf("enc/eol/lossy = %v/%v/%v, want %v/%v/false", enc, eol, lossy, tc.enc, tc.eol)
 			}
-			// The editor holds LF-separated text, so that is what Save hands
-			// back to encodeTextFile.
-			lf := text
-			if crlf {
-				lf = strings.ReplaceAll(text, "\r\n", "\n")
-			}
-			if got := string(encodeTextFile(lf, enc, crlf)); got != string(tc.data) {
+			// What Save hands back to encodeTextFile is the editor's text:
+			// load it there, so a CR-only file is checked to arrive as lines.
+			ed := editor.NewEditor(nil)
+			ed.SetText(text)
+			if got := string(encodeTextFile(ed.Text(), enc, eol)); got != string(tc.data) {
 				t.Errorf("round trip = %q, want %q", got, string(tc.data))
 			}
 		})
@@ -73,12 +72,12 @@ func TestMixedLineEndingsSaveAsTheMajority(t *testing.T) {
 		{"no line endings at all", "SELECT 1", 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			text, enc, crlf, lossy := decodeTextFile([]byte(tc.data))
+			text, enc, eol, lossy := decodeTextFile([]byte(tc.data))
 			if lossy {
 				t.Fatal("decode reported a loss on plain ASCII")
 			}
 			// The editor normalizes to LF, which is what Save hands back.
-			out := string(encodeTextFile(strings.ReplaceAll(text, "\r\n", "\n"), enc, crlf))
+			out := string(encodeTextFile(textenc.NormalizeEOL(text), enc, eol))
 			gotCRLF := strings.Count(out, "\r\n")
 			if gotCRLF != tc.wantCRLF || strings.Count(out, "\n")-gotCRLF != tc.wantLF {
 				t.Errorf("saved %q: %d CRLF and %d bare LF, want %d and %d",

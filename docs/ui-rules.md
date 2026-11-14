@@ -48,9 +48,9 @@ which owns them; the entries here say how goSSMS applies them.
   into U+FFFD-laden UTF-8. Text files go through `decodeTextFile`/
   `encodeTextFile` (`text_encoding.go`, over `internal/textenc`, the decoder
   the command line's `--file` shares): encoding **from a BOM only** (never
-  guessed), and the *majority* line ending preserved (`majorityCRLF`) — the
-  editor folds CRLF on load, and testing mere CRLF presence rewrote a mostly-LF
-  file over one stray CR.
+  guessed), and the *majority* line ending preserved (`textenc.DetectEOL`:
+  LF, CRLF or CR) — the editor folds CRLF and lone CR on load, and testing
+  mere CRLF presence rewrote a mostly-LF file over one stray CR.
 - **Auto-indent lives in the `KeyEnter` branch of `editor_input.go`, never in
   `insertNewline`** — `Paste`/`blockPaste` call `insertNewline` per line, so
   indenting there staircases a paste. The branch reads `blockEditing()`
@@ -85,7 +85,9 @@ which owns them; the entries here say how goSSMS applies them.
   "not handled" and focus leaves on the first arrow (six sites shipped, rows
   unselectable). Restoring only the cursor isn't enough: `ensureVisible`
   scrolls from zero and pins the row to the bottom. `redrawGrid` wraps
-  `SetDataPreservingView` (widths, scroll, selection); outside `internal/tui`
+  `SetDataPreservingView` (widths, scroll, cursor — a multi-row selection
+  collapses; `SetSourceKeepingSelection` keeps it, only for a rebuild whose
+  rows did not move: a new column, appended rows); outside `internal/tui`
   call that directly (`propsheet.ToggleGridRow`) — never hand-roll the pair.
   After Add/Remove/Revert use `resetGrid`, not `SetData` + `SetSelectedRow`
   (which silently drops widths). Packaged idioms: `wireGridEditor`
@@ -191,6 +193,11 @@ which owns them; the entries here say how goSSMS applies them.
   reintroduced fall-through. A dialog reacting to edits implements
   `core.ClipboardEditHandler` and checks the target it's handed. `App.pasteInto`
   drops text unless its target is still current (reads are async).
+- **`App.contextMenu` sits above the dialogs** — drawn after `modals.Draw`,
+  and offered keys and mouse ahead of `modals`, so a dialog field's
+  `OnRightClick` can open it (Connect's connection string preview). Its items
+  reach the field through the clipboard target, so the right-click must focus
+  the field first.
 - **A bracketed-paste newline arrives as `KeyEnter` (CR) or `KeyCtrlJ` (LF)**
   — tcell's legacy key mode decodes a raw LF as Ctrl+J. `bufferPastedKey`
   maps both to `\n`, skipping the LF of a CRLF. Dropping `KeyCtrlJ` ran every

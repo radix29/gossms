@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/clipperhouse/displaywidth"
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // renderText writes the text format: KEY: value header lines, a blank line
@@ -120,7 +121,7 @@ func textSections(r *Result, o Options, set func(n int, s Set) []string, verbati
 	if len(r.Messages) > 0 {
 		m := []string{"=== MESSAGES ==="}
 		for _, msg := range r.Messages {
-			m = append(m, oneLine(msg.Text))
+			m = append(m, textutil.OneLine(msg.Text))
 		}
 		sections = append(sections, m)
 	}
@@ -183,7 +184,7 @@ func setName(s Set) string {
 	if s.Name == "" {
 		return ""
 	}
-	return ": " + oneLine(s.Name)
+	return ": " + textutil.OneLine(s.Name)
 }
 
 func rowCount(n int) string {
@@ -247,7 +248,7 @@ func textCells(s Set, o Options, line func(string) string) (head []string, rows 
 func textSet(n int, s Set, o Options) []string {
 	out := []string{setMarker(n, s)}
 	if len(s.Columns) > 0 && !s.InFile {
-		head, rows := textCells(s, o, oneLine)
+		head, rows := textCells(s, o, textutil.OneLine)
 		out = append(out, alignedTable(head, rows, len(s.Columns))...)
 	}
 	if note := truncationNote(s, o); note != "" {
@@ -308,27 +309,13 @@ func keyValue(key, value string) string {
 	if value == "" {
 		return key + ":"
 	}
-	return key + ": " + oneLine(value)
-}
-
-// oneLine replaces every line break and tab in s with a space.
-func oneLine(s string) string {
-	const breaks = "\r\n\t\v\f\u0085\u2028\u2029"
-	if !strings.ContainsAny(s, breaks) {
-		return s
-	}
-	return strings.Map(func(r rune) rune {
-		if strings.ContainsRune(breaks, r) {
-			return ' '
-		}
-		return r
-	}, s)
+	return key + ": " + textutil.OneLine(value)
 }
 
 func mapLines(ss []string) []string {
 	out := make([]string, len(ss))
 	for i, s := range ss {
-		out[i] = oneLine(s)
+		out[i] = textutil.OneLine(s)
 	}
 	return out
 }

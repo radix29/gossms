@@ -184,12 +184,12 @@ func (a *App) saveQueryPanel(qp *QueryPanel, saveAs bool, then func()) {
 // succeeded so callers can proceed only then.
 //
 // The bytes are re-encoded in whatever shape the panel's file was opened in; a
-// panel never opened from a file writes LF-separated UTF-8, fileEnc/fileCRLF's
+// panel never opened from a file writes LF-separated UTF-8, fileEnc/fileEOL's
 // zero value. WriteAtomic for the same reason config.Save uses it: a plain
 // os.WriteFile truncates first, so a full disk mid-write leaves the user with
 // neither their script nor the file it replaced.
 func (a *App) writeQueryFile(qp *QueryPanel, path string) bool {
-	if err := fileutil.WriteAtomic(path, encodeTextFile(qp.editor.Text(), qp.fileEnc, qp.fileCRLF), 0o644); err != nil {
+	if err := fileutil.WriteAtomic(path, encodeTextFile(qp.editor.Text(), qp.fileEnc, qp.fileEOL), 0o644); err != nil {
 		a.setStatus(fmt.Sprintf("Save failed: %v", err))
 		return false
 	}

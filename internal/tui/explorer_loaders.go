@@ -354,6 +354,20 @@ func propertiesOnlyMenu(newQuery, refresh controls.MenuItem, show func()) []cont
 	}
 }
 
+// toggleMenu is propertiesOnlyMenu with one command, toggle, between New Query
+// and Refresh: the Enable/Disable menu of a server audit and of both kinds of
+// audit specification.
+func toggleMenu(newQuery, refresh, toggle controls.MenuItem, show func()) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		toggle,
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: show},
+	}
+}
+
 // folderMenu is the menu shape shared by every folder whose commands are what
 // it creates or opens — New Query, those items, Refresh — written once for the
 // same reason as propertiesOnlyMenu.

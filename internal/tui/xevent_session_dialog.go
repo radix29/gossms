@@ -9,6 +9,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // xevent_session_dialog.go is New Session and Session Properties for an
@@ -105,10 +106,28 @@ type xeHost struct {
 	ctx   func() context.Context
 }
 
-// columns reads an event's or a target's columns off the UI goroutine and
-// hands them to done on it — unless run has started a newer read since, the
-// selection having moved on (ARCHITECTURE.md § Latest-only loads).
-func (h xeHost) columns(run *latest, pkg, name string, done func([]gosmo.XEObjectColumn, error)) {
+// xeColumnsView is where a page shows the columns columns reads: noun names
+// them in hint's progress and error text ("fields", "parameters"), current
+// is the qualified name the page has selected now ("" for none), and show
+// fills the page from them.
+type xeColumnsView struct {
+	noun    string
+	hint    *propsheet.HintRow
+	current func() string
+	show    func([]gosmo.XEObjectColumn)
+}
+
+// columns reads the columns of the event or target pkg.name off the UI
+// goroutine, for a page whose cache lacks them. It puts the read in progress
+// on v's hint, stores the result in cache under the lower-cased qualified
+// name, and shows it only if the page still has that object selected — the
+// selection may have moved on, and run drops the result outright if a newer
+// read started since (ARCHITECTURE.md § Latest-only loads). A failed read is
+// the hint's error, shown only while the object is still selected, and is not
+// cached, so selecting the object again retries.
+func (h xeHost) columns(run *latest, cache map[string][]gosmo.XEObjectColumn, pkg, name string, v xeColumnsView) {
+	key := pkg + "." + name
+	v.hint.Set("Reading " + key + "'s " + v.noun + "...")
 	parent := h.ctx()
 	if parent == nil {
 		parent = h.sc.Server.Context()
@@ -118,8 +137,18 @@ func (h xeHost) columns(run *latest, pkg, name string, done func([]gosmo.XEObjec
 	h.app.safego("reading Extended Events columns", func() {
 		cols, err := sc.Server.XEvents().ObjectColumns(ctx, pkg, name)
 		h.app.postAndWake(func() {
-			if run.Done(token) {
-				done(cols, err)
+			if !run.Done(token) {
+				return
+			}
+			if err != nil {
+				if strings.EqualFold(v.current(), key) {
+					v.hint.SetError("Could not read " + key + "'s " + v.noun + ": " + err.Error())
+				}
+				return
+			}
+			cache[strings.ToLower(key)] = cols
+			if strings.EqualFold(v.current(), key) {
+				v.show(cols)
 			}
 		})
 	})

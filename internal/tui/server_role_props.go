@@ -199,18 +199,8 @@ func pageServerRoleOwnedRoles(sc *db.ServerConn, roleName *string) propPage {
 				}
 			}
 
-			f, apply := newOwnerTransferPage(items, serverPrincipalNames(logins, allRoles), ownerTransferSpec[*gosmo.ServerRole]{
-				Headers: []string{"Role", "Type", "Members"},
-				Cells: func(it *ownerTransferItem[*gosmo.ServerRole]) []string {
-					return []string{it.name, "Server role", strconv.Itoa(len(it.obj.Members))}
-				},
-				GridSection: "Roles owned by this role",
-				ItemSection: "Selected role",
-				Note:        "Ownership is not the same as role membership. Transfer ownership carefully for security-administration roles.",
-				SetOwner: func(ctx context.Context, r *gosmo.ServerRole, newOwner string) error {
-					return r.SetOwner(ctx, newOwner)
-				},
-			})
+			f, apply := newOwnerTransferPage(items, serverPrincipalNames(logins, allRoles), roleOwnerTransferSpec("Server role",
+				func(r *gosmo.ServerRole) int { return len(r.Members) }))
 			return f, apply, nil
 		},
 	}

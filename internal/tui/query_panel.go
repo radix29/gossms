@@ -92,11 +92,11 @@ type QueryPanel struct {
 	dirtyVer   uint64
 	dirtyValid bool
 
-	// fileEnc and fileCRLF are how the opened file was encoded on disk, so Save
+	// fileEnc and fileEOL are how the opened file was encoded on disk, so Save
 	// writes it back in the same shape rather than converting to LF-separated UTF-8.
 	// Zero values suit a panel with no file. See decodeTextFile.
-	fileEnc  textenc.Encoding
-	fileCRLF bool
+	fileEnc textenc.Encoding
+	fileEOL textenc.EOL
 
 	// runMode is the resultsMode the in-flight or most recent execution started
 	// under, snapshotted by runQuery. Anything that must agree with how that run went

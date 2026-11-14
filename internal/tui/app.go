@@ -802,12 +802,14 @@ func (a *App) draw() {
 	a.menuBar.DrawOverlay(s)
 	a.toolbar.DrawOverlay(s)
 	a.explorer.DrawOverlay(s)
-	a.contextMenu.DrawOverlay(s)
 	a.drawDragGhost(s, w)
 
-	// Modal dialogs — highest z-order, drawn bottom-to-top so a nested dialog
-	// paints over its parent.
+	// Modal dialogs, drawn bottom-to-top so a nested dialog paints over its
+	// parent.
 	a.modals.Draw(s)
+
+	// The context menu tops everything: it can open over a dialog's field.
+	a.contextMenu.DrawOverlay(s)
 
 	s.Show()
 }

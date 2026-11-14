@@ -28,16 +28,8 @@ type NewSynonymDialog struct {
 // NewNewSynonymDialog creates the dialog and wires its callbacks.
 func NewNewSynonymDialog(app *App) *NewSynonymDialog {
 	d := &NewSynonymDialog{}
-	d.initInFolder(app, newObjectConfig[schemaObjectPrefetch]{
-		title: "New Synonym",
-		noun:  "Synonym",
-		pages: []string{"General", "Permissions", "Extended Properties"},
-		fetch: func(ctx context.Context, sc *db.ServerConn) (*schemaObjectPrefetch, error) {
-			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, schemaObjectKeys((*gosmo.Database).Synonyms,
-				func(s *gosmo.Synonym) (string, string) { return s.Schema, s.Name }))
-		},
-		build: d.buildPages,
-	})
+	initSchemaObjectDialog(app, &d.dbFolderDialog, "Synonym", schemaObjectKeys((*gosmo.Database).Synonyms,
+		func(s *gosmo.Synonym) (string, string) { return s.Schema, s.Name }), d.buildPages)
 	return d
 }
 

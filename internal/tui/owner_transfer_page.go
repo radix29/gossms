@@ -262,3 +262,23 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 		},
 	}
 }
+
+// roleOwnerTransferSpec is the Owned Roles page's spec, shared by Database Role
+// and Server Role Properties: kind is the Type column ("Database role",
+// "Server role"), members a role's member count.
+func roleOwnerTransferSpec[R interface {
+	SetOwner(ctx context.Context, newOwner string) error
+}](kind string, members func(R) int) ownerTransferSpec[R] {
+	return ownerTransferSpec[R]{
+		Headers: []string{"Role", "Type", "Members"},
+		Cells: func(it *ownerTransferItem[R]) []string {
+			return []string{it.name, kind, strconv.Itoa(members(it.obj))}
+		},
+		GridSection: "Roles owned by this role",
+		ItemSection: "Selected role",
+		Note:        "Ownership is not the same as role membership. Transfer ownership carefully for security-administration roles.",
+		SetOwner: func(ctx context.Context, r R, newOwner string) error {
+			return r.SetOwner(ctx, newOwner)
+		},
+	}
+}
