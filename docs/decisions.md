@@ -1857,6 +1857,14 @@ The contract is `docs/cli.md`; these are the alternatives turned down.
   and Format Document too. `LOGIN` is not a bare floor word (a common column
   name); `CREATE/ALTER/DROP` before an administration object is admin
   wherever it stands.
+  - **`master.dbo.xp_…` stays `read`; `dbo.xp_…` elsewhere is `write`.**
+    Probed on win10cli (17), 2026-11-14: in a user database `EXEC
+    dbo.xp_msver` runs the database's own `dbo.xp_msver` (while `dbo.sp_who`
+    still runs the system one). In master, `CREATE PROCEDURE
+    dbo.xp_fixeddrives` succeeds beside `sys.xp_fixeddrives`, yet `EXEC
+    master.dbo.xp_fixeddrives` (from master or tempdb) and `EXEC
+    dbo.xp_fixeddrives` in master run the system one. So master is special
+    and `master.dbo.` is kept as a read form (`readProcedure`).
 - **The rollback hole is reported, not refused (D3).** `--transaction
   rollback` cannot stop a called procedure's `COMMIT` from ending the
   wrapping transaction. After the run, `@@TRANCOUNT 0` with a clean run or

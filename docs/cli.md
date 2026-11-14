@@ -1001,7 +1001,10 @@ run; both are class `read`.
   child of a table is a usage error, exit 2, whose hint names the table to
   script instead (its CREATE carries it); an object SQL Server ships is exit
   2. Database- and server-level objects (users, roles, schemas, types, logins
-  …) are not covered.
+  …) are not covered. A table's or indexed view's CREATE carries its
+  user-created statistics (gosmo's `ScriptOptions.Statistics`), not the
+  auto-created ones nor an index's own; one whose filter the login cannot see
+  (no VIEW DEFINITION) is a comment naming it.
 - **`--as`** (default `create`): `create`, `alter`, `drop`,
   `drop-and-create`, `select`, `insert`, `update`, `delete`, `execute`, each
   where Object Explorer offers it — every kind `create`, `drop`,
@@ -1032,7 +1035,8 @@ run; both are class `read`.
   scripted with a header warning. `objects` counts the objects
   scripted — not those, nor the principals and permissions blocks. The
   header's warnings (each broken cycle, each late reference to an object left
-  out, and a degraded dependency order) are also the envelope's `warnings`.
+  out, each statistic whose filter the login cannot see, and a degraded
+  dependency order) are also the envelope's `warnings`.
   Reads every definition, so it takes VIEW DEFINITION as the single-object
   scripts do. Without VIEW DEFINITION on the database the order is read from
   `sys.sql_dependencies` instead, which misses a reference to an object created
@@ -1503,7 +1507,7 @@ leading keywords:
 
 | Class | Examples | Needs |
 |---|---|---|
-| `read` | `SELECT`, `USE`, `SET` session options, `DECLARE`, `PRINT`, `EXECUTE AS`, catalog procedures on the read allow-list (`sp_help`, `sp_helptext`, `sp_spaceused`, `sp_who2`, …), `DBCC SHOW_STATISTICS`/`SQLPERF`/`OPENTRAN`/`INPUTBUFFER`/`TRACESTATUS`/`USEROPTIONS` | nothing (the default) |
+| `read` | `SELECT`, `USE`, `SET` session options, `DECLARE`, `PRINT`, `EXECUTE AS`, catalog procedures on the read allow-list (`sp_help`, `sp_helptext`, `sp_spaceused`, `sp_who2`, …; Agent's `msdb.dbo.sp_help_job*`), qualified as below, `DBCC SHOW_STATISTICS`/`SQLPERF`/`OPENTRAN`/`INPUTBUFFER`/`TRACESTATUS`/`USEROPTIONS` | nothing (the default) |
 | `write` | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, transaction control (`BEGIN TRAN`, `COMMIT`, …), Service Broker (`SEND`, `RECEIVE`, `BEGIN DIALOG`, `MOVE`/`GET`/`END CONVERSATION`), `WRITETEXT`/`UPDATETEXT`, `NEXT VALUE FOR` (even in a `SELECT`: it advances the sequence), a procedure not on the read allow-list, dynamic SQL, `OPENQUERY`/`OPENROWSET` | `--allow write` |
 | `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `ADD [COUNTER] SIGNATURE`, `UPDATE STATISTICS`, `sp_updatestats`, `sp_createstats` | `--allow ddl` |
 | `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `CHECKPOINT`, `SETUSER`, `sp_configure`, `xp_` and msdb procedures not on the read list, `DBCC` not on the read list | `--allow admin` |
@@ -1523,6 +1527,24 @@ common name is matched only as its phrase (`SEND ON CONVERSATION`, `ADD
 SIGNATURE`, as `NEXT VALUE FOR`), so a column named `send` or `add` stays
 `read`. It is a
 guardrail, not the security boundary: that is the login's permissions.
+
+A read allow-list procedure is `read` only under a name the server resolves to
+the real one. A system `sp_` procedure (`sp_who`, `sp_help`, …) takes no
+schema, `dbo` or `sys`, with any database part (`sp_who`, `master..sp_who`,
+`db.sys.sp_who`); `evil.sp_who` is the user's own procedure and `write`. An
+`xp_` one (`xp_readerrorlog`, `xp_fixeddrives`, `xp_msver`) is `read` only
+unqualified (`xp_msver`, `db..xp_msver`), as `sys.` or as `master.dbo.`,
+because `dbo.xp_…` in any other database is that database's own procedure
+(`write`). An Agent procedure (`sp_help_job`, `sp_help_jobhistory`,
+`sp_help_jobstep`, `sp_help_jobactivity`, `sp_help_jobschedule`,
+`sp_help_schedule`) lives in msdb, so it is `read` only as `msdb.dbo.<name>` or
+`msdb..<name>`: unqualified it resolves to the current database's own
+procedure, which the classifier, running without a connection, cannot rule
+out, so it is `write`. `sp_WhoIsActive`, `sp_block` and `sp_monitor` are not on
+the list: the first two are user code (sp_WhoIsActive writes to its
+`@destination_table`), and `sp_monitor` updates `master.dbo.spt_monitor`.
+`sp_spaceused` with `@updateusage` (named, or as its second argument) set to
+anything but the literal `'false'` runs `DBCC UPDATEUSAGE` and is `admin`.
 
 A run's check refuses, in this order, the first of:
 

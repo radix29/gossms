@@ -126,24 +126,39 @@ var dbccRead = map[string]bool{
 	"INPUTBUFFER": true, "USEROPTIONS": true,
 }
 
-// readProcs are the system procedures that only read: catalog and help
-// procedures, session and lock lists, the error log, Agent job history.
-// Names are lower-cased, schema and database ignored.
-var readProcs = map[string]bool{
+// readSystemProcs are the resource-database procedures that only read:
+// catalog and help procedures, session and lock lists, the error log. Names
+// are lower-cased. Each is read only where the server resolves the name to
+// the system procedure (readProcedure) — an sp_ one with no schema, or dbo or
+// sys; an xp_ one with no schema, sys, or master.dbo: evil.sp_who, and
+// dbo.xp_msver outside master, are the user's own procedure.
+//
+// Not here, though they look like reads: sp_WhoIsActive and sp_block are user
+// code installed by whoever installed them (sp_WhoIsActive inserts into its
+// @destination_table), and sp_monitor updates master.dbo.spt_monitor.
+var readSystemProcs = map[string]bool{
 	"sp_help": true, "sp_helptext": true, "sp_helpindex": true, "sp_helpdb": true,
 	"sp_helpfile": true, "sp_helpfilegroup": true, "sp_helpconstraint": true,
 	"sp_helprotect": true, "sp_helpuser": true, "sp_helplogins": true, "sp_helprole": true,
 	"sp_helprolemember": true, "sp_helpsrvrole": true, "sp_helpsrvrolemember": true,
 	"sp_helpserver": true, "sp_helpstats": true, "sp_helptrigger": true, "sp_helpsort": true,
 	"sp_helpdevice": true, "sp_spaceused": true, "sp_who": true, "sp_who2": true,
-	"sp_whoisactive": true, "sp_lock": true, "sp_block": true, "sp_columns": true,
+	"sp_lock": true, "sp_columns": true,
 	"sp_tables": true, "sp_stored_procedures": true, "sp_fkeys": true, "sp_pkeys": true,
 	"sp_statistics": true, "sp_server_info": true, "sp_databases": true, "sp_depends": true,
 	"sp_describe_first_result_set": true, "sp_describe_undeclared_parameters": true,
-	"sp_monitor": true, "sp_readerrorlog": true, "sp_server_diagnostics": true,
+	"sp_readerrorlog": true, "sp_server_diagnostics": true,
+	"xp_readerrorlog": true, "xp_fixeddrives": true, "xp_msver": true,
+}
+
+// readMsdbProcs are the Agent procedures that only read. They live in msdb,
+// not the resource database, so outside msdb an unqualified sp_help_job
+// resolves to the current database's dbo.sp_help_job. The classifier runs
+// without connecting and cannot know the session's database, so each is read
+// only as msdb.dbo.<name> or msdb..<name> (readProcedure).
+var readMsdbProcs = map[string]bool{
 	"sp_help_job": true, "sp_help_jobhistory": true, "sp_help_jobstep": true,
 	"sp_help_schedule": true, "sp_help_jobactivity": true, "sp_help_jobschedule": true,
-	"xp_readerrorlog": true, "xp_fixeddrives": true, "xp_msver": true,
 }
 
 // ddlProcs are the system procedures that do what a ddl statement does:
@@ -154,7 +169,7 @@ var ddlProcs = map[string]bool{
 }
 
 // adminProcs are system procedures that change the server, its security or its
-// databases. Every xp_ procedure not in readProcs, every sp_trace_ and sp_OA
+// databases. Every xp_ procedure not in readSystemProcs, every sp_trace_ and sp_OA
 // procedure, and every msdb sp_ procedure (Agent) is admin too.
 var adminProcs = map[string]bool{
 	"sp_configure": true, "sp_addlogin": true, "sp_droplogin": true, "sp_password": true,
