@@ -23,6 +23,12 @@ import (
 // Azure SQL Database (replicationHidden) — read from the connection's cached
 // ServerInfo, so the loader still issues no query.
 func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	if l.sc != nil && l.sc.IsFabricDW {
+		return []*explorerNode{
+			l.node("Databases", NodeDatabases, "", "", ""),
+			l.node("Security", NodeSecurity, "", "", ""),
+		}, nil
+	}
 	out := []*explorerNode{
 		l.node("Databases", NodeDatabases, "", "", ""),
 		l.node("Security", NodeSecurity, "", "", ""),
@@ -193,6 +199,19 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		return []*explorerNode{l.node(accessDeniedLabel+"CONNECT permission on this database is required.",
 			NodeError, "", "", dbName)}, nil
 	}
+	if l.sc != nil && l.sc.IsFabricDW {
+		folders := []*explorerNode{
+			l.node("Tables", NodeTables, "", "", dbName),
+			l.node("Views", NodeViews, "", "", dbName),
+			l.node("External Data Sources", NodeExternalDataSources, "", "", dbName),
+			l.node("Programmability", NodeProgrammability, "", "", dbName),
+			l.node("Security", NodeDatabaseSecurity, "", "", dbName),
+		}
+		if databaseScopedXEvents(l.sc) {
+			folders = append(folders, l.node("Extended Events", NodeExtendedEvents, "", "", dbName))
+		}
+		return folders, nil
+	}
 	folders := []*explorerNode{
 		l.node("Tables", NodeTables, "", "", dbName),
 		l.node("Views", NodeViews, "", "", dbName),
@@ -222,6 +241,13 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 // own Triggers folder, as in SSMS.
 func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbName := node.data.DBName
+	if l.sc != nil && l.sc.IsFabricDW {
+		return []*explorerNode{
+			l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
+			l.node("Functions", NodeFunctions, "", "", dbName),
+			l.node("External Functions", NodeExternalFunctions, "", "", dbName),
+		}, nil
+	}
 	return []*explorerNode{
 		l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
 		l.node("Functions", NodeFunctions, "", "", dbName),

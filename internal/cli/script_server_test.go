@@ -41,6 +41,7 @@ func newScriptServer(t *testing.T) *scriptServer {
 // definition is the module row scriptModule reads — definition, ANSI_NULLS,
 // QUOTED_IDENTIFIER, CLR, object_id — for the object the query names, none
 // when it is not one of s's.
+// Fabric DW function scripting also needs the function's sys.objects type.
 func (s *scriptServer) definition(q gosmotest.Query) [][]any {
 	o := s.object(str(q.Arg(0)), str(q.Arg(1)))
 	if o == nil {
@@ -64,7 +65,12 @@ func (s *scriptServer) definition(q gosmotest.Query) [][]any {
 			def = "CREATE TRIGGER Sales.trCustomer ON Sales.Customer AFTER INSERT AS SET NOCOUNT ON"
 		}
 	}
-	return [][]any{{def, true, true, false, o.ObjectID}}
+	row := []any{def, true, true, false, o.ObjectID}
+	switch o.Type {
+	case "FN", "IF", "TF", "FS", "FT", "XF":
+		row = append(row, o.Type)
+	}
+	return [][]any{row}
 }
 
 func (s *scriptServer) rules() {

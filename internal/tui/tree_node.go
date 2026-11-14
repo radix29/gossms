@@ -219,6 +219,7 @@ const (
 	NodeFullTextStoplist
 	NodeSearchPropertyLists
 	NodeSearchPropertyList
+	NodeExternalFunctions
 	// NodeViewColumns and NodeViewColumn are a view's Columns folder and its
 	// columns: types of their own, not NodeColumns/NodeColumn, because every
 	// table-column action (Delete, Rename) is ALTER TABLE, which a view refuses.
@@ -356,6 +357,7 @@ type nodeData struct {
 	// table-valued). Read at load time because the "Script Function as SELECT"
 	// template differs between them (a scalar function is selected, a
 	// table-valued one selected *from*) and the label doesn't carry it.
+	// Fabric DW external functions use the scalar-function template too.
 	FuncType gosmo.FunctionType
 
 	// CreateDate and IsMemoryOptimized back the Object Explorer folder filter's

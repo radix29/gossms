@@ -13,6 +13,13 @@ import (
 // loadDatabaseSecurityChildren returns a database's security folders, in
 // SSMS's order.
 func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	if l.sc != nil && l.sc.IsFabricDW {
+		return []*explorerNode{
+			l.node("Users", NodeUsers, "", "", node.data.DBName),
+			l.node("Roles", NodeRoles, "", "", node.data.DBName),
+			l.node("Schemas", NodeSchemas, "", "", node.data.DBName),
+		}, nil
+	}
 	return []*explorerNode{
 		l.node("Users", NodeUsers, "", "", node.data.DBName),
 		l.node("Roles", NodeRoles, "", "", node.data.DBName),

@@ -44,6 +44,9 @@ func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 // folder's own loader lists it once expanded.
 func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]*explorerNode, error) {
 	dbName := node.data.DBName
+	if l.sc != nil && l.sc.IsFabricDW {
+		return nil, nil
+	}
 	folders := []*explorerNode{
 		l.node("System Tables", NodeSystemTables, "", "", dbName),
 		l.node("FileTables", NodeFileTables, "", "", dbName),
@@ -122,6 +125,13 @@ func tablesOfKindLoader(kind gosmo.TableKind, system bool) childLoader {
 // knows which table to query.
 func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
+	if l.sc != nil && l.sc.IsFabricDW {
+		return []*explorerNode{
+			l.node("Columns", NodeColumns, schema, name, dbName),
+			l.node("Keys", NodeKeys, schema, name, dbName),
+			l.node("Statistics", NodeStatistics, schema, name, dbName),
+		}, nil
+	}
 	return []*explorerNode{
 		l.node("Columns", NodeColumns, schema, name, dbName),
 		l.node("Keys", NodeKeys, schema, name, dbName),
@@ -139,6 +149,11 @@ func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 // index and statistic action is the same DDL on a view.
 func loadViewChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
+	if l.sc != nil && l.sc.IsFabricDW {
+		return []*explorerNode{
+			l.node("Columns", NodeViewColumns, schema, name, dbName),
+		}, nil
+	}
 	indexes := l.node("Indexes", NodeIndexes, schema, name, dbName)
 	stats := l.node("Statistics", NodeStatistics, schema, name, dbName)
 	indexes.data.OnView, stats.data.OnView = true, true
@@ -445,6 +460,13 @@ func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	return loadFunctionNodes(l, node, true,
 		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
 			return d.SystemFunctions(l.ctx, serverFilter(node.data.Filter))
+		})
+}
+
+func loadExternalFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	return loadFunctionNodes(l, node, false,
+		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
+			return d.ExternalFunctions(l.ctx, serverFilter(node.data.Filter))
 		})
 }
 
