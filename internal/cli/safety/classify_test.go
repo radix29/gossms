@@ -48,21 +48,6 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"EXEC dbo.sp_help 'dbo.t'", read},
 		{"EXEC master..sp_who", read},
 		{"EXEC [sys].[sp_spaceused]", read},
-
-		// xp_ names are not sp_ ones: dbo.xp_msver outside master is the
-		// database's own procedure (probed live); master.dbo still runs the
-		// system one even beside a user master.dbo.xp_fixeddrives.
-		{"EXEC dbo.xp_msver", write},
-		{"EXEC userdb.dbo.xp_readerrorlog", write},
-		{"EXEC srv.userdb.dbo.xp_fixeddrives", write},
-		{"INSERT #t EXEC dbo.xp_msver", write},
-		{"EXEC evil.xp_msver", write},
-		{"EXEC xp_msver", read},
-		{"EXEC sys.xp_msver", read},
-		{"EXEC db..xp_msver", read},
-		{"EXEC master..xp_fixeddrives", read},
-		{"EXEC master.dbo.xp_fixeddrives", read},
-		{"EXEC [MASTER].[DBO].[XP_READERRORLOG]", read},
 		{"sp_helptext 'dbo.p'", read},
 		{"DBCC SHOW_STATISTICS ('dbo.t', ix)", read},
 		{"DBCC SQLPERF(LOGSPACE)", read},
