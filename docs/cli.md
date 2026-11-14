@@ -1529,10 +1529,13 @@ SIGNATURE`, as `NEXT VALUE FOR`), so a column named `send` or `add` stays
 guardrail, not the security boundary: that is the login's permissions.
 
 A read allow-list procedure is `read` only under a name the server resolves to
-the real one. A system procedure (`sp_who`, `sp_help`, `xp_readerrorlog`, …)
-takes no schema, `dbo` or `sys`, with any database part (`sp_who`,
-`master..sp_who`, `db.sys.sp_who`); `evil.sp_who` is the user's own procedure
-and `write`. An Agent procedure (`sp_help_job`, `sp_help_jobhistory`,
+the real one. A system `sp_` procedure (`sp_who`, `sp_help`, …) takes no
+schema, `dbo` or `sys`, with any database part (`sp_who`, `master..sp_who`,
+`db.sys.sp_who`); `evil.sp_who` is the user's own procedure and `write`. An
+`xp_` one (`xp_readerrorlog`, `xp_fixeddrives`, `xp_msver`) is `read` only
+unqualified (`xp_msver`, `db..xp_msver`), as `sys.` or as `master.dbo.`,
+because `dbo.xp_…` in any other database is that database's own procedure
+(`write`). An Agent procedure (`sp_help_job`, `sp_help_jobhistory`,
 `sp_help_jobstep`, `sp_help_jobactivity`, `sp_help_jobschedule`,
 `sp_help_schedule`) lives in msdb, so it is `read` only as `msdb.dbo.<name>` or
 `msdb..<name>`: unqualified it resolves to the current database's own

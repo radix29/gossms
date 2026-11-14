@@ -633,6 +633,11 @@ func execTarget(toks []token, i int) (c spec.Class, obj, reason string, flags Fl
 			return spec.ClassAdmin, obj, "sp_spaceused @updateusage runs DBCC UPDATEUSAGE", FlagExec
 		}
 		return spec.ClassRead, obj, "", 0
+	case readSystemProcs[proc] && strings.HasPrefix(proc, "xp_"):
+		// dbo.xp_msver outside master is the database's own procedure, not
+		// administration: ahead of the xp_ admin rule below.
+		return spec.ClassWrite, obj, "procedure " + obj + " is not on the read allow-list: " + proc +
+			" is read only unqualified, as sys." + proc + " or as master.dbo." + proc, FlagExec
 	case ddlProcs[proc]:
 		return spec.ClassDDL, obj, "procedure " + obj + " changes statistics", FlagExec
 	case adminProcs[proc] || strings.HasPrefix(proc, "xp_") || strings.HasPrefix(proc, "sp_trace_") ||
@@ -646,9 +651,10 @@ func execTarget(toks []token, i int) (c spec.Class, obj, reason string, flags Fl
 }
 
 // readProcedure reports whether the dotted call name parts (nameParts) is a
-// procedure on a read allow-list where the server resolves it: a system one
-// (readSystemProcs) with no schema, or dbo or sys; an Agent one
-// (readMsdbProcs) in msdb's dbo schema. A linked server's four-part name is
+// procedure on a read allow-list where the server resolves it: a system sp_
+// one (readSystemProcs) with no schema, or dbo or sys; a system xp_ one with
+// no schema, sys, or master.dbo; an Agent one (readMsdbProcs) in msdb's dbo
+// schema. A linked server's four-part name is
 // judged by its last three parts.
 func readProcedure(parts []string) bool {
 	proc := parts[len(parts)-1]
@@ -660,6 +666,13 @@ func readProcedure(parts []string) bool {
 		db = parts[len(parts)-3]
 	}
 	switch {
+	case readSystemProcs[proc] && strings.HasPrefix(proc, "xp_"):
+		// The server resolves sp_ names to the system procedure even under
+		// dbo, but not xp_ ones: dbo.xp_msver in a user database runs that
+		// database's own procedure. master is the exception — a user
+		// master.dbo.xp_fixeddrives exists side by side with the system one,
+		// and the call still runs the system one (docs/decisions.md).
+		return schema == "" || schema == "sys" || schema == "dbo" && db == "master"
 	case readSystemProcs[proc]:
 		return schema == "" || schema == "dbo" || schema == "sys"
 	case readMsdbProcs[proc]:

@@ -48,6 +48,21 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"EXEC dbo.sp_help 'dbo.t'", read},
 		{"EXEC master..sp_who", read},
 		{"EXEC [sys].[sp_spaceused]", read},
+
+		// xp_ names are not sp_ ones: dbo.xp_msver outside master is the
+		// database's own procedure (probed live); master.dbo still runs the
+		// system one even beside a user master.dbo.xp_fixeddrives.
+		{"EXEC dbo.xp_msver", write},
+		{"EXEC userdb.dbo.xp_readerrorlog", write},
+		{"EXEC srv.userdb.dbo.xp_fixeddrives", write},
+		{"INSERT #t EXEC dbo.xp_msver", write},
+		{"EXEC evil.xp_msver", write},
+		{"EXEC xp_msver", read},
+		{"EXEC sys.xp_msver", read},
+		{"EXEC db..xp_msver", read},
+		{"EXEC master..xp_fixeddrives", read},
+		{"EXEC master.dbo.xp_fixeddrives", read},
+		{"EXEC [MASTER].[DBO].[XP_READERRORLOG]", read},
 		{"sp_helptext 'dbo.p'", read},
 		{"DBCC SHOW_STATISTICS ('dbo.t', ix)", read},
 		{"DBCC SQLPERF(LOGSPACE)", read},
@@ -238,6 +253,21 @@ func TestClassifyReadProcedureQualification(t *testing.T) {
 		{"EXEC sys.sp_who", read},
 		{"EXEC srv.master.sys.sp_who", read},
 		{"EXEC [sys].[sp_spaceused]", read},
+
+		// xp_ names are not sp_ ones: dbo.xp_msver outside master is the
+		// database's own procedure (probed live); master.dbo still runs the
+		// system one even beside a user master.dbo.xp_fixeddrives.
+		{"EXEC dbo.xp_msver", write},
+		{"EXEC userdb.dbo.xp_readerrorlog", write},
+		{"EXEC srv.userdb.dbo.xp_fixeddrives", write},
+		{"INSERT #t EXEC dbo.xp_msver", write},
+		{"EXEC evil.xp_msver", write},
+		{"EXEC xp_msver", read},
+		{"EXEC sys.xp_msver", read},
+		{"EXEC db..xp_msver", read},
+		{"EXEC master..xp_fixeddrives", read},
+		{"EXEC master.dbo.xp_fixeddrives", read},
+		{"EXEC [MASTER].[DBO].[XP_READERRORLOG]", read},
 
 		{"EXEC sp_help_job", write},
 		{"EXEC dbo.sp_help_job", write},
@@ -474,6 +504,7 @@ func TestClassifyReasons(t *testing.T) {
 		{"SELECT 1\nDISABLE TRIGGER t ON x", "keyword DISABLE (line 2)"},
 		{"INSERT #t EXEC sp_configure", "procedure sp_configure is administration (line 1)"},
 		{"EXEC evil.sp_who", "procedure evil.sp_who is not on the read allow-list"},
+		{"EXEC dbo.xp_msver", "procedure dbo.xp_msver is not on the read allow-list: xp_msver is read only unqualified, as sys.xp_msver or as master.dbo.xp_msver"},
 		{"EXEC sp_help_job", "procedure sp_help_job is read only as msdb.dbo.sp_help_job: elsewhere the name is the current database's own procedure"},
 		{"EXEC sp_spaceused @updateusage = 'true'", "sp_spaceused @updateusage runs DBCC UPDATEUSAGE"},
 	} {

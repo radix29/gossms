@@ -129,8 +129,9 @@ var dbccRead = map[string]bool{
 // readSystemProcs are the resource-database procedures that only read:
 // catalog and help procedures, session and lock lists, the error log. Names
 // are lower-cased. Each is read only where the server resolves the name to
-// the system procedure — no schema, or dbo or sys (readProcedure): evil.sp_who
-// is the user's own procedure, whatever its name.
+// the system procedure (readProcedure) — an sp_ one with no schema, or dbo or
+// sys; an xp_ one with no schema, sys, or master.dbo: evil.sp_who, and
+// dbo.xp_msver outside master, are the user's own procedure.
 //
 // Not here, though they look like reads: sp_WhoIsActive and sp_block are user
 // code installed by whoever installed them (sp_WhoIsActive inserts into its
