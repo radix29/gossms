@@ -605,6 +605,9 @@ func (oe *ObjectExplorer) flatten(flat []controls.TreeNode, n *explorerNode, dep
 	// The suffix is added here rather than written into n.label, so clearing the
 	// filter needn't unpick it from a string the loaders own.
 	label := n.label
+	// A server root saved under a profile name leads with it. Display only:
+	// n.label stays the connection label the status-bar breadcrumb and the
+	// Details title use, and sameObject matches by.
 	if depth == 0 && n.data.Type == NodeServer && n.data.conn != nil {
 		if saved, err := oe.app.cfg.ProfileByName(n.data.conn.Opts.GeneratedName()); err == nil && saved.Profile != "" {
 			label = saved.Profile + " (" + label + ")"
