@@ -123,6 +123,10 @@ history entry and its saved password; **Profile...** names it for the
 [command line](#command-line). Tab reaches the buttons after the last field;
 Left/Right move along them.
 
+A connection with a profile name shows it in front of its Object Explorer root
+label, `finance-prod (server (login, …))`; the status bar keeps the plain
+connection label.
+
 Choose SQL Server, Windows Integrated, or a Microsoft Entra ID method. Fields the
 method does not use are greyed out.
 
