@@ -162,6 +162,8 @@ func (v *XEventViewer) selectionAnchor() xeAnchor {
 // restoreSelection puts the cursor back on anchor's row. An event now inside
 // a collapsed group leaves the cursor on that group — the nearest row still
 // showing it; one gone altogether leaves the cursor where the grid kept it.
+// Every path ends in SetSelectedCell, so a multi-row selection collapses: the
+// rows under it have moved.
 func (v *XEventViewer) restoreSelection(a xeAnchor) {
 	_, col := v.grid.SelectedCell()
 	for i, r := range v.display {
@@ -171,17 +173,18 @@ func (v *XEventViewer) restoreSelection(a xeAnchor) {
 			return
 		}
 	}
-	if a.event == 0 {
-		return
-	}
-	for _, g := range slices.Backward(v.groupPath(a.event)) {
-		for i, r := range v.display {
-			if r.group == g {
-				v.grid.SetSelectedCell(i, col)
-				return
+	if a.event != 0 {
+		for _, g := range slices.Backward(v.groupPath(a.event)) {
+			for i, r := range v.display {
+				if r.group == g {
+					v.grid.SetSelectedCell(i, col)
+					return
+				}
 			}
 		}
 	}
+	row, _ := v.grid.SelectedCell()
+	v.grid.SetSelectedCell(row, col)
 }
 
 // groupPath is the chain of groups holding the event with id, outermost
@@ -250,7 +253,9 @@ func (v *XEventViewer) setGrouping(cols []xevent.Column) {
 	if !v.grouped() {
 		v.groups, v.display = nil, nil
 	}
-	v.rebuildRows()
+	v.rebuild(anchor, false)
+	// Again after rebuild's followTail: the cursor stays on its event rather
+	// than jumping to the tail.
 	if !v.grouped() && anchor.event != 0 {
 		if i := slices.IndexFunc(v.shown, func(e *xevent.Event) bool { return e.ID == anchor.event }); i >= 0 {
 			_, col := v.grid.SelectedCell()

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/tsql"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/propsheet"
@@ -783,18 +784,18 @@ func annotateEndpointScript(groups []endpointScriptGroup) string {
 		if len(g.stmts) == 0 && !g.certPending && len(g.certSkipped) == 0 {
 			continue
 		}
-		fmt.Fprintf(&b, "\n-- on %s\n", g.instance)
+		fmt.Fprintf(&b, "\n-- on %s\n", tsql.CommentSafe(g.instance))
 		for _, stmt := range g.stmts {
 			fmt.Fprintf(&b, "%s\nGO\n", stmt)
 		}
 		if g.certPending {
 			fmt.Fprintf(&b, "-- %s has no certificate yet. Its public key is what every other instance\n"+
 				"-- imports FROM BINARY, and it can only be read from an instance that actually has\n"+
-				"-- one — so nothing that depends on it is in this script.\n", g.instance)
+				"-- one — so nothing that depends on it is in this script.\n", tsql.CommentSafe(g.instance))
 		}
 		if len(g.certSkipped) > 0 {
 			fmt.Fprintf(&b, "-- Missing here: the certificate, login and user for %s, and the CONNECT grant\n"+
-				"-- that goes with them.\n", strings.Join(g.certSkipped, ", "))
+				"-- that goes with them.\n", tsql.CommentSafe(strings.Join(g.certSkipped, ", ")))
 		}
 	}
 

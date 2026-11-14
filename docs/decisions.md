@@ -1737,9 +1737,8 @@ it from the string 'NULL'.
   unclosed one at the cursor is no token), and the function is a dozen lines
   over runes: widening the leaf rule for it does not pay.
 - **What the 2026-11-14 duplication review left duplicated, on purpose**
-  (`dupl -t 90` over gossms, gosmo, tuikit; the plan was
-  `docs/duplication-plan.md`). Re-flagging any of these costs a re-read for the
-  same answer:
+  (`dupl -t 90` over gossms, gosmo, tuikit, 2026-11-14). Re-flagging any of
+  these costs a re-read for the same answer:
   - *View vs stored-procedure Object Explorer menus*
     (`explorer_objects.go`) differ in one item; the `…MenuItems` builders
     already take `newQuery`/`refresh`. Merge only if a third kind lands.

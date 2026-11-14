@@ -10,6 +10,7 @@ import (
 	"unicode/utf16"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/tsql"
 	"github.com/radix29/gossms/internal/fileutil"
 	"github.com/radix29/gossms/internal/xevent"
 	"github.com/radix29/tuikit/controls"
@@ -265,7 +266,9 @@ func (v *XEventViewer) insertScript() string {
 	if v.files != "" {
 		source = "event files " + v.files
 	}
-	fmt.Fprintf(&b, "-- %d events from %s, exported by goSSMS %s.\n", len(v.shown), source,
+	// A session name is a delimited identifier and a file path may hold a line
+	// break: unescaped, it would end the comment and run the rest as T-SQL.
+	fmt.Fprintf(&b, "-- %d events from %s, exported by goSSMS %s.\n", len(v.shown), tsql.CommentSafe(source),
 		time.Now().Format("2006-01-02 15:04:05"))
 	b.WriteString("-- timestamp is in the exporting machine's local time.\n")
 	b.WriteString("CREATE TABLE ")

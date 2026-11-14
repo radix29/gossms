@@ -178,6 +178,84 @@ func TestXEventViewerBlockSelectionStopsFollowingTheTail(t *testing.T) {
 	}
 }
 
+// A rebuild that changes the rows (a filter, a Resume) collapses a
+// Shift-extended block onto the cursor's event. Kept by index, the block
+// covered rows 1..2 of the filtered list and Copy Rows copied events the user
+// never selected.
+func TestXEventViewerFilterCollapsesABlockOntoTheCursorsEvent(t *testing.T) {
+	v := newTestXEventViewer(t, 100)
+	v.feed.autoScroll = false
+	v.applyBatch(xeBatch{events: []xevent.Event{
+		xeTestEvent("a", 1, "duration", "10"), xeTestEvent("b", 2, "duration", "5000"),
+		xeTestEvent("c", 3, "duration", "20"), xeTestEvent("d", 4, "duration", "6000"),
+		xeTestEvent("e", 5, "duration", "7000")}})
+	v.grid.SetSelectedRow(2) // c
+	shiftKey(t, v, tcell.KeyDown)
+	if got := selectedNames(v); !slices.Equal(got, []string{"c", "d"}) {
+		t.Fatalf("before the filter: selected %v, want [c d]", got)
+	}
+	f, err := xevent.ParseFilter("duration > 1000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.setFilter(f)
+	if got := selectedNames(v); !slices.Equal(got, []string{"d"}) {
+		t.Errorf("after the filter: selected %v, want [d] (the cursor's event)", got)
+	}
+}
+
+// Resume after the store evicted the events under the selection: the
+// cursor's event is gone, so the selection collapses onto one row rather than
+// staying on the same indexes over other events.
+func TestXEventViewerResumeAfterEvictionCollapsesABlock(t *testing.T) {
+	v := newTestXEventViewer(t, 4)
+	v.feed.autoScroll = false
+	v.feed.running = true
+	v.applyBatch(xeBatch{events: []xevent.Event{
+		xeTestEvent("a", 1), xeTestEvent("b", 2), xeTestEvent("c", 3), xeTestEvent("d", 4)}})
+	v.grid.SetSelectedRow(0) // a
+	shiftKey(t, v, tcell.KeyDown)
+	v.togglePause()
+	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("e", 5), xeTestEvent("f", 6), xeTestEvent("g", 7)}})
+	v.togglePause()
+	if got := shownNames(v); !slices.Equal(got, []string{"d", "e", "f", "g"}) {
+		t.Fatalf("resumed: shown %v", got)
+	}
+	if got := selectedNames(v); len(got) != 1 {
+		t.Errorf("resumed: selected %v, want one event", got)
+	}
+
+	// The cursor's event still held: the selection collapses onto it.
+	v.grid.SetSelectedRow(1) // e
+	shiftKey(t, v, tcell.KeyDown)
+	v.togglePause()
+	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("h", 8)}})
+	v.togglePause()
+	if got := selectedNames(v); !slices.Equal(got, []string{"f"}) {
+		t.Errorf("resumed: selected %v, want [f]", got)
+	}
+}
+
+// Hiding or showing a column leaves the rows where they are, so a block
+// stays on them.
+func TestXEventViewerColumnChangeKeepsABlock(t *testing.T) {
+	v := newTestXEventViewer(t, 100)
+	v.feed.autoScroll = false
+	v.applyBatch(xeBatch{events: []xevent.Event{
+		xeTestEvent("a", 1, "duration", "1"), xeTestEvent("b", 2, "duration", "2"),
+		xeTestEvent("c", 3, "duration", "3")}})
+	v.grid.SetSelectedRow(0)
+	shiftKey(t, v, tcell.KeyDown)
+	v.toggleColumn("field:duration")
+	if got := selectedNames(v); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("after hiding a column: selected %v, want [a b]", got)
+	}
+	v.toggleColumn("field:duration")
+	if got := selectedNames(v); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("after showing it again: selected %v, want [a b]", got)
+	}
+}
+
 func TestXEventViewerPauseHoldsTheGridAndResumeCatchesUp(t *testing.T) {
 	v := newTestXEventViewer(t, 100)
 	v.feed.running = true

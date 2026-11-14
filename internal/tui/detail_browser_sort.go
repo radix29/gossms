@@ -134,9 +134,7 @@ func (db *DetailBrowser) resort() {
 	db.perm = perm
 	db.setRowObjects(sorted, sortedObjs)
 	db.grid.SetSortIndicator(db.sortColumn())
-	// Unconditionally: SetDataPreservingView kept a Shift-extended block by
-	// index, which after the reorder covers other rows; SetSelectedCell
-	// collapses it. On a miss the cursor stays on its index.
+	// On a miss the cursor stays on its index.
 	i := slices.Index(perm, selected)
 	if i < 0 {
 		i, _ = db.grid.SelectedCell()

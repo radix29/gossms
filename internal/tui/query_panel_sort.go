@@ -167,9 +167,7 @@ func (p *QueryPanel) applyResultSort(key sortRunKey, perm []int) {
 	set := key.result.Sets[key.tab]
 	p.results.SetSourcePreservingView(set.Columns, sortedResultSet{set: set, perm: perm})
 	p.results.SetSortIndicator(key.col, key.desc)
-	// Unconditionally: SetSourcePreservingView kept a Shift-extended block by
-	// index, which after the reorder covers other rows; SetSelectedCell
-	// collapses it. On a miss the cursor stays on its index.
+	// On a miss the cursor stays on its index.
 	i := slices.Index(perm, selected)
 	if i < 0 {
 		i, _ = p.results.SelectedCell()

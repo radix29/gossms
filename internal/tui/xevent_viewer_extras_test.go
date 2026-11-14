@@ -539,6 +539,28 @@ func TestXEventViewerGroupedBatchWaitsForAnOpenOverlay(t *testing.T) {
 	}
 }
 
+// TestXEventInsertScriptHeaderIsCommentSafe pins that a line break in the
+// session name or file path cannot end the header's -- comment: the name
+// below would otherwise run its EXEC when the exported script is executed.
+func TestXEventInsertScriptHeaderIsCommentSafe(t *testing.T) {
+	v := newTestXEventViewer(t, 100)
+	v.applyBatch(xeBatch{events: []xevent.Event{xeTestEvent("rpc", 1, "duration", "7")}})
+	for _, set := range []func(){
+		func() { v.session = "x\nEXEC sp_addsrvrolemember 'evil','sysadmin';--"; v.files = "" },
+		func() { v.session = "x"; v.files = "/tmp/a\r\nDROP TABLE t;--\r.xel" },
+	} {
+		set()
+		lines := strings.Split(v.insertScript(), "\n")
+		if len(lines) < 3 || !strings.HasPrefix(lines[0], "-- ") ||
+			!strings.HasPrefix(lines[1], "-- timestamp") || !strings.HasPrefix(lines[2], "CREATE TABLE ") {
+			t.Errorf("header broke out of its comment:\n%s", strings.Join(lines[:min(4, len(lines))], "\n"))
+		}
+		if strings.ContainsRune(lines[0], '\r') {
+			t.Errorf("header keeps a CR: %q", lines[0])
+		}
+	}
+}
+
 // TestXEventInsertScriptTypesHashesAndWideText pins U4: a uint64 past
 // bigint's range is decimal(20,0), not a float that rounds two hashes equal,
 // and nvarchar is sized in UTF-16 code units, so an emoji counts twice.

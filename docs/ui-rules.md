@@ -85,7 +85,9 @@ which owns them; the entries here say how goSSMS applies them.
   "not handled" and focus leaves on the first arrow (six sites shipped, rows
   unselectable). Restoring only the cursor isn't enough: `ensureVisible`
   scrolls from zero and pins the row to the bottom. `redrawGrid` wraps
-  `SetDataPreservingView` (widths, scroll, selection); outside `internal/tui`
+  `SetDataPreservingView` (widths, scroll, cursor — a multi-row selection
+  collapses; `SetSourceKeepingSelection` keeps it, only for a rebuild whose
+  rows did not move: a new column, appended rows); outside `internal/tui`
   call that directly (`propsheet.ToggleGridRow`) — never hand-roll the pair.
   After Add/Remove/Revert use `resetGrid`, not `SetData` + `SetSelectedRow`
   (which silently drops widths). Packaged idioms: `wireGridEditor`
