@@ -119,7 +119,15 @@ func systemSuffix(name string, system bool) string {
 // loadResourcePoolsChildren lists every resource pool, the built-in internal
 // and default included.
 func loadResourcePoolsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	pools, err := l.sc.Server.ResourcePools(l.ctx)
+	return loadPoolChildren(l, l.sc.Server.ResourcePools, NodeResourcePool,
+		func(p *gosmo.ResourcePool) string { return p.Name })
+}
+
+// loadPoolChildren is a pool folder's rows, one leaf of kind per pool fetch
+// returns, a built-in one marked "(system)". name reads the pool's Name — a
+// field, so beyond a type parameter's reach.
+func loadPoolChildren[P interface{ IsSystem() bool }](l loaderCtx, fetch func(context.Context) ([]P, error), kind NodeType, name func(P) string) ([]*explorerNode, error) {
+	pools, err := fetch(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +136,7 @@ func loadResourcePoolsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 	}
 	out := make([]*explorerNode, 0, len(pools))
 	for _, p := range pools {
-		n := l.node(systemSuffix(p.Name, p.IsSystem()), NodeResourcePool, "", p.Name, "")
+		n := l.node(systemSuffix(name(p), p.IsSystem()), kind, "", name(p), "")
 		n.data.IsSystem = p.IsSystem()
 		out = append(out, n)
 	}
@@ -175,20 +183,8 @@ func loadWorkloadGroupsChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 // is one built-in, default; unlike resource pools there is no internal one
 // (W1).
 func loadExternalResourcePoolsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	pools, err := l.sc.Server.ExternalResourcePools(l.ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(pools) == 0 {
-		return resourceGovernorNotVisible(l), nil
-	}
-	out := make([]*explorerNode, 0, len(pools))
-	for _, p := range pools {
-		n := l.node(systemSuffix(p.Name, p.IsSystem()), NodeExternalResourcePool, "", p.Name, "")
-		n.data.IsSystem = p.IsSystem()
-		out = append(out, n)
-	}
-	return out, nil
+	return loadPoolChildren(l, l.sc.Server.ExternalResourcePools, NodeExternalResourcePool,
+		func(p *gosmo.ExternalResourcePool) string { return p.Name })
 }
 
 // The context menus for this family's nodes, looked up through nodeMenus
@@ -364,17 +360,6 @@ func (a *App) runResourceGovernorCommand(sc *db.ServerConn, node *explorerNode, 
 		})
 }
 
-// resourceGovernorNodeOf is sc's Resource Governor node, or nil when the tree
-// has not loaded one.
-func (a *App) resourceGovernorNodeOf(sc *db.ServerConn) *explorerNode {
-	for _, r := range a.explorer.roots {
-		if r.data.conn == sc {
-			return findDescendantByType(r, NodeResourceGovernor)
-		}
-	}
-	return nil
-}
-
 // refreshResourceGovernorNodes brings sc's Resource Governor subtree up to
 // date after Resource Governor Properties saved: the label (see
 // refreshResourceGovernorLabel), and the two pool folders reloaded, since
@@ -389,23 +374,7 @@ func (a *App) refreshResourceGovernorNodes(sc *db.ServerConn) {
 // expanded subtree stays open. Reloading Management instead would collapse
 // it. A failed read leaves the label bare, as the loader does.
 func (a *App) refreshResourceGovernorLabel(sc *db.ServerConn) {
-	rgNode := a.resourceGovernorNodeOf(sc)
-	if rgNode == nil {
-		return
-	}
-	a.safego("refreshing the Resource Governor node", func() {
-		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
-		defer cancel()
-		st := resourceGovernorState(ctx, sc)
-		a.postAndWake(func() {
-			if rgNode.retired {
-				return
-			}
-			st.applyTo(rgNode)
-			a.explorer.rebuild()
-			a.detailBrowser.Retitle(rgNode)
-		})
-	})
+	refreshStateLabel(a, sc, NodeResourceGovernor, "refreshing the Resource Governor node", resourceGovernorState)
 }
 
 // applyResourceGovernor puts stored Resource Governor changes in force without

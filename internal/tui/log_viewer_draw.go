@@ -30,33 +30,10 @@ func (lv *LogViewer) Draw(s tcell.Screen) {
 // drawToolbar paints the toolbar row (selectors and buttons in Activity
 // Monitor's tooltip scheme), then the filter field.
 func (lv *LogViewer) drawToolbar(s tcell.Screen) {
-	if lv.toolRect.H != 1 {
+	// "More ▾", the stand-in for whatever did not fit, is dimmed only while the
+	// whole row is; its items are gated one by one once the menu is open.
+	if !lv.drawToolCells(s, lv.toolDisabled, !lv.toolsEnabled()) {
 		return
-	}
-	pal := theme.Active()
-	barStyle := theme.StyleMenuBar()
-	core.FillRect(s, lv.toolRect, ' ', barStyle)
-
-	for i, t := range lv.tools.Cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if lv.toolDisabled(i) {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
-	// The stand-in for whatever did not fit. Dimmed only while the whole row is;
-	// its items are gated one by one once the menu is open.
-	if !lv.tools.More.Rect.IsZero() {
-		style := theme.StyleTooltip()
-		if !lv.toolsEnabled() {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, lv.tools.More.Rect, ' ', style)
-		core.DrawText(s, lv.tools.More.Rect.X+1, lv.tools.More.Rect.Y, style, lv.tools.More.Label)
 	}
 	if lv.filterVisible() {
 		lv.filter.Draw(s)

@@ -70,38 +70,11 @@ func databaseMailState(ctx context.Context, sc *db.ServerConn) mailNodeState {
 	return out
 }
 
-// databaseMailNodeOf is sc's Database Mail node, or nil when the tree has not
-// loaded one.
-func (a *App) databaseMailNodeOf(sc *db.ServerConn) *explorerNode {
-	for _, r := range a.explorer.roots {
-		if r.data.conn == sc {
-			return findDescendantByType(r, NodeDatabaseMail)
-		}
-	}
-	return nil
-}
-
 // refreshDatabaseMailLabel re-reads the Database Mail node's state in place.
 // Management's loader is what reads it, so without this a Refresh of the node
 // itself would leave a stale "(Stopped)" until Management was refreshed.
 func (a *App) refreshDatabaseMailLabel(sc *db.ServerConn) {
-	node := a.databaseMailNodeOf(sc)
-	if node == nil {
-		return
-	}
-	a.safego("refreshing the Database Mail node", func() {
-		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
-		defer cancel()
-		st := databaseMailState(ctx, sc)
-		a.postAndWake(func() {
-			if node.retired {
-				return
-			}
-			st.applyTo(node)
-			a.explorer.rebuild()
-			a.detailBrowser.Retitle(node)
-		})
-	})
+	refreshStateLabel(a, sc, NodeDatabaseMail, "refreshing the Database Mail node", databaseMailState)
 }
 
 // databaseMailMenuItems is the Database Mail node's context menu, looked up

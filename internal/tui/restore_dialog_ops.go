@@ -468,7 +468,7 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 			err = runRestore(ctx, app, sc.Server, task, req)
 		}
 		if err == nil {
-			app.postAndWake(func() { app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) })
+			app.postAndWake(func() { app.reloadDatabasesFolder(sc) })
 		}
 		app.postTaskDone(task, err)
 	})

@@ -92,7 +92,7 @@ func NewNewDatabaseDialog(app *App) *NewDatabaseDialog {
 		scriptDatabase: "",
 		fetch:          fetchNewDatabasePrefetch,
 		build:          d.buildPages,
-		refresh:        func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) },
+		refresh:        app.reloadDatabasesFolder,
 	})
 	return d
 }

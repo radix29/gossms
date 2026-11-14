@@ -125,6 +125,49 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 	})
 }
 
+// stateApplier is a node state read off the server — the Resource Governor
+// node's rgState, the Database Mail node's mailNodeState — that writes its
+// label and menu flags onto the node.
+type stateApplier interface {
+	applyTo(n *explorerNode)
+}
+
+// stateNodeOf is sc's first node of type t, or nil when the tree has not
+// loaded one.
+func (a *App) stateNodeOf(sc *db.ServerConn, t NodeType) *explorerNode {
+	for _, r := range a.explorer.roots {
+		if r.data.conn == sc {
+			return findDescendantByType(r, t)
+		}
+	}
+	return nil
+}
+
+// refreshStateLabel re-reads the state of sc's node of type t with fetch and
+// applies it in place, so an expanded subtree stays open (reloading the
+// parent folder would collapse it). fetch never fails: a read it cannot make
+// comes back as the state the loader shows for one. A node retired while the
+// read was out is left alone.
+func refreshStateLabel[S stateApplier](a *App, sc *db.ServerConn, t NodeType, what string, fetch func(context.Context, *db.ServerConn) S) {
+	node := a.stateNodeOf(sc, t)
+	if node == nil {
+		return
+	}
+	a.safego(what, func() {
+		ctx, cancel := context.WithTimeout(sc.Server.Context(), childFetchTimeout)
+		defer cancel()
+		st := fetch(ctx, sc)
+		a.postAndWake(func() {
+			if node.retired {
+				return
+			}
+			st.applyTo(node)
+			a.explorer.rebuild()
+			a.detailBrowser.Retitle(node)
+		})
+	})
+}
+
 func (a *App) onNodeSelected(node *explorerNode) {
 	a.setStatus(FormatNodePath(node))
 	if node.data.Type == NodeStatistic {
@@ -650,7 +693,7 @@ func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 				return
 			}
 			a.setStatus(fmt.Sprintf("Database %q reverted to snapshot %q", source, snapshot))
-			a.explorer.ReloadFolders(sc, folderOf("", NodeDatabases))
+			a.reloadDatabasesFolder(sc)
 		})
 	})
 }

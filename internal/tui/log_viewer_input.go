@@ -96,8 +96,7 @@ func (lv *LogViewer) scrollDetails(delta int) {
 	if !ok || lv.detailRect.H <= 0 {
 		return
 	}
-	limit := max(0, len(lv.detailLines(row, lv.detailRect.W-2))-lv.detailRect.H)
-	lv.detailScroll = min(limit, max(0, lv.detailScroll+delta))
+	lv.scrollDetailLines(len(lv.detailLines(row, lv.detailRect.W-2)), delta)
 }
 
 // HandleMouse routes a mouse event to the sub-region that owns it. The gesture

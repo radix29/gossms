@@ -71,9 +71,11 @@ func TestServerWriteContextOutlivesAFolderRead(t *testing.T) {
 // failed restore, deliberately on the short budget. The repair is gosmo's now
 // (RestoreOptions.CloseExistingConnections), on gosmo's own 10s.
 var readTimeoutSites = map[string]int{
-	"alwayson_menu.go":     2,
-	"app_connections.go":   1,
-	"app_explorer_data.go": 3,
+	"alwayson_menu.go":   2,
+	"app_connections.go": 1,
+	// 4: includes refreshStateLabel, the Resource Governor and Database Mail
+	// nodes' label re-reads.
+	"app_explorer_data.go": 4,
 	// 4: the database list, the default backup directory the destination
 	// is generated in — see BackupDialog.loadDefaultPaths — the server's
 	// "backup compression default" (loadCompressionDefault), and Start
@@ -90,14 +92,10 @@ var readTimeoutSites = map[string]int{
 	// 2: a schema group's narrowed folder listing, a grouped folder's schema counts.
 	"detail_browser_group_schema.go": 2,
 	// The node-detail fetch — see DetailBrowser.fetch.
-	"detail_browser_runs.go":   1,
-	"detail_browser_server.go": 1,
-	"detail_browser_tables.go": 1,
-	// The Database Mail node's label, re-read on a Refresh of the node.
-	"explorer_database_mail.go":  1,
+	"detail_browser_runs.go":     1,
+	"detail_browser_server.go":   1,
+	"detail_browser_tables.go":   1,
 	"explorer_object_actions.go": 1,
-	// The Resource Governor node's label, re-read after its Properties saved.
-	"explorer_resource_governor.go": 1,
 	// 3: the index read before each cascade action, the check for a
 	// population after one that may start it, and each read of a followed
 	// population.

@@ -81,8 +81,7 @@ func (v *XEventViewer) scrollDetails(delta int) {
 	if !ok || v.detailRect.H <= 0 {
 		return
 	}
-	limit := max(0, len(v.detailLines(e, v.detailRect.W-2))-v.detailRect.H)
-	v.detailScroll = min(limit, max(0, v.detailScroll+delta))
+	v.scrollDetailLines(len(v.detailLines(e, v.detailRect.W-2)), delta)
 }
 
 // HandleMouse routes a mouse event to the sub-region owning it: a press

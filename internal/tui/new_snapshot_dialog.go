@@ -66,7 +66,7 @@ func NewNewSnapshotDialog(app *App) *NewSnapshotDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(sc *db.ServerConn) { d.app.explorer.ReloadFolders(sc, folderOf("", NodeDatabases)) },
+		refresh: app.reloadDatabasesFolder,
 	})
 	d.OnClose = func() {
 		d.defaultsRead.Abandon()

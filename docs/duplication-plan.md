@@ -130,18 +130,98 @@ touched module (docs/testing.md), then driving the built binary for UI steps.
    build/vet (incl. `-tags livedb`)/staticcheck/`go test ./...` clean; 238
    live Create/Certificate/Key/Credential/Audit/… tests pass on win10cli
    (`-short`).*
-6. **A2, A3, A4, A6** — gossms explorer/XEvent helpers (same area, same review).
-7. **A5, A7** — dialog/prop-page builders, pair by pair, skipping any pair whose
-   helper would exceed ~4 parameters.
-8. **A9, A11, C3** — small, optional; do only if touching those files anyway.
-9. **A1** — LogViewer/XEventViewer shell. Last: highest churn in event/mouse
+6. ✅ **A2, A3, A4, A6** — gossms explorer/XEvent helpers (same area, same
+   review). *Done 2026-11-14. **A2** — generic `refreshStateLabel[S
+   stateApplier]` plus `App.stateNodeOf(sc, type)` (`app_explorer_data.go`)
+   replace the Resource Governor and Database Mail bodies and their
+   `…NodeOf` lookups; the Agent root's refresh stays separate (no
+   `applyTo`/retired/Retitle — different shape). `TestOnlyReadsUseTheReadTimeout`
+   counts moved with the timeout. **A3** — `loadPoolChildren[P]` takes the
+   fetch, the node kind and a name accessor (`Name` is a field, out of a
+   type parameter's reach). **A4** — `xeHost.columns` now owns the miss path
+   (progress/error hint, cache store, re-show only if still selected) via an
+   `xeColumnsView`; the 3-line cache hit stays in each editor, since Events
+   resets its grids between hit and miss. **A6** — `App.reloadDatabasesFolder`,
+   used by all six sites (New Database, Attach, Detach, New Snapshot, restore,
+   revert), not just the two named. Verified: vet/staticcheck/deadcode clean,
+   `go test -race ./internal/tui` passes; on win10cli, both pool folders
+   list, Database Mail Stop/Start retitles the node and Details, a New Session
+   template's event fields and an added event_file's parameters load, and a
+   throwaway New Database appears in the reloaded folder (dropped after).*
+7. ✅ **A5, A7** — dialog/prop-page builders, pair by pair, skipping any pair whose
+   helper would exceed ~4 parameters. *Done 2026-11-14. **A5** —
+   `initSchemaObjectDialog(app, d, noun, keys, build)`
+   (`new_sequence_dialog.go`) holds the shared constructor; New Sequence and
+   New Synonym are its only callers (title is `"New " + noun`). **A7** —
+   **role owner transfer**: `roleOwnerTransferSpec(kind, members)`
+   (`owner_transfer_page.go`), generic over anything with `SetOwner`; the
+   items loop stays per caller (the role lists come from different reads).
+   **Audit menus** (`explorer_security.go` pair plus a third caller,
+   `explorer_database_security.go`): `toggleMenu(newQuery, refresh, toggle,
+   show)` beside `propertiesOnlyMenu`. **Skipped**: the full-text list pages
+   and the rule/default pages already share their form builder
+   (`fullTextListGeneralForm`, `bindableObjectForm`), and what is left differs
+   in finder, field accessors, note, contents page and gate. The key-signature
+   pair already shares `keySignaturesPage`, and its wrappers differ in finder,
+   kind, `…Ref` and gate. Both detail-browser pairs are the
+   `filterObjects` + rows loop used about 45 times across `detail_browser_*.go`,
+   with different columns and keys. Each would need more than 4 parameters.
+   Verified: gofmt/vet/staticcheck/deadcode clean, `go test ./internal/tui/...`
+   passes. On win10cli: Server Role Properties › Owned Roles lists a throwaway
+   role ("Server role", 0 members). The server-audit menu keeps its shape, and
+   both Enable and Properties work. New Sequence's preflight refuses an
+   existing name, and New Sequence/New Synonym create and reload their
+   folders. All throwaway objects were dropped.*
+8. ✅ **A9, A11, C3** — small, optional; do only if touching those files anyway.
+   *Done 2026-11-14: all three evaluated and skipped, no code change.
+   **A9** — the repeated part is the two-line `TimeLabel`/`Interval` pair in
+   20 chart literals (`history.go`, `tempdb.go`, `instance.go`); a
+   `chartTriple` doesn't fit, since sections split into 3 or 2 columns, CPU is
+   conditional, one column is a bar panel, and charts mix stacked/overlaid
+   with per-chart `Scale`/`LegendRows`. A table would also detach the "why
+   stacked / why overlaid" comments from their charts. **A11** — not
+   identical formatting: the CLI's is unit-aware (`--unit`) and says
+   "unlimited"; the Properties grid's is whole-MB-else-KB and says
+   "Unlimited", so the plan's "only if identical" condition fails. **C3** —
+   `vgaColors`/`tangoColors` are two RGB tables of one `mcColors` type,
+   already sharing the `mcSkin` builder; neither derives from the other.
+   Add all three to the step-10 skip list.*
+9. ✅ **A1** — LogViewer/XEventViewer shell. Last: highest churn in event/mouse
    code (`ARCHITECTURE.md` § mouseDragging); verify by driving both panels
    (resize, splitter drag, toolbar clicks) per docs/testing.md, with
-   `go test -race` on `internal/tui`.
-10. Update `docs/open-threads.md` with anything left deliberately skipped
+   `go test -race` on `internal/tui`. *Done 2026-11-14, stopped at the shell
+   as planned. New `viewer_panel.go`: `viewerPanel` (rect, active, grid,
+   splitter, tool/grid/detail rects, `tools`, `detailScroll`), embedded by
+   both panels, with `newViewerPanel(app, title, ratio)` (the shared grid
+   setup), `setShellBounds`, `layoutChildren`, `drawToolCells(s, disabled,
+   moreDim)` and `scrollDetailLines(n, delta)`. Each `SetBounds` is now
+   `setShellBounds` + its own `layoutTools`; the toolbar cells are laid out
+   after the splitter rather than before, which is safe because neither
+   reads the other's rects. Not shared, because the content diverges:
+   HandleKey/HandleMouse (LogViewer's filter field and `lZoneFilter`;
+   XEventViewer's group-row clicks, F-keys and `catchUpAfterOverlay`), the
+   two drag-zone enums, SetActive (filter focus), the details text and its
+   cache (different entry types and widths), and the More cell's dimming
+   (LogViewer dims it while busy). Package-map row added. Verified:
+   gofmt/vet/staticcheck/deadcode clean, `go test -race ./internal/tui`
+   passed 3 runs in a row. An earlier run, made while the live session was
+   driving the binary, FAILed; only its tail was kept, so the failing test is
+   unknown. On win10cli, Log File Viewer: splitter drag, a filter click and
+   typing (60 of 2301 entries), narrowing until the filter hides drops its
+   focus (a typed key doesn't reach it), More ▾ lists Search/Recycle/Export,
+   and a Refresh click re-reads. system_health Watch Live Data: splitter
+   drag, Pause click turns into Resume, Alt+↓ scrolls the details pane, and
+   More ▾ lists the overflowed cells after narrowing.*
+10. ✅ Update `docs/open-threads.md` with anything left deliberately skipped
     (A8, B3, C2) so a later review does not re-flag it; add a line to
     `ARCHITECTURE.md` § Package map for `internal/textutil` (and any new
-    `internal/tui` file, `TestPackageMapListsEveryTUIFile`).
+    `internal/tui` file, `TestPackageMapListsEveryTUIFile`). *Done 2026-11-14,
+    in `docs/decisions.md` § Code and dependency hygiene instead:
+    open-threads holds open work only and sends settled answers to
+    decisions.md, the "do not re-raise" record. The entry covers every skip —
+    A8, A9, A11, the A7 remainder, A1 beyond the shell, B3, B4, the B1 exec
+    tails, C2, C3, C5. Both package-map rows (`internal/textutil`,
+    `viewer_panel.go`) had already landed with steps 3 and 9.*
 
 Cross-cutting rules: don't commit (user commits); no `CHANGELOG.md` edits; keep
 long "why" comments when moving code; check target paths exist before writing.

@@ -411,17 +411,13 @@ func (e *xeEventsEditor) syncConfigure() {
 	e.source.SetItems(nil)
 	e.fieldValue.SetEnabled(false)
 	resetGrid(e.fieldGrid, xeFieldColumns, nil, 0)
-	e.typeHint.Set("Reading " + key + "'s fields...")
-	e.h.columns(&e.colRun, ev.Package, ev.Name, func(cols []gosmo.XEObjectColumn, err error) {
-		if err != nil {
-			e.typeHint.SetError("Could not read " + key + "'s fields: " + err.Error())
-			return
-		}
-		e.cols[strings.ToLower(key)] = cols
-		if cur := e.current(); cur != nil && strings.EqualFold(cur.QualifiedName(), key) {
-			e.showColumns(cols)
-		}
-	})
+	e.h.columns(&e.colRun, e.cols, ev.Package, ev.Name, xeColumnsView{noun: "fields", hint: e.typeHint,
+		current: func() string {
+			if cur := e.current(); cur != nil {
+				return cur.QualifiedName()
+			}
+			return ""
+		}, show: e.showColumns})
 }
 
 // showColumns fills the builder's field list and the event-field grid from the

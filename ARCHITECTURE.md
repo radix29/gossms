@@ -399,6 +399,7 @@ gossms/
 │       ├── log_viewer_files.go        # choosing files: the family menu, the file menu, the multi-file checklist, Export, and the App-level recycle/refresh entry points
 │       ├── log_viewer_draw.go         # toolbar row, entry grid, splitter, selected-entry details pane
 │       ├── log_viewer_input.go        # HandleKey/HandleMouse: filter/grid focus, details scroll, gesture zones
+│       ├── viewer_panel.go            # viewerPanel, the shell LogViewer and XEventViewer embed: toolbar row over grid + splitter + details pane, its layout, toolbar-cell paint, details scroll clamp
 │       ├── xevent_session_dialog.go   # New Session / Session Properties: what the four pages share (catalog, edited events and targets, async column reads, alterXESession), the page set, New Session's create
 │       ├── xevent_session_general.go  # their General page: name, New Session's template (gosmo.XESessionTemplates), startup, start/watch after create, causality
 │       ├── xevent_session_events.go   # their Events page: event library (search, category, channel), selected events, Configure — global fields, filter text + clause builder, event fields

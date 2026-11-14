@@ -352,17 +352,13 @@ func (s *xeStorageEditor) syncParams() {
 		s.showParams(cols)
 		return
 	}
-	s.paramHint.Set("Reading " + key + "'s parameters...")
-	s.h.columns(&s.colRun, t.Package, t.Name, func(cols []gosmo.XEObjectColumn, err error) {
-		if err != nil {
-			s.paramHint.SetError("Could not read " + key + "'s parameters: " + err.Error())
-			return
-		}
-		s.cols[strings.ToLower(key)] = cols
-		if cur := s.current(); cur != nil && strings.EqualFold(cur.QualifiedName(), key) {
-			s.showParams(cols)
-		}
-	})
+	s.h.columns(&s.colRun, s.cols, t.Package, t.Name, xeColumnsView{noun: "parameters", hint: s.paramHint,
+		current: func() string {
+			if cur := s.current(); cur != nil {
+				return cur.QualifiedName()
+			}
+			return ""
+		}, show: s.showParams})
 }
 
 func (s *xeStorageEditor) showParams(cols []gosmo.XEObjectColumn) {

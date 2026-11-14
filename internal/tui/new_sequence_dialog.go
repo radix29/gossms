@@ -120,6 +120,23 @@ func fetchSchemaObjectPrefetch(ctx context.Context, sc *db.ServerConn, dbName st
 	return pf, nil
 }
 
+// initSchemaObjectDialog inits d as the New <noun> dialog of a schema-scoped
+// object (New Sequence, New Synonym): General, Permissions and Extended
+// Properties pages, built from a fetchSchemaObjectPrefetch whose existing
+// names keys lists.
+func initSchemaObjectDialog(app *App, d *dbFolderDialog[schemaObjectPrefetch], noun string,
+	keys func(context.Context, *gosmo.Database) ([]string, error), build func(*schemaObjectPrefetch)) {
+	d.initInFolder(app, newObjectConfig[schemaObjectPrefetch]{
+		title: "New " + noun,
+		noun:  noun,
+		pages: []string{"General", "Permissions", "Extended Properties"},
+		fetch: func(ctx context.Context, sc *db.ServerConn) (*schemaObjectPrefetch, error) {
+			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, keys)
+		},
+		build: build,
+	})
+}
+
 // sequenceSchemas is what the schema picker offers: every schema but sys and
 // INFORMATION_SCHEMA, which refuse CREATE SEQUENCE whoever runs it (Msg 2760,
 // sa included). The db_* role schemas are ordinary schemas.
@@ -142,16 +159,8 @@ type NewSequenceDialog struct {
 // NewNewSequenceDialog creates the dialog and wires its callbacks.
 func NewNewSequenceDialog(app *App) *NewSequenceDialog {
 	d := &NewSequenceDialog{}
-	d.initInFolder(app, newObjectConfig[schemaObjectPrefetch]{
-		title: "New Sequence",
-		noun:  "Sequence",
-		pages: []string{"General", "Permissions", "Extended Properties"},
-		fetch: func(ctx context.Context, sc *db.ServerConn) (*schemaObjectPrefetch, error) {
-			return fetchSchemaObjectPrefetch(ctx, sc, d.dbName, schemaObjectKeys((*gosmo.Database).Sequences,
-				func(s *gosmo.Sequence) (string, string) { return s.Schema, s.Name }))
-		},
-		build: d.buildPages,
-	})
+	initSchemaObjectDialog(app, &d.dbFolderDialog, "Sequence", schemaObjectKeys((*gosmo.Database).Sequences,
+		func(s *gosmo.Sequence) (string, string) { return s.Schema, s.Name }), d.buildPages)
 	return d
 }
 

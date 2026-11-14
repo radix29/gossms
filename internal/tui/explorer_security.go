@@ -147,16 +147,11 @@ func auditsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, re
 }
 
 func auditMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return toggleMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: auditToggleLabel(node),
 			Action: func() { a.toggleAudit(sc, node) }},
 			sc, "", gate.AlterAnyAudit),
-		{Divider: true},
-		refresh,
-		{Label: "Properties...", Action: func() { a.showAuditPropertiesFor(sc, node.data.Name) }},
-	}
+		func() { a.showAuditPropertiesFor(sc, node.data.Name) })
 }
 
 func serverAuditSpecificationsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -168,14 +163,9 @@ func serverAuditSpecificationsMenuItems(a *App, sc *db.ServerConn, node *explore
 }
 
 func serverAuditSpecificationMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
+	return toggleMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: auditToggleLabel(node),
 			Action: func() { a.toggleServerAuditSpecification(sc, node) }},
 			sc, "", gate.AlterAnyAudit),
-		{Divider: true},
-		refresh,
-		{Label: "Properties...", Action: func() { a.showServerAuditSpecificationPropertiesFor(sc, node.data.Name) }},
-	}
+		func() { a.showServerAuditSpecificationPropertiesFor(sc, node.data.Name) })
 }

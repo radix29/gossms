@@ -309,7 +309,7 @@ func (a *App) followTestMail(sc *db.ServerConn, id int) {
 // testMailSettled refreshes the Database Mail node's Details, whose failed
 // items a test message may have joined.
 func (a *App) testMailSettled(sc *db.ServerConn) {
-	if node := a.databaseMailNodeOf(sc); node != nil {
+	if node := a.stateNodeOf(sc, NodeDatabaseMail); node != nil {
 		a.detailBrowser.Invalidate(a, node)
 	}
 }
