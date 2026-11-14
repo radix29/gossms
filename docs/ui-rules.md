@@ -191,6 +191,11 @@ which owns them; the entries here say how goSSMS applies them.
   reintroduced fall-through. A dialog reacting to edits implements
   `core.ClipboardEditHandler` and checks the target it's handed. `App.pasteInto`
   drops text unless its target is still current (reads are async).
+- **`App.contextMenu` sits above the dialogs** — drawn after `modals.Draw`,
+  and offered keys and mouse ahead of `modals`, so a dialog field's
+  `OnRightClick` can open it (Connect's connection string preview). Its items
+  reach the field through the clipboard target, so the right-click must focus
+  the field first.
 - **A bracketed-paste newline arrives as `KeyEnter` (CR) or `KeyCtrlJ` (LF)**
   — tcell's legacy key mode decodes a raw LF as Ctrl+J. `bufferPastedKey`
   maps both to `\n`, skipping the LF of a CRLF. Dropping `KeyCtrlJ` ran every

@@ -200,6 +200,7 @@ func NewConnectDialog(app *App) *ConnectDialog {
 	d.fConnStrPreview = editor.NewEditor(nil)
 	d.fConnStrPreview.SetGutterVisible(false)
 	d.fConnStrPreview.SetWrapMode(true)
+	d.fConnStrPreview.OnRightClick = d.showConnStrMenu
 
 	d.history = controls.NewListBox()
 	d.history.OnSelect = func(i int) { d.applyHistory(i) }
@@ -644,17 +645,39 @@ func (d *ConnectDialog) setFocus(i int) {
 //
 // A setting Connect would refuse (an Extra Properties entry that is not
 // key=value, or names a setting a field controls) shows as that error.
+//
+// Unchanged text is not re-set: SetText resets cursor and selection, and every
+// click or drag motion in the preview runs this via setFocus, so a mouse
+// selection there was wiped on each event and could never be copied.
 func (d *ConnectDialog) refreshConnStrPreview() {
+	s := ""
 	// Nothing to preview yet (avoids gosmo's "Server is required" at startup).
-	if !d.canConnect() {
-		d.fConnStrPreview.SetText("")
-		return
+	if d.canConnect() {
+		var err error
+		s, err = db.BuildConnectionString(d.currentOptions())
+		if err != nil {
+			s = "Cannot build a connection string: " + err.Error()
+		}
 	}
-	s, err := db.BuildConnectionString(d.currentOptions())
-	if err != nil {
-		s = "Cannot build a connection string: " + err.Error()
+	if d.fConnStrPreview.Text() != s {
+		d.fConnStrPreview.SetText(s)
 	}
-	d.fConnStrPreview.SetText(s)
+}
+
+// showConnStrMenu is the connection string preview's right-click menu. The
+// preview is focused by then (HandleMouse), so Copy and Select All reach it
+// through the app's clipboard target like Ctrl+C and Ctrl+A.
+func (d *ConnectDialog) showConnStrMenu(x, y int) {
+	a := d.app
+	ed := d.fConnStrPreview
+	a.contextMenu.Show(x, y, []controls.MenuItem{
+		{Label: "Copy", Shortcut: "Ctrl+C", Action: a.copySelection, Enabled: ed.HasSelection},
+		{Label: "Copy Connection String", Action: func() { a.copyWithStatus(ed.Text()) },
+			Enabled: func() bool { return ed.Text() != "" }},
+		{Divider: true},
+		{Label: "Select All", Shortcut: "Ctrl+A", Action: a.selectAllInTarget,
+			Enabled: func() bool { return ed.Text() != "" }},
+	})
 }
 
 // History row label budget. A row is the ListBox's selection marker ("▸ ")
