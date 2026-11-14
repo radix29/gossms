@@ -66,6 +66,33 @@ func focusedClipboardTarget(list []focusable, i int) core.ClipboardTarget {
 	return nil
 }
 
+// clipboardFieldAt is core.ClipboardFocuser's hit test for a dialog that drives
+// focus with a flat slice: the index of the entry that is a text field (a
+// core.ClipboardTarget) drawn at (x, y), or -1. An InputField is hit on its box
+// (HitTest), as a left-click is, not on its label; anything else on its Bounds.
+// Buttons, checkboxes and dropdowns are not targets, so a right-click on one is
+// never taken for the clipboard.
+func clipboardFieldAt(list []focusable, x, y int) int {
+	for i, f := range list {
+		if _, ok := f.(core.ClipboardTarget); ok && fieldHit(f, x, y) {
+			return i
+		}
+	}
+	return -1
+}
+
+// fieldHit reports whether (x, y) is on w: its HitTest where it has one (an
+// InputField's box), else its Bounds.
+func fieldHit(w any, x, y int) bool {
+	if h, ok := w.(interface{ HitTest(x, y int) bool }); ok {
+		return h.HitTest(x, y)
+	}
+	if b, ok := w.(core.Bounded); ok {
+		return b.Bounds().Contains(x, y)
+	}
+	return false
+}
+
 // nextFocus and prevFocus are Tab and Backtab over a list of n widgets.
 // n must be positive; every caller builds its list statically and none can be
 // empty, and an empty one divides by zero here exactly as it did at the seven

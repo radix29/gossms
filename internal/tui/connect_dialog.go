@@ -879,6 +879,23 @@ func (d *ConnectDialog) Hide() {
 	d.ModalDialog.Hide()
 }
 
+// FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
+// field of the tab showing focuses it for the app's Cut/Copy/Paste menu. The
+// connection string preview is left to its own right-click (showConnStrMenu),
+// which adds Copy Connection String; nothing is taken mid-connect, when only
+// Cancel answers.
+func (d *ConnectDialog) FocusClipboardTargetAt(x, y int) bool {
+	if d.connecting {
+		return false
+	}
+	i := clipboardFieldAt(d.focusable, x, y)
+	if i < 0 || d.focusable[i] == focusable(d.fConnStrPreview) {
+		return false
+	}
+	d.setFocus(i)
+	return true
+}
+
 // FocusedClipboardTarget implements core.ClipboardHost: whichever text field or
 // editor has focus. A dropdown, checkbox, list or button answers nil.
 func (d *ConnectDialog) FocusedClipboardTarget() core.ClipboardTarget {

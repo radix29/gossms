@@ -193,6 +193,24 @@ which owns them; the entries here say how goSSMS applies them.
   reintroduced fall-through. A dialog reacting to edits implements
   `core.ClipboardEditHandler` and checks the target it's handed. `App.pasteInto`
   drops text unless its target is still current (reads are async).
+- **Every text field gets the right-click Cut/Copy/Paste menu through one route,
+  never a per-field handler.** A dialog that is a `core.ClipboardHost` is also a
+  `core.ClipboardFocuser`: `FocusClipboardTargetAt` focuses the field under the
+  pointer (caret and selection untouched) and `App.openDialogClipboardMenu`
+  opens `showClipboardMenu` (tuikit's `controls.ClipboardMenuItems`) there, on
+  the fresh Button2 press only, ahead of the dialog's own routing. A flat-slice
+  dialog answers with `clipboardFieldAt` (`dialog_common.go`); a propsheet one
+  inherits `PropertySheet`'s. Return false for a field with its own menu
+  (Connect's preview) and in any mode where the field can't take input.
+  `TestEveryDialogWithTextEntryIsAClipboardHost` checks both interfaces. Outside
+  dialogs, a text widget's `OnRightClick` calls `showClipboardMenu` with **the
+  widget itself** — an editor fires it inside `HandleMouse`, before its panel
+  moves focus, so `activeClipboardTarget` still names the previous one. Whether
+  Cut and Paste appear is the target's `core.ClipboardAccess` (read-only →
+  Copy and Select All only); a new read-only target implements it, or it is
+  taken as editable. A panel with a text field among other things is a
+  `core.ClipboardHost` (Log Viewer's filter) — `activeClipboardTarget` asks the
+  active panel, so Ctrl+C/X/V and a terminal paste reach it too.
 - **`App.contextMenu` sits above the dialogs** — drawn after `modals.Draw`,
   and offered keys and mouse ahead of `modals`, so a dialog field's
   `OnRightClick` can open it (Connect's connection string preview). Its items

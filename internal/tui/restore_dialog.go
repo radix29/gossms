@@ -651,12 +651,38 @@ func (d *RestoreDialog) doProgressButton() {
 	runProgressButton(d.task, d.btnFocus, d.Hide)
 }
 
+// FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
+// path field of the form, or on a folder field of the Files view, focuses it.
+// The progress and Inspect views have no field.
+func (d *RestoreDialog) FocusClipboardTargetAt(x, y int) bool {
+	switch d.mode {
+	case restoreModeForm:
+		if i := clipboardFieldAt(d.focusable, x, y); i >= 0 {
+			d.setFocus(i)
+			return true
+		}
+	case restoreModeFiles:
+		if i := clipboardFieldAt(d.filesFocusCycle(), x, y); i >= 0 {
+			d.setFilesFocus(i)
+			return true
+		}
+	}
+	return false
+}
+
 // FocusedClipboardTarget implements core.ClipboardHost: the backup-file or
 // target-database field while the option form is showing and has it focused. The
 // inspect, files and progress views drive their own focus, so each answers nil.
 func (d *RestoreDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.mode != restoreModeForm || d.onButtons {
+	if d.onButtons {
 		return nil
 	}
-	return focusedClipboardTarget(d.focusable, d.focusIdx)
+	switch d.mode {
+	case restoreModeForm:
+		return focusedClipboardTarget(d.focusable, d.focusIdx)
+	case restoreModeFiles:
+		// The Files view's folder fields: without this arm Ctrl+C/V there did nothing.
+		return focusedClipboardTarget(d.filesFocusCycle(), d.filesFocus)
+	}
+	return nil
 }

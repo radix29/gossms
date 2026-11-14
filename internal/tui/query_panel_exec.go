@@ -491,6 +491,7 @@ func (p *QueryPanel) newPlanView() *planview.PlanView {
 		}
 	}
 	v.OnContextMenu = func(x, y int) { p.app.showPlanContextMenu(x, y, p) }
+	v.OnTextContextMenu = func(x, y int) { p.app.showClipboardMenu(v, x, y) }
 	return v
 }
 

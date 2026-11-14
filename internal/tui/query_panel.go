@@ -260,6 +260,10 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	p.messages.OnDoubleClick = p.goToMessageLine
 	p.resultsText = editor.NewEditor(nil)
 	p.resultsText.SetReadOnly(true)
+	// The read-only views get the same right-click menu as the SQL editor, which
+	// offers them Copy and Select All (showClipboardMenu).
+	p.messages.OnRightClick = func(x, y int) { app.showClipboardMenu(p.messages, x, y) }
+	p.resultsText.OnRightClick = func(x, y int) { app.showClipboardMenu(p.resultsText, x, y) }
 	// An XML or JSON cell goes to its own query tab with matching highlighting
 	// instead of the grid's 60-column popup; anything else falls through to the
 	// popup. The declared column type comes from the active result set, since a
@@ -273,7 +277,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	results.OnHeaderClick = p.sortResultsByColumn
 	results.OnMenuItems = p.resultMenuItems
 	results.OnGridMenuItems = p.gridExportMenuItems
-	p.editor.OnRightClick = func(x, y int) { app.showEditorContextMenu(x, y) }
+	p.editor.OnRightClick = func(x, y int) { app.showClipboardMenu(p.editor, x, y) }
 	p.editor.SetCompletionProvider(p.newCompletionProvider())
 	return p
 }

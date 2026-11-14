@@ -796,6 +796,20 @@ func (d *BackupDialog) doProgressButton() {
 	runProgressButton(d.task, d.btnFocus, d.Hide)
 }
 
+// FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on the
+// destination field focuses it. The progress view has no field.
+func (d *BackupDialog) FocusClipboardTargetAt(x, y int) bool {
+	if d.mode != backupModeForm {
+		return false
+	}
+	i := clipboardFieldAt(d.focusable, x, y)
+	if i < 0 {
+		return false
+	}
+	d.setFocus(i)
+	return true
+}
+
 // FocusedClipboardTarget implements core.ClipboardHost: the destination path
 // field while the option form is showing and has it focused. The progress view
 // is buttons and a log, and drives its own btnFocus rather than focusable, so

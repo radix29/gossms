@@ -272,6 +272,12 @@ func (d *KeyDiagnosticsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
+// FocusClipboardTargetAt implements core.ClipboardFocuser: the log editor is
+// the only field, always focused, so a right-click on it is all it takes.
+func (d *KeyDiagnosticsDialog) FocusClipboardTargetAt(x, y int) bool {
+	return d.editor != nil && d.editor.Bounds().Contains(x, y)
+}
+
 // FocusedClipboardTarget implements core.ClipboardHost. The log editor is
 // read-only, so Copy works and Cut/Paste are no-ops on it.
 func (d *KeyDiagnosticsDialog) FocusedClipboardTarget() core.ClipboardTarget {

@@ -96,6 +96,7 @@ func (a *App) openLivePlanPanel(sc *db.ServerConn, spid int) {
 func newLivePlanPanel(app *App, sc *db.ServerConn, spid int) *LivePlanPanel {
 	v := planview.New()
 	v.OnCopyRequest = app.copyWithStatus
+	v.OnTextContextMenu = func(x, y int) { app.showClipboardMenu(v, x, y) }
 	v.SetLive(nil, nil)
 	lp := new(LivePlanPanel{app: app, sc: sc, sessionID: spid, planView: v, state: "waiting",
 		wake: make(chan struct{}, 1)})

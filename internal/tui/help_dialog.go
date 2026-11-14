@@ -170,6 +170,8 @@ var helpLines = []string{
 	"  Ctrl+W      Close current query",
 	"  Ctrl+S      Save query (a plan panel saves its .sqlplan)",
 	"  Ctrl+C/X/V  Copy / cut / paste (editor and dialog fields)",
+	"  Right-click Cut / Copy / Paste / Select All on any text field;",
+	"              Copy and Select All on read-only text",
 	"  Ctrl+Space  Open context menu (keyboard right-click equivalent)",
 	"  Alt+P       XEvent Profiler: start the Standard trace and watch it",
 	"              (Tools > XEvent Profiler also has TSQL)",

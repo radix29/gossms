@@ -43,6 +43,7 @@ func NewPlanPanel(app *App, title string, plan *showplan.Plan) *PlanPanel {
 	v.SetPlan(plan)
 	pp := new(PlanPanel{title: title, planView: v})
 	v.OnContextMenu = func(x, y int) { app.showPlanContextMenu(x, y, pp) }
+	v.OnTextContextMenu = func(x, y int) { app.showClipboardMenu(v, x, y) }
 	return pp
 }
 

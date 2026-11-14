@@ -165,6 +165,12 @@ func (d *DeviceCodeDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
+// FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click
+// anywhere in the dialog's content, above its buttons, offers the code's Copy.
+func (d *DeviceCodeDialog) FocusClipboardTargetAt(x, y int) bool {
+	return d.msg.UserCode != "" && d.InnerRect().Contains(x, y) && y < d.ButtonRowY()
+}
+
 // FocusedClipboardTarget implements core.ClipboardHost: the code, so Ctrl+C
 // copies it wherever focus is — through the OS clipboard, or OSC 52 to the
 // terminal's own over SSH.
@@ -183,3 +189,10 @@ func (d *DeviceCodeDialog) SelectedText() string { return d.msg.UserCode }
 func (d *DeviceCodeDialog) Cut() string          { return d.msg.UserCode }
 func (d *DeviceCodeDialog) Paste(string)         {}
 func (d *DeviceCodeDialog) SelectAll()           {}
+
+// CanCopy, CanCut and CanPaste implement core.ClipboardAccess: the code is
+// copied, never edited, so its right-click menu is Copy alone.
+func (d *DeviceCodeDialog) CanCopy() bool      { return d.HasSelection() }
+func (d *DeviceCodeDialog) CanCut() bool       { return false }
+func (d *DeviceCodeDialog) CanPaste() bool     { return false }
+func (d *DeviceCodeDialog) CanSelectAll() bool { return false }

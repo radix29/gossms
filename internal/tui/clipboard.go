@@ -83,14 +83,26 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 		}
 		return qp.editor
 	}
-	if db, ok := a.panels.ActivePanel().(*DetailBrowser); ok && db.HasSelection() {
-		return db
-	}
-	// The Always On dashboard is two grids and nothing else, so whichever has the
-	// keyboard is the target; copySelection's DataGrid branch then copies the cell
-	// under the cursor even with no viewer open.
-	if dash, ok := a.panels.ActivePanel().(*AGDashboard); ok {
-		return dash.grid()
+	switch p := a.panels.ActivePanel().(type) {
+	case *DetailBrowser:
+		if p.HasSelection() {
+			return p
+		}
+		return nil
+	case *AGDashboard:
+		// The Always On dashboard is two grids and nothing else, so whichever has the
+		// keyboard is the target; copySelection's DataGrid branch then copies the cell
+		// under the cursor even with no viewer open.
+		return p.grid()
+	case core.ClipboardHost:
+		// A panel with a text field among other things (the Log Viewer's filter box)
+		// names the focused one, or an explicit nil.
+		return p.FocusedClipboardTarget()
+	case clipboardTarget:
+		// A panel that is its own target, forwarding to whatever it shows (Plan, Live
+		// Plan, Plan Compare, Query Store, Replication Monitor). Without this arm their
+		// clipboard methods were never reached and Ctrl+C there did nothing.
+		return p
 	}
 	return nil
 }
@@ -344,15 +356,39 @@ func (a *App) selectAllInTarget() {
 	}
 }
 
-// showEditorContextMenu pops up a Cut/Copy/Paste/Select All menu at (x,y), wired
-// to the same App-level actions as the shortcuts and Edit menu. Fired from a
-// query editor's right-click.
-func (a *App) showEditorContextMenu(x, y int) {
-	a.contextMenu.Show(x, y, []controls.MenuItem{
-		{Label: "Cut", Shortcut: "Ctrl+X", Action: func() { a.cutSelection() }},
-		{Label: "Copy", Shortcut: "Ctrl+C", Action: func() { a.copySelection() }},
-		{Label: "Paste", Shortcut: "Ctrl+V", Action: func() { a.pasteFromClipboard() }},
-		{Divider: true},
-		{Label: "Select All", Shortcut: "Ctrl+A", Action: func() { a.selectAllInTarget() }},
-	})
+// showClipboardMenu pops up the standard right-click menu for a text field at
+// (x,y) — Cut, Copy, Paste and Select All, or Copy and Select All on a read-only
+// one (controls.ClipboardMenuItems) — wired to the same App-level actions as
+// the shortcuts and the Edit menu, so each acts on activeClipboardTarget.
+//
+// target is the field right-clicked, passed rather than resolved: a query
+// panel's editors fire OnRightClick from inside their HandleMouse, before the
+// panel moves focus to them, so activeClipboardTarget still names the previous
+// one then. The actions run later, once the focus move has landed.
+func (a *App) showClipboardMenu(target clipboardTarget, x, y int) {
+	if target == nil {
+		return
+	}
+	a.contextMenu.Show(x, y, controls.ClipboardMenuItems(target, controls.ClipboardActions{
+		Cut:       a.cutSelection,
+		Copy:      a.copySelection,
+		Paste:     a.pasteFromClipboard,
+		SelectAll: a.selectAllInTarget,
+	}))
+}
+
+// openDialogClipboardMenu is a right-click on a dialog's text field: the
+// frontmost dialog focuses the field under the pointer (core.ClipboardFocuser)
+// and the field's Cut/Copy/Paste menu opens there. One route for every dialog,
+// so no field needs its own right-click handler. False when no dialog is open,
+// it has no field there, or it isn't a focuser: the click then routes as usual
+// (Connect's connection string preview opens its own menu that way).
+func (a *App) openDialogClipboardMenu(x, y int) bool {
+	f, ok := a.modals.Top().(core.ClipboardFocuser)
+	if !ok || !f.FocusClipboardTargetAt(x, y) {
+		return false
+	}
+	target, _ := a.modals.ClipboardTarget()
+	a.showClipboardMenu(target, x, y)
+	return true
 }

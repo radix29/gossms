@@ -219,7 +219,10 @@ or use File > Export Results) to export the result set on screen, in the order
 shown, to a CSV, tab-separated, JSON or XML file. Show Value on a `varbinary`/`image` cell that holds a picture
 (PNG, JPEG, GIF, BMP, TIFF or WebP) opens it in its own tab as terminal art,
 with fit, zoom, pan and Save; pictures render in Unicode block sextants, with
-an ASCII mode for fonts that lack them. Press **F1** for the full keyboard
+an ASCII mode for fonts that lack them. Right-click any text field — a dialog's
+input box, the query editor, the Log Viewer's filter — for Cut, Copy, Paste and
+Select All; on read-only text (Messages, Results to Text, a plan's XML, a
+read-only property) the menu offers Copy and Select All. Press **F1** for the full keyboard
 reference.
 
 ## Supported SQL Server versions
