@@ -11,6 +11,7 @@ import (
 	"time"
 
 	mssql "github.com/microsoft/go-mssqldb"
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // appendGUID appends a uniqueidentifier as SSMS renders it: NULL or uppercase
@@ -159,19 +160,7 @@ func isDecimalLiteral(b []byte) bool {
 		b = b[1:]
 	}
 	intPart, frac, hasDot := bytes.Cut(b, []byte{'.'})
-	return allDigits(intPart) && (!hasDot || allDigits(frac))
-}
-
-func allDigits(b []byte) bool {
-	if len(b) == 0 {
-		return false
-	}
-	for _, c := range b {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
+	return textutil.AllDigits(intPart) && (!hasDot || textutil.AllDigits(frac))
 }
 
 // appendHexUpper appends b as SSMS's "0x…" uppercase hex in one pass.

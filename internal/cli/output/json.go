@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // jsonEnvelope is the JSON format. Struct field order is output order, and
@@ -112,13 +114,13 @@ func renderJSON(w io.Writer, r *Result, o Options) error {
 	env := newEnvelope(r)
 	for _, s := range r.Sets {
 		js := jsonSet{
-			Name:          nullable(s.Name),
+			Name:          textutil.Nullable(s.Name),
 			Columns:       jsonColumns(s.Columns),
 			Rows:          [][]any{},
 			RowCount:      len(s.Rows),
 			TotalRowCount: s.TotalRowCount,
 			Truncated:     s.Truncated,
-			TruncatedBy:   nullable(s.TruncatedBy),
+			TruncatedBy:   textutil.Nullable(s.TruncatedBy),
 			RowsAffected:  s.RowsAffected,
 		}
 		k := kinds(s.Columns)
@@ -136,11 +138,11 @@ func newEnvelope(r *Result) jsonEnvelope {
 		SchemaVersion: SchemaVersion,
 		Status:        r.Status,
 		Command:       r.Command,
-		Server:        nullable(r.Server),
-		Database:      nullable(r.Database),
+		Server:        textutil.Nullable(r.Server),
+		Database:      textutil.Nullable(r.Database),
 		DurationMs:    r.Duration.Milliseconds(),
 		RowsAffected:  r.RowsAffected,
-		OutFile:       nullable(r.OutFile),
+		OutFile:       textutil.Nullable(r.OutFile),
 		Data:          jsonFields(r.Fields),
 		ResultSets:    []any{},
 		Messages:      []jsonMessage{},
@@ -156,10 +158,10 @@ func newEnvelope(r *Result) jsonEnvelope {
 	for _, e := range r.Errors {
 		if q := e.SQL; q != nil {
 			env.Errors = append(env.Errors, jsonSQLError{Code: e.Code, SQLErrorNumber: q.Number, Severity: q.Severity,
-				State: q.State, Line: q.Line, Procedure: nullable(q.Procedure), Message: e.Message, Hint: nullable(e.Hint)})
+				State: q.State, Line: q.Line, Procedure: textutil.Nullable(q.Procedure), Message: e.Message, Hint: textutil.Nullable(e.Hint)})
 			continue
 		}
-		env.Errors = append(env.Errors, jsonError{Code: e.Code, Message: e.Message, Hint: nullable(e.Hint)})
+		env.Errors = append(env.Errors, jsonError{Code: e.Code, Message: e.Message, Hint: textutil.Nullable(e.Hint)})
 	}
 	return env
 }
@@ -167,7 +169,7 @@ func newEnvelope(r *Result) jsonEnvelope {
 func jsonColumns(cols []Column) []jsonColumn {
 	out := []jsonColumn{}
 	for _, c := range cols {
-		out = append(out, jsonColumn{Name: c.Name, Type: nullable(c.Type), Nullable: c.Nullable})
+		out = append(out, jsonColumn{Name: c.Name, Type: textutil.Nullable(c.Type), Nullable: c.Nullable})
 	}
 	return out
 }
@@ -194,13 +196,4 @@ func encodeJSON(w io.Writer, v any, indent string) error {
 		enc.SetIndent("", indent)
 	}
 	return enc.Encode(v)
-}
-
-// nullable is nil for "", so JSON says null rather than an empty string that
-// could be a value.
-func nullable(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

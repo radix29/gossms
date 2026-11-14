@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/radix29/gossms/internal/export"
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // The keys of jsonl's two non-row lines. A column whose key would equal one is
@@ -75,7 +76,7 @@ func (j *jsonlWriter) beginSet(name string, cols []Column) bool {
 	j.keys = j.keys[:0]
 	jc := make([]jsonlColumn, len(cols))
 	for i, c := range cols {
-		jc[i] = jsonlColumn{Name: c.Name, Key: keys[i], Type: nullable(c.Type), Nullable: c.Nullable}
+		jc[i] = jsonlColumn{Name: c.Name, Key: keys[i], Type: textutil.Nullable(c.Type), Nullable: c.Nullable}
 		j.keys = append(j.keys, bytes.Clone(j.encode(keys[i])))
 	}
 	head := struct {
@@ -85,7 +86,7 @@ func (j *jsonlWriter) beginSet(name string, cols []Column) bool {
 			Columns []jsonlColumn `json:"columns"`
 		} `json:"_resultSet"`
 	}{}
-	head.Set.Index, head.Set.Name, head.Set.Columns = j.sets, nullable(name), jc
+	head.Set.Index, head.Set.Name, head.Set.Columns = j.sets, textutil.Nullable(name), jc
 	j.line.Reset()
 	j.line.Write(j.encode(head))
 	return j.emit()
@@ -139,12 +140,12 @@ func (j *jsonlWriter) summary(r *Result, shown []int) error {
 	env := newEnvelope(r)
 	for i, s := range r.Sets {
 		env.ResultSets = append(env.ResultSets, jsonSetSummary{
-			Name:          nullable(s.Name),
+			Name:          textutil.Nullable(s.Name),
 			Columns:       jsonColumns(s.Columns),
 			RowCount:      shown[i],
 			TotalRowCount: s.TotalRowCount,
 			Truncated:     s.Truncated,
-			TruncatedBy:   nullable(s.TruncatedBy),
+			TruncatedBy:   textutil.Nullable(s.TruncatedBy),
 			RowsAffected:  s.RowsAffected,
 		})
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/gossms/internal/textutil"
 	"github.com/radix29/tuikit/controls"
 )
 
@@ -370,7 +371,7 @@ func decimalSortKey(cell string) (rank int64, digits string, ok bool) {
 	neg := strings.HasPrefix(cell, "-")
 	s := strings.TrimPrefix(cell, "-")
 	intPart, frac, hasDot := strings.Cut(s, ".")
-	if intPart == "" || hasDot && frac == "" || !allDigits(intPart) || !allDigits(frac) {
+	if !textutil.AllDigits(intPart) || hasDot && !textutil.AllDigits(frac) {
 		return 0, "", false
 	}
 	s = strings.TrimLeft(s, "0")
@@ -385,15 +386,6 @@ func decimalSortKey(cell string) (rank int64, digits string, ok bool) {
 		rank = -rank
 	}
 	return rank, s, true
-}
-
-func allDigits(s string) bool {
-	for i := range len(s) {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func boolRank(b bool) int {

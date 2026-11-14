@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // log_viewer_rows.go is what the read's rows become on screen: grid columns,
@@ -168,10 +169,10 @@ func logEntryMatches(e *gosmo.ErrorLogEntry, needle string) bool {
 // grid cell is one row tall, so they become spaces. The details pane shows the
 // text as written.
 func flattenLogText(s string) string {
-	if !strings.ContainsAny(s, "\r\n\t") {
+	if !strings.ContainsAny(s, textutil.Breaks) {
 		return s
 	}
-	return strings.Join(strings.Fields(strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(s)), " ")
+	return textutil.Collapse(s)
 }
 
 // sortLogRowsDesc orders merged rows newest first, as SSMS does. The sort is

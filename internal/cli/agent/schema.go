@@ -15,6 +15,7 @@ import (
 
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // Schema is the catalog `agent schema` and `help -o json` print. Struct field
@@ -106,7 +107,7 @@ func Build(tree *spec.Tree, version string, topic []string) *Schema {
 		cmd := Command{
 			Path:           c.Name(),
 			Summary:        c.Summary,
-			Description:    nullable(c.Description),
+			Description:    textutil.Nullable(c.Description),
 			OperationClass: c.Class,
 			Arguments:      []Arg{},
 			Options:        options(c.Options),
@@ -116,7 +117,7 @@ func Build(tree *spec.Tree, version string, topic []string) *Schema {
 			cmd.Examples = []string{}
 		}
 		for _, a := range c.Args {
-			cmd.Arguments = append(cmd.Arguments, Arg{Name: a.Name, Help: a.Help, Format: nullable(a.Format),
+			cmd.Arguments = append(cmd.Arguments, Arg{Name: a.Name, Help: a.Help, Format: textutil.Nullable(a.Format),
 				Required: a.Required, Repeat: a.Repeat})
 		}
 		s.Commands = append(s.Commands, cmd)
@@ -154,7 +155,7 @@ func options(opts []spec.Option) []Option {
 			Type:    o.Type,
 			Enum:    slices.Clone(o.Enum),
 			Default: typedDefault(o),
-			Env:     nullable(o.Env),
+			Env:     textutil.Nullable(o.Env),
 			Help:    o.Help,
 		}
 		if o.Short != "" {
@@ -191,12 +192,4 @@ func typedDefault(o spec.Option) any {
 		return nil
 	}
 	return o.Default
-}
-
-// nullable is nil for "", so JSON says null rather than an empty string.
-func nullable(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

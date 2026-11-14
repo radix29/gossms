@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // WriteAtomic writes data to a temp file in path's directory and renames it over
@@ -206,7 +208,7 @@ func RemoveStaleTemps(path string) {
 	cutoff := time.Now().Add(-StaleTempAge)
 	for _, e := range entries {
 		digits, ok := strings.CutPrefix(e.Name(), prefix)
-		if !ok || !allDigits(digits) || !e.Type().IsRegular() {
+		if !ok || !textutil.AllDigits(digits) || !e.Type().IsRegular() {
 			continue
 		}
 		if fi, err := e.Info(); err == nil && fi.ModTime().Before(cutoff) {
@@ -215,17 +217,11 @@ func RemoveStaleTemps(path string) {
 	}
 }
 
-// allDigits reports whether s is a non-empty run of ASCII digits, the random
-// part os.CreateTemp puts in place of no "*".
-func allDigits(s string) bool {
-	return s != "" && strings.Trim(s, "0123456789") == ""
-}
-
 // isTempName reports whether name is a WriteAtomic/CreateAtomic temp file,
 // possibly one still being written.
 func isTempName(name string) bool {
 	_, after, ok := strings.CutLast(name, ".tmp")
-	return ok && allDigits(after)
+	return ok && textutil.AllDigits(after) // os.CreateTemp's random part, put in place of no "*"
 }
 
 // KeepCorrupt saves data — path's contents, which did not parse — beside it as
