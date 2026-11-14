@@ -57,7 +57,7 @@ var connectTabLabels = [...]string{"Connection Properties", "Connection String"}
 const (
 	connectBtnDelete = iota
 	connectBtnProfile
-	connectBtnReset
+	connectBtnNew
 	connectBtnConnect
 	connectBtnCancel
 	connectButtonCount
@@ -65,7 +65,7 @@ const (
 
 var (
 	connectLeftButtons  = []string{"Delete", "Profile..."}
-	connectRightButtons = []string{"Reset", "Connect", "Cancel"}
+	connectRightButtons = []string{"New", "Connect", "Cancel"}
 )
 
 // ConnectDialog is the "Connect to Server" modal dialog, embedding
@@ -447,7 +447,7 @@ func (d *ConnectDialog) buttonsDisabled() []bool {
 	gated := make([]bool, connectButtonCount)
 	gated[connectBtnDelete] = d.connecting || d.history.Selected() < 0
 	gated[connectBtnProfile] = gated[connectBtnDelete]
-	gated[connectBtnReset] = d.connecting
+	gated[connectBtnNew] = d.connecting
 	gated[connectBtnConnect] = !d.canConnect() || d.connecting
 	gated[connectBtnCancel] = false
 	return gated

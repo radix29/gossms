@@ -119,7 +119,7 @@ func (d *ConnectDialog) doButton() {
 			return
 		}
 		d.startConnect(d.currentOptions())
-	case connectBtnReset:
+	case connectBtnNew:
 		d.resetForm()
 	case connectBtnDelete:
 		d.deleteSelectedHistory()

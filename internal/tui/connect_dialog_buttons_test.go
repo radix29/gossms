@@ -55,9 +55,9 @@ func waitForSavesAtCleanup(t *testing.T) {
 	t.Cleanup(savesInFlight.Wait)
 }
 
-// Reset clears the right pane back to the dialog's opening defaults, and
+// New clears the right pane back to the dialog's opening defaults, and
 // leaves History alone: the saved connections are not what it clears.
-func TestConnectResetClearsTheFormAndKeepsHistory(t *testing.T) {
+func TestConnectNewClearsTheFormAndKeepsHistory(t *testing.T) {
 	d := twoPaneConnectDialog(t,
 		config.Connection{Server: "srv", Database: "master", User: "sa", Password: "p",
 			RememberPassword: true, AuthMethod: config.AuthEntraPassword},
@@ -66,11 +66,11 @@ func TestConnectResetClearsTheFormAndKeepsHistory(t *testing.T) {
 	d.cbTrust.SetChecked(true)
 	d.setEncryptMode(config.EncryptOptional)
 
-	d.btnFocus = connectBtnReset
+	d.btnFocus = connectBtnNew
 	d.doButton()
 
 	if v := d.fServer.Value(); v != "" {
-		t.Errorf("Server Name = %q after Reset, want empty", v)
+		t.Errorf("Server Name = %q after New, want empty", v)
 	}
 	for name, got := range map[string]string{
 		"Database Name":            d.fDatabase.Value(),
@@ -82,30 +82,30 @@ func TestConnectResetClearsTheFormAndKeepsHistory(t *testing.T) {
 		"Custom Properties":        d.fExtraProps.Text(),
 	} {
 		if got != "" {
-			t.Errorf("%s = %q after Reset, want empty", name, got)
+			t.Errorf("%s = %q after New, want empty", name, got)
 		}
 	}
 	if d.cbRemember.Checked() {
-		t.Error("Remember Password stayed ticked after Reset")
+		t.Error("Remember Password stayed ticked after New")
 	}
 	if d.cbTrust.Checked() {
-		t.Error("Trust Server Certificate stayed on after Reset")
+		t.Error("Trust Server Certificate stayed on after New")
 	}
 	if got := d.authMethod(); got != config.AuthSQLServer {
-		t.Errorf("Authentication = %v after Reset, want SQL Server", got)
+		t.Errorf("Authentication = %v after New, want SQL Server", got)
 	}
 	if got := config.AllEncryptModes()[d.ddEncrypt.Selected()]; got != config.EncryptMandatory {
-		t.Errorf("Encrypt = %v after Reset, want Mandatory", got)
+		t.Errorf("Encrypt = %v after New, want Mandatory", got)
 	}
 	if len(d.historyConns) != 1 {
-		t.Errorf("Reset changed History: %d rows, want 1", len(d.historyConns))
+		t.Errorf("New changed History: %d rows, want 1", len(d.historyConns))
 	}
 	// An emptied Server field is what Show reads to pre-fill, so a reset
 	// dialog reopens on the most recent connection rather than staying blank.
 	d.Hide()
 	d.Show()
 	if d.fServer.Value() != "srv" {
-		t.Errorf("reopening after Reset left Server Name %q, want the most recent connection",
+		t.Errorf("reopening after New left Server Name %q, want the most recent connection",
 			d.fServer.Value())
 	}
 }
@@ -252,10 +252,10 @@ func TestConnectButtonRowSkipsGatedButtons(t *testing.T) {
 	if !d.onButtons {
 		t.Fatal("Backtab from the first stop did not reach the button row")
 	}
-	d.btnFocus = connectBtnReset
+	d.btnFocus = connectBtnNew
 	d.HandleKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
-	if d.btnFocus != connectBtnReset {
-		t.Errorf("Left from Reset moved to %d, onto gated Delete", d.btnFocus)
+	if d.btnFocus != connectBtnNew {
+		t.Errorf("Left from New moved to %d, onto gated Delete", d.btnFocus)
 	}
 }
 

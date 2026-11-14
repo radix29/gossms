@@ -193,7 +193,7 @@ func (d *ConnectDialog) drawSection(s tcell.Screen, title string, y int) {
 // The label is clipped to what is left before that group. A one-pane dialog is
 // only just wide enough for the four buttons, and drawn last — after
 // DrawButtonsGated, so the spinner survives a clamped rect's row clear — an
-// unclipped "Connecting..." painted over the leading '[' of Reset.
+// unclipped "Connecting..." painted over the leading '[' of New.
 func (d *ConnectDialog) drawConnecting(s tcell.Screen, style tcell.Style) {
 	if !d.connecting {
 		return

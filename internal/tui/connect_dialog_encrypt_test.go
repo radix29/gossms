@@ -44,7 +44,7 @@ func TestConnectCertificateValidationReachesTheDriver(t *testing.T) {
 		d.setFocus(indexOfFocusable(d.focusable, d.cbTrust))
 		d.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
 		check(t, d, true)
-		d.btnFocus = connectBtnReset
+		d.btnFocus = connectBtnNew
 		d.doButton()
 		check(t, d, false)
 	})
