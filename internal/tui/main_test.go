@@ -9,6 +9,10 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
+// configHomeEnv names the variable os.UserConfigDir reads on each OS; TestMain
+// and scratchConfigHome set them all.
+var configHomeEnv = []string{"XDG_CONFIG_HOME", "HOME", "AppData"}
+
 // TestMain points os.UserConfigDir and the process-wide tracked-query set at a
 // temp dir before any test runs. Otherwise every saveConfig (Options OK,
 // connection edits) writes the config.json of whoever ran the tests:
@@ -33,7 +37,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	for _, env := range []string{"XDG_CONFIG_HOME", "HOME", "AppData"} {
+	for _, env := range configHomeEnv {
 		os.Setenv(env, dir)
 	}
 	config.UseTrackedQueries(config.LoadTrackedQueriesFrom(filepath.Join(dir, "tracked_queries.json")))

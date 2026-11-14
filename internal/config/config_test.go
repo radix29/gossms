@@ -248,7 +248,7 @@ func TestMatchByServerNoMatch(t *testing.T) {
 }
 
 func TestLoadMissingFileReturnsEmptyConfig(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	cfg := Load()
 	if cfg == nil {
 		t.Fatal("Load() = nil, want an empty *Config")
@@ -277,9 +277,7 @@ func TestLoadDefaultsMaxTextColumnLength(t *testing.T) {
 		{`{"max_text_column_length": -5}`, DefaultMaxTextColumnLength},
 		{`{"max_text_column_length": 8192}`, 8192},
 	} {
-		dir := t.TempDir()
-		t.Setenv("XDG_CONFIG_HOME", dir)
-		cfgDir := filepath.Join(dir, "gossms")
+		cfgDir := scratchConfigDir(t)
 		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -294,9 +292,7 @@ func TestLoadDefaultsMaxTextColumnLength(t *testing.T) {
 
 // A config.json with the removed Max Result Rows key must still load.
 func TestLoadIgnoresRemovedMaxResultRows(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -310,9 +306,7 @@ func TestLoadIgnoresRemovedMaxResultRows(t *testing.T) {
 }
 
 func TestLoadCorruptFileReturnsEmptyConfig(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -331,9 +325,7 @@ func TestLoadRefusesToSaveOverAnUnreadableConfig(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: a 0000 file is still readable")
 	}
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +359,7 @@ func TestLoadRefusesToSaveOverAnUnreadableConfig(t *testing.T) {
 
 // No file at all is an ordinary first run and must stay saveable.
 func TestLoadMissingConfigStillSaves(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 
 	cfg := Load()
 	if err := cfg.Save(); err != nil {
@@ -379,8 +371,7 @@ func TestLoadMissingConfigStillSaves(t *testing.T) {
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
-	xdgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+	cfgDir := scratchConfigDir(t)
 
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{
@@ -403,7 +394,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	// The config directory (config.json plus the key) must be owner-only. On a
 	// fresh install Save's MkdirAll runs first and MkdirAll never chmods an
 	// existing directory, so Save's mode is what sticks.
-	info, err := os.Stat(filepath.Join(xdgDir, "gossms"))
+	info, err := os.Stat(cfgDir)
 	if err != nil {
 		t.Fatalf("stat config dir: %v", err)
 	}
@@ -436,7 +427,7 @@ func TestIconStyleDefaultsToEmoji(t *testing.T) {
 }
 
 func TestIconStyleRoundTrip(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 
 	cfg := &Config{IconStyle: IconStylePortable}
 	if err := cfg.Save(); err != nil {
@@ -450,8 +441,7 @@ func TestIconStyleRoundTrip(t *testing.T) {
 }
 
 func TestSavePasswordIsEncryptedOnDisk(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	dir := scratchConfigDir(t)
 
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{Server: "srv", Database: "db", User: "sa", Password: "s3cr3t!", RememberPassword: true})
@@ -459,7 +449,7 @@ func TestSavePasswordIsEncryptedOnDisk(t *testing.T) {
 		t.Fatalf("Save(): %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(dir, "gossms", "config.json"))
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,8 +461,7 @@ func TestSavePasswordIsEncryptedOnDisk(t *testing.T) {
 // Save must never leave a partial config.json: a truncated file is invalid JSON
 // and Load discards it, losing every connection.
 func TestSaveIsAtomic(t *testing.T) {
-	xdgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+	scratchConfigDir(t)
 
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{Server: "myserver", Port: 1433, User: "sa", Password: "hunter2", RememberPassword: true})
@@ -507,7 +496,7 @@ func TestSaveIsAtomic(t *testing.T) {
 
 // Save must copy the whole Config so fields added later aren't dropped.
 func TestSaveCarriesUnnamedFields(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 
 	cfg := &Config{
 		IconStyle:            IconStylePortable,
@@ -546,10 +535,8 @@ func TestLoadClampsIndentWidth(t *testing.T) {
 		{"at ceiling", `{"indent_width":16}`, MaxIndentWidth},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			t.Setenv("XDG_CONFIG_HOME", dir)
+			cfgDir := scratchConfigDir(t)
 			if tc.raw != "" {
-				cfgDir := filepath.Join(dir, "gossms")
 				if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 					t.Fatal(err)
 				}
@@ -567,9 +554,7 @@ func TestLoadClampsIndentWidth(t *testing.T) {
 // An unparseable config.json is kept as .corrupt before being discarded, so
 // server/user/database stay readable by hand.
 func TestLoadCorruptFileKeepsACopy(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -607,9 +592,7 @@ func corruptCopies(t *testing.T, path string) []string {
 // A config corrupted a second time keeps both recovery copies: one fixed
 // .corrupt name lost the first.
 func TestASecondCorruptConfigKeepsTheFirstCopy(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -639,9 +622,7 @@ func failKeepCorrupt(t *testing.T) {
 // When the corrupt bytes can't be copied aside, config.json is their only
 // copy, so Save must not write over it.
 func TestACorruptConfigThatCannotBeKeptIsNotSavedOver(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -664,8 +645,7 @@ func TestACorruptConfigThatCannotBeKeptIsNotSavedOver(t *testing.T) {
 
 // The same when the file is found corrupt at Save's re-read, not at Load.
 func TestSaveDoesNotWriteOverAConfigCorruptedSinceLoadThatCannotBeKept(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	scratchConfigDir(t)
 	cfg := Load()
 	cfg.IndentWidth = 2
 	if err := cfg.Save(); err != nil {
@@ -691,9 +671,7 @@ func TestSaveDoesNotWriteOverAConfigCorruptedSinceLoadThatCannotBeKept(t *testin
 // full copy of the config, encrypted passwords included — but not one young
 // enough to be another instance's save in progress.
 func TestLoadRemovesStaleSaveTempFiles(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -728,10 +706,7 @@ func TestLoadRemovesStaleSaveTempFiles(t *testing.T) {
 // A pre-binding config.json must still load its plaintext, and the next Save
 // rewrites it bound. Otherwise every saved password empties on upgrade.
 func TestLoadMigratesLegacyUnboundPasswordOnNextSave(t *testing.T) {
-	xdgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdgDir)
-
-	dir := filepath.Dir(configPath())
+	dir := scratchConfigDir(t)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -793,8 +768,7 @@ func TestLoadMigratesLegacyUnboundPasswordOnNextSave(t *testing.T) {
 // A password whose ciphertext no longer opens (key file replaced) must survive
 // an unrelated save, so a restored key can still read it.
 func TestUndecryptablePasswordSurvivesAnUnrelatedSave(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	scratchConfigDir(t)
 
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "s3cr3t!", RememberPassword: true})
@@ -850,8 +824,7 @@ func TestUndecryptablePasswordSurvivesAnUnrelatedSave(t *testing.T) {
 // The preserved ciphertext isn't sticky: reconnecting goes through AddOrUpdate
 // with empty sealed, replacing it.
 func TestReenteredPasswordReplacesAnUnopenableOne(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	scratchConfigDir(t)
 
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "old-secret", RememberPassword: true})
@@ -884,8 +857,7 @@ func TestReenteredPasswordReplacesAnUnopenableOne(t *testing.T) {
 // connections are written, every stored ciphertext goes back as it was, and
 // only the passwords that would need the key are left out, named in the error.
 func TestABadKeyFileStillSavesEverythingButNewPasswords(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	scratchConfigDir(t)
 
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "s3cr3t!", RememberPassword: true})
@@ -1009,9 +981,7 @@ func TestPasswordUnreadableDistinguishesNoPasswordFromASealedOne(t *testing.T) {
 // Load produces this state: an unopenable ciphertext yields an empty Password
 // with the ciphertext stashed.
 func TestLoadMarksAnUndecryptablePasswordUnreadable(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -1085,7 +1055,7 @@ func TestSaveKeepsTheLegacyEncryptBooleanForADowngrade(t *testing.T) {
 // A log past the limit moves to .1 and a fresh one starts; one under it is
 // appended to. Only one generation is kept.
 func TestOpenLogFileRotatesOnlyPastTheLimit(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	path, err := LogFilePath()
 	if err != nil {
 		t.Fatal(err)
@@ -1155,7 +1125,7 @@ func TestOpenLogFileNarrowsAnOlderWorldReadableLog(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows has no group/other permission bits")
 	}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	path, err := LogFilePath()
 	if err != nil {
 		t.Fatal(err)
@@ -1203,7 +1173,7 @@ func TestOpenLogFileNarrowsAnOlderWorldReadableLog(t *testing.T) {
 // password saved", not "saved but unreadable", or the next connect dials
 // with "" and reads as a login failure instead of a prompt.
 func TestRememberPasswordGatesWhatIsStored(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 
 	conn := Connection{Server: "srv", User: "sa", Password: "s3cr3t!", RememberPassword: true}
 	cfg := &Config{}
@@ -1312,7 +1282,7 @@ func TestAddOrUpdateReplacesEveryLegacyDuplicate(t *testing.T) {
 // between must stay in memory and reach the file on the next save — neither
 // adopted as written, nor overwritten by the adoption.
 func TestEndSaveKeepsChangesMadeWhileTheJobRan(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	servers := func(conns []Connection) (out []string) {
 		for _, c := range conns {
 			out = append(out, c.Server)
@@ -1352,7 +1322,7 @@ func TestEndSaveKeepsChangesMadeWhileTheJobRan(t *testing.T) {
 // A job that wrote nothing adopts nothing: its connection changes stay pending
 // for the next save.
 func TestEndSaveOfAFailedJobKeepsTheChangesPending(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	c := Load()
 	c.AddOrUpdate(Connection{Server: "a"})
 	j := c.BeginSave()

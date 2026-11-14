@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,13 +26,26 @@ func drawnFieldText(f *widgets.InputField) string {
 	return strings.TrimRight(b.String(), " ")
 }
 
-// scratchConfigHome points config.Save at a temporary directory. Every test
-// here saves, and Save writes to the real os.UserConfigDir otherwise — a test
-// run would delete the user's own saved connections.
-func scratchConfigHome(t *testing.T) {
+// scratchConfigHome points config.Save at a fresh temporary directory and
+// returns gossms's config directory inside it (not created). Every test here
+// saves; TestMain already keeps that away from the user's own config, and this
+// keeps each test's saves away from every other test's.
+//
+// It sets every variable os.UserConfigDir reads (configHomeEnv, TestMain's
+// list): XDG_CONFIG_HOME alone redirected Linux only, so on Windows and macOS
+// those tests shared — and, without TestMain, wrote — one config (issue #23).
+func scratchConfigHome(t *testing.T) string {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	home := t.TempDir()
+	for _, env := range configHomeEnv {
+		t.Setenv(env, home)
+	}
 	waitForSavesAtCleanup(t)
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(dir, "gossms")
 }
 
 // waitForSavesAtCleanup holds the test's end until every background save

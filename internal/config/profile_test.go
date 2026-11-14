@@ -123,7 +123,7 @@ func TestNamedConnectionsAreNotTrimmed(t *testing.T) {
 // The done-when of phase 1: a sealed password still opens after the
 // connection is named, and the name survives a save and reload.
 func TestProfileRoundTripsAndKeepsThePassword(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	cfg := Load()
 	conn := Connection{Server: "a", User: "sa", Password: "secret", RememberPassword: true}
 	cfg.AddOrUpdate(conn)
@@ -157,7 +157,7 @@ func TestProfileRoundTripsAndKeepsThePassword(t *testing.T) {
 // Another instance reconnecting the same connection (its op holds no profile)
 // must not wipe a name this one saved, and vice versa.
 func TestAProfileSurvivesAnotherInstancesReconnect(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	conn := Connection{Server: "a", User: "sa"}
 	seed := Load()
 	seed.AddOrUpdate(conn)
@@ -187,7 +187,7 @@ func TestAProfileSurvivesAnotherInstancesReconnect(t *testing.T) {
 // Two instances giving one name to different entries: the later save keeps
 // it, so names stay unique on disk.
 func TestALaterProfileNameMovesOffAnotherInstancesEntry(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	scratchConfigDir(t)
 	ca, cb := Connection{Server: "a", User: "sa"}, Connection{Server: "b", User: "sa"}
 	seed := Load()
 	seed.AddOrUpdate(ca)
@@ -249,9 +249,7 @@ func TestCeiling(t *testing.T) {
 
 // LoadReadOnly writes nothing: no key, no sweep, no corrupt copy, no save.
 func TestLoadReadOnlyWritesNothing(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgDir := filepath.Join(dir, "gossms")
+	cfgDir := scratchConfigDir(t)
 
 	// Missing config: empty, no directory created.
 	cfg, err := LoadReadOnly()
