@@ -18,6 +18,10 @@ import (
 // WITH ROLLBACK IMMEDIATE — kicking every connection to msdb or model — before the
 // server refuses the rename itself, and renaming a system Agent job is not refused
 // at all.
+//
+// A Fabric DW database offers neither either: a warehouse is renamed and
+// deleted in the Fabric workspace, not with ALTER/DROP DATABASE. Objects inside
+// it keep both.
 func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 	op := objectOpFor(node.data.Type)
 	if op == nil || node.data.IsSystem {

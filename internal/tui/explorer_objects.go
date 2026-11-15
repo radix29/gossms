@@ -549,6 +549,7 @@ func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 		}},
 		{Divider: true},
 	}
+	// Fabric DW tables have no user-managed indexes and no full-text indexing.
 	if sc == nil || !sc.IsFabricDW {
 		items = append(items, controls.MenuItem{Label: "Rebuild All Indexes", Action: func() {
 			a.openQueryWithText(sc, node.data.DBName, "ALTER INDEX ALL ON "+tableFQN+" REBUILD")

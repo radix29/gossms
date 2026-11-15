@@ -170,15 +170,7 @@ func TestFabricDWTableMenuHidesUnsupportedActions(t *testing.T) {
 		"View Dependencies", "|", "Refresh", "Properties..."}
 	for _, sc := range []*db.ServerConn{sql, fabric, sql, nil} {
 		node := &explorerNode{data: nodeData{Type: NodeTable, DBName: "AppDB", Schema: "dbo", Name: "Orders", conn: sc}}
-		items := a.nodeMenuItems(node)
-		var got []string
-		for _, item := range items {
-			label := item.Label
-			if item.Divider {
-				label = "|"
-			}
-			got = append(got, label)
-		}
+		got := menuLabelsWithDividers(a.nodeMenuItems(node))
 		want := standard
 		isFabricDW := sc != nil && sc.IsFabricDW
 		if isFabricDW {
@@ -225,14 +217,7 @@ func TestFabricDWDatabasesMenuHidesBackupRestore(t *testing.T) {
 	sql := &db.ServerConn{}
 	for _, sc := range []*db.ServerConn{sql, fabric, sql, nil} {
 		node := &explorerNode{data: nodeData{Type: NodeDatabases, conn: sc}}
-		var got []string
-		for _, item := range a.nodeMenuItems(node) {
-			label := item.Label
-			if item.Divider {
-				label = "|"
-			}
-			got = append(got, label)
-		}
+		got := menuLabelsWithDividers(a.nodeMenuItems(node))
 		want := []string{"New Query", "|", "New Database...", "Attach Database...", "|",
 			"Back Up Database...", "Restore Database...", "|", "Refresh"}
 		isFabricDW := sc != nil && sc.IsFabricDW
@@ -251,14 +236,7 @@ func TestFabricDWUsersMenuHidesNewUser(t *testing.T) {
 	sql := &db.ServerConn{}
 	for _, sc := range []*db.ServerConn{sql, fabric, sql, nil} {
 		node := &explorerNode{data: nodeData{Type: NodeUsers, DBName: "AppDB", conn: sc}}
-		var got []string
-		for _, item := range a.nodeMenuItems(node) {
-			label := item.Label
-			if item.Divider {
-				label = "|"
-			}
-			got = append(got, label)
-		}
+		got := menuLabelsWithDividers(a.nodeMenuItems(node))
 		want := []string{"New Query", "|", "New User...", "|", "Refresh"}
 		isFabricDW := sc != nil && sc.IsFabricDW
 		if isFabricDW {
@@ -268,6 +246,19 @@ func TestFabricDWUsersMenuHidesNewUser(t *testing.T) {
 			t.Errorf("IsFabricDW=%v: menu = %v, want %v", isFabricDW, got, want)
 		}
 	}
+}
+
+// menuLabelsWithDividers renders items as labels, a divider as "|".
+func menuLabelsWithDividers(items []controls.MenuItem) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.Divider {
+			out = append(out, "|")
+			continue
+		}
+		out = append(out, item.Label)
+	}
+	return out
 }
 
 func TestFabricDWObjectFoldersAreConnectionScoped(t *testing.T) {
