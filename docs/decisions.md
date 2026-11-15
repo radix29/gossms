@@ -1724,11 +1724,24 @@ it from the string 'NULL'.
   reader.
 - **`gate.AlterAnyLinkedSrv` and `gate.CreateTable` read as unused**,
   deliberately (the reason is at `AlterAnyLinkedSrv`, `gate/gate.go`).
-- **`fileutil.WithLock`'s stale-lock race is accepted.** Two waiters finding
-  the same stale lock (older than `lockStale`, 10 s) can race; it needs a dead
-  holder plus two saves within one poll, and costs only a lost edit, never
-  corruption (writes stay atomic). Closing it needs flock/`LockFileEx`, a GOOS
-  branch. Documented on `WithLock` (`internal/fileutil/lock.go`).
+- **`fileutil.WithLock` breaks a stale lock under a second lock, not flock**
+  (reopened 2026-11-15; was "race accepted"). A stale `.lock` (older than
+  `lockStale`, 10 s) is removed only while holding `.lock.break` and after
+  re-checking staleness inside it, and release removes the lock only while it
+  still holds the holder's token — portable O_EXCL files, no GOOS branch. Left:
+  a crash inside the microsecond break window leaves a stale `.break`, which
+  is removed outright (`breakStaleLock`).
+- **`widgets.InputField.HandleKey` keeps its exception to the `HandleKey`
+  rule** (settled 2026-11-15). It claims every key it binds, Left at column 0
+  and Right at the end included, where grid/editor/tree/list hand edge keys to
+  their host: caret keys in a text field never move focus (a property-sheet
+  field's Left-at-start does not jump to the page list). tuikit's
+  `ARCHITECTURE.md` § Widgets and grids names it.
+- **An open Show Value popup swallows clicks anywhere, Object Explorer and
+  the menu row included, until Esc or Close** (2026-11-15). Since panels
+  report their overlay (`layout.OverlayPanel`), `App.handleMouse` offers it
+  every press first, and `controls.ValueViewer` takes every press while open,
+  as it already did on its own panel — the `core.Overlay` contract, kept modal.
 - **`sqlparse.unquoteIdent` keeps its own unquoter.**
   `safety.unquote` now goes through gosmo's `tsql.Spans`/`Span.Unescape`,
   which reads an unterminated identifier to the end where `tsql.UnquoteName`

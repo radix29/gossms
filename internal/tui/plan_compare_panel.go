@@ -547,6 +547,9 @@ func (p *PlanComparePanel) overlayGrid() *controls.DataGrid {
 	return nil
 }
 
+// OverlayActive implements layout.OverlayPanel.
+func (p *PlanComparePanel) OverlayActive() bool { return p.overlayGrid() != nil }
+
 func (p *PlanComparePanel) focusedGrid() *controls.DataGrid {
 	if p.focusOps {
 		return p.ops

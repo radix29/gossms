@@ -112,6 +112,14 @@ func (p *QueryPanel) setResultsFocused(v bool) {
 	p.syncFocusVisuals()
 }
 
+// OverlayActive implements layout.OverlayPanel: one of the three overlays
+// HandleMouse gives first refusal to is open.
+func (p *QueryPanel) OverlayActive() bool {
+	return (!p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive()) ||
+		(p.planTabActive() && p.planView.OverlayActive()) ||
+		p.editor.OverlayActive()
+}
+
 // HandleMouse routes mouse events to the splitter (drag), result tabs,
 // editor, results grid, or results-text view.
 func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {

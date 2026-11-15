@@ -213,12 +213,5 @@ func (s *Session) markLost() { s.lost.Store(true) }
 // off the UI goroutine if needed. Idempotent.
 func (s *Session) Close() {
 	s.markLost()
-	discardConn(s.conn)
-}
-
-// discardConn marks conn to be closed rather than pooled when released.
-// driver.ErrBadConn from Raw is database/sql's way to close rather than pool a
-// connection. Raw on a closed Conn returns sql.ErrConnDone, giving idempotence.
-func discardConn(conn *sql.Conn) {
-	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	gosmo.DiscardConn(s.conn)
 }

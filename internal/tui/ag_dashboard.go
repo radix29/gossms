@@ -524,6 +524,9 @@ func (d *AGDashboard) overlayGrid() *controls.DataGrid {
 	return nil
 }
 
+// OverlayActive implements layout.OverlayPanel.
+func (d *AGDashboard) OverlayActive() bool { return d.overlayGrid() != nil }
+
 // overlayRouted hands ev's outcome back after an overlay took it, installing
 // a reading deferred while it was open once it has closed.
 func (d *AGDashboard) overlayRouted(handled bool) bool {

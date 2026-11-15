@@ -53,6 +53,9 @@ func (p *ReplicationMonitorPanel) overlayGrid() *controls.DataGrid {
 	return nil
 }
 
+// OverlayActive implements layout.OverlayPanel.
+func (p *ReplicationMonitorPanel) OverlayActive() bool { return p.overlayGrid() != nil }
+
 // HandleMouse routes a mouse event to the sub-region that owns it: a press
 // claims the gesture until its release, and a release goes to every
 // latch-bearing child wherever the pointer ended.

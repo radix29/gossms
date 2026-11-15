@@ -292,6 +292,13 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	if a.menuBar.OverlayActive() && (a.menuBar.HandleMouse(ev) || a.menuBar.OverlayActive()) {
 		return
 	}
+	// Then the active panel's overlay (a grid's cell menu or Show Value popup,
+	// the editor's completion list, the tab drop-down), by the same rule: routed
+	// by position, a right-click on Object Explorer opened the tree's menu
+	// beside the grid's still-open one (layout.OverlayPanel).
+	if a.panels.OverlayActive() && (a.panels.HandleMouse(ev) || a.panels.OverlayActive()) {
+		return
+	}
 
 	// Object Explorer -> editor drag-and-drop: once drag.node is armed it takes
 	// every event ahead of the menu row, status row and splitter, or a drag
@@ -457,11 +464,13 @@ func (a *App) routeGesture(ev *tcell.EventMouse, region appGestureOwner) {
 }
 
 // overlayStack is the modal layers open at one instant: top dialog (or nil),
-// context menu and dropdown. Compared by value to detect changes mid-gesture.
+// context menu, menu-bar dropdown and the active panel's overlay. Compared by
+// value to detect changes mid-gesture.
 type overlayStack struct {
 	dialog      Dialog
 	contextMenu bool
 	menuBar     bool
+	panels      bool
 }
 
 func (a *App) overlaySnapshot() overlayStack {
@@ -469,5 +478,6 @@ func (a *App) overlaySnapshot() overlayStack {
 		dialog:      a.modals.Top(),
 		contextMenu: a.contextMenu.OverlayActive(),
 		menuBar:     a.menuBar.OverlayActive(),
+		panels:      a.panels.OverlayActive(),
 	}
 }

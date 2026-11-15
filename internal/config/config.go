@@ -504,33 +504,55 @@ const MaxLogSize = 5 << 20
 // mode applies only at create, so a log (or its .1) left 0644 by an older
 // build is narrowed here. On Windows Chmod only toggles read-only, which the
 // owner bits preserve.
+//
+// Rotating and narrowing are best effort, but not silent: each failure is
+// written to the opened log itself, so a log still 0644, or one growing past
+// MaxLogSize because .1 can't be replaced, leaves a trace for whoever reads it.
 func OpenLogFile() (*os.File, error) {
 	path, err := LogFilePath()
 	if err != nil {
 		return nil, err
 	}
-	rotateLog(path, MaxLogSize)
+	var warnings []error
+	if err := rotateLog(path, MaxLogSize); err != nil {
+		warnings = append(warnings, err)
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
 	if fi, err := f.Stat(); err == nil && fi.Mode().Perm()&^0o600 != 0 {
-		_ = f.Chmod(fi.Mode().Perm() & 0o600)
+		if err := f.Chmod(fi.Mode().Perm() & 0o600); err != nil {
+			warnings = append(warnings, fmt.Errorf("narrowing %s to owner-only: %w", path, err))
+		}
 	}
-	if fi, err := os.Stat(path + ".1"); err == nil && fi.Mode().Perm()&^0o600 != 0 {
-		_ = os.Chmod(path+".1", fi.Mode().Perm()&0o600)
+	// Regular files only: a directory narrowed to 0600 loses its search bit.
+	if fi, err := os.Stat(path + ".1"); err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&^0o600 != 0 {
+		if err := os.Chmod(path+".1", fi.Mode().Perm()&0o600); err != nil {
+			warnings = append(warnings, fmt.Errorf("narrowing %s.1 to owner-only: %w", path, err))
+		}
+	}
+	// Same flags as the standard logger main points at f next, so the lines
+	// read like every other one in the file.
+	w := log.New(f, "", log.LstdFlags)
+	for _, err := range warnings {
+		w.Printf("log: %v", err)
 	}
 	return f, nil
 }
 
-// rotateLog renames path to path+".1" when larger than limit. Best effort: a
-// failed rename (e.g. file held open on Windows) just keeps appending.
-func rotateLog(path string, limit int64) {
+// rotateLog renames path to path+".1" when larger than limit. A failed rename
+// (e.g. the file held open on Windows) is returned for OpenLogFile to record;
+// the log just keeps appending.
+func rotateLog(path string, limit int64) error {
 	fi, err := os.Stat(path)
 	if err != nil || fi.Size() <= limit {
-		return
+		return nil
 	}
-	_ = os.Rename(path, path+".1")
+	if err := os.Rename(path, path+".1"); err != nil {
+		return fmt.Errorf("rotating a %d-byte log: %w", fi.Size(), err)
+	}
+	return nil
 }
 
 // Load reads the config, returning an empty one if there is no file. Passwords

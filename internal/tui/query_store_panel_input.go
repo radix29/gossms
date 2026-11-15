@@ -74,6 +74,9 @@ func (p *QueryStorePanel) overlayGrid() *controls.DataGrid {
 	return nil
 }
 
+// OverlayActive implements layout.OverlayPanel.
+func (p *QueryStorePanel) OverlayActive() bool { return p.overlayGrid() != nil }
+
 // focusedGrid is the grid the keyboard is on.
 func (p *QueryStorePanel) focusedGrid() *controls.DataGrid {
 	if p.focus == qsFocusPlans {

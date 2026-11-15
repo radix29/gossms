@@ -795,7 +795,11 @@ func (a *App) draw() {
 	if n := a.runningTaskCount(); n > 0 {
 		connInfo += fmt.Sprintf("  |  %d task%s running", n, pluralSuffix(n))
 	}
-	core.DrawTextClipped(s, 1, h-statusH, w-2, statusStyle, a.statusText+connInfo)
+	// DrawTextLine, not DrawTextClipped: a status can carry an error joined
+	// from several (a write's, then the failed repair after it — see
+	// Task.repairNote), and DrawTextClipped drops the line break, running the
+	// second message into the first without a space.
+	core.DrawTextLine(s, 1, h-statusH, w-2, statusStyle, a.statusText+connInfo)
 
 	// Overlays last, so the panels and status bar don't paint over the rows the
 	// menu dropdown and context menu extend into.

@@ -90,6 +90,9 @@ func (pp *PlanPanel) HandleKey(ev *tcell.EventKey) bool { return pp.planView.Han
 // HandleMouse delegates to the wrapped PlanView.
 func (pp *PlanPanel) HandleMouse(ev *tcell.EventMouse) bool { return pp.planView.HandleMouse(ev) }
 
+// OverlayActive implements layout.OverlayPanel (PlanView's summary popup).
+func (pp *PlanPanel) OverlayActive() bool { return pp.planView.OverlayActive() }
+
 // HasSelection and the SelectedText, Cut, Paste, SelectAll and Can* beside it
 // implement clipboardTarget (internal/tui/clipboard.go) by forwarding to the
 // wrapped PlanView, as DetailBrowser forwards to its grid.

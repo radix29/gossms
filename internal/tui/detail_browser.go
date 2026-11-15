@@ -438,6 +438,10 @@ const (
 	dbZonePanel            // the panel acted on the press; the rest of the gesture is swallowed
 )
 
+// OverlayActive implements layout.OverlayPanel: the grid's cell menu or Show
+// Value popup is open, so a press anywhere on screen reaches it first.
+func (db *DetailBrowser) OverlayActive() bool { return db.grid.OverlayActive() }
+
 // HandleMouse fires OnRefresh for a press on the title bar's refresh button,
 // pins or dismisses a chart readout for one on the strip, and delegates the
 // rest to the grid.

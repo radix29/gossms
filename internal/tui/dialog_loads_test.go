@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/propsheet"
 	"github.com/radix29/tuikit/tuikittest"
@@ -220,6 +221,20 @@ func TestCancelledTaskReadsCancelled(t *testing.T) {
 	a.markTaskDone(failed, errors.New("disk full"))
 	if failed.Cancelled || failed.statusText() != "Backup db3 — failed: disk full" {
 		t.Errorf("failed task: Cancelled=%v, statusText %q", failed.Cancelled, failed.statusText())
+	}
+
+	// Cancelled, but gosmo could not put back what the write changed: the
+	// cancel still reads as one, and the repair's failure is said too — not
+	// the cancellation's own wording.
+	stranded, _ := a.startTask(context.Background(), "Restore db5")
+	stranded.Cancel()
+	left := `gosmo: database "db5" may still be SINGLE_USER: setting it back to MULTI_USER failed: timeout`
+	a.markTaskDone(stranded, errors.Join(context.Canceled, &gosmo.RepairError{Err: errors.New(left)}))
+	if !stranded.Cancelled || stranded.statusText() != "Restore db5 — cancelled — "+left {
+		t.Errorf("cancelled task whose repair failed: Cancelled=%v, statusText %q", stranded.Cancelled, stranded.statusText())
+	}
+	if a.statusText != "Restore db5 cancelled — "+left {
+		t.Errorf("status bar = %q", a.statusText)
 	}
 
 	// A panic after a cancel is still a panic.

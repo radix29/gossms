@@ -320,7 +320,11 @@ which owns them; the entries here say how goSSMS applies them.
   focused row before positional routing in `propsheet.Form.HandleMouse`, the
   wheel included. A `DropDown`'s open list is clamped to the *screen*, not the
   dialog, so a dialog routing one by hand offers it every event before
-  `ConsumeOutsideClick` (Filter, Back Up, Restore).
+  `ConsumeOutsideClick` (Filter, Back Up, Restore). One level up, a panel
+  with such a child implements `layout.OverlayPanel` (`OverlayActive`), and
+  `App.handleMouse` offers `a.panels` every event before routing by position
+  — without it a press on Object Explorer left the Details cell menu open.
+  `panel_overlay_routing_test.go` lists the implementers; add a new panel there.
 - **Report with `App.postAndWake(fn)`**, never `postEvent` + `wakeEventLoop` by
   hand (tree nodes stuck on "Loading..."). `ARCHITECTURE.md` § Async result delivery:
   postAndWake. The elapsed-timer tick is the one legit bare `wakeEventLoop()`.

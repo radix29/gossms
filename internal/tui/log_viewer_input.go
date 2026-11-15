@@ -100,6 +100,9 @@ func (lv *LogViewer) scrollDetails(delta int) {
 	lv.scrollDetailLines(len(lv.detailLines(row, lv.detailRect.W-2)), delta)
 }
 
+// OverlayActive implements layout.OverlayPanel (the grid's menu or popup).
+func (lv *LogViewer) OverlayActive() bool { return lv.grid.OverlayActive() }
+
 // HandleMouse routes a mouse event to the sub-region that owns it. The gesture
 // rules are the five invariants in docs/ui-rules.md § Mouse, overlays, and
 // async UI (reasoning in ARCHITECTURE.md § The mouseDragging idiom): a press
