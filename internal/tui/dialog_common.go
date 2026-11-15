@@ -71,10 +71,21 @@ func focusedClipboardTarget(list []focusable, i int) core.ClipboardTarget {
 // core.ClipboardTarget) drawn at (x, y), or -1. An InputField is hit on its box
 // (HitTest), as a left-click is, not on its label; anything else on its Bounds.
 // Buttons, checkboxes and dropdowns are not targets, so a right-click on one is
-// never taken for the clipboard.
+// never taken for the clipboard. A disabled (greyed) field is skipped too, as
+// the left-click and Tab paths skip it: focusing one would leave the focus ring
+// on a widget that refuses every key and that Tab can never reach. Nothing is
+// hit while an entry's overlay is open (a dropdown's list): the list is drawn
+// over the fields below it, so the field under (x, y) is not what the user
+// right-clicked (core.ClipboardFocuser). Every dropdown of a dialog using this
+// helper is in its list, so this one check covers them all.
 func clipboardFieldAt(list []focusable, x, y int) int {
+	for _, f := range list {
+		if o, ok := f.(core.Overlay); ok && o.OverlayActive() {
+			return -1
+		}
+	}
 	for i, f := range list {
-		if _, ok := f.(core.ClipboardTarget); ok && fieldHit(f, x, y) {
+		if _, ok := f.(core.ClipboardTarget); ok && focusableEnabled(f) && fieldHit(f, x, y) {
 			return i
 		}
 	}

@@ -481,7 +481,8 @@ gossms/
 │       ├── new_operator_dialog.go       # New Operator, a single General page
 │       │
 │       │  ── Standalone dialogs ──
-│       ├── connect_dialog.go     # Connect dialog — state, focus ring, History pane, options/prefill, connect lifecycle
+│       ├── connect_dialog.go     # Connect dialog — state, focus ring, options/prefill, connect lifecycle
+│       ├── connect_dialog_history.go # Connect dialog — History pane: pre-fill, highlight sync, Delete/Profile, reload, row labels
 │       ├── connect_dialog_draw.go  # Connect dialog — two-pane/one-pane layout, tab bar, History pane and section rules
 │       ├── connect_dialog_input.go # Connect dialog — keys, buttons and the mouse ordering (overlays, tabs, then panes)
 │       ├── profile_dialog.go     # Connection Profile dialog (Connect dialog's Profile... button): the name the command line addresses a saved connection by, and its operation ceiling

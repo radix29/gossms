@@ -257,9 +257,10 @@ func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 }
 
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on the
-// name field focuses it.
+// name field focuses it; nothing does while the Allowed Operations list is
+// open (core.ClipboardFocuser).
 func (d *ProfileDialog) FocusClipboardTargetAt(x, y int) bool {
-	if !d.fName.HitTest(x, y) {
+	if d.ddAllow.OverlayActive() || !d.fName.HitTest(x, y) {
 		return false
 	}
 	d.setFocus(indexOfFocusable(d.focusable, d.fName))

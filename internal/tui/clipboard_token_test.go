@@ -39,6 +39,10 @@ func (d *tokenDialog) SelectedText() string                         { return d.f
 func (d *tokenDialog) Cut() string                                  { return d.field().Cut() }
 func (d *tokenDialog) Paste(text string)                            { d.field().Paste(text) }
 func (d *tokenDialog) SelectAll()                                   { d.field().SelectAll() }
+func (d *tokenDialog) CanCopy() bool                                { return d.field().CanCopy() }
+func (d *tokenDialog) CanCut() bool                                 { return d.field().CanCut() }
+func (d *tokenDialog) CanPaste() bool                               { return d.field().CanPaste() }
+func (d *tokenDialog) CanSelectAll() bool                           { return d.field().CanSelectAll() }
 func (d *tokenDialog) FocusedClipboardTarget() core.ClipboardTarget { return d }
 func (d *tokenDialog) ClipboardTargetToken() any                    { return d.field() }
 

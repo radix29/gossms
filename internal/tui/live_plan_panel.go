@@ -223,3 +223,7 @@ func (lp *LivePlanPanel) SelectedText() string { return lp.planView.SelectedText
 func (lp *LivePlanPanel) Cut() string          { return lp.planView.Cut() }
 func (lp *LivePlanPanel) Paste(text string)    { lp.planView.Paste(text) }
 func (lp *LivePlanPanel) SelectAll()           { lp.planView.SelectAll() }
+func (lp *LivePlanPanel) CanCopy() bool        { return lp.planView.CanCopy() }
+func (lp *LivePlanPanel) CanCut() bool         { return lp.planView.CanCut() }
+func (lp *LivePlanPanel) CanPaste() bool       { return lp.planView.CanPaste() }
+func (lp *LivePlanPanel) CanSelectAll() bool   { return lp.planView.CanSelectAll() }

@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tui/planview"
-	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/dialogs"
 )
 
@@ -101,6 +101,89 @@ func TestConnectPreviewKeepsItsOwnRightClickMenu(t *testing.T) {
 	}
 }
 
+// A greyed field is not a right-click target, as it is not a left-click or Tab
+// one: with Entra Default, a right-click on Password opens no menu and
+// leaves focus where it was, instead of parking it on a field that refuses
+// every key.
+func TestRightClickOnADisabledFieldOpensNoClipboardMenu(t *testing.T) {
+	a, d := connectDialogOnStack(t)
+	d.ddAuth.SetSelected(slices.Index(config.AllAuthMethods(), config.AuthEntraDefault))
+	d.applyAuthFields()
+	if d.fPassword.Enabled() {
+		t.Fatal("setup: Password is enabled under Entra Default")
+	}
+	before := d.focusedWidget()
+
+	rightPress(a, d.fPassword.InputX()+1, d.fPassword.Bounds().Y)
+
+	if a.contextMenu.OverlayActive() {
+		t.Error("a right-click on the greyed Password field opened the clipboard menu")
+	}
+	if d.focusedWidget() != before {
+		t.Errorf("focus moved to %T, want it left on %T", d.focusedWidget(), before)
+	}
+}
+
+// FilterDialog has its own hit test over its rows; it skips a disabled value
+// field like clipboardFieldAt does.
+func TestFilterDialogRightClickSkipsADisabledValueField(t *testing.T) {
+	d := showTestFilterDialogOnScreen(t, 120, 30)
+	v := d.rows[1].value
+	v.SetEnabled(false)
+	before := d.focusIdx
+	r := v.Bounds()
+	if d.FocusClipboardTargetAt(v.InputX()+1, r.Y) {
+		t.Error("a right-click on a disabled value field was taken for the clipboard")
+	}
+	if d.focusIdx != before {
+		t.Errorf("focusIdx = %d, want %d unchanged", d.focusIdx, before)
+	}
+	v.SetEnabled(true)
+	if !d.FocusClipboardTargetAt(v.InputX()+1, r.Y) || d.focusIdx != 3 {
+		t.Errorf("an enabled value field: focusIdx = %d, want 3", d.focusIdx)
+	}
+}
+
+// An open dropdown list is drawn over the fields below it: a right-click on a
+// list entry must not focus the field underneath and open the clipboard menu
+// over the still-open list.
+func TestRightClickOnAnOpenDropdownListOpensNoClipboardMenu(t *testing.T) {
+	a, d := connectDialogOnStack(t)
+	d.setFocus(indexOfFocusable(d.focusable, d.ddAuth))
+	d.ddAuth.HandleKey(tcell.NewEventKey(tcell.KeyF4, "", tcell.ModNone))
+	if !d.ddAuth.OverlayActive() {
+		t.Fatal("setup: F4 did not open the Authentication list")
+	}
+
+	rightPress(a, d.fPassword.InputX()+1, d.fPassword.Bounds().Y)
+
+	if a.contextMenu.OverlayActive() {
+		t.Error("a right-click on the open list opened the clipboard menu")
+	}
+	if d.focusedWidget() != focusable(d.ddAuth) {
+		t.Errorf("focus moved to %T, want it left on the Authentication dropdown", d.focusedWidget())
+	}
+}
+
+// FilterDialog's own hit test refuses too while an operator list is open over
+// the value fields of the rows below.
+func TestFilterDialogRightClickIgnoredWhileAnOperatorListIsOpen(t *testing.T) {
+	d := showTestFilterDialogOnScreen(t, 120, 30)
+	d.focusIdx = 0
+	d.syncFocus()
+	d.rows[0].op.HandleKey(tcell.NewEventKey(tcell.KeyF4, "", tcell.ModNone))
+	if !d.rows[0].op.OverlayActive() {
+		t.Fatal("setup: F4 did not open the operator list")
+	}
+	v := d.rows[1].value
+	if d.FocusClipboardTargetAt(v.InputX()+1, v.Bounds().Y) {
+		t.Error("a right-click through the open operator list focused a value field")
+	}
+	if d.focusIdx != 0 {
+		t.Errorf("focusIdx = %d, want 0 unchanged", d.focusIdx)
+	}
+}
+
 // A right-click on a button is not the clipboard's: no menu, and the click is
 // the dialog's to route.
 func TestRightClickOffAFieldOpensNoClipboardMenu(t *testing.T) {
@@ -116,15 +199,20 @@ func TestRightClickOffAFieldOpensNoClipboardMenu(t *testing.T) {
 // A read-only view offers Copy and Select All, never a Cut or Paste it would
 // refuse.
 func TestReadOnlyViewsGetACopyOnlyMenu(t *testing.T) {
-	// Every read-only target the app hands showClipboardMenu must say so; one
-	// missing a ClipboardAccess method silently stops satisfying it and gets
-	// Cut and Paste.
-	for _, target := range []clipboardTarget{&DeviceCodeDialog{}, planview.New()} {
-		if _, ok := target.(core.ClipboardAccess); !ok {
-			t.Errorf("%T is not a core.ClipboardAccess", target)
+	// Every read-only target the app hands showClipboardMenu must say so
+	// through core.ClipboardTarget's Can* methods. The panels used to lack
+	// them and were taken as editable, so their menu offered Cut and Paste.
+	a := newClipboardTestApp()
+	for _, target := range []clipboardTarget{&DeviceCodeDialog{}, planview.New(),
+		NewPlanPanel(a, "Plan", loadTestPlan(t)), a.newDetailBrowser()} {
+		if target.CanCut() || target.CanPaste() {
+			t.Errorf("%T: CanCut=%v CanPaste=%v, want both false", target, target.CanCut(), target.CanPaste())
 		}
 	}
-	a := newClipboardTestApp()
+	a.showClipboardMenu(a.newDetailBrowser(), 0, 0)
+	if order, _ := menuState(a); slices.Contains(order, "Cut") || slices.Contains(order, "Paste") {
+		t.Errorf("Object Explorer Details menu = %v, want no Cut or Paste", order)
+	}
 	qp := focusedQueryPanel(t, a)
 	a.showClipboardMenu(qp.messages, 0, 0)
 	if order, _ := menuState(a); !slices.Equal(order, []string{"Copy", "-", "Select All"}) {

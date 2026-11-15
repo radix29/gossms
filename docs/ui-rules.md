@@ -206,9 +206,9 @@ which owns them; the entries here say how goSSMS applies them.
   dialogs, a text widget's `OnRightClick` calls `showClipboardMenu` with **the
   widget itself** — an editor fires it inside `HandleMouse`, before its panel
   moves focus, so `activeClipboardTarget` still names the previous one. Whether
-  Cut and Paste appear is the target's `core.ClipboardAccess` (read-only →
-  Copy and Select All only); a new read-only target implements it, or it is
-  taken as editable. A panel with a text field among other things is a
+  Cut and Paste appear is the target's `CanPaste`/`CanCut` (part of
+  `core.ClipboardTarget`; read-only → Copy and Select All only), so a panel
+  forwarding to a grid or plan view forwards the four `Can*` methods too. A panel with a text field among other things is a
   `core.ClipboardHost` (Log Viewer's filter) — `activeClipboardTarget` asks the
   active panel, so Ctrl+C/X/V and a terminal paste reach it too.
 - **`App.contextMenu` sits above the dialogs** — drawn after `modals.Draw`,

@@ -220,3 +220,7 @@ func (p *QueryStorePanel) SelectedText() string { return p.focusedGrid().Selecte
 func (p *QueryStorePanel) Cut() string          { return p.focusedGrid().Cut() }
 func (p *QueryStorePanel) Paste(text string)    { p.focusedGrid().Paste(text) }
 func (p *QueryStorePanel) SelectAll()           { p.focusedGrid().SelectAll() }
+func (p *QueryStorePanel) CanCopy() bool        { return p.focusedGrid().CanCopy() }
+func (p *QueryStorePanel) CanCut() bool         { return p.focusedGrid().CanCut() }
+func (p *QueryStorePanel) CanPaste() bool       { return p.focusedGrid().CanPaste() }
+func (p *QueryStorePanel) CanSelectAll() bool   { return p.focusedGrid().CanSelectAll() }

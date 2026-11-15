@@ -489,7 +489,7 @@ func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 	return db.grid.HandleMouse(ev)
 }
 
-// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it
+// HasSelection and the SelectedText, Cut, Paste, SelectAll and Can* beside it
 // implement clipboardTarget by forwarding to the grid, which is a real
 // clipboard target only while its "Show Value" viewer is open.
 func (db *DetailBrowser) HasSelection() bool   { return db.grid.HasSelection() }
@@ -497,6 +497,10 @@ func (db *DetailBrowser) SelectedText() string { return db.grid.SelectedText() }
 func (db *DetailBrowser) Cut() string          { return db.grid.Cut() }
 func (db *DetailBrowser) Paste(text string)    { db.grid.Paste(text) }
 func (db *DetailBrowser) SelectAll()           { db.grid.SelectAll() }
+func (db *DetailBrowser) CanCopy() bool        { return db.grid.CanCopy() }
+func (db *DetailBrowser) CanCut() bool         { return db.grid.CanCut() }
+func (db *DetailBrowser) CanPaste() bool       { return db.grid.CanPaste() }
+func (db *DetailBrowser) CanSelectAll() bool   { return db.grid.CanSelectAll() }
 
 // newDetailBrowser builds the Object Explorer Details panel wired to this
 // app: the title bar's refresh button, the Query Store reports' "Query" column

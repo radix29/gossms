@@ -190,7 +190,7 @@ func (d *DeviceCodeDialog) Cut() string          { return d.msg.UserCode }
 func (d *DeviceCodeDialog) Paste(string)         {}
 func (d *DeviceCodeDialog) SelectAll()           {}
 
-// CanCopy, CanCut and CanPaste implement core.ClipboardAccess: the code is
+// CanCopy, CanCut and CanPaste implement core.ClipboardTarget: the code is
 // copied, never edited, so its right-click menu is Copy alone.
 func (d *DeviceCodeDialog) CanCopy() bool      { return d.HasSelection() }
 func (d *DeviceCodeDialog) CanCut() bool       { return false }
