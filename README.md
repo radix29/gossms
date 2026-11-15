@@ -175,7 +175,10 @@ Individual views show only Columns.
 **Programmability** contains only Stored Procedures, Functions, and External
 Functions. **External Functions** lists `sys.objects` entries of type `XF`.
 Databases omit Query Store, Service Broker, and Storage; database **Security**
-contains only Users, Roles, and Schemas. This layout is per connection; other
+contains only Users, Roles, and Schemas. Context menus drop what Fabric does
+not support: Back Up, Restore, Backup History, Rename, Delete and Shrink on a
+database; Back Up and Restore on **Databases**; New User on **Users**; Rebuild
+All Indexes and Full-Text index on a table. This layout is per connection; other
 connected servers keep their usual folders.
 
 Fabric statistics lists use `sys.stats` and `STATS_DATE`, without the unsupported

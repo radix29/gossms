@@ -320,6 +320,7 @@ func databasesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 		gateAzure(gate.Item(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
 			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase), sc),
 	}
+	// Fabric DW has no BACKUP/RESTORE: the platform owns recovery.
 	if sc == nil || !sc.IsFabricDW {
 		items = append(items,
 			controls.MenuItem{Divider: true},
@@ -335,6 +336,7 @@ func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 		newQuery,
 		{Divider: true},
 	}
+	// Fabric DW has no BACKUP/RESTORE and no msdb backup history.
 	if sc == nil || !sc.IsFabricDW {
 		items = append(items,
 			gate.Item(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
