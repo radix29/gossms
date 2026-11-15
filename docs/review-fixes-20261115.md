@@ -207,10 +207,77 @@ Measure first; do not change without a benchmark.
    Explorer/menu row too (it already swallowed every click on the panel)
    until Esc/Close — kept (user, `decisions.md`). InputField exception: kept
    (user, 2026-11-15) — `decisions.md` § By design; open thread removed.
-6. **C1** — tuikit list-editor page builder; convert the four property
-   sheets one per commit.
-7. **C2** — editor `applyKey` table.
-8. **C3/C4** — remaining long functions and file splits, opportunistic.
+6. ~~**C1** — tuikit list-editor page builder; convert the four property
+   sheets one per commit.~~
+   **DONE 2026-11-15**: tuikit `propsheet.ListEditor[E]` (`listeditor.go`):
+   grid + selection-follows-detail (commit before the cursor moves, view
+   kept), name field, Add/Remove with the standard hints, Revert that forgets
+   the selection *before* the caller's items revert, `Changed` hook for
+   cross-page publishing, `NewForm` wiring the commit hook. Items and pending
+   state stay in gossms (`pendingEdits`, collation-aware checks — tuikit
+   cannot import gosmo). Converted `rgIntPage` (pools + external pools),
+   `pageRGGroups`, `pageMailAccounts`, `pageMailProfiles`: −195 net lines in
+   gossms (+249 library). The ~1,200-line estimate was the four functions'
+   whole length; most of it is page-specific detail rows and apply, which
+   stay. Tests `TestListEditor*` (7), mutation-checked (commit on revert;
+   `SetData` redraw). All gossms tests pass unchanged. Driven on win10cli:
+   pool add (empty/duplicate `DEFAULT` hints), offered at once on Workload
+   Groups, group added in it, MAXDOP committed by the form hook → Script
+   Changes `CREATE RESOURCE POOL` / `CREATE WORKLOAD GROUP … WITH (MAX_DOP =
+   4) USING [c1pool]`; Mail account added and published to Profiles, profile
+   added, account linked, live rename redraws → script add account / add
+   profile / add profileaccount. Nothing applied. Behaviour change: the pool
+   pages now publish on selection moves too (no-op unless names changed). Not
+   split per commit — the user commits.
+7. ~~**C2** — editor `applyKey` table.~~
+   **DONE 2026-11-15**: tuikit `controls/editor/editor_input.go` —
+   `editorKeys` (`map[tcell.Key]keyBinding`: handler + `keyTrait` bits
+   arrow/motion/read-only/goal-column/not-typed) replaces the 240-line
+   switch; a key absent from it goes to `keyText` (typing, Ctrl+/,
+   Ctrl+Space). Handlers return a `keyOutcome` (acted / kept selection /
+   fired / unbound / declined) that the shared prologue/epilogue in
+   `applyKey` (now ~50 lines) acts on; `readOnlySafeKey` reads the table.
+   Backspace/Delete share `keyErase`, Up/Down `keyVertical`. No behaviour
+   change. 13 mutants of traits and outcomes run; 7 survived the existing
+   suite, so `editor_keys_test.go` adds `TestEditorPgDnKeepsTheGoalColumn`,
+   `TestEditorRawDelDoesNotOpenCompletion` (0x7f keeps `Str`, so it would
+   read as typed), `TestEditorShiftHomeExtendsTheSelection`,
+   `TestEditorKeysThatKeepTheSelection` — all 13 now killed. Driven in the
+   binary: auto-indent Enter, Ctrl+A/Tab/Backtab, Ctrl+D/L/Z, Ctrl+/,
+   Shift+Down/End + Backspace. Not done: exporting the table for the F1
+   help — its rows are keys, not modifier variants with descriptions, so it
+   can't generate help text without a second per-variant table; left until
+   someone wants it.
+8. ~~**C3/C4** — remaining long functions and file splits, opportunistic.~~
+   **DONE 2026-11-15**: C4 — the six files split by exact line range along
+   their sections, each verified line-for-line against the original:
+   `app_focus.go` (from `app.go`), `activity_monitor_toolbar.go`,
+   `new_endpoint_configure.go`, `fulltext_stoplist_props.go` +
+   `search_property_list_props.go` (from `fulltext_props.go`),
+   `query_store_report_loaders.go`, `backup_dialog_actions.go`; package-map
+   rows added, `readTimeoutSites` re-counted for the moved backup probe. C3 —
+   `buildSecurablesMatrix` → `securablesMatrix` struct, one method per
+   closure (select/load columns/candidates/add/search/dirty/revert/apply);
+   `pageDatabaseFiles` → `databaseFilesPage` likewise; `App.handleKey` →
+   routing plus `handleGlobalKey` (the shortcut switch); gosmo
+   `ScriptDatabaseObjectList` → `objectListBuild`, one method per documented
+   stage; `prefetchTables` → `tablePrefetchQuery` + `resultReaders`;
+   `buildDSN` → `setEntraDSNValues` + `setClassicDSNAuth`. No behaviour
+   change. Mutation runs found coverage gaps the closures already had; new
+   tests `TestSecurablesFilterMatchingNothingEmptiesThePermissions`,
+   `TestSecurablesShowAViewsExistingColumnGrant`,
+   `TestFilesPageKeepsAnExistingFilesTypeAndPath`,
+   `TestFilesPageGreysSizeForASelectedFilestreamFile` kill them. Still
+   surviving (not new, left): `ScriptDatabaseObjectList`'s `late` flag on a
+   non-inline function and the bare schemas' `IncludeIfNotExists` (no
+   offline test reaches the function; the live ones don't pin those two), and
+   Add's `selected = -1` reset on the Securables page (equivalent in every
+   path found). gosmo live: `TestLiveScriptDatabaseObjects*`,
+   `TestLiveRoundTrip*` and the `-short` suite on win10cli (17.0). Driven in
+   the binary on win10cli: Files page rename → Script Changes `MODIFY FILE
+   (… NEWNAME …)`; user Securables search/Add/cycle/Load Columns → `GRANT
+   SELECT ON [dbo].[Patients]`; F1, Ctrl+N, Ctrl+Shift+Left/Right, Alt+Z.
+   Nothing applied.
 9. **D1–D3** — benchmarks first; act only on evidence.
 10. **E2, E4** — classify globals; theme recolour.
 11. **E1** — tag tuikit and gosmo, drop `replace`, then release (user's

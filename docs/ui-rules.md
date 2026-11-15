@@ -98,7 +98,10 @@ which owns them; the entries here say how goSSMS applies them.
   and Remove keeps its rows in `pendingEdits` (`pending_edits.go`): the row
   type embeds `pendingState`, and the list owns dirty, visible, revert,
   add/remove and the collation-aware name checks the pages each used to
-  rewrite.
+  rewrite. When the page also has a detail form and a name field to add by,
+  the UI half is tuikit's `propsheet.ListEditor` (selection, commit before
+  the cursor moves, the Add/Remove/Revert flow and its hint) — Resource
+  Governor pools and groups, Database Mail accounts and profiles.
 - **A read-only page's grids browse, so their `OnSelectRow` runs there too.**
   `Form.SetReadOnly` leaves grids focusable and browse-only, and flat rows
   focusable only to be copied; everything else is inert, and the form reports
@@ -336,7 +339,8 @@ which owns them; the entries here say how goSSMS applies them.
   apply never moves them. (AG Listener Properties cleared pending addresses in
   its apply; after Script Changes the next Apply sent nothing.)
   - A grid-plus-detail page copies its editor into the model with
-    `form.SetCommit(commitCurrent)`, never by calling it in the apply: the
+    `form.SetCommit(commitCurrent)` (a `ListEditor` page: `list.NewForm`),
+    never by calling it in the apply: the
     host runs every form's hook on the UI goroutine before reading
     dirtiness (`PropDialog.runApply`/`runScript`, `newObjectDialog.runPipeline`).
   - A New-object dialog builds its request in `preflight` and the step

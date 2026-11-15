@@ -8,9 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/propsheet"
-	"github.com/radix29/tuikit/widgets"
 )
 
 // resource_governor_props_groups.go is Resource Governor Properties > Workload
@@ -235,25 +233,18 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 			if tempdb {
 				headers = append(headers, "Tempdb %", "Tempdb MB")
 			}
-			gridRows := func() [][]string {
-				vis := visible()
-				rows := make([][]string, len(vis))
-				for i, e := range vis {
-					v := e.cur
-					rows[i] = []string{
-						rgEditName(e.name, e.system, e.isNew), v.importance, grantPercentText(v.grant),
-						zeroAs(v.cpuSec, "Unlimited"), zeroAs(v.timeoutSec, "Default"),
-						zeroAs(v.maxDOP, "Default"), zeroAs(v.maxRequests, "Unlimited"), v.external,
-					}
-					if tempdb {
-						rows[i] = append(rows[i], orDefault(v.tempdbPercent, "None"), orDefault(v.tempdbMB, "None"))
-					}
+			cells := func(e *rgGroupEdit) []string {
+				v := e.cur
+				row := []string{
+					rgEditName(e.name, e.system, e.isNew), v.importance, grantPercentText(v.grant),
+					zeroAs(v.cpuSec, "Unlimited"), zeroAs(v.timeoutSec, "Default"),
+					zeroAs(v.maxDOP, "Default"), zeroAs(v.maxRequests, "Unlimited"), v.external,
 				}
-				return rows
+				if tempdb {
+					row = append(row, orDefault(v.tempdbPercent, "None"), orDefault(v.tempdbMB, "None"))
+				}
+				return row
 			}
-			grid := controls.NewDataGrid()
-			grid.SetData(headers, gridRows())
-			grid.SetCellCursor(true)
 
 			selectedRow := propsheet.Static("Name", "")
 			importanceRow := propsheet.Select("Importance", rgImportanceItems, 1)
@@ -275,7 +266,6 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 			}
 			selectRows := []*propsheet.SelectRow{importanceRow, moveRow, externalRow}
 
-			var current *rgGroupEdit
 			// valid reads a detail row's value only when it validates; a value it would
 			// refuse leaves the group as it was.
 			valid := func(row *propsheet.TextRow) (string, bool) {
@@ -286,11 +276,11 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 					*dst = int(n)
 				}
 			}
-			commitCurrent := func() {
-				if current == nil || current.locked {
+			commit := func(e *rgGroupEdit) {
+				if e.locked {
 					return
 				}
-				v := &current.cur
+				v := &e.cur
 				v.importance = importanceRow.Value()
 				if s, ok := valid(grantRow); ok {
 					v.grant, _ = strconv.ParseFloat(s, 64)
@@ -311,20 +301,15 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 					v.tempdbMB = s
 				}
 			}
-			syncFromSelection := func() {
-				vis := visible()
-				current = nil
-				if i := grid.SelectedRow(); i >= 0 && i < len(vis) {
-					current = vis[i]
-				}
-				locked := current == nil || current.locked
+			show := func(e *rgGroupEdit) {
+				locked := e == nil || e.locked
 				for _, row := range textRows {
 					row.SetReadOnly(locked)
 				}
 				for _, row := range selectRows {
 					row.SetReadOnly(locked)
 				}
-				if current == nil {
+				if e == nil {
 					// Nothing selected (a pool with no groups): blank, not the last group's settings
 					// under no name.
 					selectedRow.SetValue("")
@@ -333,8 +318,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 					}
 					return
 				}
-				v := current.cur
-				selectedRow.SetValue(rgEditName(current.name, current.system, current.isNew))
+				v := e.cur
+				selectedRow.SetValue(rgEditName(e.name, e.system, e.isNew))
 				items, i := preservingItems(rgImportanceItems, v.importance)
 				importanceRow.SetItems(items)
 				importanceRow.SetSelected(i)
@@ -352,27 +337,19 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				tempdbPctRow.SetValue(v.tempdbPercent)
 				tempdbMBRow.SetValue(v.tempdbMB)
 			}
-			if i := slices.IndexFunc(visible(), func(e *rgGroupEdit) bool { return e.name == focus.group }); i > 0 {
-				grid.SetSelectedRow(i)
-			}
-			reload := wireGridEditor(grid, headers, gridRows, commitCurrent, syncFromSelection)
-			reselect := func(row int) {
-				current = nil
-				resetGrid(grid, headers, gridRows(), row)
-				syncFromSelection()
-			}
-			hint := propsheet.Hint()
+
+			var list *propsheet.ListEditor[*rgGroupEdit]
 			// warnRemoved says so when the pool listed is one the Resource Pools page
 			// removes: its groups must move out first.
 			warnRemoved := func() {
 				if shown := poolRow.Value(); !slices.Contains(poolNames, shown) {
-					hint.Set(shown + " is removed on the Resource Pools page; move its groups to another pool.")
+					list.Hint().Set(shown + " is removed on the Resource Pools page; move its groups to another pool.")
 				}
 			}
 			refreshPools := func() {
-				commitCurrent()
+				list.Commit()
 				readModel()
-				shown, row := poolRow.Value(), grid.SelectedRow()
+				shown, row := poolRow.Value(), list.Grid().SelectedRow()
 				listed := rgListedPools(poolNames, edits.all())
 				poolRow.SetItems(listed)
 				if i := slices.Index(listed, shown); i >= 0 {
@@ -381,83 +358,71 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 					poolRow.SetSelected(max(slices.Index(listed, "default"), 0))
 					row = 0
 				}
-				reselect(max(min(row, len(visible())-1), 0))
+				list.Reselect(max(min(row, len(visible())-1), 0))
 				warnRemoved()
 			}
+			list = propsheet.NewListEditor(propsheet.ListEditorSpec[*rgGroupEdit]{
+				Noun:       "workload group",
+				NameLabel:  "New workload group",
+				NameWidth:  24,
+				Headers:    headers,
+				GridHeight: 9,
+				Items:      visible,
+				Cells:      cells,
+				Initial:    func(e *rgGroupEdit) bool { return e.name == focus.group },
+				Show:       show,
+				Commit:     commit,
+				Add: func(name string) (string, bool) {
+					pool := poolRow.Value()
+					switch {
+					case pool == "internal":
+						return "The internal pool takes no workload groups; pick another pool above.", false
+					case edits.taken(name):
+						// Names are unique server-wide, not per pool.
+						return "A workload group named " + name + " already exists.", false
+					}
+					def := rgGroupDefaults(pool)
+					edits.add(&rgGroupEdit{name: name, orig: def, cur: def})
+					return "", true
+				},
+				Remove: func(e *rgGroupEdit) (string, bool) {
+					if e.system {
+						return e.name + " is built in and cannot be removed.", false
+					}
+					edits.remove(e)
+					return "", true
+				},
+				Dirty: edits.dirty,
+				Revert: func() {
+					edits.revert()
+					// A reverted group may be back in a pool no longer listed.
+					refreshPools()
+				},
+			})
 
 			// Listing another pool, and moving the selected group to one, both change which
 			// groups the grid holds.
 			poolRow.SetOnChange(func(string) {
-				commitCurrent()
-				hint.Clear()
-				reselect(0)
+				list.Commit()
+				list.Hint().Clear()
+				list.Reselect(0)
 				warnRemoved()
 			})
 			moveRow.SetOnChange(func(to string) {
-				if current == nil {
+				cur := list.Current()
+				if cur == nil {
 					return
 				}
-				name := current.name
-				i := grid.SelectedRow()
-				commitCurrent()
-				hint.Set(name + " moves to " + to + " on Apply; it is listed under that pool now.")
-				reselect(min(i, len(visible())-1))
-			})
-
-			gridRow := propsheet.NewGridRow(grid, 9)
-			gridRow.DirtyFn = edits.dirty
-			gridRow.RevertFn = func() {
-				edits.revert()
-				current = nil
-				reload()
-				// A reverted group may be back in a pool no longer listed.
-				refreshPools()
-			}
-
-			nameField := propsheet.Text("New workload group", "", 24)
-			addBtn := widgets.NewButton("Add", func() {
-				commitCurrent()
-				name, pool := nameField.Value(), poolRow.Value()
-				switch {
-				case name == "":
-					hint.Set("Type a name for the new workload group first.")
-					return
-				case pool == "internal":
-					hint.Set("The internal pool takes no workload groups; pick another pool above.")
-					return
-				case edits.taken(name):
-					// Names are unique server-wide, not per pool.
-					hint.Set("A workload group named " + name + " already exists.")
-					return
-				}
-				hint.Clear()
-				def := rgGroupDefaults(pool)
-				edits.add(&rgGroupEdit{name: name, orig: def, cur: def})
-				nameField.SetValue("")
-				reselect(len(visible()) - 1)
-			})
-			removeBtn := widgets.NewButton("Remove", func() {
-				commitCurrent()
-				vis := visible()
-				i := grid.SelectedRow()
-				if i < 0 || i >= len(vis) {
-					hint.Set("Select a workload group in the grid above to remove it.")
-					return
-				}
-				e := vis[i]
-				if e.system {
-					hint.Set(e.name + " is built in and cannot be removed.")
-					return
-				}
-				hint.Clear()
-				edits.remove(e)
-				reselect(min(i, len(visible())-1))
+				i := list.Grid().SelectedRow()
+				list.Commit()
+				list.Hint().Set(cur.name + " moves to " + to + " on Apply; it is listed under that pool now.")
+				list.Reselect(min(i, len(visible())-1))
 			})
 
 			rows := []propsheet.Row{
 				propsheet.Section("Workload groups"),
 				poolRow,
-				gridRow,
+				list.GridRow(),
 				propsheet.Section("Selected workload group"),
 				selectedRow,
 				importanceRow, grantRow, cpuRow, timeoutRow, dopRow, requestsRow,
@@ -467,11 +432,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				rows = append(rows, tempdbPctRow, tempdbMBRow,
 					propsheet.Note("Tempdb data limits: blank is no limit."))
 			}
+			rows = append(rows, list.AddRemoveRows()...)
 			rows = append(rows,
-				propsheet.Section("Add or remove"),
-				nameField,
-				propsheet.Buttons(addBtn, removeBtn),
-				hint,
 				propsheet.Note("A new group is added to the pool listed above. internal accepts no changes; default and internal cannot be removed. 0 means unlimited, or the server's own value, for CPU time, timeout, DOP and requests."),
 				propsheet.Note("Pools added on the Resource Pools and External Pools pages are offered here at once."),
 			)
@@ -514,9 +476,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				}
 				return nil
 			}
-			form := propsheet.NewForm(rows...)
-			form.SetCommit(commitCurrent)
-			return form, apply, nil
+			return list.NewForm(rows...), apply, nil
 		},
 	}
 }

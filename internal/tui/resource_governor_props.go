@@ -11,7 +11,6 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/propsheet"
 	"github.com/radix29/tuikit/widgets"
 )
@@ -620,27 +619,11 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				return out
 			}
 			spec.names.set(published())
-			publish := func() { spec.names.publish(published()) }
 			headers := []string{"Name"}
 			for _, f := range spec.fields {
 				headers = append(headers, f.header)
 			}
 			headers = append(headers, "Affinity")
-			gridRows := func() [][]string {
-				vis := visible()
-				rows := make([][]string, len(vis))
-				for i, e := range vis {
-					row := []string{rgEditName(e.name, e.system, e.isNew)}
-					for _, v := range e.cur {
-						row = append(row, strconv.Itoa(v))
-					}
-					rows[i] = append(row, e.affinityText())
-				}
-				return rows
-			}
-			grid := controls.NewDataGrid()
-			grid.SetData(headers, gridRows())
-			grid.SetCellCursor(true)
 
 			detail := make([]*propsheet.TextRow, len(spec.fields))
 			for i, f := range spec.fields {
@@ -648,102 +631,70 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			}
 			selectedRow := propsheet.Static("Name", "")
 
-			var current *rgIntEdit
-			// commitCurrent folds the detail rows into the selected pool. A value the row
-			// would not validate stays what it was.
-			commitCurrent := func() {
-				aff.commit(current)
-				if current == nil || current.locked {
-					return
-				}
-				for i, row := range detail {
-					if n, err := row.IntValue(); err == nil && row.Validate() == nil {
-						current.cur[i] = int(n)
+			list := propsheet.NewListEditor(propsheet.ListEditorSpec[*rgIntEdit]{
+				Noun:       spec.noun,
+				NameWidth:  24,
+				Headers:    headers,
+				GridHeight: min(len(loaded)+4, 10),
+				Items:      visible,
+				Cells: func(e *rgIntEdit) []string {
+					row := []string{rgEditName(e.name, e.system, e.isNew)}
+					for _, v := range e.cur {
+						row = append(row, strconv.Itoa(v))
 					}
-				}
-			}
-			syncFromSelection := func() {
-				vis := visible()
-				current = nil
-				if i := grid.SelectedRow(); i >= 0 && i < len(vis) {
-					current = vis[i]
-				}
-				if current == nil {
-					selectedRow.SetValue("")
-				} else {
-					selectedRow.SetValue(rgEditName(current.name, current.system, current.isNew))
-				}
-				for i, row := range detail {
-					if current != nil {
-						row.SetValue(strconv.Itoa(current.cur[i]))
+					return append(row, e.affinityText())
+				},
+				Initial: func(e *rgIntEdit) bool { return e.name == spec.focus },
+				// A value a detail row would not validate stays what it was.
+				Commit: func(e *rgIntEdit) {
+					aff.commit(e)
+					if e.locked {
+						return
 					}
-					row.SetReadOnly(current == nil || current.locked)
-				}
-				aff.show(current)
-			}
-			if i := slices.IndexFunc(visible(), func(e *rgIntEdit) bool { return e.name == spec.focus }); i > 0 {
-				grid.SetSelectedRow(i)
-			}
-			reload := wireGridEditor(grid, headers, gridRows, commitCurrent, syncFromSelection)
-			// reselect moves the cursor to row after a change to the row set.
-			reselect := func(row int) {
-				current = nil
-				resetGrid(grid, headers, gridRows(), row)
-				syncFromSelection()
-			}
-
-			gridRow := propsheet.NewGridRow(grid, min(len(loaded)+4, 10))
-			gridRow.DirtyFn = edits.dirty
-			gridRow.RevertFn = func() {
-				edits.revert()
-				current = nil
-				reload()
-				publish()
-			}
-
-			nameField := propsheet.Text("New "+spec.noun, "", 24)
-			hint := propsheet.Hint()
-			addBtn := widgets.NewButton("Add", func() {
-				commitCurrent()
-				name := nameField.Value()
-				if name == "" {
-					hint.Set("Type a name for the new " + spec.noun + " first.")
-					return
-				}
-				if edits.taken(name) {
-					hint.Set("A " + spec.noun + " named " + name + " is already listed.")
-					return
-				}
-				hint.Clear()
-				def := spec.defaults()
-				auto := rgAffinity{auto: true}
-				edits.add(&rgIntEdit{name: name, orig: def, cur: slices.Clone(def), origAff: auto, curAff: auto})
-				nameField.SetValue("")
-				reselect(len(visible()) - 1)
-				publish()
-			})
-			removeBtn := widgets.NewButton("Remove", func() {
-				commitCurrent()
-				vis := visible()
-				i := grid.SelectedRow()
-				if i < 0 || i >= len(vis) {
-					hint.Set("Select a " + spec.noun + " in the grid above to remove it.")
-					return
-				}
-				e := vis[i]
-				if e.system {
-					hint.Set(e.name + " is built in and cannot be removed.")
-					return
-				}
-				hint.Clear()
-				edits.remove(e)
-				reselect(min(i, len(visible())-1))
-				publish()
+					for i, row := range detail {
+						if n, err := row.IntValue(); err == nil && row.Validate() == nil {
+							e.cur[i] = int(n)
+						}
+					}
+				},
+				Show: func(e *rgIntEdit) {
+					if e == nil {
+						selectedRow.SetValue("")
+					} else {
+						selectedRow.SetValue(rgEditName(e.name, e.system, e.isNew))
+					}
+					for i, row := range detail {
+						if e != nil {
+							row.SetValue(strconv.Itoa(e.cur[i]))
+						}
+						row.SetReadOnly(e == nil || e.locked)
+					}
+					aff.show(e)
+				},
+				Add: func(name string) (string, bool) {
+					if edits.taken(name) {
+						return "A " + spec.noun + " named " + name + " is already listed.", false
+					}
+					def := spec.defaults()
+					auto := rgAffinity{auto: true}
+					edits.add(&rgIntEdit{name: name, orig: def, cur: slices.Clone(def), origAff: auto, curAff: auto})
+					return "", true
+				},
+				Remove: func(e *rgIntEdit) (string, bool) {
+					if e.system {
+						return e.name + " is built in and cannot be removed.", false
+					}
+					edits.remove(e)
+					return "", true
+				},
+				Dirty:   edits.dirty,
+				Revert:  edits.revert,
+				Changed: func() { spec.names.publish(published()) },
 			})
 
 			rows := []propsheet.Row{
 				propsheet.Section(spec.title),
-				gridRow,
+				list.GridRow(),
 				propsheet.Section("Selected " + spec.noun),
 				selectedRow,
 			}
@@ -751,12 +702,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				rows = append(rows, row)
 			}
 			rows = append(rows, aff.rows()...)
-			rows = append(rows,
-				propsheet.Section("Add or remove"),
-				nameField,
-				propsheet.Buttons(addBtn, removeBtn),
-				hint,
-			)
+			rows = append(rows, list.AddRemoveRows()...)
 			for _, n := range spec.notes {
 				rows = append(rows, propsheet.Note(n))
 			}
@@ -788,9 +734,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				}
 				return nil
 			}
-			form := propsheet.NewForm(rows...)
-			form.SetCommit(commitCurrent)
-			return form, apply, nil
+			return list.NewForm(rows...), apply, nil
 		},
 	}
 }

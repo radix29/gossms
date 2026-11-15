@@ -292,6 +292,7 @@ gossms/
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
 │       ├── app_events.go         # key/mouse dispatch, resize/redraw, top-level event loop plumbing
+│       ├── app_focus.go          # which half has the keyboard (appFocus): Explorer/panels focus, Ctrl+Tab cycle, next/prev/jump panel with focus-visual resync
 │       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping, activeServerConn/selectedServerConn helpers
 │       ├── app_peer_creds.go     # App's db.PeerCredentials answer: which saved connection to reach a given instance with
 │       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Take Offline/Bring Online/Restore With Recovery task consumer
@@ -388,6 +389,7 @@ gossms/
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
 │       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
 │       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
+│       ├── activity_monitor_toolbar.go # toolbar cells per tab (rate, Pause/Continue, Refresh), overflow menu, and the collection-state summary and dashboard header
 │       ├── chart_tooltip.go      # the pinned chart readout box itself, shared by Activity Monitor and the Detail Browser's disk-usage strip
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid, Kill Process
 │       │
@@ -421,6 +423,7 @@ gossms/
 │       │
 │       │  ── Query Store ──
 │       ├── query_store_reports.go     # the seven SSMS views: one table of title/description/default statistic/loader, and the typed rows (qsResult) both surfaces render — the Detail Browser's grid and the panel's chart
+│       ├── query_store_report_loaders.go # each view's loader (gosmo report → qsResult), the Query-Store-off rows, and the metric/statistic value formatting they share
 │       ├── query_store_panel.go       # QueryStorePanel state, construction and layout: the selectors' current values, the grids and the two splitters; implements layout.Panel
 │       ├── query_store_panel_toolbar.go # the two tool rows: each cell's label, its disabled reason, and the menu each selector pops
 │       ├── query_store_panel_load.go  # the report read: the options the selections come to, the tracked-query set, the load, the plan pane's own read and the summary line
@@ -543,7 +546,8 @@ gossms/
 │       ├── ag_listener_props.go             # Availability Group Listener Properties: port and added addresses, the only two things MODIFY LISTENER can change
 │       ├── new_ag_dialog.go                  # New Availability Group: prefetch, shared page state, and the CREATE/JOIN/GRANT pipeline across three instances
 │       ├── new_ag_pages.go                   # New Availability Group's General and Backup Preferences pages; the cluster-type/failover-mode rules
-│       ├── new_endpoint_dialog.go            # New Database Mirroring Endpoint: master key, certificate and login per instance, and the public-certificate exchange between them
+│       ├── new_endpoint_dialog.go            # New Database Mirroring Endpoint: the dialog, its pages and per-instance list, validation
+│       ├── new_endpoint_configure.go         # its pipeline: master key, certificate and login per instance, the public-certificate exchange between them, endpoint creation, annotated Script Changes
 │       ├── database_props.go               # Database Properties: General/Owner page definitions
 │       ├── database_props_files.go          # Database Properties > Files page
 │       ├── database_props_filegroups.go     # Database Properties > Filegroups page
@@ -603,7 +607,9 @@ gossms/
 │       ├── replication_monitor_panel_load.go # its reads (snapshot of every distribution database, an agent's sessions, a session's actions with MSrepl_errors detail), selection kept by key across refreshes, the refresh timer
 │       ├── replication_monitor_panel_draw.go # its toolbar (Refresh, Auto refresh, History window, Failed sessions only) and drawing
 │       ├── replication_monitor_panel_input.go # HandleKey/HandleMouse: Tab through the grids, splitter keys, gesture zones
-│       ├── fulltext_props.go     # Full-Text Catalog (General: set default; Maintenance: Optimize/Rebuild with accent sensitivity; Tables/Views), Stoplist (General, Stopwords: add/remove words and languages) and Search Property List (General, Properties: register/remove) Properties, plus the owner and language pickers the full-text dialogs share
+│       ├── fulltext_props.go     # Full-Text Catalog Properties (General: set default; Maintenance: Optimize/Rebuild with accent sensitivity; Tables/Views), plus the owner and language pickers the full-text dialogs share
+│       ├── fulltext_stoplist_props.go # Full-Text Stoplist Properties (General, Stopwords: add/remove words and languages)
+│       ├── search_property_list_props.go # Search Property List Properties (General, Properties: register/remove)
 │       ├── fulltext_index_props.go # a table's Full-Text Index Properties (General: change tracking, stoplist, property list; Columns: add/remove) and the column editor New Full-Text Index shares
 │       ├── fulltext_index_ops.go # the table's Full-Text index cascade actions — Enable/Disable, Delete, Start Full/Incremental and Stop Population, Track Changes, Apply Tracked Changes — each refused or confirmed on a fresh read of the index; the population it starts followed in Background Tasks
 │       ├── replication_props.go  # read-only Publication (General, Articles, Filter Rows, Snapshot, Subscription Options, Subscriptions) and Subscription (General, Agent, Synchronization) Properties
@@ -653,6 +659,7 @@ gossms/
 │       ├── backup_dialog.go      # Back Up Database dialog — options form + in-place progress
 │       ├── backup_dialog_draw.go # Back Up Database rendering
 │       ├── backup_dialog_input.go # Back Up Database HandleKey/HandleMouse
+│       ├── backup_dialog_actions.go # Back Up Database actions: browse destination, Validate, Script, Start Backup (destination check, run, verify), button dispatch
 │       ├── restore_dialog.go     # Restore Database dialog — options form, backup-set inspection
 │       ├── restore_dialog_draw.go  # Restore Database rendering
 │       ├── restore_dialog_input.go # Restore Database HandleKey/HandleMouse

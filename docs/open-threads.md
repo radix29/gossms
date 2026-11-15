@@ -63,6 +63,11 @@ support); this section covers only the environment.
   `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
   Document's keyword case (below) waits on the same instance.
+- **Two gosmo live tests fail only inside the full `-short` run on
+  win10cli** (2026-11-15, 20 min): `TestLiveStartTime` and
+  `TestLiveReplicationMonitor` both failed there and both passed run alone
+  straight after. Unexplained; the failure text was lost to the run's
+  filter. Rerun them in the full suite with `-v` before trusting a failure.
 
 ## Picture viewer: what is left
 
