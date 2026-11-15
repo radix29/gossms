@@ -541,25 +541,32 @@ func loadSynonymsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 
 func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	tableFQN := gosmo.QualifiedName(node.data.Schema, node.data.Name)
-	return []controls.MenuItem{
+	items := []controls.MenuItem{
 		newQuery,
 		{Divider: true},
 		{Label: "Select Top 1000 Rows", Action: func() {
 			a.openQueryWithTextAndExecute(sc, node.data.DBName, "SELECT TOP 1000 *\nFROM "+tableFQN)
 		}},
 		{Divider: true},
-		{Label: "Rebuild All Indexes", Action: func() {
+	}
+	if sc == nil || !sc.IsFabricDW {
+		items = append(items, controls.MenuItem{Label: "Rebuild All Indexes", Action: func() {
 			a.openQueryWithText(sc, node.data.DBName, "ALTER INDEX ALL ON "+tableFQN+" REBUILD")
-		}},
-		{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
-		{Divider: true},
-		tableFullTextMenu(a, sc, node),
-		{Divider: true},
+		}})
+	}
+	items = append(items,
+		controls.MenuItem{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
+		controls.MenuItem{Divider: true},
+	)
+	if sc == nil || !sc.IsFabricDW {
+		items = append(items, tableFullTextMenu(a, sc, node), controls.MenuItem{Divider: true})
+	}
+	return append(items,
 		refresh,
-		{Label: "Properties...", Action: func() {
+		controls.MenuItem{Label: "Properties...", Action: func() {
 			a.showTablePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
 		}},
-	}
+	)
 }
 
 func viewMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
