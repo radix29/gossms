@@ -160,6 +160,116 @@ func TestFabricDWServerFoldersAreConnectionScoped(t *testing.T) {
 	}
 }
 
+func TestFabricDWTableMenuHidesUnsupportedActions(t *testing.T) {
+	a := newTestApp()
+	fabric := &db.ServerConn{IsFabricDW: true}
+	sql := &db.ServerConn{}
+	standard := []string{"New Query", "|", "Select Top 1000 Rows", "|",
+		"Rebuild All Indexes", "View Dependencies", "|", "Full-Text index", "|", "Refresh", "Properties..."}
+	fabricMenu := []string{"New Query", "|", "Select Top 1000 Rows", "|",
+		"View Dependencies", "|", "Refresh", "Properties..."}
+	for _, sc := range []*db.ServerConn{sql, fabric, sql, nil} {
+		node := &explorerNode{data: nodeData{Type: NodeTable, DBName: "AppDB", Schema: "dbo", Name: "Orders", conn: sc}}
+		items := a.nodeMenuItems(node)
+		var got []string
+		for _, item := range items {
+			label := item.Label
+			if item.Divider {
+				label = "|"
+			}
+			got = append(got, label)
+		}
+		want := standard
+		isFabricDW := sc != nil && sc.IsFabricDW
+		if isFabricDW {
+			want = fabricMenu
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("IsFabricDW=%v: menu = %v, want %v", isFabricDW, got, want)
+		}
+	}
+}
+
+func TestFabricDWDatabaseMenuHidesUnsupportedActions(t *testing.T) {
+	a := newTestApp()
+	sql, _ := newGConn(t)
+	fabric, _ := newGConn(t)
+	fabric.IsFabricDW = true
+	for _, sc := range []*db.ServerConn{sql, fabric, sql} {
+		node := &explorerNode{data: nodeData{Type: NodeDatabase, DBName: "AppDB", DBState: "ONLINE", conn: sc}}
+		items := a.contextMenuItemsForNode(node)
+		for _, label := range []string{"Back Up Database...", "Restore Database...", "View Backup History",
+			"Rename...", "Delete...", "Shrink"} {
+			if present := findMenuItem(items, label) != nil; present == sc.IsFabricDW {
+				t.Errorf("IsFabricDW=%v: %q present=%v", sc.IsFabricDW, label, present)
+			}
+		}
+		for _, label := range []string{"New Query", "Generate Scripts...", "Script Database Security", "Refresh", "Properties..."} {
+			if findMenuItem(items, label) == nil {
+				t.Errorf("IsFabricDW=%v: supported item %q is missing", sc.IsFabricDW, label)
+			}
+		}
+		table := &explorerNode{data: nodeData{Type: NodeTable, DBName: "AppDB", Schema: "dbo", Name: "Orders", conn: sc}}
+		tableItems := a.contextMenuItemsForNode(table)
+		for _, label := range []string{"Rename...", "Delete..."} {
+			if findMenuItem(tableItems, label) == nil {
+				t.Errorf("IsFabricDW=%v: table lost %q", sc.IsFabricDW, label)
+			}
+		}
+	}
+}
+
+func TestFabricDWDatabasesMenuHidesBackupRestore(t *testing.T) {
+	a := newTestApp()
+	fabric := &db.ServerConn{IsFabricDW: true}
+	sql := &db.ServerConn{}
+	for _, sc := range []*db.ServerConn{sql, fabric, sql, nil} {
+		node := &explorerNode{data: nodeData{Type: NodeDatabases, conn: sc}}
+		var got []string
+		for _, item := range a.nodeMenuItems(node) {
+			label := item.Label
+			if item.Divider {
+				label = "|"
+			}
+			got = append(got, label)
+		}
+		want := []string{"New Query", "|", "New Database...", "Attach Database...", "|",
+			"Back Up Database...", "Restore Database...", "|", "Refresh"}
+		isFabricDW := sc != nil && sc.IsFabricDW
+		if isFabricDW {
+			want = []string{"New Query", "|", "New Database...", "Attach Database...", "|", "Refresh"}
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("IsFabricDW=%v: menu = %v, want %v", isFabricDW, got, want)
+		}
+	}
+}
+
+func TestFabricDWUsersMenuHidesNewUser(t *testing.T) {
+	a := newTestApp()
+	fabric := &db.ServerConn{IsFabricDW: true}
+	sql := &db.ServerConn{}
+	for _, sc := range []*db.ServerConn{sql, fabric, sql, nil} {
+		node := &explorerNode{data: nodeData{Type: NodeUsers, DBName: "AppDB", conn: sc}}
+		var got []string
+		for _, item := range a.nodeMenuItems(node) {
+			label := item.Label
+			if item.Divider {
+				label = "|"
+			}
+			got = append(got, label)
+		}
+		want := []string{"New Query", "|", "New User...", "|", "Refresh"}
+		isFabricDW := sc != nil && sc.IsFabricDW
+		if isFabricDW {
+			want = []string{"New Query", "|", "Refresh"}
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("IsFabricDW=%v: menu = %v, want %v", isFabricDW, got, want)
+		}
+	}
+}
+
 func TestFabricDWObjectFoldersAreConnectionScoped(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

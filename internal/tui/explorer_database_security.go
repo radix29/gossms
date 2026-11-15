@@ -274,6 +274,9 @@ func dbCreateFolderMenu(sc *db.ServerConn, node *explorerNode, newQuery, refresh
 // user's own writes do (explorerObjectRights' NodeUser entry): CREATE USER
 // needs ALTER ANY USER, which ALTER and CONTROL on the database both imply.
 func usersMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	if sc != nil && sc.IsFabricDW {
+		return []controls.MenuItem{newQuery, {Divider: true}, refresh}
+	}
 	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New User...",
 		func() { a.showNewUserDialog(sc, node) }, gate.AlterAnyUser)
 }

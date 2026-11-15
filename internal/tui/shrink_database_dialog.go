@@ -27,9 +27,9 @@ import (
 // it can still use, as Script Changes on a read-only page is. Offered on an
 // ONLINE, writable database only — DBCC SHRINK* needs the database open (the
 // dialogs' size reads go through a USE) and fails on a read-only one, so the
-// script could only fail.
+// script could only fail. Fabric DW does not support shrinking.
 func shrinkMenuItem(a *App, sc *db.ServerConn, node *explorerNode) (controls.MenuItem, bool) {
-	if node.data.DBState != gosmo.DatabaseOnline || node.data.DBReadOnly {
+	if node.data.DBState != gosmo.DatabaseOnline || node.data.DBReadOnly || (sc != nil && sc.IsFabricDW) {
 		return controls.MenuItem{}, false
 	}
 	dbName := node.data.DBName

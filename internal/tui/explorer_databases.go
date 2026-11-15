@@ -312,33 +312,40 @@ func serverMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, re
 }
 
 func databasesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
+	items := []controls.MenuItem{
 		newQuery,
 		{Divider: true},
 		gate.Item(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
 			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase),
 		gateAzure(gate.Item(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
 			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase), sc),
-		{Divider: true},
-		{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
-		{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
-		{Divider: true},
-		refresh,
 	}
+	if sc == nil || !sc.IsFabricDW {
+		items = append(items,
+			controls.MenuItem{Divider: true},
+			controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
+			controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
+		)
+	}
+	return append(items, controls.MenuItem{Divider: true}, refresh)
 }
 
 func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	items := []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate.Item(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
-			sc, node.data.DBName, gate.BackupDatabase, gate.AlterAnyDatabase),
-		gate.Item(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
-			sc, node.data.DBName, gate.ControlDB, gate.AlterAnyDatabase, gate.CreateAnyDatabase),
-		{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
-		// Reads the catalog and opens a script; nothing runs, so it is not gated.
-		{Label: "Generate Scripts...", Action: func() { a.showGenerateScriptsFor(sc, node.data.DBName) }},
 	}
+	if sc == nil || !sc.IsFabricDW {
+		items = append(items,
+			gate.Item(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
+				sc, node.data.DBName, gate.BackupDatabase, gate.AlterAnyDatabase),
+			gate.Item(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
+				sc, node.data.DBName, gate.ControlDB, gate.AlterAnyDatabase, gate.CreateAnyDatabase),
+			controls.MenuItem{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
+		)
+	}
+	// Reads the catalog and opens a script; nothing runs, so it is not gated.
+	items = append(items, controls.MenuItem{Label: "Generate Scripts...", Action: func() { a.showGenerateScriptsFor(sc, node.data.DBName) }})
 	// SSMS offers neither Take Offline nor Bring Online on a distribution
 	// database: offline, it stops every distribution and cleanup agent.
 	// ALTER DATABASE ... SET OFFLINE is Msg 5008 on an Azure edition, so the

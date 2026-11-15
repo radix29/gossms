@@ -24,6 +24,9 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 		return nil
 	}
 	sc, dbName := resolveConn(node), node.data.DBName
+	if node.data.Type == NodeDatabase && sc != nil && sc.IsFabricDW {
+		return nil
+	}
 	groups := objectDataRightGroups(node.data)
 	schema, object := objectOpSchema(node), objectOpName(node)
 
