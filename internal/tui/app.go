@@ -651,103 +651,6 @@ func registerDialog[T Dialog](a *App, d T) T {
 	return d
 }
 
-// appFocus names which half of the window has the keyboard: Object Explorer or
-// the panel area.
-type appFocus int
-
-const (
-	focusOnExplorer appFocus = iota
-	focusOnPanels
-)
-
-func (f appFocus) String() string {
-	if f == focusOnPanels {
-		return "panels"
-	}
-	return "explorer"
-}
-
-func (a *App) focusExplorer() {
-	a.focus = focusOnExplorer
-	a.explorer.Focus(true)
-	a.syncActivePanelFocus()
-}
-
-func (a *App) focusPanels() {
-	a.focus = focusOnPanels
-	a.explorer.Focus(false)
-	a.syncActivePanelFocus()
-}
-
-// syncActivePanelFocus keeps the visible panel's Activatable state (title bar
-// highlight, cursor visibility) in sync with a.focus. PanelManager knows
-// nothing about a.focus and calls SetActive only when its own active index
-// changes, so anything that changes the active panel while a.focus stays
-// focusOnExplorer (nextPanel/prevPanel) must call this, or the new panel shows as
-// focused while Object Explorer holds real keyboard focus.
-func (a *App) syncActivePanelFocus() {
-	if p, ok := a.panels.ActivePanel().(layout.Activatable); ok {
-		p.SetActive(a.focus == focusOnPanels)
-	}
-}
-
-// cycleFocus advances keyboard focus one step (Ctrl+Tab): Object Explorer ->
-// the active query panel's editor -> its results pane -> Object Explorer. A
-// non-query panel, or a query panel with no results yet, offers no middle stop
-// and degrades to a two-way explorer/panels toggle.
-func (a *App) cycleFocus() {
-	qp := a.activeQueryPanel()
-	switch {
-	case a.focus == focusOnExplorer:
-		a.focusPanels()
-		if qp != nil {
-			qp.setResultsFocused(false)
-		}
-	case qp != nil && !qp.resultsFocused && qp.result != nil:
-		qp.setResultsFocused(true)
-	default:
-		a.focusExplorer()
-	}
-}
-
-// cycleFocusReverse is cycleFocus backwards (Ctrl+Shift+Tab): Object Explorer
-// -> results pane -> editor -> Object Explorer. Degrades the same way.
-func (a *App) cycleFocusReverse() {
-	qp := a.activeQueryPanel()
-	switch {
-	case a.focus == focusOnExplorer:
-		a.focusPanels()
-		if qp != nil {
-			qp.setResultsFocused(qp.result != nil)
-		}
-	case qp != nil && qp.resultsFocused:
-		qp.setResultsFocused(false)
-	default:
-		a.focusExplorer()
-	}
-}
-
-// nextPanel and prevPanel run the tab-bar's Next/Prev panel action
-// (Ctrl+Shift+Right/Left and the View menu), wrapping PanelManager.Next/Prev
-// and re-syncing focus visuals, since they can fire while a.focus ==
-// focusOnExplorer.
-func (a *App) nextPanel() {
-	a.panels.Next()
-	a.syncActivePanelFocus()
-}
-
-func (a *App) prevPanel() {
-	a.panels.Prev()
-	a.syncActivePanelFocus()
-}
-
-// jumpToPanel switches to panel i, counted from the left (Ctrl+0..9; 0 is
-// always Object Explorer Details). Out-of-range i is a silent no-op.
-func (a *App) jumpToPanel(i int) {
-	a.panels.SetActiveIndex(i)
-	a.syncActivePanelFocus()
-}
-
 // layoutAll recalculates every region from current screen size.
 func (a *App) layoutAll() {
 	// Dialogs first, and above the too-small guard: a dialog that outgrows the
@@ -795,7 +698,11 @@ func (a *App) draw() {
 	if n := a.runningTaskCount(); n > 0 {
 		connInfo += fmt.Sprintf("  |  %d task%s running", n, pluralSuffix(n))
 	}
-	core.DrawTextClipped(s, 1, h-statusH, w-2, statusStyle, a.statusText+connInfo)
+	// DrawTextLine, not DrawTextClipped: a status can carry an error joined
+	// from several (a write's, then the failed repair after it — see
+	// Task.repairNote), and DrawTextClipped drops the line break, running the
+	// second message into the first without a space.
+	core.DrawTextLine(s, 1, h-statusH, w-2, statusStyle, a.statusText+connInfo)
 
 	// Overlays last, so the panels and status bar don't paint over the rows the
 	// menu dropdown and context menu extend into.

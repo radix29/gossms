@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // selectAuth picks m in the dialog's auth dropdown the way a user does from
@@ -158,5 +159,38 @@ func TestConnectDialogPreviewReportsABadExtraProperty(t *testing.T) {
 	d.refreshConnStrPreview()
 	if got := d.fConnStrPreview.Text(); len(got) < 12 || got[:12] != "sqlserver://" {
 		t.Errorf("preview = %q, want a connection string", got)
+	}
+}
+
+// Escape on an open dropdown list closes the list only, as in Backup,
+// Restore and Options; a second Escape closes the dialog.
+func TestConnectDialogEscapeClosesAnOpenListNotTheDialog(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		dd   func(*ConnectDialog) *widgets.DropDown
+	}{
+		{"authentication", func(d *ConnectDialog) *widgets.DropDown { return d.ddAuth }},
+		{"encrypt", func(d *ConnectDialog) *widgets.DropDown { return d.ddEncrypt }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			key := func(d *ConnectDialog, k tcell.Key) { d.HandleKey(tcell.NewEventKey(k, "", tcell.ModNone)) }
+			d := NewConnectDialog(newTestApp())
+			d.Show()
+			dd := tc.dd(d)
+			d.setFocus(indexOfFocusable(d.focusable, dd))
+			key(d, tcell.KeyF4)
+			if !dd.OverlayActive() {
+				t.Fatal("F4 did not open the list")
+			}
+			key(d, tcell.KeyEscape)
+			if dd.OverlayActive() || !d.Visible() {
+				t.Fatalf("after Escape: list open %v, dialog visible %v; want closed list, open dialog",
+					dd.OverlayActive(), d.Visible())
+			}
+			key(d, tcell.KeyEscape)
+			if d.Visible() {
+				t.Error("a second Escape left the dialog open")
+			}
+		})
 	}
 }

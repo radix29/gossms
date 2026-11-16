@@ -106,33 +106,17 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				return a
 			}
 			headers := []string{"Name", "Accounts", "Description"}
-			gridRows := func() [][]string {
-				vis := visible()
-				rows := make([][]string, len(vis))
-				for i, e := range vis {
-					accts := make([]string, len(e.accounts))
-					for j, a := range e.accounts {
-						accts[j] = accountText(a)
-					}
-					rows[i] = []string{mailEditName(e.origName, e.name, e.isNew), strings.Join(accts, ", "), e.desc}
-				}
-				return rows
-			}
-			grid := controls.NewDataGrid()
-			grid.SetData(headers, gridRows())
-			grid.SetCellCursor(true)
 
 			nameRow := propsheet.Text("Profile name", "", 30)
 			descRow := propsheet.Text("Description", "", 40)
 
-			var current *mailProfileEdit
 			acctHeaders := []string{"Priority", "Account"}
-			acctRows := func() [][]string {
-				if current == nil {
+			acctRows := func(p *mailProfileEdit) [][]string {
+				if p == nil {
 					return nil
 				}
-				rows := make([][]string, len(current.accounts))
-				for i, a := range current.accounts {
+				rows := make([][]string, len(p.accounts))
+				for i, a := range p.accounts {
 					rows[i] = []string{strconv.Itoa(i + 1), accountText(a)}
 				}
 				return rows
@@ -140,98 +124,115 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 			acctGrid := controls.NewDataGrid()
 			acctGrid.SetData(acctHeaders, nil)
 			acctGrid.SetCellCursor(true)
-			addable := func() []string {
-				if current == nil {
+			addable := func(p *mailProfileEdit) []string {
+				if p == nil {
 					return nil
 				}
-				return slices.DeleteFunc(slices.Clone(available), func(a string) bool { return slices.Contains(current.accounts, a) })
+				return slices.DeleteFunc(slices.Clone(available), func(a string) bool { return slices.Contains(p.accounts, a) })
 			}
 			addRow := propsheet.Select("Account to add", nil, 0)
 			addRow.SetDirtyTracked(false)
 			addRow.SetFitItems(true)
+			// syncAccounts redraws profile p's account list with row selected.
+			syncAccounts := func(p *mailProfileEdit, row int) {
+				resetGrid(acctGrid, acctHeaders, acctRows(p), row)
+				addRow.SetItems(addable(p))
+			}
 
-			commitCurrent := func() {
-				if current == nil {
-					return
-				}
-				current.name, current.desc = nameRow.Value(), descRow.Value()
-			}
-			syncAccounts := func(row int) {
-				resetGrid(acctGrid, acctHeaders, acctRows(), row)
-				addRow.SetItems(addable())
-			}
-			syncFromSelection := func() {
-				vis := visible()
-				current = nil
-				if i := grid.SelectedRow(); i >= 0 && i < len(vis) {
-					current = vis[i]
-				}
-				nameRow.SetReadOnly(current == nil)
-				descRow.SetReadOnly(current == nil)
-				if current == nil {
-					nameRow.SetValue("")
-					descRow.SetValue("")
-				} else {
-					nameRow.SetValue(current.name)
-					descRow.SetValue(current.desc)
-				}
-				syncAccounts(0)
-			}
-			reload := wireGridEditor(grid, headers, gridRows, commitCurrent, syncFromSelection)
-			onSelect := grid.OnSelectRow
-			grid.OnSelectRow = func(row int) {
-				onSelect(row)
-				publish()
-			}
-			reselect := func(row int) {
-				current = nil
-				resetGrid(grid, headers, gridRows(), row)
-				syncFromSelection()
-				publish()
-			}
+			list := propsheet.NewListEditor(propsheet.ListEditorSpec[*mailProfileEdit]{
+				Noun:       "profile",
+				NameLabel:  "New profile name",
+				NameWidth:  30,
+				Headers:    headers,
+				GridHeight: min(len(loaded)+4, 7),
+				Items:      visible,
+				Cells: func(e *mailProfileEdit) []string {
+					accts := make([]string, len(e.accounts))
+					for j, a := range e.accounts {
+						accts[j] = accountText(a)
+					}
+					return []string{mailEditName(e.origName, e.name, e.isNew), strings.Join(accts, ", "), e.desc}
+				},
+				Commit: func(e *mailProfileEdit) { e.name, e.desc = nameRow.Value(), descRow.Value() },
+				Show: func(e *mailProfileEdit) {
+					nameRow.SetReadOnly(e == nil)
+					descRow.SetReadOnly(e == nil)
+					if e == nil {
+						nameRow.SetValue("")
+						descRow.SetValue("")
+					} else {
+						nameRow.SetValue(e.name)
+						descRow.SetValue(e.desc)
+					}
+					syncAccounts(e, 0)
+				},
+				Add: func(name string) (string, bool) {
+					if edits.listed(name) {
+						return "A profile named " + name + " is already listed.", false
+					}
+					edits.add(&mailProfileEdit{name: name})
+					return "Add the accounts " + name + " sends through below, first choice first.", true
+				},
+				Remove: func(e *mailProfileEdit) (string, bool) {
+					edits.remove(e)
+					if e.isNew {
+						return "", true
+					}
+					return e.origName + " is deleted on Apply with its grants; its queued mail is marked failed.", true
+				},
+				Dirty: edits.dirty,
+				Validate: func() error {
+					return edits.refusal("profile", func(e *mailProfileEdit) string { return e.origName })
+				},
+				Revert:  edits.revert,
+				Changed: publish,
+			})
 			nameRow.SetOnChange(func(string) {
-				if current != nil && current.isNew {
-					commitCurrent()
-					redrawGrid(grid, headers, gridRows())
+				if cur := list.Current(); cur != nil && cur.isNew {
+					list.Commit()
+					list.Redraw()
 					publish()
 				}
 			})
 
-			hint := propsheet.Hint()
+			hint := list.Hint()
 			// moveAccount moves the selected account by delta in the failover
 			// order.
 			moveAccount := func(delta int) {
-				if current == nil {
+				cur := list.Current()
+				if cur == nil {
 					return
 				}
 				i := acctGrid.SelectedRow()
 				j := i + delta
-				if i < 0 || i >= len(current.accounts) || j < 0 || j >= len(current.accounts) {
+				if i < 0 || i >= len(cur.accounts) || j < 0 || j >= len(cur.accounts) {
 					return
 				}
-				current.accounts[i], current.accounts[j] = current.accounts[j], current.accounts[i]
-				syncAccounts(j)
-				redrawGrid(grid, headers, gridRows())
+				cur.accounts[i], cur.accounts[j] = cur.accounts[j], cur.accounts[i]
+				syncAccounts(cur, j)
+				list.Redraw()
 			}
 			upBtn := widgets.NewButton("Move Up", func() { moveAccount(-1) })
 			downBtn := widgets.NewButton("Move Down", func() { moveAccount(1) })
 			dropAcctBtn := widgets.NewButton("Remove Account", func() {
-				if current == nil {
+				cur := list.Current()
+				if cur == nil {
 					return
 				}
 				i := acctGrid.SelectedRow()
-				if i < 0 || i >= len(current.accounts) {
+				if i < 0 || i >= len(cur.accounts) {
 					hint.Set("Select an account of the profile to remove it.")
 					return
 				}
 				hint.Clear()
-				current.accounts = slices.Delete(current.accounts, i, i+1)
-				syncAccounts(min(i, len(current.accounts)-1))
-				redrawGrid(grid, headers, gridRows())
+				cur.accounts = slices.Delete(cur.accounts, i, i+1)
+				syncAccounts(cur, min(i, len(cur.accounts)-1))
+				list.Redraw()
 			})
 			addAcctBtn := widgets.NewButton("Add Account", func() {
+				cur := list.Current()
 				switch {
-				case current == nil:
+				case cur == nil:
 					hint.Set("Select or add a profile first.")
 					return
 				case addRow.Value() == "":
@@ -239,56 +240,9 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					return
 				}
 				hint.Clear()
-				current.accounts = append(current.accounts, addRow.Value())
-				syncAccounts(len(current.accounts) - 1)
-				redrawGrid(grid, headers, gridRows())
-			})
-
-			gridRow := propsheet.NewGridRow(grid, min(len(loaded)+4, 7))
-			gridRow.DirtyFn = edits.dirty
-			gridRow.ValidateFn = func() error {
-				return edits.refusal("profile", func(e *mailProfileEdit) string { return e.origName })
-			}
-			gridRow.RevertFn = func() {
-				edits.revert()
-				current = nil
-				reload()
-				publish()
-			}
-
-			newName := propsheet.Text("New profile name", "", 30)
-			addBtn := widgets.NewButton("Add", func() {
-				commitCurrent()
-				name := newName.Value()
-				if name == "" {
-					hint.Set("Type a name for the new profile first.")
-					return
-				}
-				if edits.listed(name) {
-					hint.Set("A profile named " + name + " is already listed.")
-					return
-				}
-				hint.Set("Add the accounts " + name + " sends through below, first choice first.")
-				edits.add(&mailProfileEdit{name: name})
-				newName.SetValue("")
-				reselect(len(visible()) - 1)
-			})
-			removeBtn := widgets.NewButton("Remove", func() {
-				commitCurrent()
-				vis := visible()
-				i := grid.SelectedRow()
-				if i < 0 || i >= len(vis) {
-					hint.Set("Select a profile in the grid above to remove it.")
-					return
-				}
-				e := vis[i]
-				edits.remove(e)
-				if e.isNew {
-					hint.Clear()
-				} else {
-					hint.Set(e.origName + " is deleted on Apply with its grants; its queued mail is marked failed.")
-				}
-				reselect(min(i, len(visible())-1))
+				cur.accounts = append(cur.accounts, addRow.Value())
+				syncAccounts(cur, len(cur.accounts)-1)
+				list.Redraw()
 			})
 
 			// The Accounts page's edits change what may be added, and mark
@@ -296,13 +250,13 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 			model.listenAccounts(func() {
 				available = model.accountNames(loadedAccounts)
 				i := acctGrid.SelectedRow()
-				redrawGrid(grid, headers, gridRows())
-				syncAccounts(max(i, 0))
+				list.Redraw()
+				syncAccounts(list.Current(), max(i, 0))
 			})
 
 			rows := []propsheet.Row{
 				propsheet.Section("Profiles"),
-				gridRow,
+				list.GridRow(),
 				propsheet.Section("Selected profile"),
 				nameRow, descRow,
 				propsheet.Section("SMTP accounts, in failover order"),
@@ -310,12 +264,11 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				propsheet.Buttons(upBtn, downBtn, dropAcctBtn),
 				addRow,
 				propsheet.Buttons(addAcctBtn),
-				propsheet.Section("Add or remove"),
-				newName,
-				propsheet.Buttons(addBtn, removeBtn),
-				hint,
-				propsheet.Note("A message goes through the first account; the next is tried only when one fails. Accounts added on the Accounts page are offered here at once; a profile added here is offered on Profile Security at once. A renamed profile or account keeps its old name on the other pages until Apply."),
 			}
+			rows = append(rows, list.AddRemoveRows()...)
+			rows = append(rows,
+				propsheet.Note("A message goes through the first account; the next is tried only when one fails. Accounts added on the Accounts page are offered here at once; a profile added here is offered on Profile Security at once. A renamed profile or account keeps its old name on the other pages until Apply."),
+			)
 			if info := sc.Server.Info(); info != nil && info.EngineEdition == int(gosmo.EngineAzureManagedInst) {
 				rows = append(rows, propsheet.Note("Managed Instance: SQL Server Agent sends its notifications only through a profile named "+mailManagedInstanceProfile+"."))
 			}
@@ -366,9 +319,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				}
 				return nil
 			}
-			form := propsheet.NewForm(rows...)
-			form.SetCommit(commitCurrent)
-			return form, apply, nil
+			return list.NewForm(rows...), apply, nil
 		},
 	}
 }

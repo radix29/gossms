@@ -98,7 +98,10 @@ which owns them; the entries here say how goSSMS applies them.
   and Remove keeps its rows in `pendingEdits` (`pending_edits.go`): the row
   type embeds `pendingState`, and the list owns dirty, visible, revert,
   add/remove and the collation-aware name checks the pages each used to
-  rewrite.
+  rewrite. When the page also has a detail form and a name field to add by,
+  the UI half is tuikit's `propsheet.ListEditor` (selection, commit before
+  the cursor moves, the Add/Remove/Revert flow and its hint) — Resource
+  Governor pools and groups, Database Mail accounts and profiles.
 - **A read-only page's grids browse, so their `OnSelectRow` runs there too.**
   `Form.SetReadOnly` leaves grids focusable and browse-only, and flat rows
   focusable only to be copied; everything else is inert, and the form reports
@@ -206,9 +209,9 @@ which owns them; the entries here say how goSSMS applies them.
   dialogs, a text widget's `OnRightClick` calls `showClipboardMenu` with **the
   widget itself** — an editor fires it inside `HandleMouse`, before its panel
   moves focus, so `activeClipboardTarget` still names the previous one. Whether
-  Cut and Paste appear is the target's `core.ClipboardAccess` (read-only →
-  Copy and Select All only); a new read-only target implements it, or it is
-  taken as editable. A panel with a text field among other things is a
+  Cut and Paste appear is the target's `CanPaste`/`CanCut` (part of
+  `core.ClipboardTarget`; read-only → Copy and Select All only), so a panel
+  forwarding to a grid or plan view forwards the four `Can*` methods too. A panel with a text field among other things is a
   `core.ClipboardHost` (Log Viewer's filter) — `activeClipboardTarget` asks the
   active panel, so Ctrl+C/X/V and a terminal paste reach it too.
 - **`App.contextMenu` sits above the dialogs** — drawn after `modals.Draw`,
@@ -320,7 +323,11 @@ which owns them; the entries here say how goSSMS applies them.
   focused row before positional routing in `propsheet.Form.HandleMouse`, the
   wheel included. A `DropDown`'s open list is clamped to the *screen*, not the
   dialog, so a dialog routing one by hand offers it every event before
-  `ConsumeOutsideClick` (Filter, Back Up, Restore).
+  `ConsumeOutsideClick` (Filter, Back Up, Restore). One level up, a panel
+  with such a child implements `layout.OverlayPanel` (`OverlayActive`), and
+  `App.handleMouse` offers `a.panels` every event before routing by position
+  — without it a press on Object Explorer left the Details cell menu open.
+  `panel_overlay_routing_test.go` lists the implementers; add a new panel there.
 - **Report with `App.postAndWake(fn)`**, never `postEvent` + `wakeEventLoop` by
   hand (tree nodes stuck on "Loading..."). `ARCHITECTURE.md` § Async result delivery:
   postAndWake. The elapsed-timer tick is the one legit bare `wakeEventLoop()`.
@@ -332,7 +339,8 @@ which owns them; the entries here say how goSSMS applies them.
   apply never moves them. (AG Listener Properties cleared pending addresses in
   its apply; after Script Changes the next Apply sent nothing.)
   - A grid-plus-detail page copies its editor into the model with
-    `form.SetCommit(commitCurrent)`, never by calling it in the apply: the
+    `form.SetCommit(commitCurrent)` (a `ListEditor` page: `list.NewForm`),
+    never by calling it in the apply: the
     host runs every form's hook on the UI goroutine before reading
     dirtiness (`PropDialog.runApply`/`runScript`, `newObjectDialog.runPipeline`).
   - A New-object dialog builds its request in `preflight` and the step

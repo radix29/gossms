@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/radix29/gosmo"
 )
 
 // errTaskPanicked is what a task is finished with when its goroutine
@@ -75,12 +77,24 @@ func (t *Task) statusText() string {
 		}
 		return t.Label + " — " + strconv.Itoa(t.Progress) + "% — " + msg
 	case t.Cancelled:
-		return t.Label + " — cancelled"
+		return t.Label + " — cancelled" + t.repairNote()
 	case t.Err != nil:
 		return t.Label + " — failed: " + t.Err.Error()
 	default:
 		return t.Label + " — done"
 	}
+}
+
+// repairNote is what a cancelled task must still say: " — " and the failure of
+// the repair gosmo runs after a write cut short (a *gosmo.RepairError, e.g.
+// the database left SINGLE_USER by a cancelled Restore with Close existing
+// connections), or "" when there was none. "cancelled" alone would hide the
+// one thing about the server's state the user has to act on.
+func (t *Task) repairNote() string {
+	if re, ok := errors.AsType[*gosmo.RepairError](t.Err); ok {
+		return " — " + re.Error()
+	}
+	return ""
 }
 
 // startTask registers a new background task under label and returns it with a
@@ -131,7 +145,7 @@ func (a *App) markTaskDone(t *Task, err error) {
 	t.Cancel()
 	switch {
 	case t.Cancelled:
-		a.setStatus(t.Label + " cancelled")
+		a.setStatus(t.Label + " cancelled" + t.repairNote())
 	case err != nil:
 		a.setStatus(fmt.Sprintf("%s failed: %v", t.Label, withPermissionAdvice(err)))
 	default:

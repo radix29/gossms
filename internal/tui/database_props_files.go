@@ -242,6 +242,35 @@ func shrinkStoppedNote(name string, targetKB, reachedKB int64) string {
 		name, fileSizeText(reachedKB), fileSizeText(targetKB))
 }
 
+// databaseFilesPage is the Files page's state once loaded: the pending file
+// edits, the grid over them, and the "Selected file" fields that edit the row
+// the grid's cursor is on (current).
+type databaseFilesPage struct {
+	sc     *db.ServerConn
+	dbName string
+
+	edits   *pendingEdits[*fileEdit]
+	fgNames []string
+	// fsGroup is which filegroups make a file put into them a FILESTREAM file.
+	// gosmo reports the filegroup's own type_desc; nothing about the file being
+	// added says it.
+	fsGroup map[string]bool
+
+	grid            *controls.DataGrid
+	nameField       *propsheet.TextRow
+	typeSelect      *propsheet.SelectRow
+	filegroupSelect *propsheet.SelectRow
+	pathField       *propsheet.TextRow
+	sizeField       *propsheet.TextRow
+	growthKind      *propsheet.RadioRow
+	growthField     *propsheet.TextRow
+	maxKind         *propsheet.RadioRow
+	maxField        *propsheet.TextRow
+	hint            *propsheet.HintRow
+
+	current *fileEdit
+}
+
 func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Files",
@@ -262,15 +291,15 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			fgNames := make([]string, len(fgs))
-			// fsGroup is which filegroups make a file put into them a FILESTREAM file.
-			// gosmo reports the filegroup's own type_desc; nothing about the file being
-			// added says it.
-			fsGroup := make(map[string]bool, len(fgs))
+			p := &databaseFilesPage{
+				sc: sc, dbName: dbName,
+				fgNames: make([]string, len(fgs)),
+				fsGroup: make(map[string]bool, len(fgs)),
+			}
 			for i, fg := range fgs {
-				fgNames[i] = fg.Name
+				p.fgNames[i] = fg.Name
 				if fg.IsFileStream() {
-					fsGroup[fg.Name] = true
+					p.fsGroup[fg.Name] = true
 				}
 			}
 
@@ -278,332 +307,355 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 			for i, fl := range files {
 				loaded[i] = fileEditFromInfo(fl)
 			}
-			edits := newPendingEdits(databaseCollation(d), loaded,
+			p.edits = newPendingEdits(databaseCollation(d), loaded,
 				func(e *fileEdit) string { return e.name }, (*fileEdit).changed, (*fileEdit).reset)
-			visible := edits.visible
-			rowsFor := func() [][]string {
-				vis := visible()
-				rows := make([][]string, len(vis))
-				for i, e := range vis {
-					rows[i] = []string{
-						e.name, e.fileType, e.fileGroup,
-						fileSizeText(e.sizeKB),
-						growthText(e.isPercentGrowth, e.growthKB, e.growthPercent),
-						maxSizeText(e.maxSizeKB), e.path,
-					}
-				}
-				return rows
-			}
+			return p.form(opts.Owner), p.apply, nil
+		},
+	}
+}
 
-			grid := controls.NewDataGrid()
-			grid.SetData(databaseFileColumns, rowsFor())
-			grid.SetCellCursor(true)
+// form builds the page's rows and wires them to p.
+func (p *databaseFilesPage) form(owner string) *propsheet.Form {
+	p.grid = controls.NewDataGrid()
+	p.grid.SetData(databaseFileColumns, p.rows())
+	p.grid.SetCellCursor(true)
 
-			nameField := propsheet.Text("Logical name", "", 24)
-			typeSelect := propsheet.Select("File type", addableFileTypes, 0)
-			filegroupSelect := propsheet.Select("Filegroup", fgNames, 0)
-			pathField := propsheet.Text("Path", "", 40)
-			sizeField := propsheet.Int("Initial size", 0, 0, 16777216, "MB")
-			growthKind := propsheet.Radio("Growth by", []string{"Megabytes", "Percent"}, 0)
-			growthField := propsheet.Int("Growth amount", 0, 0, 2097151, "")
-			maxKind := propsheet.Radio("Max size", []string{"Unlimited", "Limited"}, 0)
-			maxField := propsheet.Int("Max size limit", 0, 0, 16777216, "MB")
+	p.nameField = propsheet.Text("Logical name", "", 24)
+	p.typeSelect = propsheet.Select("File type", addableFileTypes, 0)
+	p.filegroupSelect = propsheet.Select("Filegroup", p.fgNames, 0)
+	p.pathField = propsheet.Text("Path", "", 40)
+	p.sizeField = propsheet.Int("Initial size", 0, 0, 16777216, "MB")
+	p.growthKind = propsheet.Radio("Growth by", []string{"Megabytes", "Percent"}, 0)
+	p.growthField = propsheet.Int("Growth amount", 0, 0, 2097151, "")
+	p.maxKind = propsheet.Radio("Max size", []string{"Unlimited", "Limited"}, 0)
+	p.maxField = propsheet.Int("Max size limit", 0, 0, 16777216, "MB")
 
-			selected := func() *fileEdit {
-				vis := visible()
-				i := grid.SelectedRow()
-				if i < 0 || i >= len(vis) {
-					return nil
-				}
-				return vis[i]
-			}
-			// showFilegroupFor swaps the Filegroup dropdown between the real filegroup list
-			// and the single "(not applicable)" entry a LOG file gets, so the row never
-			// offers a choice that wouldn't be used.
-			showFilegroupFor := func(fileType, fileGroup string) {
-				if fileType == logFileType {
-					filegroupSelect.SetItems([]string{noFilegroupItem})
-					return
-				}
-				if fileGroup == "" {
-					filegroupSelect.SetItems(fgNames)
-					filegroupSelect.SetSelected(0)
-					return
-				}
-				// Widened as the type picker is: a file can sit in a filegroup FileGroups
-				// didn't list, and a stand-in name would read as the server's answer.
-				items, i := preservingItems(fgNames, fileGroup)
-				filegroupSelect.SetItems(items)
-				filegroupSelect.SetSelected(i)
-			}
-			// pickedFilegroup reads the dropdown back, as "" for a LOG file (what
-			// DatabaseFileInfo.FileGroup holds for one).
-			pickedFilegroup := func(fileType string) string {
-				if fileType == logFileType {
-					return ""
-				}
-				return filegroupSelect.Value()
-			}
-			// effectiveType is what a file put in fileGroup becomes. The picker offers ROWS
-			// and LOG; the filegroup turns a ROWS pick into FILESTREAM, so they are read
-			// together.
-			effectiveType := func(picked, fileGroup string) string {
-				if picked != logFileType && fsGroup[fileGroup] {
-					return filestreamFileType
-				}
-				return picked
-			}
-			// syncSizeRows gates the size and growth spinners on whether the file can carry
-			// either. A FILESTREAM file cannot, and a live spinner whose value the
-			// statement drops is the silent wrong-thing this page's pickers are gated
-			// against; worse here, since sending them fails the whole Add with Msg 5509.
-			syncSizeRows := func(fileType string) {
-				fs := fileType == filestreamFileType
-				sizeField.SetEnabled(!fs)
-				growthField.SetEnabled(!fs)
-				if fs {
-					sizeField.SetValue("0")
-					growthField.SetValue("0")
-				}
-			}
-			typeSelect.SetOnChange(func(string) {
-				showFilegroupFor(typeSelect.Value(), "")
-				syncSizeRows(effectiveType(typeSelect.Value(), pickedFilegroup(typeSelect.Value())))
-			})
-			filegroupSelect.SetOnChange(func(string) {
-				syncSizeRows(effectiveType(typeSelect.Value(), pickedFilegroup(typeSelect.Value())))
-			})
+	p.typeSelect.SetOnChange(func(string) {
+		p.showFilegroupFor(p.typeSelect.Value(), "")
+		p.syncSizeRows(p.effectiveType(p.typeSelect.Value(), p.pickedFilegroup(p.typeSelect.Value())))
+	})
+	p.filegroupSelect.SetOnChange(func(string) {
+		p.syncSizeRows(p.effectiveType(p.typeSelect.Value(), p.pickedFilegroup(p.typeSelect.Value())))
+	})
 
-			var current *fileEdit
-			commitCurrent := func() {
-				if current == nil {
-					return
-				}
-				current.name = nameField.Value()
-				// Only a new file reads type/filegroup/path back. They are fixed for an existing
-				// one (changed() excludes them because MODIFY FILE can neither retype nor move a
-				// file), so writing them could only record something untrue: a FILESTREAM file's
-				// type is outside the picker's two items, so the picker shows a stand-in and
-				// merely selecting the row would rewrite the file as ROWS. Same defect as
-				// noFilegroupItem, one field over.
-				if current.isNew {
-					current.fileGroup = pickedFilegroup(typeSelect.Value())
-					current.fileType = effectiveType(typeSelect.Value(), current.fileGroup)
-					current.path = pathField.Value()
-				}
-				// The spinners are whole MB, so each reads back only once the user has edited it
-				// (Dirty is "since this file was selected": syncFieldsFromSelection resets each
-				// baseline). Copied back unconditionally, a file not sized in whole MB (grown by a
-				// percentage or a KB amount) would round down on every OK of an untouched page: a
-				// smaller SIZE the server refuses, a cap lowered, and a growth under 1 MB read as
-				// 0, which growthOff sends as FILEGROWTH = 0 — autogrowth silently switched off.
-				if sizeField.Dirty() {
-					if n, err := sizeField.IntValue(); err == nil {
-						current.sizeKB = n * 1024
-					}
-				}
-				// The radio and the amount travel together: switching the unit alone must
-				// re-read the amount in the new one.
-				if growthKind.Dirty() || growthField.Dirty() {
-					current.isPercentGrowth = growthKind.Selected() == 1
-					if n, err := growthField.IntValue(); err == nil {
-						if current.isPercentGrowth {
-							current.growthPercent = int(n)
-						} else {
-							current.growthKB = n * 1024
-						}
-					}
-				}
-				if maxKind.Dirty() || maxField.Dirty() {
-					if maxKind.Selected() == 0 {
-						current.maxSizeKB = -1
-					} else if n, err := maxField.IntValue(); err == nil {
-						current.maxSizeKB = n * 1024
-					}
-				}
+	// wireGridEditor redraws after the commit, so the row moved off shows
+	// what Apply will send rather than its loaded values.
+	wireGridEditor(p.grid, databaseFileColumns, p.rows, p.commitCurrent, p.syncFieldsFromSelection)
+
+	p.hint = propsheet.Hint()
+	addBtn := widgets.NewButton("Add", p.addFile)
+	removeBtn := widgets.NewButton("Remove", p.removeFile)
+
+	gridRow := propsheet.NewGridRow(p.grid, 10)
+	gridRow.DirtyFn = p.edits.dirty
+	gridRow.RevertFn = func() {
+		p.edits.revert()
+		resetGrid(p.grid, databaseFileColumns, p.rows(), 0)
+		p.syncFieldsFromSelection()
+	}
+
+	f := propsheet.NewForm(
+		propsheet.Section("Database files"),
+		propsheet.Static("Owner", owner),
+		gridRow,
+		propsheet.Section("Selected file"),
+		p.nameField, p.typeSelect, p.filegroupSelect, p.sizeField,
+		p.growthKind, p.growthField, p.maxKind, p.maxField, p.pathField,
+		propsheet.Buttons(addBtn, removeBtn),
+		p.hint,
+		propsheet.Note("A file added to a FILESTREAM filegroup is a FILESTREAM file: its path is a directory rather than a file, and it takes neither an initial size nor autogrowth, so those two are greyed. Choosing the filegroup is what makes it one — there is no file type to pick."),
+	)
+	f.SetCommit(p.commitCurrent)
+	f.SetApplyConfirm(p.shrinkConfirm)
+	return f
+}
+
+func (p *databaseFilesPage) rows() [][]string {
+	vis := p.edits.visible()
+	rows := make([][]string, len(vis))
+	for i, e := range vis {
+		rows[i] = []string{
+			e.name, e.fileType, e.fileGroup,
+			fileSizeText(e.sizeKB),
+			growthText(e.isPercentGrowth, e.growthKB, e.growthPercent),
+			maxSizeText(e.maxSizeKB), e.path,
+		}
+	}
+	return rows
+}
+
+func (p *databaseFilesPage) selected() *fileEdit {
+	vis := p.edits.visible()
+	i := p.grid.SelectedRow()
+	if i < 0 || i >= len(vis) {
+		return nil
+	}
+	return vis[i]
+}
+
+// showFilegroupFor swaps the Filegroup dropdown between the real filegroup list
+// and the single "(not applicable)" entry a LOG file gets, so the row never
+// offers a choice that wouldn't be used.
+func (p *databaseFilesPage) showFilegroupFor(fileType, fileGroup string) {
+	if fileType == logFileType {
+		p.filegroupSelect.SetItems([]string{noFilegroupItem})
+		return
+	}
+	if fileGroup == "" {
+		p.filegroupSelect.SetItems(p.fgNames)
+		p.filegroupSelect.SetSelected(0)
+		return
+	}
+	// Widened as the type picker is: a file can sit in a filegroup FileGroups
+	// didn't list, and a stand-in name would read as the server's answer.
+	items, i := preservingItems(p.fgNames, fileGroup)
+	p.filegroupSelect.SetItems(items)
+	p.filegroupSelect.SetSelected(i)
+}
+
+// pickedFilegroup reads the dropdown back, as "" for a LOG file (what
+// DatabaseFileInfo.FileGroup holds for one).
+func (p *databaseFilesPage) pickedFilegroup(fileType string) string {
+	if fileType == logFileType {
+		return ""
+	}
+	return p.filegroupSelect.Value()
+}
+
+// effectiveType is what a file put in fileGroup becomes. The picker offers ROWS
+// and LOG; the filegroup turns a ROWS pick into FILESTREAM, so they are read
+// together.
+func (p *databaseFilesPage) effectiveType(picked, fileGroup string) string {
+	if picked != logFileType && p.fsGroup[fileGroup] {
+		return filestreamFileType
+	}
+	return picked
+}
+
+// syncSizeRows gates the size and growth spinners on whether the file can carry
+// either. A FILESTREAM file cannot, and a live spinner whose value the
+// statement drops is the silent wrong-thing this page's pickers are gated
+// against; worse here, since sending them fails the whole Add with Msg 5509.
+func (p *databaseFilesPage) syncSizeRows(fileType string) {
+	fs := fileType == filestreamFileType
+	p.sizeField.SetEnabled(!fs)
+	p.growthField.SetEnabled(!fs)
+	if fs {
+		p.sizeField.SetValue("0")
+		p.growthField.SetValue("0")
+	}
+}
+
+// commitCurrent writes the fields back into the file they were synced from.
+func (p *databaseFilesPage) commitCurrent() {
+	current := p.current
+	if current == nil {
+		return
+	}
+	current.name = p.nameField.Value()
+	// Only a new file reads type/filegroup/path back. They are fixed for an existing
+	// one (changed() excludes them because MODIFY FILE can neither retype nor move a
+	// file), so writing them could only record something untrue: a FILESTREAM file's
+	// type is outside the picker's two items, so the picker shows a stand-in and
+	// merely selecting the row would rewrite the file as ROWS. Same defect as
+	// noFilegroupItem, one field over.
+	if current.isNew {
+		current.fileGroup = p.pickedFilegroup(p.typeSelect.Value())
+		current.fileType = p.effectiveType(p.typeSelect.Value(), current.fileGroup)
+		current.path = p.pathField.Value()
+	}
+	// The spinners are whole MB, so each reads back only once the user has edited it
+	// (Dirty is "since this file was selected": syncFieldsFromSelection resets each
+	// baseline). Copied back unconditionally, a file not sized in whole MB (grown by a
+	// percentage or a KB amount) would round down on every OK of an untouched page: a
+	// smaller SIZE the server refuses, a cap lowered, and a growth under 1 MB read as
+	// 0, which growthOff sends as FILEGROWTH = 0 — autogrowth silently switched off.
+	if p.sizeField.Dirty() {
+		if n, err := p.sizeField.IntValue(); err == nil {
+			current.sizeKB = n * 1024
+		}
+	}
+	// The radio and the amount travel together: switching the unit alone must
+	// re-read the amount in the new one.
+	if p.growthKind.Dirty() || p.growthField.Dirty() {
+		current.isPercentGrowth = p.growthKind.Selected() == 1
+		if n, err := p.growthField.IntValue(); err == nil {
+			if current.isPercentGrowth {
+				current.growthPercent = int(n)
+			} else {
+				current.growthKB = n * 1024
 			}
-			syncFieldsFromSelection := func() {
-				current = selected()
-				if current == nil {
-					nameField.SetValue("")
-					pathField.SetValue("")
-					sizeField.SetValue("0")
-					growthField.SetValue("0")
-					maxField.SetValue("0")
-					return
-				}
-				nameField.SetValue(current.name)
-				// preservingItems, not indexOf: sys.database_files also reports FILESTREAM (and
-				// memory-optimized) files, whose type is in neither item this page can create.
-				// indexOf would show "ROWS" for one as though the server had said so.
-				typeItems, typeIdx := preservingItems(addableFileTypes, current.fileType)
-				typeSelect.SetItems(typeItems)
-				typeSelect.SetSelected(typeIdx)
-				showFilegroupFor(current.fileType, current.fileGroup)
-				syncSizeRows(current.fileType)
-				pathField.SetValue(current.path)
-				sizeField.SetValue(strconv.FormatInt(current.sizeKB/1024, 10))
-				if current.isPercentGrowth {
-					growthKind.SetSelected(1)
-					growthField.SetValue(strconv.Itoa(current.growthPercent))
-				} else {
-					growthKind.SetSelected(0)
-					growthField.SetValue(strconv.FormatInt(current.growthKB/1024, 10))
-				}
-				if current.maxSizeKB < 0 {
-					maxKind.SetSelected(0)
-					maxField.SetValue("0")
-				} else {
-					maxKind.SetSelected(1)
-					maxField.SetValue(strconv.FormatInt(current.maxSizeKB/1024, 10))
-				}
+		}
+	}
+	if p.maxKind.Dirty() || p.maxField.Dirty() {
+		if p.maxKind.Selected() == 0 {
+			current.maxSizeKB = -1
+		} else if n, err := p.maxField.IntValue(); err == nil {
+			current.maxSizeKB = n * 1024
+		}
+	}
+}
+
+// syncFieldsFromSelection makes the grid's selected file current and shows it
+// in the fields.
+func (p *databaseFilesPage) syncFieldsFromSelection() {
+	p.current = p.selected()
+	current := p.current
+	if current == nil {
+		p.nameField.SetValue("")
+		p.pathField.SetValue("")
+		p.sizeField.SetValue("0")
+		p.growthField.SetValue("0")
+		p.maxField.SetValue("0")
+		return
+	}
+	p.nameField.SetValue(current.name)
+	// preservingItems, not indexOf: sys.database_files also reports FILESTREAM (and
+	// memory-optimized) files, whose type is in neither item this page can create.
+	// indexOf would show "ROWS" for one as though the server had said so.
+	typeItems, typeIdx := preservingItems(addableFileTypes, current.fileType)
+	p.typeSelect.SetItems(typeItems)
+	p.typeSelect.SetSelected(typeIdx)
+	p.showFilegroupFor(current.fileType, current.fileGroup)
+	p.syncSizeRows(current.fileType)
+	p.pathField.SetValue(current.path)
+	p.sizeField.SetValue(strconv.FormatInt(current.sizeKB/1024, 10))
+	if current.isPercentGrowth {
+		p.growthKind.SetSelected(1)
+		p.growthField.SetValue(strconv.Itoa(current.growthPercent))
+	} else {
+		p.growthKind.SetSelected(0)
+		p.growthField.SetValue(strconv.FormatInt(current.growthKB/1024, 10))
+	}
+	if current.maxSizeKB < 0 {
+		p.maxKind.SetSelected(0)
+		p.maxField.SetValue("0")
+	} else {
+		p.maxKind.SetSelected(1)
+		p.maxField.SetValue(strconv.FormatInt(current.maxSizeKB/1024, 10))
+	}
+}
+
+// addFile is Add: a new file from the fields.
+func (p *databaseFilesPage) addFile() {
+	// Deliberately does NOT call commitCurrent(): these fields double as the
+	// previously-selected file's live edit, and commitCurrent() writes nameField's
+	// text into that file's rename target, so a new name typed here to Add would
+	// silently rename the wrong file. Any not-yet-applied edit to the previously
+	// selected file is left as last synced from its own selection.
+	name := p.nameField.Value()
+	if name == "" {
+		p.hint.Set("Type a logical file name first.")
+		return
+	}
+	// The type picker widens to show a selected file's real type (FILESTREAM, say);
+	// Add must not carry one of those into a spec this page can't build correctly.
+	if !slices.Contains(addableFileTypes, p.typeSelect.Value()) {
+		p.hint.Set("Set File type to ROWS or LOG — this page adds data and log files only.")
+		return
+	}
+	if i := p.edits.index(name); i >= 0 {
+		// Already present: say so and select it, rather than leave the button looking
+		// broken.
+		p.hint.Set("A file named " + name + " is already listed — its row is selected below.")
+		p.grid.SetSelectedRow(i)
+		p.syncFieldsFromSelection()
+		return
+	}
+	p.hint.Clear()
+	fileGroup := p.pickedFilegroup(p.typeSelect.Value())
+	e := &fileEdit{
+		name: name, fileType: p.effectiveType(p.typeSelect.Value(), fileGroup),
+		fileGroup: fileGroup, path: p.pathField.Value(),
+		maxSizeKB: -1,
+	}
+	if n, err := p.sizeField.IntValue(); err == nil {
+		e.sizeKB = n * 1024
+	}
+	e.isPercentGrowth = p.growthKind.Selected() == 1
+	if n, err := p.growthField.IntValue(); err == nil {
+		if e.isPercentGrowth {
+			e.growthPercent = int(n)
+		} else {
+			e.growthKB = n * 1024
+		}
+	}
+	if p.maxKind.Selected() == 1 {
+		if n, err := p.maxField.IntValue(); err == nil {
+			e.maxSizeKB = n * 1024
+		}
+	}
+	p.edits.add(e)
+	resetGrid(p.grid, databaseFileColumns, p.rows(), len(p.edits.visible())-1)
+	p.syncFieldsFromSelection()
+}
+
+// removeFile is Remove: mark the selected file for dropping.
+func (p *databaseFilesPage) removeFile() {
+	e := p.selected()
+	if e == nil {
+		p.hint.Set("Select a file in the grid above to remove it.")
+		return
+	}
+	p.hint.Clear()
+	p.edits.remove(e)
+	p.current = nil
+	resetGrid(p.grid, databaseFileColumns, p.rows(), 0)
+	p.syncFieldsFromSelection()
+}
+
+// shrinkConfirm is the Apply confirmation when a lowered size means SHRINKFILE.
+func (p *databaseFilesPage) shrinkConfirm() string {
+	var names []string
+	for _, e := range p.edits.all() {
+		if e.shrinks() {
+			names = append(names, e.name)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "Lowering the size of " + strings.Join(names, ", ") + " shrinks the file (DBCC SHRINKFILE). " +
+		"It can be slow on a large file, moves pages and so fragments indexes, and stops short " +
+		"of the target where the file's data does not fit."
+}
+
+func (p *databaseFilesPage) apply(ctx context.Context) error {
+	d, err := p.sc.Server.DatabaseByName(ctx, p.dbName)
+	if err != nil {
+		return err
+	}
+	for _, e := range p.edits.all() {
+		switch {
+		case e.removing:
+			if err := d.FileRef(e.origName).Drop(ctx); err != nil {
+				return err
 			}
-			// wireGridEditor redraws after the commit, so the row moved off shows
-			// what Apply will send rather than its loaded values.
-			wireGridEditor(grid, databaseFileColumns, rowsFor, commitCurrent, syncFieldsFromSelection)
-
-			hint := propsheet.Hint()
-			var addBtn, removeBtn *widgets.Button
-			addBtn = widgets.NewButton("Add", func() {
-				// Deliberately does NOT call commitCurrent(): these fields double as the
-				// previously-selected file's live edit, and commitCurrent() writes nameField's
-				// text into that file's rename target, so a new name typed here to Add would
-				// silently rename the wrong file. Any not-yet-applied edit to the previously
-				// selected file is left as last synced from its own selection.
-				name := nameField.Value()
-				if name == "" {
-					hint.Set("Type a logical file name first.")
-					return
-				}
-				// The type picker widens to show a selected file's real type (FILESTREAM, say);
-				// Add must not carry one of those into a spec this page can't build correctly.
-				if !slices.Contains(addableFileTypes, typeSelect.Value()) {
-					hint.Set("Set File type to ROWS or LOG — this page adds data and log files only.")
-					return
-				}
-				if i := edits.index(name); i >= 0 {
-					// Already present: say so and select it, rather than leave the button looking
-					// broken.
-					hint.Set("A file named " + name + " is already listed — its row is selected below.")
-					grid.SetSelectedRow(i)
-					syncFieldsFromSelection()
-					return
-				}
-				hint.Clear()
-				fileGroup := pickedFilegroup(typeSelect.Value())
-				e := &fileEdit{
-					name: name, fileType: effectiveType(typeSelect.Value(), fileGroup),
-					fileGroup: fileGroup, path: pathField.Value(),
-					maxSizeKB: -1,
-				}
-				if n, err := sizeField.IntValue(); err == nil {
-					e.sizeKB = n * 1024
-				}
-				e.isPercentGrowth = growthKind.Selected() == 1
-				if n, err := growthField.IntValue(); err == nil {
-					if e.isPercentGrowth {
-						e.growthPercent = int(n)
-					} else {
-						e.growthKB = n * 1024
-					}
-				}
-				if maxKind.Selected() == 1 {
-					if n, err := maxField.IntValue(); err == nil {
-						e.maxSizeKB = n * 1024
-					}
-				}
-				edits.add(e)
-				resetGrid(grid, databaseFileColumns, rowsFor(), len(visible())-1)
-				syncFieldsFromSelection()
-			})
-			removeBtn = widgets.NewButton("Remove", func() {
-				e := selected()
-				if e == nil {
-					hint.Set("Select a file in the grid above to remove it.")
-					return
-				}
-				hint.Clear()
-				edits.remove(e)
-				current = nil
-				resetGrid(grid, databaseFileColumns, rowsFor(), 0)
-				syncFieldsFromSelection()
-			})
-
-			gridRow := propsheet.NewGridRow(grid, 10)
-			gridRow.DirtyFn = edits.dirty
-			gridRow.RevertFn = func() {
-				edits.revert()
-				resetGrid(grid, databaseFileColumns, rowsFor(), 0)
-				syncFieldsFromSelection()
+		case e.isNew:
+			if err := d.AddFile(ctx, e.spec()); err != nil {
+				return err
 			}
-
-			f := propsheet.NewForm(
-				propsheet.Section("Database files"),
-				propsheet.Static("Owner", opts.Owner),
-				gridRow,
-				propsheet.Section("Selected file"),
-				nameField, typeSelect, filegroupSelect, sizeField,
-				growthKind, growthField, maxKind, maxField, pathField,
-				propsheet.Buttons(addBtn, removeBtn),
-				hint,
-				propsheet.Note("A file added to a FILESTREAM filegroup is a FILESTREAM file: its path is a directory rather than a file, and it takes neither an initial size nor autogrowth, so those two are greyed. Choosing the filegroup is what makes it one — there is no file type to pick."),
-			)
-			f.SetCommit(commitCurrent)
-			f.SetApplyConfirm(func() string {
-				var names []string
-				for _, e := range edits.all() {
-					if e.shrinks() {
-						names = append(names, e.name)
-					}
-				}
-				if len(names) == 0 {
-					return ""
-				}
-				return "Lowering the size of " + strings.Join(names, ", ") + " shrinks the file (DBCC SHRINKFILE). " +
-					"It can be slow on a large file, moves pages and so fragments indexes, and stops short " +
-					"of the target where the file's data does not fit."
-			})
-
-			apply := func(ctx context.Context) error {
-				d, err := sc.Server.DatabaseByName(ctx, dbName)
+		default:
+			if !e.changed() {
+				continue // nothing about this file actually changed
+			}
+			// Addressed by origName, not name: a rename is carried inside the modify as
+			// NEWNAME, so the file still answers to its old name here.
+			if err := d.FileRef(e.origName).Alter(ctx, e.modify()); err != nil {
+				return err
+			}
+			// After the Alter, so a renamed file is shrunk by its new name.
+			if e.shrinks() {
+				// SHRINKFILE takes whole MB: rounded up, so the file never ends below the size asked for.
+				res, err := d.FileRef(e.name).Shrink(ctx, gosmo.ShrinkFileOptions{TargetMB: new((e.sizeKB + 1023) / 1024)})
 				if err != nil {
 					return err
 				}
-				for _, e := range edits.all() {
-					switch {
-					case e.removing:
-						if err := d.FileRef(e.origName).Drop(ctx); err != nil {
-							return err
-						}
-					case e.isNew:
-						if err := d.AddFile(ctx, e.spec()); err != nil {
-							return err
-						}
-					default:
-						if !e.changed() {
-							continue // nothing about this file actually changed
-						}
-						// Addressed by origName, not name: a rename is carried inside the modify as
-						// NEWNAME, so the file still answers to its old name here.
-						if err := d.FileRef(e.origName).Alter(ctx, e.modify()); err != nil {
-							return err
-						}
-						// After the Alter, so a renamed file is shrunk by its new name.
-						if e.shrinks() {
-							// SHRINKFILE takes whole MB: rounded up, so the file never ends below the size asked for.
-							res, err := d.FileRef(e.name).Shrink(ctx, gosmo.ShrinkFileOptions{TargetMB: new((e.sizeKB + 1023) / 1024)})
-							if err != nil {
-								return err
-							}
-							if note := shrinkStoppedNote(e.name, e.sizeKB, res.CurrentKB); note != "" {
-								noteApply(ctx, note)
-							}
-						}
-					}
+				if note := shrinkStoppedNote(e.name, e.sizeKB, res.CurrentKB); note != "" {
+					noteApply(ctx, note)
 				}
-				return nil
 			}
-			return f, apply, nil
-		},
+		}
 	}
+	return nil
 }

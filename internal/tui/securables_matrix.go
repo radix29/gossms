@@ -208,6 +208,72 @@ const securableSearchLimit = 200
 // which reads as broken.
 const noSecurableCandidates = "(no matches)"
 
+// securableEntryKey addresses one explicit grant or deny the page was seeded
+// with: a securable's key and a permission name.
+type securableEntryKey struct{ secKey, permission string }
+
+// securablesMatrix is one Securables page's state, shared by the three grids, the
+// Add picker and the apply. The grids' row indices address the visible* slices,
+// which the filters rebuild; the full lists stay in securables and the edit maps.
+type securablesMatrix struct {
+	d          pageActionRunner
+	database   *gosmo.Database
+	find       securableFindFn
+	applyFn    securableApplyFn
+	colApplyFn columnApplyFn
+
+	existing   map[securableEntryKey]gosmo.PermissionState
+	securables []securable
+
+	// editsBySecurable is built lazily, one securable at a time, as the user
+	// browses the grid: a securable never selected has nothing to apply.
+	editsBySecurable map[string][]*securableEdit
+
+	// colEdits holds every column-level edit made this session, keyed by
+	// securable+permission+column and seeded from the server. A column never
+	// looked at is absent.
+	colEdits map[string]*columnEdit
+
+	// visibleSecurables is the filtered view the top grid's row indices address;
+	// securables stays the full list.
+	securableFilter   string
+	visibleSecurables []securable
+	securableGrid     *controls.DataGrid
+
+	permGrid     *controls.DataGrid
+	permFilter   string
+	visiblePerms []*securableEdit
+	permSection  *propsheet.SectionRow
+
+	colSection    *propsheet.SectionRow
+	colPermSelect *propsheet.SelectRow
+	colHint       *propsheet.HintRow
+	colGrid       *controls.DataGrid
+	// loadedCols is the column list the bottom grid is showing. Each entry
+	// carries its own securable and permission, so a cycled cell writes back to
+	// what the grid was loaded for rather than whatever is selected when the
+	// click lands.
+	loadedCols   []*columnEdit
+	loadColsBusy bool
+
+	selected int
+	// selectedSec is the securable the middle grid is showing, held by value
+	// rather than as an index into visibleSecurables, which the filter rebuilds
+	// underneath it.
+	selectedSec   securable
+	selectedEdits []*securableEdit
+
+	addSelect *propsheet.SelectRow
+	hint      *propsheet.HintRow
+	// available is what the Add picker lists, in its order.
+	available []securable
+
+	// searchTerm is what the search box holds, searchedFor what the picker was
+	// last populated from; see runSearch.
+	searchTerm, searchedFor string
+	searchRunning           bool
+}
+
 // buildSecurablesMatrix builds a Securables page: a securable-list grid on top,
 // the selected securable's full permission catalog x state in the middle, and
 // for a table or view the per-column grants for one permission below — the
@@ -224,418 +290,415 @@ func buildSecurablesMatrix(
 	candidates []securable, find securableFindFn, securablesHeight, permsHeight int,
 	applyFn securableApplyFn, colApplyFn columnApplyFn,
 ) (*propsheet.Form, propApply) {
-	type entryKey struct{ secKey, permission string }
-	existing := make(map[entryKey]gosmo.PermissionState, len(entries))
+	p := &securablesMatrix{
+		d: d, database: database, find: find, applyFn: applyFn, colApplyFn: colApplyFn,
+		existing:         make(map[securableEntryKey]gosmo.PermissionState, len(entries)),
+		securables:       append([]securable(nil), initial...),
+		editsBySecurable: make(map[string][]*securableEdit),
+		colEdits:         make(map[string]*columnEdit),
+		selected:         -1,
+	}
 	for _, e := range entries {
 		k := securable{Type: e.SecurableType, Schema: e.Schema, Name: e.Name}
-		existing[entryKey{k.key(), e.Permission}] = e.State
+		p.existing[securableEntryKey{k.key(), e.Permission}] = e.State
 	}
-
-	securables := append([]securable(nil), initial...)
-
-	// editsBySecurable is built lazily, one securable at a time, as the user
-	// browses the grid: a securable never selected has nothing to apply.
-	editsBySecurable := make(map[string][]*securableEdit)
-	editsFor := func(s securable) []*securableEdit {
-		if e, ok := editsBySecurable[s.key()]; ok {
-			return e
-		}
-		catalog := s.catalog()
-		edits := make([]*securableEdit, len(catalog))
-		for i, perm := range catalog {
-			state := existing[entryKey{s.key(), perm}]
-			edits[i] = &securableEdit{sec: s, permission: perm, orig: state, current: state}
-		}
-		editsBySecurable[s.key()] = edits
-		return edits
-	}
-
-	// colEdits holds every column-level edit made this session, keyed by
-	// securable+permission+column and seeded from the server. A column never
-	// looked at is absent.
-	colEdits := make(map[string]*columnEdit)
 	for _, e := range colEntries {
 		// e.ObjectType, not a hardcoded "TABLE": a view's column grants key under
 		// VIEW, the Type the securable list gives them, and keying them as TABLE
 		// makes columnEditKey miss so an existing grant shows as "(none)".
 		sec := securable{Type: e.ObjectType, Schema: e.Schema, Name: e.Object}
 		state := e.State
-		colEdits[columnEditKey(sec, string(e.Permission), e.Column)] = &columnEdit{
+		p.colEdits[columnEditKey(sec, string(e.Permission), e.Column)] = &columnEdit{
 			sec: sec, permission: string(e.Permission), column: e.Column,
 			orig: state, current: state,
 		}
 	}
 
-	// visibleSecurables is the filtered view the top grid's row indices address;
-	// securables stays the full list.
-	securableFilter := ""
-	var visibleSecurables []securable
-	securableRows := func() [][]string {
-		visibleSecurables = visibleSecurables[:0]
-		for _, s := range securables {
-			if matchesFilter(securableFilter, s.label(), string(s.Type)) {
-				visibleSecurables = append(visibleSecurables, s)
-			}
-		}
-		rows := make([][]string, len(visibleSecurables))
-		for i, s := range visibleSecurables {
-			rows[i] = []string{s.label(), string(s.Type)}
-		}
-		return rows
-	}
-	securableGrid := controls.NewDataGrid()
-	securableGrid.SetData(securableListColumns, securableRows())
+	p.securableGrid = controls.NewDataGrid()
+	p.securableGrid.SetData(securableListColumns, p.securableRows())
 
-	permGrid := controls.NewDataGrid()
-	permGrid.SetCellCursor(true)
-	permFilter := ""
-	var visiblePerms []*securableEdit
-	permRowsFor := func(edits []*securableEdit) [][]string {
-		visiblePerms = visiblePerms[:0]
-		for _, e := range edits {
-			if matchesFilter(permFilter, e.permission) {
-				visiblePerms = append(visiblePerms, e)
-			}
-		}
-		rows := make([][]string, len(visiblePerms))
-		for i, e := range visiblePerms {
-			rows[i] = []string{e.permission, displayPermState(e.current)}
-		}
-		return rows
-	}
+	p.permGrid = controls.NewDataGrid()
+	p.permGrid.SetCellCursor(true)
 
 	// -- column-permissions editor ------------------------------------
-	colSection := propsheet.Section("Column permissions")
-	colPermSelect := propsheet.Select("Column permission", gosmo.ColumnPermissionNames(), 0)
-	colHint := propsheet.Hint()
-	colGrid := controls.NewDataGrid()
-	colGrid.SetCellCursor(true)
-	colGrid.SetData(securableColumnColumns, nil)
-	// loadedCols is the column list the bottom grid is showing. Each entry
-	// carries its own securable and permission, so a cycled cell writes back to
-	// what the grid was loaded for rather than whatever is selected when the
-	// click lands.
-	var loadedCols []*columnEdit
+	p.colSection = propsheet.Section("Column permissions")
+	p.colPermSelect = propsheet.Select("Column permission", gosmo.ColumnPermissionNames(), 0)
+	p.colHint = propsheet.Hint()
+	p.colGrid = controls.NewDataGrid()
+	p.colGrid.SetCellCursor(true)
+	p.colGrid.SetData(securableColumnColumns, nil)
+	wireCellToggle(p.colGrid, securableColumnColumns, 1, func() int { return len(p.loadedCols) },
+		func(row int) { p.loadedCols[row].current = nextPermState(p.loadedCols[row].current) }, p.colRows)
 
-	colRows := func() [][]string {
-		rows := make([][]string, len(loadedCols))
-		for i, c := range loadedCols {
-			rows[i] = []string{c.column, displayPermState(c.current)}
-		}
-		return rows
-	}
-	wireCellToggle(colGrid, securableColumnColumns, 1, func() int { return len(loadedCols) },
-		func(row int) { loadedCols[row].current = nextPermState(loadedCols[row].current) }, colRows)
+	p.permSection = propsheet.Section("Permissions")
+	p.securableGrid.OnSelectRow = p.loadSecurable
+	p.loadSecurable(0)
 
-	permSection := propsheet.Section("Permissions")
-	selected := -1
-	// selectedSec is the securable the middle grid is showing, held by value
-	// rather than as an index into visibleSecurables, which the filter rebuilds
-	// underneath it.
-	var selectedSec securable
-	var selectedEdits []*securableEdit
-	// clearSelection empties both lower grids. A filter matching nothing must
-	// reach this: leaving them on the previously selected securable means
-	// cycling a State there edits, and Apply writes, permissions on a securable
-	// the page no longer lists.
-	clearSelection := func() {
-		selected = -1
-		selectedSec = securable{}
-		selectedEdits = nil
-		visiblePerms = visiblePerms[:0]
-		resetGrid(permGrid, permissionStateColumns, nil, 0)
-		loadedCols = nil
-		resetGrid(colGrid, securableColumnColumns, nil, 0)
-		permSection.SetTitle("Permissions")
-		colSection.SetTitle("Column permissions")
-		colHint.Set("No securable selected.")
-	}
-	loadSecurable := func(row int) {
-		if row < 0 || row >= len(visibleSecurables) {
-			clearSelection()
-			return
-		}
-		if row == selected {
-			return
-		}
-		selected = row
-		selectedSec = visibleSecurables[row]
-		selectedEdits = editsFor(selectedSec)
-		resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
-		permSection.SetTitle("Permissions for " + selectedSec.label())
-		if selectedSec.hasColumns() {
-			// The column permissions offered are the securable's own: a
-			// multi-statement table function refuses UPDATE (col). The
-			// permission picked last stays picked when this one has it too.
-			names := selectedSec.columnCatalog()
-			picked := colPermSelect.Value()
-			colPermSelect.SetItems(names)
-			if i := slices.Index(names, picked); i >= 0 {
-				colPermSelect.SetSelected(i)
-			}
-			colHint.Set("Click Load Columns to edit per-column grants on " + selectedSec.label() + ".")
-		} else {
-			colHint.Set(string(selectedSec.Type) + " securables have no columns.")
-		}
-	}
-	securableGrid.OnSelectRow = loadSecurable
-	loadSecurable(0)
+	wireCellToggle(p.permGrid, permissionStateColumns, 1, func() int { return len(p.visiblePerms) },
+		func(row int) { p.visiblePerms[row].current = nextPermState(p.visiblePerms[row].current) },
+		func() [][]string { return p.permRowsFor(p.selectedEdits) })
 
-	wireCellToggle(permGrid, permissionStateColumns, 1, func() int { return len(visiblePerms) },
-		func(row int) { visiblePerms[row].current = nextPermState(visiblePerms[row].current) },
-		func() [][]string { return permRowsFor(selectedEdits) })
+	loadColsBtn := widgets.NewButton("Load Columns", p.loadColumns)
 
-	var loadColsBusy bool
-	loadColsBtn := widgets.NewButton("Load Columns", func() {
-		if selected < 0 || !selectedSec.hasColumns() {
-			colHint.Set("Select a table, view or table-valued function above first — only those have columns.")
-			return
-		}
-		sec := selectedSec
-		perm := colPermSelect.Value()
-		colHint.Set("Loading columns for " + sec.label() + "...")
+	p.addSelect = propsheet.Select("Add securable", []string{noSecurableCandidates}, 0)
+	p.addSelect.SetDirtyTracked(false)
+	p.hint = propsheet.Hint()
+	p.setCandidates(candidates, "")
 
-		var cols []*gosmo.Column
-		d.runPageActionOnce(&loadColsBusy, func(ctx context.Context) error {
-			// ObjectColumns, not TableByName + Table.Columns: the latter reads
-			// sys.tables and so fails on a view, which carries column
-			// permissions exactly like a table.
-			var err error
-			cols, err = database.ObjectColumns(ctx, sec.Schema, sec.Name)
-			return err
-		}, func(err error) {
-			if err != nil {
-				colHint.Set("Error: " + err.Error())
-				return
-			}
-			loadedCols = loadedCols[:0]
-			for _, c := range cols {
-				k := columnEditKey(sec, perm, c.Name)
-				e, ok := colEdits[k]
-				if !ok {
-					// Absent means no explicit grant on that column: seed a
-					// "(none)" edit so cycling it produces a real statement.
-					e = &columnEdit{sec: sec, permission: perm, column: c.Name}
-					colEdits[k] = e
-				}
-				loadedCols = append(loadedCols, e)
-			}
-			colSection.SetTitle(fmt.Sprintf("Column permissions — %s %s", perm, sec.label()))
-			resetGrid(colGrid, securableColumnColumns, colRows(), 0)
-			colHint.Set(fmt.Sprintf("%d columns. Cycling a State here grants on that column only.", len(loadedCols)))
-		})
-	})
+	addBtn := widgets.NewButton("Add", p.addSelected)
 
-	addSelect := propsheet.Select("Add securable", []string{noSecurableCandidates}, 0)
-	addSelect.SetDirtyTracked(false)
-	hint := propsheet.Hint()
-
-	// The database itself is a securable but not an object, so no name search
-	// returns it. It is offered whenever the typed term matches its label, as
-	// the top grid's own filter does.
-	var available []securable
-	setCandidates := func(found []securable, term string) {
-		available = available[:0]
-		if dbSec := (securable{Type: gosmo.SecurableDatabase}); matchesFilter(term, dbSec.label(), string(dbSec.Type)) {
-			available = append(available, dbSec)
-		}
-		truncated := len(found) > securableSearchLimit
-		if truncated {
-			found = found[:securableSearchLimit]
-		}
-		available = append(available, found...)
-
-		labels := make([]string, len(available))
-		for i, s := range available {
-			labels[i] = s.label()
-		}
-		if len(labels) == 0 {
-			labels = []string{noSecurableCandidates}
-		}
-		addSelect.SetItems(labels)
-		switch {
-		case truncated:
-			hint.Set(fmt.Sprintf("More than %d matches — type more to narrow the list.", securableSearchLimit))
-		case len(available) == 0:
-			hint.Set("Nothing on the server matches that name.")
-		default:
-			hint.Clear()
-		}
-	}
-	setCandidates(candidates, "")
-
-	addBtn := widgets.NewButton("Add", func() {
-		if len(available) == 0 {
-			hint.Set("Nothing to add — search for a securable by name first.")
-			return
-		}
-		s := available[addSelect.Selected()]
-		if slices.ContainsFunc(securables, func(e securable) bool { return e.key() == s.key() }) {
-			// Already present — say so and move to its row rather than leaving
-			// the button looking broken.
-			hint.Set(s.label() + " is already listed — edit its permissions below.")
-		} else {
-			hint.Clear()
-			securables = append(securables, s)
-		}
-		rows := securableRows()
-		row := slices.IndexFunc(visibleSecurables, func(e securable) bool { return e.key() == s.key() })
-		if row < 0 {
-			// Present, but the filter box is hiding it — selecting row 0 would
-			// point the grids at a different securable.
-			redrawGrid(securableGrid, securableListColumns, rows)
-			hint.Set(s.label() + " is listed, but the filter above is hiding it.")
-			return
-		}
-		selected = -1
-		resetGrid(securableGrid, securableListColumns, rows, row)
-		loadSecurable(row)
-	})
-
-	// The search box re-queries the server as the user types, coalescing rather
-	// than queueing: at most one search is in flight, and if the term moved on
-	// while it was out the completion starts the next. A query per keystroke
-	// would put five round trips behind "Order" and let an early one land last,
-	// repopulating the picker from a term already backspaced away.
-	//
-	// runPageActionOnce owns the latch: a panicking search releases it, where
-	// a hand-cleared flag stayed set and killed search for the rest of the
-	// showing.
-	searchTerm, searchedFor := "", ""
-	searchRunning := false
-	var runSearch func()
-	runSearch = func() {
-		if searchRunning || searchTerm == searchedFor {
-			return
-		}
-		want := searchTerm
-		var found []securable
-		d.runPageActionOnce(&searchRunning, func(ctx context.Context) error {
-			var err error
-			found, err = find(ctx, want)
-			return err
-		}, func(err error) {
-			searchedFor = want
-			if err != nil {
-				hint.SetError("Search failed: " + err.Error())
-			} else {
-				setCandidates(found, want)
-			}
-			runSearch()
-		})
-	}
 	searchRow := propsheet.Text("Search to add", "", 28)
 	searchRow.SetDirtyTracked(false)
 	searchRow.SetOnChange(func(term string) {
-		searchTerm = term
-		runSearch()
+		p.searchTerm = term
+		p.runSearch()
 	})
 
 	securableFilterRow := propsheet.Text("Filter securables", "", 28)
 	securableFilterRow.SetDirtyTracked(false)
 	securableFilterRow.SetOnChange(func(term string) {
-		securableFilter = term
-		selected = -1
-		resetGrid(securableGrid, securableListColumns, securableRows(), 0)
-		loadSecurable(0)
+		p.securableFilter = term
+		p.selected = -1
+		resetGrid(p.securableGrid, securableListColumns, p.securableRows(), 0)
+		p.loadSecurable(0)
 	})
 
 	permFilterRow := propsheet.Text("Filter permissions", "", 28)
 	permFilterRow.SetDirtyTracked(false)
 	permFilterRow.SetOnChange(func(term string) {
-		permFilter = term
-		if selectedEdits != nil {
-			resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
+		p.permFilter = term
+		if p.selectedEdits != nil {
+			resetGrid(p.permGrid, permissionStateColumns, p.permRowsFor(p.selectedEdits), 0)
 		}
 	})
 
-	securablesRow := propsheet.NewGridRow(securableGrid, securablesHeight)
-	permsRow := propsheet.NewGridRow(permGrid, permsHeight)
-	colsRow := propsheet.NewGridRow(colGrid, 8)
+	securablesRow := propsheet.NewGridRow(p.securableGrid, securablesHeight)
+	permsRow := propsheet.NewGridRow(p.permGrid, permsHeight)
+	colsRow := propsheet.NewGridRow(p.colGrid, 8)
 
-	anyDirty := func() bool {
-		for _, edits := range editsBySecurable {
-			for _, e := range edits {
-				if e.current != e.orig {
-					return true
-				}
-			}
-		}
-		for _, e := range colEdits {
-			if e.current != e.orig {
-				return true
-			}
-		}
-		return false
-	}
-	revertAll := func() {
-		for _, edits := range editsBySecurable {
-			for _, e := range edits {
-				e.current = e.orig
-			}
-		}
-		for _, e := range colEdits {
-			e.current = e.orig
-		}
-		if selectedEdits != nil {
-			resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
-		}
-		resetGrid(colGrid, securableColumnColumns, colRows(), 0)
-	}
 	// Both grids report the page's whole dirty state: the sheet asks each row,
 	// and a column edit made while the middle grid is clean would otherwise
 	// leave Apply disabled.
-	permsRow.DirtyFn, permsRow.RevertFn = anyDirty, revertAll
-	colsRow.DirtyFn, colsRow.RevertFn = anyDirty, revertAll
+	permsRow.DirtyFn, permsRow.RevertFn = p.anyDirty, p.revertAll
+	colsRow.DirtyFn, colsRow.RevertFn = p.anyDirty, p.revertAll
 
 	f := propsheet.NewForm(
 		propsheet.Section("Securables"),
 		securableFilterRow,
 		securablesRow,
 		searchRow,
-		addSelect,
+		p.addSelect,
 		propsheet.Buttons(addBtn),
-		hint,
-		permSection,
+		p.hint,
+		p.permSection,
 		permFilterRow,
 		permsRow,
-		colSection,
-		colPermSelect,
+		p.colSection,
+		p.colPermSelect,
 		propsheet.Buttons(loadColsBtn),
-		colHint,
+		p.colHint,
 		colsRow,
 		propsheet.Note(permStateCycleNote+" Tab switches between the grids, and the filter boxes narrow them as you type. \"Search to add\" looks names up on the server — type part of the name of a schema, object, type or certificate, then pick it from the dropdown and click Add to give it its own row. For a table, view or table-valued function, Load Columns fetches its columns so single-column grants can be edited below; a column DENY overrides an object-level GRANT."),
 	)
+	return f, p.apply
+}
 
-	// Both loops walk a stable order rather than ranging their map: map order
-	// changes every run, so which statements landed before a mid-apply failure
-	// isn't reproducible and Script Changes reorders its output between presses.
-	// editsFor is only called with a securable from the securables slice.
-	apply := func(ctx context.Context) error {
-		for _, s := range securables {
-			for _, e := range editsBySecurable[s.key()] {
-				if e.current == e.orig {
-					continue
-				}
-				verb, opts := permTransition(e.orig, e.current)
-				if err := applyFn(ctx, verb, opts, e.sec, e.permission); err != nil {
-					return err
-				}
+// editsFor returns s's permission edits, building them from its catalog and the
+// seeded grants the first time s is selected.
+func (p *securablesMatrix) editsFor(s securable) []*securableEdit {
+	if e, ok := p.editsBySecurable[s.key()]; ok {
+		return e
+	}
+	catalog := s.catalog()
+	edits := make([]*securableEdit, len(catalog))
+	for i, perm := range catalog {
+		state := p.existing[securableEntryKey{s.key(), perm}]
+		edits[i] = &securableEdit{sec: s, permission: perm, orig: state, current: state}
+	}
+	p.editsBySecurable[s.key()] = edits
+	return edits
+}
+
+// securableRows rebuilds visibleSecurables from the filter and returns the top
+// grid's rows.
+func (p *securablesMatrix) securableRows() [][]string {
+	p.visibleSecurables = p.visibleSecurables[:0]
+	for _, s := range p.securables {
+		if matchesFilter(p.securableFilter, s.label(), string(s.Type)) {
+			p.visibleSecurables = append(p.visibleSecurables, s)
+		}
+	}
+	rows := make([][]string, len(p.visibleSecurables))
+	for i, s := range p.visibleSecurables {
+		rows[i] = []string{s.label(), string(s.Type)}
+	}
+	return rows
+}
+
+// permRowsFor rebuilds visiblePerms from edits and the filter and returns the
+// middle grid's rows.
+func (p *securablesMatrix) permRowsFor(edits []*securableEdit) [][]string {
+	p.visiblePerms = p.visiblePerms[:0]
+	for _, e := range edits {
+		if matchesFilter(p.permFilter, e.permission) {
+			p.visiblePerms = append(p.visiblePerms, e)
+		}
+	}
+	rows := make([][]string, len(p.visiblePerms))
+	for i, e := range p.visiblePerms {
+		rows[i] = []string{e.permission, displayPermState(e.current)}
+	}
+	return rows
+}
+
+func (p *securablesMatrix) colRows() [][]string {
+	rows := make([][]string, len(p.loadedCols))
+	for i, c := range p.loadedCols {
+		rows[i] = []string{c.column, displayPermState(c.current)}
+	}
+	return rows
+}
+
+// clearSelection empties both lower grids. A filter matching nothing must
+// reach this: leaving them on the previously selected securable means
+// cycling a State there edits, and Apply writes, permissions on a securable
+// the page no longer lists.
+func (p *securablesMatrix) clearSelection() {
+	p.selected = -1
+	p.selectedSec = securable{}
+	p.selectedEdits = nil
+	p.visiblePerms = p.visiblePerms[:0]
+	resetGrid(p.permGrid, permissionStateColumns, nil, 0)
+	p.loadedCols = nil
+	resetGrid(p.colGrid, securableColumnColumns, nil, 0)
+	p.permSection.SetTitle("Permissions")
+	p.colSection.SetTitle("Column permissions")
+	p.colHint.Set("No securable selected.")
+}
+
+// loadSecurable points the lower grids at the top grid's row.
+func (p *securablesMatrix) loadSecurable(row int) {
+	if row < 0 || row >= len(p.visibleSecurables) {
+		p.clearSelection()
+		return
+	}
+	if row == p.selected {
+		return
+	}
+	p.selected = row
+	p.selectedSec = p.visibleSecurables[row]
+	p.selectedEdits = p.editsFor(p.selectedSec)
+	resetGrid(p.permGrid, permissionStateColumns, p.permRowsFor(p.selectedEdits), 0)
+	p.permSection.SetTitle("Permissions for " + p.selectedSec.label())
+	if p.selectedSec.hasColumns() {
+		// The column permissions offered are the securable's own: a
+		// multi-statement table function refuses UPDATE (col). The
+		// permission picked last stays picked when this one has it too.
+		names := p.selectedSec.columnCatalog()
+		picked := p.colPermSelect.Value()
+		p.colPermSelect.SetItems(names)
+		if i := slices.Index(names, picked); i >= 0 {
+			p.colPermSelect.SetSelected(i)
+		}
+		p.colHint.Set("Click Load Columns to edit per-column grants on " + p.selectedSec.label() + ".")
+	} else {
+		p.colHint.Set(string(p.selectedSec.Type) + " securables have no columns.")
+	}
+}
+
+// loadColumns is Load Columns: fetch the selected securable's columns and show
+// the picked column permission's state on each.
+func (p *securablesMatrix) loadColumns() {
+	if p.selected < 0 || !p.selectedSec.hasColumns() {
+		p.colHint.Set("Select a table, view or table-valued function above first — only those have columns.")
+		return
+	}
+	sec := p.selectedSec
+	perm := p.colPermSelect.Value()
+	p.colHint.Set("Loading columns for " + sec.label() + "...")
+
+	var cols []*gosmo.Column
+	p.d.runPageActionOnce(&p.loadColsBusy, func(ctx context.Context) error {
+		// ObjectColumns, not TableByName + Table.Columns: the latter reads
+		// sys.tables and so fails on a view, which carries column
+		// permissions exactly like a table.
+		var err error
+		cols, err = p.database.ObjectColumns(ctx, sec.Schema, sec.Name)
+		return err
+	}, func(err error) {
+		if err != nil {
+			p.colHint.Set("Error: " + err.Error())
+			return
+		}
+		p.loadedCols = p.loadedCols[:0]
+		for _, c := range cols {
+			k := columnEditKey(sec, perm, c.Name)
+			e, ok := p.colEdits[k]
+			if !ok {
+				// Absent means no explicit grant on that column: seed a
+				// "(none)" edit so cycling it produces a real statement.
+				e = &columnEdit{sec: sec, permission: perm, column: c.Name}
+				p.colEdits[k] = e
+			}
+			p.loadedCols = append(p.loadedCols, e)
+		}
+		p.colSection.SetTitle(fmt.Sprintf("Column permissions — %s %s", perm, sec.label()))
+		resetGrid(p.colGrid, securableColumnColumns, p.colRows(), 0)
+		p.colHint.Set(fmt.Sprintf("%d columns. Cycling a State here grants on that column only.", len(p.loadedCols)))
+	})
+}
+
+// setCandidates repopulates the Add picker from a search for term.
+//
+// The database itself is a securable but not an object, so no name search
+// returns it. It is offered whenever the typed term matches its label, as
+// the top grid's own filter does.
+func (p *securablesMatrix) setCandidates(found []securable, term string) {
+	p.available = p.available[:0]
+	if dbSec := (securable{Type: gosmo.SecurableDatabase}); matchesFilter(term, dbSec.label(), string(dbSec.Type)) {
+		p.available = append(p.available, dbSec)
+	}
+	truncated := len(found) > securableSearchLimit
+	if truncated {
+		found = found[:securableSearchLimit]
+	}
+	p.available = append(p.available, found...)
+
+	labels := make([]string, len(p.available))
+	for i, s := range p.available {
+		labels[i] = s.label()
+	}
+	if len(labels) == 0 {
+		labels = []string{noSecurableCandidates}
+	}
+	p.addSelect.SetItems(labels)
+	switch {
+	case truncated:
+		p.hint.Set(fmt.Sprintf("More than %d matches — type more to narrow the list.", securableSearchLimit))
+	case len(p.available) == 0:
+		p.hint.Set("Nothing on the server matches that name.")
+	default:
+		p.hint.Clear()
+	}
+}
+
+// addSelected is Add: list the picked securable and select its row.
+func (p *securablesMatrix) addSelected() {
+	if len(p.available) == 0 {
+		p.hint.Set("Nothing to add — search for a securable by name first.")
+		return
+	}
+	s := p.available[p.addSelect.Selected()]
+	if slices.ContainsFunc(p.securables, func(e securable) bool { return e.key() == s.key() }) {
+		// Already present — say so and move to its row rather than leaving
+		// the button looking broken.
+		p.hint.Set(s.label() + " is already listed — edit its permissions below.")
+	} else {
+		p.hint.Clear()
+		p.securables = append(p.securables, s)
+	}
+	rows := p.securableRows()
+	row := slices.IndexFunc(p.visibleSecurables, func(e securable) bool { return e.key() == s.key() })
+	if row < 0 {
+		// Present, but the filter box is hiding it — selecting row 0 would
+		// point the grids at a different securable.
+		redrawGrid(p.securableGrid, securableListColumns, rows)
+		p.hint.Set(s.label() + " is listed, but the filter above is hiding it.")
+		return
+	}
+	p.selected = -1
+	resetGrid(p.securableGrid, securableListColumns, rows, row)
+	p.loadSecurable(row)
+}
+
+// runSearch re-queries the server as the user types, coalescing rather than
+// queueing: at most one search is in flight, and if the term moved on while it
+// was out the completion starts the next. A query per keystroke would put five
+// round trips behind "Order" and let an early one land last, repopulating the
+// picker from a term already backspaced away.
+//
+// runPageActionOnce owns the latch: a panicking search releases it, where a
+// hand-cleared flag stayed set and killed search for the rest of the showing.
+func (p *securablesMatrix) runSearch() {
+	if p.searchRunning || p.searchTerm == p.searchedFor {
+		return
+	}
+	want := p.searchTerm
+	var found []securable
+	p.d.runPageActionOnce(&p.searchRunning, func(ctx context.Context) error {
+		var err error
+		found, err = p.find(ctx, want)
+		return err
+	}, func(err error) {
+		p.searchedFor = want
+		if err != nil {
+			p.hint.SetError("Search failed: " + err.Error())
+		} else {
+			p.setCandidates(found, want)
+		}
+		p.runSearch()
+	})
+}
+
+func (p *securablesMatrix) anyDirty() bool {
+	for _, edits := range p.editsBySecurable {
+		for _, e := range edits {
+			if e.current != e.orig {
+				return true
 			}
 		}
-		for _, k := range slices.Sorted(maps.Keys(colEdits)) {
-			e := colEdits[k]
+	}
+	for _, e := range p.colEdits {
+		if e.current != e.orig {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *securablesMatrix) revertAll() {
+	for _, edits := range p.editsBySecurable {
+		for _, e := range edits {
+			e.current = e.orig
+		}
+	}
+	for _, e := range p.colEdits {
+		e.current = e.orig
+	}
+	if p.selectedEdits != nil {
+		resetGrid(p.permGrid, permissionStateColumns, p.permRowsFor(p.selectedEdits), 0)
+	}
+	resetGrid(p.colGrid, securableColumnColumns, p.colRows(), 0)
+}
+
+// apply writes every changed state. Both loops walk a stable order rather than
+// ranging their map: map order changes every run, so which statements landed
+// before a mid-apply failure isn't reproducible and Script Changes reorders its
+// output between presses. editsFor is only called with a securable from the
+// securables slice.
+func (p *securablesMatrix) apply(ctx context.Context) error {
+	for _, s := range p.securables {
+		for _, e := range p.editsBySecurable[s.key()] {
 			if e.current == e.orig {
 				continue
 			}
 			verb, opts := permTransition(e.orig, e.current)
-			if err := colApplyFn(ctx, verb, opts, e.sec, e.permission, e.column); err != nil {
+			if err := p.applyFn(ctx, verb, opts, e.sec, e.permission); err != nil {
 				return err
 			}
 		}
-		return nil
 	}
-	return f, apply
+	for _, k := range slices.Sorted(maps.Keys(p.colEdits)) {
+		e := p.colEdits[k]
+		if e.current == e.orig {
+			continue
+		}
+		verb, opts := permTransition(e.orig, e.current)
+		if err := p.colApplyFn(ctx, verb, opts, e.sec, e.permission, e.column); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // applySecurable issues one object/schema/database-scoped state change.

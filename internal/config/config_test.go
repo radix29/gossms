@@ -1166,6 +1166,49 @@ func TestOpenLogFileNarrowsAnOlderWorldReadableLog(t *testing.T) {
 	}
 }
 
+// A rotation that fails (here: .1 is a non-empty directory, which no rename
+// replaces) still opens the log for appending, but records why in the log
+// itself rather than growing past MaxLogSize silently. The directory is left
+// alone, not narrowed to 0600.
+func TestOpenLogFileRecordsAFailedRotation(t *testing.T) {
+	scratchConfigDir(t)
+	path, err := LogFilePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(path+".1", "keep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path+".1", 0o755); err != nil { // past the umask
+		t.Fatal(err)
+	}
+	big := strings.Repeat("x", MaxLogSize+1)
+	if err := os.WriteFile(path, []byte(big), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := OpenLogFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	if !strings.HasPrefix(got, big) {
+		t.Fatalf("the unrotated log lost its contents (%d bytes)", len(got))
+	}
+	if tail := got[len(big):]; !strings.Contains(tail, "log: rotating a") {
+		t.Errorf("no warning recorded for the failed rotation; appended %q", tail)
+	}
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(path + ".1"); err != nil || fi.Mode().Perm() != 0o755 {
+			t.Errorf("the .1 directory was touched: %v, %v", fi.Mode(), err)
+		}
+	}
+}
+
 // Remember Password gates whether a password reaches config.json at all.
 // Unchecked, the entry is still saved — it is what the Connect dialog's
 // History pane lists — but with no password and, crucially, no ciphertext

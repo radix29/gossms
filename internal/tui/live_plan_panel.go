@@ -216,6 +216,9 @@ func (lp *LivePlanPanel) HandleKey(ev *tcell.EventKey) bool { return lp.planView
 // HandleMouse delegates to the wrapped PlanView.
 func (lp *LivePlanPanel) HandleMouse(ev *tcell.EventMouse) bool { return lp.planView.HandleMouse(ev) }
 
+// OverlayActive implements layout.OverlayPanel (PlanView's summary popup).
+func (lp *LivePlanPanel) OverlayActive() bool { return lp.planView.OverlayActive() }
+
 // HasSelection and the rest of clipboardTarget forward to the PlanView, as
 // PlanPanel's do.
 func (lp *LivePlanPanel) HasSelection() bool   { return lp.planView.HasSelection() }
@@ -223,3 +226,7 @@ func (lp *LivePlanPanel) SelectedText() string { return lp.planView.SelectedText
 func (lp *LivePlanPanel) Cut() string          { return lp.planView.Cut() }
 func (lp *LivePlanPanel) Paste(text string)    { lp.planView.Paste(text) }
 func (lp *LivePlanPanel) SelectAll()           { lp.planView.SelectAll() }
+func (lp *LivePlanPanel) CanCopy() bool        { return lp.planView.CanCopy() }
+func (lp *LivePlanPanel) CanCut() bool         { return lp.planView.CanCut() }
+func (lp *LivePlanPanel) CanPaste() bool       { return lp.planView.CanPaste() }
+func (lp *LivePlanPanel) CanSelectAll() bool   { return lp.planView.CanSelectAll() }

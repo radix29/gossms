@@ -495,3 +495,39 @@ func TestFilesPageGrowsARaisedSize(t *testing.T) {
 		t.Errorf("growing a file shrank it: %q", r)
 	}
 }
+
+// TestFilesPageKeepsAnExistingFilesTypeAndPath: File type and Path are live
+// fields for every row but read back only for a file Add created. MODIFY FILE
+// can neither retype nor move a file, so changed() ignores both, and a picker
+// change on an existing file that commitCurrent copied back would show in the
+// grid as a fact about the database it is not.
+func TestFilesPageKeepsAnExistingFilesTypeAndPath(t *testing.T) {
+	sc, inst := newGConn(t, filesPageResponses()...)
+	form, _ := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
+	g := plainGrid(t, form)
+
+	selectGridRow(t, g, 0, "appdb")
+	editSelect(t, form, "File type", "LOG")
+	editText(t, form, "Path", `D:\elsewhere\appdb.mdf`)
+	selectGridRow(t, g, 0, "appdb_log")
+
+	row := g.Row(gridRowIndex(t, g, 0, "appdb"))
+	if row[1] != "ROWS" || row[6] != `C:\data\appdb.mdf` {
+		t.Errorf("the grid now reports the existing file as %q at %q", row[1], row[6])
+	}
+}
+
+// TestFilesPageGreysSizeForASelectedFilestreamFile: the spinner gating follows
+// the selected row too, not only the Add pickers — an existing FILESTREAM
+// file has no size or growth to edit.
+func TestFilesPageGreysSizeForASelectedFilestreamFile(t *testing.T) {
+	sc, inst := newGConn(t, filestreamFilesResponses()...)
+	form, _ := loadPageG(t, pageDatabaseFiles(sc, "appdb"), inst)
+
+	selectGridRow(t, plainGrid(t, form), 0, "appdb_fs")
+	for _, label := range []string{"Initial size", "Growth amount"} {
+		if textRow(t, form, label).Focusable() {
+			t.Errorf("%q is live on a FILESTREAM file", label)
+		}
+	}
+}

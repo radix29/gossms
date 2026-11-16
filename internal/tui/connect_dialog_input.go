@@ -62,6 +62,17 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 		d.stepFocus(-1)
 		return true
 	case tcell.KeyEscape:
+		// An open list gets Escape first: it closes the list only, as in
+		// Backup, Restore and Options. The selection is unchanged, so there
+		// is nothing to re-apply.
+		if d.ddAuth.OverlayActive() {
+			d.ddAuth.HandleKey(ev)
+			return true
+		}
+		if d.ddEncrypt.OverlayActive() {
+			d.ddEncrypt.HandleKey(ev)
+			return true
+		}
 		d.Hide()
 		return true
 	case tcell.KeyEnter:

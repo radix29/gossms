@@ -63,6 +63,11 @@ support); this section covers only the environment.
   `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
   Document's keyword case (below) waits on the same instance.
+- **Two gosmo live tests fail only inside the full `-short` run on
+  win10cli** (2026-11-15, 20 min): `TestLiveStartTime` and
+  `TestLiveReplicationMonitor` both failed there and both passed run alone
+  straight after. Unexplained; the failure text was lost to the run's
+  filter. Rerun them in the full suite with `-v` before trusting a failure.
 
 ## Picture viewer: what is left
 
@@ -119,15 +124,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
 
-## Theme: what is left
-
-- **Nine palette/style pairs read below the WCAG floor** — found when review
-  step S5 gave them named helpers; they were drawn inline before, so nothing
-  changed visibly. `knownLowContrast` in tuikit's `theme/contrast_test.go`
-  lists them (DialogAccent and DialogError in Default, DialogAccent/DialogDim/
-  MenuDim in Light, MenuDim in MC, MenuDim/DialogDim/DialogError in MCRetro).
-  Recolouring is a visible change: check each palette in the binary.
-
 ## tuikit: what is left
 
 - **No tag yet — a release blocker.** tuikit became its own module
@@ -135,20 +131,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   requires the `v0.0.0-…` placeholder and builds only through
   `replace … => ../tuikit`; before a gossms tag, commit, tag and push tuikit,
   then bump the `require` and drop the `replace` (as for gosmo).
-- **The Details pane's own cell menu stays open when a click lands in Object
-  Explorer.** `DataGrid` keeps its context menu inside the grid, and
-  `App.handleMouse` routes by position, so a right-click on a tree node opens
-  the tree's menu beside the grid's still-open "Show Value" box. Breaks
-  `core.MouseHandler`'s "any press outside an open menu dismisses it" one
-  level up: the app does not offer the press to an `OverlayActive()` pane
-  first. Seen 2026-11-12 driving tuikit-review step 4; predates it.
-- **`widgets.InputField.HandleKey` breaks the `HandleKey` rule** that
-  tuikit-review step 8 (IN1) applied to the grid, editor, tree and list: it
-  tests its own focus and claims every key it binds, Left at column 0 and
-  Right at the end included. Following the rule would hand a property-sheet
-  text field's Left-at-start to the sheet (page list) and an edge arrow in a
-  dialog to the dialog's own keys — a UX decision, not taken. tuikit's
-  `ARCHITECTURE.md` § Widgets and grids names the exception.
 
 ## Fix order
 

@@ -72,6 +72,13 @@ func (am *ActivityMonitor) newProcTab(proc *activity.Proc, credit string) *amPro
 }
 
 // procTab is the showing procedure tab, nil otherwise.
+// OverlayActive implements layout.OverlayPanel: the shown tab's grid has its
+// menu or popup open.
+func (am *ActivityMonitor) OverlayActive() bool {
+	pt := am.procTab()
+	return pt != nil && pt.grid != nil && pt.grid.OverlayActive()
+}
+
 func (am *ActivityMonitor) procTab() *amProcTab {
 	switch am.tab {
 	case amTabBlock:

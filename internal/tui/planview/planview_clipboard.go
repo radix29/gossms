@@ -39,7 +39,7 @@ func (v *PlanView) SelectedText() string {
 func (v *PlanView) Cut() string       { return "" } // read-only: nothing cut (Copy takes the text)
 func (v *PlanView) Paste(text string) {}
 
-// CanCopy, CanCut and CanPaste implement core.ClipboardAccess: the view is
+// CanCopy, CanCut and CanPaste implement core.ClipboardTarget: the view is
 // read-only throughout, copied from wherever HasSelection finds something.
 func (v *PlanView) CanCopy() bool  { return v.HasSelection() }
 func (v *PlanView) CanCut() bool   { return false }

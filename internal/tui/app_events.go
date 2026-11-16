@@ -69,155 +69,8 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		return false
 	}
 
-	switch ev.Key() {
-	case tcell.KeyF1:
-		a.helpDialog.Show()
-		return false
-	case tcell.KeyF10:
-		// Plain F10 opens the menu bar (the OverlayActive check above handles
-		// closing). Shift+F10 is the context menu and falls through.
-		if ev.Modifiers()&tcell.ModShift == 0 {
-			a.menuBar.Open()
-			return false
-		}
-	case tcell.KeyCtrlQ:
-		// Returns true only if quitting went through; with unsaved panels
-		// requestQuit prompts and quits from its callback.
-		return a.requestQuit()
-	case tcell.KeyCtrlN:
-		a.newQueryPanel()
-		return false
-	case tcell.KeyCtrlW:
-		a.closeActivePanel()
-		return false
-	case tcell.KeyF9:
-		a.connectDialog.Show()
-		return false
-	case tcell.KeyCtrlO:
-		// Ctrl+Shift+O arrives as KeyCtrlO+ModShift only via normalizeCtrlRune
-		// on modern-protocol terminals; elsewhere it's plain Ctrl+O (open
-		// file). F9 works everywhere.
-		if ev.Modifiers()&tcell.ModShift != 0 {
-			a.connectDialog.Show()
-		} else {
-			a.openQueryFile()
-		}
-		return false
-	case tcell.KeyCtrlS:
-		a.saveQuery(false)
-		return false
-	case tcell.KeyCtrlF:
-		a.findDialog.ShowFind()
-		return false
-	case tcell.KeyF3:
-		// Ctrl+F3 finds the word under the caret, Shift+F3 steps back; both
-		// decorate plain F3.
-		switch {
-		case ev.Modifiers()&tcell.ModCtrl != 0:
-			a.findWordAtCursor()
-		case ev.Modifiers()&tcell.ModShift != 0:
-			a.findNextInEditor(-1)
-		default:
-			a.findNextInEditor(1)
-		}
-		return false
-	case tcell.KeyF5:
-		// Explorer focused: refresh the selection. Otherwise the active panel
-		// sees F5 first (like Tab below), so panels that refresh rather than
-		// execute (the Always On dashboard) get it; QueryPanel's F5 executes
-		// anyway.
-		switch {
-		case a.focus == focusOnExplorer:
-			a.refreshSelected()
-		case !a.panels.HandleKey(ev):
-			a.executeActiveQuery()
-		}
-		return false
-	case tcell.KeyTab:
-		// tcell has no KeyCtrlTab: Ctrl(+Shift)+Tab arrive as KeyTab with ModCtrl (and
-		// ModShift) on modern-protocol terminals. Elsewhere, including emulators that
-		// reserve Ctrl+Tab, they look like plain Tab; Ctrl+Shift+Right/Left and
-		// Ctrl+0..9 are the reliable alternatives.
-		//
-		// Ctrl+Tab cycles focus forward through Object Explorer, the query editor and
-		// its results; Ctrl+Shift+Tab reverses.
-		switch {
-		case ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0:
-			a.cycleFocusReverse()
-			return false
-		case ev.Modifiers()&tcell.ModCtrl != 0:
-			a.cycleFocus()
-			return false
-		case a.focus == focusOnExplorer:
-			a.focusPanels()
-			return false
-		}
-		// Plain Tab goes to the focused panel first, so the editor's indent
-		// wins; only a refusing panel falls back to focusing Explorer.
-		if a.panels.HandleKey(ev) {
-			return false
-		}
-		a.focusExplorer()
-		return false
-	case tcell.KeyBacktab:
-		// Some terminals send Shift+Tab as Backtab instead of KeyTab+ModShift.
-		// With Ctrl it reverses the focus cycle; plain Backtab falls through
-		// (e.g. the editor's Dedent).
-		if ev.Modifiers()&tcell.ModCtrl != 0 {
-			a.cycleFocusReverse()
-			return false
-		}
-	case tcell.KeyLeft:
-		// Ctrl+Shift+Left: previous panel. Plain Ctrl+Left falls through
-		// (explorer resize, word jump).
-		if ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0 {
-			a.prevPanel()
-			return false
-		}
-	case tcell.KeyRight:
-		// Ctrl+Shift+Right switches to the next panel/tab.
-		if ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0 {
-			a.nextPanel()
-			return false
-		}
-	case tcell.KeyRune:
-		// Alt+Z toggles Word Wrap, as in VS Code. App-wide, so it works
-		// whatever has focus; Alt+Shift+Z arrives as 'Z' and counts too.
-		if ev.Modifiers()&^tcell.ModShift == tcell.ModAlt {
-			if r := core.EvRune(ev); r == 'z' || r == 'Z' {
-				a.toggleWordWrap()
-				return false
-			}
-			// Alt+Shift+F is Edit > Format Document, as in VS Code; plain
-			// Alt+F counts too. A no-op without a query panel.
-			if r := core.EvRune(ev); r == 'f' || r == 'F' {
-				if a.activeQueryPanel() != nil {
-					a.formatActiveDocument()
-				}
-				return false
-			}
-			// Alt+P is the XEvent Profiler's Standard session, on the
-			// connection Object Explorer has selected — SSMS has no default
-			// key for it; P for Profiler.
-			if r := core.EvRune(ev); r == 'p' || r == 'P' {
-				a.launchXEventProfilerActive(xeProfilerKinds[0])
-				return false
-			}
-			// Alt+G is View > Group by Schema, whatever has focus — SSMS
-			// has no key for it; G for Group.
-			if r := core.EvRune(ev); r == 'g' || r == 'G' {
-				a.toggleGroupBySchema()
-				return false
-			}
-		}
-		// Ctrl+0..9 jumps to panel N from the left (Object Explorer Details is
-		// 0), only while a panel has focus.
-		if a.focus == focusOnPanels && ev.Modifiers()&tcell.ModCtrl != 0 {
-			if r := core.EvRune(ev); r >= '0' && r <= '9' {
-				a.jumpToPanel(int(r - '0'))
-				return false
-			}
-		}
+	if handled, quit := a.handleGlobalKey(ev); handled {
+		return quit
 	}
 
 	// Explorer splitter resize (Ctrl+Left/Right), only with explorer focus so
@@ -233,6 +86,164 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		a.panels.HandleKey(ev)
 	}
 	return false
+}
+
+// handleGlobalKey runs the app-wide shortcuts that apply whatever has focus,
+// once no overlay or dialog has taken the key. handled is false for a key that
+// is not one, or a modifier variant that falls through to the focused half
+// (Shift+F10, plain Ctrl+Left, plain Backtab).
+func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
+	switch ev.Key() {
+	case tcell.KeyF1:
+		a.helpDialog.Show()
+		return true, false
+	case tcell.KeyF10:
+		// Plain F10 opens the menu bar (the OverlayActive check above handles
+		// closing). Shift+F10 is the context menu and falls through.
+		if ev.Modifiers()&tcell.ModShift == 0 {
+			a.menuBar.Open()
+			return true, false
+		}
+	case tcell.KeyCtrlQ:
+		// Returns true only if quitting went through; with unsaved panels
+		// requestQuit prompts and quits from its callback.
+		return true, a.requestQuit()
+	case tcell.KeyCtrlN:
+		a.newQueryPanel()
+		return true, false
+	case tcell.KeyCtrlW:
+		a.closeActivePanel()
+		return true, false
+	case tcell.KeyF9:
+		a.connectDialog.Show()
+		return true, false
+	case tcell.KeyCtrlO:
+		// Ctrl+Shift+O arrives as KeyCtrlO+ModShift only via normalizeCtrlRune
+		// on modern-protocol terminals; elsewhere it's plain Ctrl+O (open
+		// file). F9 works everywhere.
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			a.connectDialog.Show()
+		} else {
+			a.openQueryFile()
+		}
+		return true, false
+	case tcell.KeyCtrlS:
+		a.saveQuery(false)
+		return true, false
+	case tcell.KeyCtrlF:
+		a.findDialog.ShowFind()
+		return true, false
+	case tcell.KeyF3:
+		// Ctrl+F3 finds the word under the caret, Shift+F3 steps back; both
+		// decorate plain F3.
+		switch {
+		case ev.Modifiers()&tcell.ModCtrl != 0:
+			a.findWordAtCursor()
+		case ev.Modifiers()&tcell.ModShift != 0:
+			a.findNextInEditor(-1)
+		default:
+			a.findNextInEditor(1)
+		}
+		return true, false
+	case tcell.KeyF5:
+		// Explorer focused: refresh the selection. Otherwise the active panel
+		// sees F5 first (like Tab below), so panels that refresh rather than
+		// execute (the Always On dashboard) get it; QueryPanel's F5 executes
+		// anyway.
+		switch {
+		case a.focus == focusOnExplorer:
+			a.refreshSelected()
+		case !a.panels.HandleKey(ev):
+			a.executeActiveQuery()
+		}
+		return true, false
+	case tcell.KeyTab:
+		// tcell has no KeyCtrlTab: Ctrl(+Shift)+Tab arrive as KeyTab with ModCtrl (and
+		// ModShift) on modern-protocol terminals. Elsewhere, including emulators that
+		// reserve Ctrl+Tab, they look like plain Tab; Ctrl+Shift+Right/Left and
+		// Ctrl+0..9 are the reliable alternatives.
+		//
+		// Ctrl+Tab cycles focus forward through Object Explorer, the query editor and
+		// its results; Ctrl+Shift+Tab reverses.
+		switch {
+		case ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0:
+			a.cycleFocusReverse()
+			return true, false
+		case ev.Modifiers()&tcell.ModCtrl != 0:
+			a.cycleFocus()
+			return true, false
+		case a.focus == focusOnExplorer:
+			a.focusPanels()
+			return true, false
+		}
+		// Plain Tab goes to the focused panel first, so the editor's indent
+		// wins; only a refusing panel falls back to focusing Explorer.
+		if a.panels.HandleKey(ev) {
+			return true, false
+		}
+		a.focusExplorer()
+		return true, false
+	case tcell.KeyBacktab:
+		// Some terminals send Shift+Tab as Backtab instead of KeyTab+ModShift.
+		// With Ctrl it reverses the focus cycle; plain Backtab falls through
+		// (e.g. the editor's Dedent).
+		if ev.Modifiers()&tcell.ModCtrl != 0 {
+			a.cycleFocusReverse()
+			return true, false
+		}
+	case tcell.KeyLeft:
+		// Ctrl+Shift+Left: previous panel. Plain Ctrl+Left falls through
+		// (explorer resize, word jump).
+		if ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0 {
+			a.prevPanel()
+			return true, false
+		}
+	case tcell.KeyRight:
+		// Ctrl+Shift+Right switches to the next panel/tab.
+		if ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0 {
+			a.nextPanel()
+			return true, false
+		}
+	case tcell.KeyRune:
+		// Alt+Z toggles Word Wrap, as in VS Code. App-wide, so it works
+		// whatever has focus; Alt+Shift+Z arrives as 'Z' and counts too.
+		if ev.Modifiers()&^tcell.ModShift == tcell.ModAlt {
+			if r := core.EvRune(ev); r == 'z' || r == 'Z' {
+				a.toggleWordWrap()
+				return true, false
+			}
+			// Alt+Shift+F is Edit > Format Document, as in VS Code; plain
+			// Alt+F counts too. A no-op without a query panel.
+			if r := core.EvRune(ev); r == 'f' || r == 'F' {
+				if a.activeQueryPanel() != nil {
+					a.formatActiveDocument()
+				}
+				return true, false
+			}
+			// Alt+P is the XEvent Profiler's Standard session, on the
+			// connection Object Explorer has selected — SSMS has no default
+			// key for it; P for Profiler.
+			if r := core.EvRune(ev); r == 'p' || r == 'P' {
+				a.launchXEventProfilerActive(xeProfilerKinds[0])
+				return true, false
+			}
+			// Alt+G is View > Group by Schema, whatever has focus — SSMS
+			// has no key for it; G for Group.
+			if r := core.EvRune(ev); r == 'g' || r == 'G' {
+				a.toggleGroupBySchema()
+				return true, false
+			}
+		}
+		// Ctrl+0..9 jumps to panel N from the left (Object Explorer Details is
+		// 0), only while a panel has focus.
+		if a.focus == focusOnPanels && ev.Modifiers()&tcell.ModCtrl != 0 {
+			if r := core.EvRune(ev); r >= '0' && r <= '9' {
+				a.jumpToPanel(int(r - '0'))
+				return true, false
+			}
+		}
+	}
+	return false, false
 }
 
 func (a *App) handleMouse(ev *tcell.EventMouse) {
@@ -290,6 +301,13 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 	if a.menuBar.OverlayActive() && (a.menuBar.HandleMouse(ev) || a.menuBar.OverlayActive()) {
+		return
+	}
+	// Then the active panel's overlay (a grid's cell menu or Show Value popup,
+	// the editor's completion list, the tab drop-down), by the same rule: routed
+	// by position, a right-click on Object Explorer opened the tree's menu
+	// beside the grid's still-open one (layout.OverlayPanel).
+	if a.panels.OverlayActive() && (a.panels.HandleMouse(ev) || a.panels.OverlayActive()) {
 		return
 	}
 
@@ -457,11 +475,13 @@ func (a *App) routeGesture(ev *tcell.EventMouse, region appGestureOwner) {
 }
 
 // overlayStack is the modal layers open at one instant: top dialog (or nil),
-// context menu and dropdown. Compared by value to detect changes mid-gesture.
+// context menu, menu-bar dropdown and the active panel's overlay. Compared by
+// value to detect changes mid-gesture.
 type overlayStack struct {
 	dialog      Dialog
 	contextMenu bool
 	menuBar     bool
+	panels      bool
 }
 
 func (a *App) overlaySnapshot() overlayStack {
@@ -469,5 +489,6 @@ func (a *App) overlaySnapshot() overlayStack {
 		dialog:      a.modals.Top(),
 		contextMenu: a.contextMenu.OverlayActive(),
 		menuBar:     a.menuBar.OverlayActive(),
+		panels:      a.panels.OverlayActive(),
 	}
 }

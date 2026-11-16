@@ -228,3 +228,53 @@ func TestFabricDWExternalFunctionPermissionsCanBeRevoked(t *testing.T) {
 		}
 	}
 }
+
+// TestSecurablesFilterMatchingNothingEmptiesThePermissions: a filter that
+// hides every securable must leave nothing selected. Left on the previously
+// selected securable, the permissions grid kept offering its states to cycle,
+// and Apply wrote them against a securable the page no longer listed.
+func TestSecurablesFilterMatchingNothingEmptiesThePermissions(t *testing.T) {
+	_, _, _, form := loadSecurablesPage(t)
+
+	secs, perms, _ := securableGrids(t, form)
+	selectGridRow(t, secs, 0, "[sales].[Orders]")
+	typeInto(t, form, "Filter securables", "no-such-securable")
+
+	if row := perms.Grid.Row(0); row != nil {
+		t.Fatalf("the permissions grid still shows %v with no securable listed", row)
+	}
+}
+
+// TestSecurablesShowAViewsExistingColumnGrant: a view's column grants key
+// under VIEW, the Type the securable list gives the view. Keyed as TABLE, the
+// loaded column read "(none)" though the server holds a GRANT on it, and
+// cycling it from there wrote a statement against the wrong baseline.
+func TestSecurablesShowAViewsExistingColumnGrant(t *testing.T) {
+	resps := securableResponses()
+	for i, r := range resps {
+		switch r.match {
+		case "dp.class_desc IN ('DATABASE','SCHEMA','OBJECT_OR_COLUMN','TYPE','CERTIFICATE')":
+			resps[i].rows = append(resps[i].rows, []driver.Value{"OBJECT_OR_COLUMN", "SELECT", "GRANT", "sales", "OrderTotals", "V"})
+		case "dp.minor_id > 0":
+			resps[i].rows = [][]driver.Value{{"appwriter", "SQL_USER", "dbo", "sales", "OrderTotals", "V", "Total", "SELECT", "GRANT"}}
+		}
+	}
+	sc, inst := newGConn(t, append(resps,
+		fakeResponse{match: "OBJECT_ID(@p1)", db: secDatabase, cols: 42, rows: [][]driver.Value{
+			{"Total", int64(1), "money", int64(8), int64(19), int64(4), false, false, false, "", "", "", false, "", int64(0), int64(0), false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", "", "", "", false, int64(0), "", "", "", "", "", false},
+		}},
+	)...)
+	d, app := newFakeDialog(t)
+	principal := "appwriter"
+	form, _ := loadPageG(t, pageDatabasePrincipalSecurables(d, sc, secDatabase, &principal), inst)
+
+	secs, _, cols := securableGrids(t, form)
+	selectGridRow(t, secs, 0, "[sales].[OrderTotals]")
+	chooseSelect(t, form, "Column permission", "SELECT")
+	clickButton(t, form, "Load Columns")
+	drainDialog(t, app, func() bool { return cols.Grid.Row(0) != nil }, "the column list to arrive")
+
+	if got := cols.Grid.Row(permRowIndex(t, cols, "Total"))[1]; got != "Grant" {
+		t.Errorf("the view's Total column reads %q, want the server's Grant", got)
+	}
+}

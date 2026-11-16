@@ -84,6 +84,9 @@ func (v *XEventViewer) scrollDetails(delta int) {
 	v.scrollDetailLines(len(v.detailLines(e, v.detailRect.W-2)), delta)
 }
 
+// OverlayActive implements layout.OverlayPanel (the grid's menu or popup).
+func (v *XEventViewer) OverlayActive() bool { return v.grid.OverlayActive() }
+
 // HandleMouse routes a mouse event to the sub-region owning it: a press
 // claims the gesture until its release (dragZone), and a release reaches
 // every latch-bearing child wherever the pointer is.

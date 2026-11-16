@@ -53,6 +53,9 @@ func (p *ReplicationMonitorPanel) overlayGrid() *controls.DataGrid {
 	return nil
 }
 
+// OverlayActive implements layout.OverlayPanel.
+func (p *ReplicationMonitorPanel) OverlayActive() bool { return p.overlayGrid() != nil }
+
 // HandleMouse routes a mouse event to the sub-region that owns it: a press
 // claims the gesture until its release, and a release goes to every
 // latch-bearing child wherever the pointer ended.
@@ -143,3 +146,7 @@ func (p *ReplicationMonitorPanel) SelectedText() string { return p.focusedGrid()
 func (p *ReplicationMonitorPanel) Cut() string          { return p.focusedGrid().Cut() }
 func (p *ReplicationMonitorPanel) Paste(text string)    { p.focusedGrid().Paste(text) }
 func (p *ReplicationMonitorPanel) SelectAll()           { p.focusedGrid().SelectAll() }
+func (p *ReplicationMonitorPanel) CanCopy() bool        { return p.focusedGrid().CanCopy() }
+func (p *ReplicationMonitorPanel) CanCut() bool         { return p.focusedGrid().CanCut() }
+func (p *ReplicationMonitorPanel) CanPaste() bool       { return p.focusedGrid().CanPaste() }
+func (p *ReplicationMonitorPanel) CanSelectAll() bool   { return p.focusedGrid().CanSelectAll() }

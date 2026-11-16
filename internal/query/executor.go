@@ -362,7 +362,7 @@ func Execute(ctx context.Context, db *sql.DB, script string, opts ...Option) *Re
 	endDB := ""
 	defer func() {
 		if startDB == "" || endDB != startDB {
-			discardConn(conn)
+			gosmo.DiscardConn(conn)
 		}
 		conn.Close()
 	}()

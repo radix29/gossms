@@ -547,6 +547,9 @@ func (p *PlanComparePanel) overlayGrid() *controls.DataGrid {
 	return nil
 }
 
+// OverlayActive implements layout.OverlayPanel.
+func (p *PlanComparePanel) OverlayActive() bool { return p.overlayGrid() != nil }
+
 func (p *PlanComparePanel) focusedGrid() *controls.DataGrid {
 	if p.focusOps {
 		return p.ops
@@ -631,10 +634,14 @@ func (p *PlanComparePanel) routeDrag(ev *tcell.EventMouse, zone pcDragZone) {
 	}
 }
 
-// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it
+// HasSelection and the SelectedText, Cut, Paste, SelectAll and Can* beside it
 // implement clipboardTarget by forwarding to the focused grid.
 func (p *PlanComparePanel) HasSelection() bool   { return p.focusedGrid().HasSelection() }
 func (p *PlanComparePanel) SelectedText() string { return p.focusedGrid().SelectedText() }
 func (p *PlanComparePanel) Cut() string          { return p.focusedGrid().Cut() }
 func (p *PlanComparePanel) Paste(text string)    { p.focusedGrid().Paste(text) }
 func (p *PlanComparePanel) SelectAll()           { p.focusedGrid().SelectAll() }
+func (p *PlanComparePanel) CanCopy() bool        { return p.focusedGrid().CanCopy() }
+func (p *PlanComparePanel) CanCut() bool         { return p.focusedGrid().CanCut() }
+func (p *PlanComparePanel) CanPaste() bool       { return p.focusedGrid().CanPaste() }
+func (p *PlanComparePanel) CanSelectAll() bool   { return p.focusedGrid().CanSelectAll() }

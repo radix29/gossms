@@ -76,11 +76,12 @@ var readTimeoutSites = map[string]int{
 	// 4: includes refreshStateLabel, the Resource Governor and Database Mail
 	// nodes' label re-reads.
 	"app_explorer_data.go": 4,
-	// 4: the database list, the default backup directory the destination
-	// is generated in — see BackupDialog.loadDefaultPaths — the server's
-	// "backup compression default" (loadCompressionDefault), and Start
-	// Backup's xp_fileexist probe of the destination (checkDestThen).
-	"backup_dialog.go": 4,
+	// 3: the database list, the default backup directory the destination
+	// is generated in — see BackupDialog.loadDefaultPaths — and the server's
+	// "backup compression default" (loadCompressionDefault).
+	"backup_dialog.go": 3,
+	// Start Backup's xp_fileexist probe of the destination (checkDestThen).
+	"backup_dialog_actions.go": 1,
 	// Re-reading a Query Store query's text for "Show Value" — see
 	// DetailBrowser.showQueryStoreValue.
 	"detail_browser.go":          1,

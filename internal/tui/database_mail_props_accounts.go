@@ -10,9 +10,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/propsheet"
-	"github.com/radix29/tuikit/widgets"
 )
 
 // database_mail_props_accounts.go is Database Mail Properties ▸ Accounts: the
@@ -221,19 +219,6 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 			publish := func() { model.publishAccounts(mailPublishedAccounts(edits.all())) }
 			visible := edits.visible
 			headers := []string{"Name", "E-mail address", "SMTP server", "Port", "SSL", "Authentication"}
-			gridRows := func() [][]string {
-				vis := visible()
-				rows := make([][]string, len(vis))
-				for i, e := range vis {
-					v := e.cur
-					rows[i] = []string{mailEditName(e.orig.name, v.name, e.isNew), v.email, v.server,
-						strconv.Itoa(v.port), yesNo(v.ssl), mailAuthItems[v.auth]}
-				}
-				return rows
-			}
-			grid := controls.NewDataGrid()
-			grid.SetData(headers, gridRows())
-			grid.SetCellCursor(true)
 
 			nameRow := propsheet.Text("Account name", "", 30)
 			descRow := propsheet.Text("Description", "", 40)
@@ -251,12 +236,8 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 			textRows := []*propsheet.TextRow{nameRow, descRow, emailRow, displayRow, replyRow, serverRow, portRow, timeoutRow}
 			credRows := []*propsheet.TextRow{userRow, passwordRow, confirmRow}
 
-			var current *mailAccountEdit
-			commitCurrent := func() {
-				if current == nil {
-					return
-				}
-				v := &current.cur
+			commit := func(e *mailAccountEdit) {
+				v := &e.cur
 				v.name, v.description, v.email = nameRow.Value(), descRow.Value(), emailRow.Value()
 				v.display, v.replyTo, v.server = displayRow.Value(), replyRow.Value(), serverRow.Value()
 				if n, err := portRow.IntValue(); err == nil && portRow.Validate() == nil {
@@ -269,36 +250,31 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				v.auth = gosmo.MailAuthentication(authRow.Selected())
 				if credsAllowed {
 					v.user = userRow.Value()
-					current.password, current.confirm = passwordRow.Value(), confirmRow.Value()
+					e.password, e.confirm = passwordRow.Value(), confirmRow.Value()
 				}
 			}
 			// credFieldsFor makes the user name and password editable only
 			// where they mean something and may be written.
-			credFieldsFor := func(auth gosmo.MailAuthentication) {
+			credFieldsFor := func(selected bool, auth gosmo.MailAuthentication) {
 				for _, row := range credRows {
-					row.SetReadOnly(current == nil || !credsAllowed || auth != gosmo.MailAuthBasic)
+					row.SetReadOnly(!selected || !credsAllowed || auth != gosmo.MailAuthBasic)
 				}
 			}
-			syncFromSelection := func() {
-				vis := visible()
-				current = nil
-				if i := grid.SelectedRow(); i >= 0 && i < len(vis) {
-					current = vis[i]
-				}
+			show := func(e *mailAccountEdit) {
 				for _, row := range textRows {
-					row.SetReadOnly(current == nil)
+					row.SetReadOnly(e == nil)
 				}
-				sslRow.SetReadOnly(current == nil)
-				if current == nil {
+				sslRow.SetReadOnly(e == nil)
+				if e == nil {
 					for _, row := range append(slices.Clone(textRows), credRows...) {
 						row.SetValue("")
 					}
 					sslRow.SetChecked(false)
 					authRow.SetSelected(int(gosmo.MailAuthAnonymous))
-					credFieldsFor(gosmo.MailAuthAnonymous)
+					credFieldsFor(false, gosmo.MailAuthAnonymous)
 					return
 				}
-				v := current.cur
+				v := e.cur
 				nameRow.SetValue(v.name)
 				descRow.SetValue(v.description)
 				emailRow.SetValue(v.email)
@@ -310,96 +286,71 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				sslRow.SetChecked(v.ssl)
 				authRow.SetSelected(int(v.auth))
 				userRow.SetValue(v.user)
-				passwordRow.SetValue(current.password)
-				confirmRow.SetValue(current.confirm)
-				credFieldsFor(v.auth)
+				passwordRow.SetValue(e.password)
+				confirmRow.SetValue(e.confirm)
+				credFieldsFor(true, v.auth)
 			}
-			reload := wireGridEditor(grid, headers, gridRows, commitCurrent, syncFromSelection)
-			// The selection handler commits and redraws; the Profiles page
-			// hears of a new account's rename from here as well.
-			onSelect := grid.OnSelectRow
-			grid.OnSelectRow = func(row int) {
-				onSelect(row)
-				publish()
-			}
-			reselect := func(row int) {
-				current = nil
-				resetGrid(grid, headers, gridRows(), row)
-				syncFromSelection()
-				publish()
-			}
-			authRow.SetOnChange(func(i int) { credFieldsFor(gosmo.MailAuthentication(i)) })
+
+			list := propsheet.NewListEditor(propsheet.ListEditorSpec[*mailAccountEdit]{
+				Noun:       "account",
+				NameLabel:  "New account name",
+				NameWidth:  30,
+				Headers:    headers,
+				GridHeight: min(len(loaded)+4, 8),
+				Items:      visible,
+				Cells: func(e *mailAccountEdit) []string {
+					v := e.cur
+					return []string{mailEditName(e.orig.name, v.name, e.isNew), v.email, v.server,
+						strconv.Itoa(v.port), yesNo(v.ssl), mailAuthItems[v.auth]}
+				},
+				Show:   show,
+				Commit: commit,
+				Add: func(name string) (string, bool) {
+					if edits.listed(name) {
+						return "An account named " + name + " is already listed.", false
+					}
+					v := mailAccountValues{name: name, port: 25}
+					edits.add(&mailAccountEdit{orig: v, cur: v})
+					return "Fill in the e-mail address and SMTP server of " + name + " below.", true
+				},
+				Remove: func(e *mailAccountEdit) (string, bool) {
+					if !credsAllowed && !e.isNew && e.orig.auth == gosmo.MailAuthBasic {
+						return "Deleting " + e.orig.name + " needs ALTER ANY CREDENTIAL (Basic authentication).", false
+					}
+					edits.remove(e)
+					if e.isNew {
+						return "", true
+					}
+					// The server removes it from every profile without a
+					// word (W8), so this page says it instead.
+					return e.orig.name + " is deleted on Apply, and leaves every profile that uses it.", true
+				},
+				Dirty: edits.dirty,
+				// A new account's orig is its first values, not a stored row;
+				// refusal leaves it no stored name.
+				Validate: func() error {
+					return edits.refusal("account", func(e *mailAccountEdit) string { return e.orig.name })
+				},
+				Revert: edits.revert,
+				// The Profiles page hears of a new account's rename from a
+				// selection move as well.
+				Changed: publish,
+			})
+			authRow.SetOnChange(func(i int) { credFieldsFor(list.Current() != nil, gosmo.MailAuthentication(i)) })
 			// A new account's name is what the Profiles page lists it by, so
 			// a rename of one is published as typed. An existing account is
 			// listed there by its stored name until Apply.
 			nameRow.SetOnChange(func(string) {
-				if current != nil && current.isNew {
-					commitCurrent()
-					redrawGrid(grid, headers, gridRows())
+				if cur := list.Current(); cur != nil && cur.isNew {
+					list.Commit()
+					list.Redraw()
 					publish()
 				}
 			})
 
-			gridRow := propsheet.NewGridRow(grid, min(len(loaded)+4, 8))
-			gridRow.DirtyFn = edits.dirty
-			gridRow.ValidateFn = func() error {
-				// A new account's orig is its first values, not a stored
-				// row; refusal leaves it no stored name.
-				return edits.refusal("account", func(e *mailAccountEdit) string { return e.orig.name })
-			}
-			gridRow.RevertFn = func() {
-				edits.revert()
-				current = nil
-				reload()
-				publish()
-			}
-
-			newName := propsheet.Text("New account name", "", 30)
-			hint := propsheet.Hint()
-			addBtn := widgets.NewButton("Add", func() {
-				commitCurrent()
-				name := newName.Value()
-				if name == "" {
-					hint.Set("Type a name for the new account first.")
-					return
-				}
-				if edits.listed(name) {
-					hint.Set("An account named " + name + " is already listed.")
-					return
-				}
-				hint.Set("Fill in the e-mail address and SMTP server of " + name + " below.")
-				v := mailAccountValues{name: name, port: 25}
-				edits.add(&mailAccountEdit{orig: v, cur: v})
-				newName.SetValue("")
-				reselect(len(visible()) - 1)
-			})
-			removeBtn := widgets.NewButton("Remove", func() {
-				commitCurrent()
-				vis := visible()
-				i := grid.SelectedRow()
-				if i < 0 || i >= len(vis) {
-					hint.Set("Select an account in the grid above to remove it.")
-					return
-				}
-				e := vis[i]
-				if !credsAllowed && !e.isNew && e.orig.auth == gosmo.MailAuthBasic {
-					hint.Set("Deleting " + e.orig.name + " needs ALTER ANY CREDENTIAL (Basic authentication).")
-					return
-				}
-				edits.remove(e)
-				if e.isNew {
-					hint.Clear()
-				} else {
-					// The server removes it from every profile without a
-					// word (W8), so this page says it instead.
-					hint.Set(e.orig.name + " is deleted on Apply, and leaves every profile that uses it.")
-				}
-				reselect(min(i, len(visible())-1))
-			})
-
 			rows := []propsheet.Row{
 				propsheet.Section("Accounts"),
-				gridRow,
+				list.GridRow(),
 				propsheet.Section("Selected account"),
 				nameRow, descRow,
 				propsheet.Section("Outgoing mail (SMTP) server"),
@@ -411,11 +362,8 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 			if !credsAllowed {
 				rows = append(rows, propsheet.Note("User name and password are read-only: an account with Basic authentication stores its password as a server credential, which needs ALTER ANY CREDENTIAL (CONTROL SERVER implies it). Without it an existing Basic account cannot be changed or deleted at all — the server would unlink or orphan its credential. Other accounts can still be changed."))
 			}
+			rows = append(rows, list.AddRemoveRows()...)
 			rows = append(rows,
-				propsheet.Section("Add or remove"),
-				newName,
-				propsheet.Buttons(addBtn, removeBtn),
-				hint,
 				propsheet.Note("Removing an account also removes it from every profile that uses it; the server does not refuse it. A new account is offered on the Profiles page at once."),
 			)
 
@@ -455,9 +403,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				}
 				return nil
 			}
-			form := propsheet.NewForm(rows...)
-			form.SetCommit(commitCurrent)
-			return form, apply, nil
+			return list.NewForm(rows...), apply, nil
 		},
 	}
 }

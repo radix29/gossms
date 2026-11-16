@@ -1,5 +1,4 @@
 - add windows store installation? 
-- add copy / paste on all text fields that can be edited and copy on read only fields. this should be a core functionality.
 
 Results:
 -	Geo/GIS data?

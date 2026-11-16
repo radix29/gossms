@@ -130,7 +130,7 @@ func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgres
 	msgStyle := labelStyle
 	switch {
 	case t.Done && t.Cancelled:
-		msg = v.verb + " cancelled."
+		msg = v.verb + " cancelled." + t.repairNote()
 		msgStyle = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError)
 	case t.Done && t.Err != nil:
 		msg = "Failed: " + t.Err.Error()
