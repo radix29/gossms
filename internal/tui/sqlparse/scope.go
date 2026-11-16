@@ -149,7 +149,7 @@ func ParseFromScope(tokens []Token) []FromRef {
 				expectRef = true
 			case "MERGE":
 				expectRef, merge = true, merge || !isJoinHint(tokens, i)
-			case "WHERE", "ON", "GROUP", "ORDER", "HAVING", "SET", "VALUES", "AND", "OR",
+			case "WHERE", "ON", "GROUP", "ORDER", "HAVING", "QUALIFY", "SET", "VALUES", "AND", "OR",
 				"UNION", "EXCEPT", "INTERSECT":
 				expectRef = false
 			}
@@ -203,6 +203,10 @@ func CurrentClause(tokens []Token) Clause {
 		if depth != 0 {
 			continue
 		}
+		if windowClauseAt(tokens, i) {
+			clause = ClauseColumn
+			continue
+		}
 		if atMergeUsing(tokens, i, merge) {
 			clause = ClauseTable
 			continue
@@ -211,7 +215,7 @@ func CurrentClause(tokens []Token) Clause {
 			continue
 		}
 		switch t.Text {
-		case "SELECT", "WHERE", "ON", "HAVING", "SET", "AND", "OR", "BY":
+		case "SELECT", "WHERE", "ON", "HAVING", "QUALIFY", "SET", "AND", "OR", "BY":
 			clause = ClauseColumn
 		case "FROM", "JOIN", "INTO", "UPDATE", "DELETE", "TABLE":
 			clause = ClauseTable

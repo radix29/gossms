@@ -1,6 +1,10 @@
 package sqlparse
 
-import "github.com/radix29/gossms/internal/sqltext"
+import (
+	"strings"
+
+	"github.com/radix29/gossms/internal/sqltext"
+)
 
 // ---------------------------------------------------------------------------
 // Statement bounds: where the DML statement the cursor is in begins and ends
@@ -8,8 +12,8 @@ import "github.com/radix29/gossms/internal/sqltext"
 
 // DMLStatementStarts scans tokens (depth-tracked from their own start, since a
 // ';'/GO boundary falls outside any paren in valid SQL) and returns, ascending,
-// the offset of every top-level WITH or sqltext.IsDMLLeader keyword that begins
-// a new statement rather than continuing the current one:
+// the offset of every top-level WITH, FROM-first query or sqltext.IsDMLLeader
+// keyword that begins a new statement rather than continuing the current one:
 //   - a SELECT chained onto the previous clause by UNION[ ALL]/EXCEPT/INTERSECT
 //     is the same statement
 //   - the first top-level SELECT after WITH, or after an INSERT with no
@@ -18,6 +22,7 @@ import "github.com/radix29/gossms/internal/sqltext"
 //     boundary. An INSERT ... VALUES has no such SELECT to suppress, so a
 //     separate SELECT stacked right after it with no ';' is (rarely) missed
 //     (known limitation)
+//   - a FROM-first query's trailing SELECT continues its table sources
 //   - an INSERT, UPDATE or DELETE right after THEN is a MERGE action, and a
 //     MERGE after INNER/OUTER/LEFT/RIGHT/FULL is a join hint
 //   - a WITH directly followed by '(' is a table hint ("t WITH (NOLOCK)") or a
@@ -46,6 +51,11 @@ type dmlSplitter struct {
 	depth                   int
 	prevKeyword, prevPrevKw string
 	pendingMainSelect       bool
+	pendingFromSelect       bool
+	started                 bool
+	prevToken               Token
+	fromSeen, querySource   bool
+	systemTime              bool
 
 	// with is a top-level WITH whose role the token after it decides: a '('
 	// makes it a hint or a WITH column list, anything else a CTE clause.
@@ -65,6 +75,9 @@ func (s *dmlSplitter) feed(t Token) (Token, bool) {
 			// may set a WITH pending; t continues this statement either way.
 			with := s.with
 			s.pendingMainSelect = true
+			s.pendingFromSelect = false
+			s.started = true
+			s.fromSeen, s.querySource = false, true
 			s.advance(t)
 			s.withPending = false
 			return with, true
@@ -82,8 +95,16 @@ var joinHintPrefixes = map[string]bool{"INNER": true, "OUTER": true, "LEFT": tru
 
 // advance is feed for every token but the one after a pending WITH's verdict.
 func (s *dmlSplitter) advance(t Token) bool {
+	prev := s.prevToken
+	temporalFrom := s.systemTime
+	s.systemTime = !prev.Quoted && strings.EqualFold(prev.Text, "FOR") &&
+		!t.Quoted && strings.EqualFold(t.Text, "SYSTEM_TIME")
+	s.prevToken = t
 	switch t.Kind {
 	case TokenParenOpen:
+		if s.depth == 0 && prev.Kind == TokenKeyword && prev.Text == "AS" {
+			s.pendingFromSelect = false // WINDOW name AS (...)
+		}
 		s.depth++
 		return false
 	case TokenParenClose:
@@ -92,23 +113,47 @@ func (s *dmlSplitter) advance(t Token) bool {
 		}
 		return false
 	}
-	if s.depth != 0 || t.Kind != TokenKeyword {
+	if s.depth != 0 {
 		return false
+	}
+	if !prev.Quoted && strings.EqualFold(prev.Text, "FOR") && !t.Quoted &&
+		(strings.EqualFold(t.Text, "JSON") || strings.EqualFold(t.Text, "XML")) {
+		s.pendingFromSelect = false
+	}
+	if t.Kind != TokenKeyword {
+		return false
+	}
+	continuesUnion := s.prevKeyword == "UNION" || s.prevKeyword == "EXCEPT" || s.prevKeyword == "INTERSECT" ||
+		(s.prevKeyword == "ALL" && s.prevPrevKw == "UNION")
+	switch t.Text {
+	case "WHERE", "GROUP", "HAVING", "QUALIFY", "ORDER":
+		s.pendingFromSelect = false
+	case "UNION", "EXCEPT", "INTERSECT":
+		s.fromSeen, s.pendingFromSelect = false, false
 	}
 	starts := false
 	switch {
+	case t.Text == "FROM":
+		if temporalFrom || (s.prevKeyword == "DISTINCT" && (s.prevPrevKw == "IS" || s.prevPrevKw == "NOT")) {
+			break
+		}
+		starts = !s.started || (s.fromSeen && s.querySource)
+		if starts || continuesUnion || s.pendingMainSelect {
+			s.pendingMainSelect = false
+			s.pendingFromSelect, s.querySource = true, true
+		}
+		s.fromSeen = true
 	case t.Text == "VALUES", t.Text == "EXEC", t.Text == "EXECUTE":
 		// INSERT ... VALUES and INSERT ... EXEC have no main SELECT to
 		// wait for, so the next top-level SELECT is a statement of its own.
-		s.pendingMainSelect = false
+		s.pendingMainSelect, s.pendingFromSelect = false, false
+		s.started, s.fromSeen, s.querySource = false, false, false
 	case t.Text == "WITH":
 		s.with, s.withPending = t, true
 	case sqltext.IsDMLLeader(t.Text):
-		continuesUnion := s.prevKeyword == "UNION" || s.prevKeyword == "EXCEPT" || s.prevKeyword == "INTERSECT" ||
-			(s.prevKeyword == "ALL" && s.prevPrevKw == "UNION")
 		switch {
-		case t.Text == "SELECT" && s.pendingMainSelect:
-			s.pendingMainSelect = false
+		case t.Text == "SELECT" && (s.pendingMainSelect || s.pendingFromSelect):
+			s.pendingMainSelect, s.pendingFromSelect = false, false
 		case t.Text == "SELECT" && continuesUnion:
 			// UNION-chain continuation of the same statement.
 		case s.prevKeyword == "THEN":
@@ -120,8 +165,12 @@ func (s *dmlSplitter) advance(t Token) bool {
 		default:
 			starts = true
 			s.pendingMainSelect = t.Text == "INSERT"
+			s.pendingFromSelect = false
+			s.fromSeen = false
+			s.querySource = t.Text == "SELECT" || t.Text == "INSERT"
 		}
 	}
+	s.started = s.started || starts
 	s.prevPrevKw = s.prevKeyword
 	s.prevKeyword = t.Text
 	return starts

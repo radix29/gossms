@@ -69,6 +69,13 @@ var continuesAfter = map[string]bool{
 	",": true, ".": true,
 }
 
+// These statements can contain their own top-level FROM. A completed
+// INSERT ... VALUES/EXEC is handled separately; other leaders yield to a new query.
+var fromClauseLeaders = map[string]bool{
+	"SELECT": true, "FROM": true, "WITH": true, "INSERT": true, "UPDATE": true, "DELETE": true, "MERGE": true,
+	"CREATE": true, "ALTER": true, "DROP": true, "RESTORE": true, "FETCH": true, "BULK": true,
+}
+
 // notBefore names, per leader, the next tokens that make it no statement:
 // UPDATE(col) in a trigger, ON DELETE CASCADE / ON UPDATE SET NULL in a
 // foreign key, MERGE ... THEN UPDATE SET, ALTER PARTITION FUNCTION ... MERGE
@@ -142,8 +149,12 @@ type stmtSplitter struct {
 	leader         string // the keyword that began the current statement
 
 	pendingMainSelect bool // INSERT waiting for its SELECT or EXEC
+	pendingFromSelect bool // FROM-first source waiting for its optional SELECT
 	pendingCTEMain    bool // a CTE waiting for its main statement
 	permission        bool // GRANT/DENY/REVOKE before TO/FROM: verbs are permission names
+	fromSeen          bool // a top-level FROM already in this query block
+	querySource       bool // the statement is a query, so a second top-level FROM begins a FROM-first one
+	brokerFrom        bool // BEGIN DIALOG, RECEIVE or GET CONVERSATION GROUP: the next FROM is its own
 
 	pend     pendKind
 	pendTok  stmtToken
@@ -168,7 +179,10 @@ func (s *stmtSplitter) start(t stmtToken) {
 	s.cut(t.row, t.col)
 	s.leader = t.text
 	s.pendingMainSelect = t.text == "INSERT"
+	s.pendingFromSelect = false
 	s.pendingCTEMain = false
+	s.fromSeen, s.brokerFrom = false, false
+	s.querySource = t.text == "SELECT" || t.text == "INSERT" || t.text == "FROM" || t.text == "WITH"
 	s.permission = t.text == "GRANT" || t.text == "DENY" || t.text == "REVOKE"
 }
 
@@ -210,6 +224,9 @@ func (s *stmtSplitter) resolve(t stmtToken) bool {
 func (s *stmtSplitter) advance(t stmtToken) {
 	switch t.kind {
 	case tokOpen:
+		if s.depth == 0 && s.prev == "AS" {
+			s.pendingFromSelect = false // WINDOW name AS (...)
+		}
 		s.depth++
 		return
 	case tokClose:
@@ -226,8 +243,50 @@ func (s *stmtSplitter) advance(t stmtToken) {
 		s.permission = w != "TO" && w != "FROM"
 		return
 	}
+	switch w {
+	case "WHERE", "GROUP", "HAVING", "QUALIFY", "ORDER":
+		s.pendingFromSelect = false
+	case "UNION", "EXCEPT", "INTERSECT":
+		s.fromSeen, s.pendingFromSelect = false, false
+	}
+	if s.prev == "FOR" && (w == "JSON" || w == "XML") {
+		s.pendingFromSelect = false
+	}
 	if w == "VALUES" {
 		s.pendingMainSelect = false
+		if s.leader == "INSERT" {
+			s.querySource = false
+		}
+		return
+	}
+	if (w == "DIALOG" && s.prev == "BEGIN") || w == "RECEIVE" || (w == "CONVERSATION" && s.prev == "GET") {
+		s.brokerFrom = true // BEGIN DIALOG @h FROM SERVICE, RECEIVE ... FROM queue
+	}
+	continuesUnion := s.prev == "UNION" || s.prev == "EXCEPT" || s.prev == "INTERSECT" ||
+		(s.prev == "ALL" && s.prevPrev == "UNION")
+	if w == "FROM" {
+		if s.brokerFrom && !fromClauseLeaders[s.leader] {
+			s.brokerFrom = false
+			return
+		}
+		if (s.prev == "SYSTEM_TIME" && s.prevPrev == "FOR") ||
+			(s.prev == "DISTINCT" && (s.prevPrev == "IS" || s.prevPrev == "NOT")) {
+			return
+		}
+		fromFirst := continuesUnion || s.pendingMainSelect || s.pendingCTEMain ||
+			((s.leader == "CREATE" || s.leader == "ALTER") && (s.prev == "AS" || s.prev == "RETURN")) ||
+			((s.leader == "DECLARE" || s.leader == "SET") && s.prev == "FOR")
+		newStatement := !fromFirst && ((s.leader == "" && s.prev == "") || (s.fromSeen && s.querySource) ||
+			(s.leader == "INSERT" && !s.querySource) ||
+			(s.leader != "" && !fromClauseLeaders[s.leader]))
+		if newStatement {
+			s.start(t)
+		}
+		s.fromSeen = true
+		if fromFirst || newStatement {
+			s.pendingMainSelect, s.pendingCTEMain = false, false
+			s.pendingFromSelect, s.querySource = true, true
+		}
 		return
 	}
 	if !statementLeaders[w] {
@@ -239,22 +298,23 @@ func (s *stmtSplitter) advance(t stmtToken) {
 		switch {
 		case w == "WITH":
 			s.pend, s.pendTok, s.pendCont = pendWith, t, true
-		case (s.prev == "AS" || s.prev == "THEN") && dmlLeaders[w]:
+		case (s.prev == "AS" || s.prev == "THEN" || s.prev == "FOR") && dmlLeaders[w]:
 			s.leader, s.pendingMainSelect = w, w == "INSERT"
+			s.querySource = w == "SELECT" || w == "INSERT"
 		}
 		return
 	}
-	continuesUnion := s.prev == "UNION" || s.prev == "EXCEPT" || s.prev == "INTERSECT" ||
-		(s.prev == "ALL" && s.prevPrev == "UNION")
 	switch {
-	case w == "SELECT" && (s.pendingMainSelect || s.pendingCTEMain):
-		s.pendingMainSelect, s.pendingCTEMain = false, false
+	case w == "SELECT" && (s.pendingMainSelect || s.pendingCTEMain || s.pendingFromSelect):
+		s.pendingMainSelect, s.pendingCTEMain, s.pendingFromSelect = false, false, false
 	case w == "SELECT" && continuesUnion:
 	case (w == "EXEC" || w == "EXECUTE") && s.pendingMainSelect:
 		s.pendingMainSelect = false // INSERT ... EXEC
+		s.querySource = false
 	case s.pendingCTEMain && dmlLeaders[w]:
 		s.pendingCTEMain = false
 		s.leader, s.pendingMainSelect = w, w == "INSERT"
+		s.querySource = w == "INSERT" || w == "SELECT"
 	case w == "SET" && (s.leader == "UPDATE" || s.leader == "ALTER" || s.leader == "MERGE" ||
 		s.prev == "DELETE" || s.prev == "UPDATE"):
 	case w == "WITH":

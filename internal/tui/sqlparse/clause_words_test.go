@@ -15,6 +15,10 @@ func TestClauseWordsAreNotAliases(t *testing.T) {
 	}{
 		{"FOR JSON", "SELECT Orders.| FROM Orders FOR JSON PATH", "Orders"},
 		{"FOR XML", "SELECT | FROM dbo.Orders FOR XML AUTO", "dbo.Orders"},
+		{"QUALIFY", "SELECT Orders.| FROM Orders QUALIFY ROW_NUMBER() OVER (ORDER BY id) = 1", "Orders"},
+		{"quoted QUALIFY alias", "SELECT [QUALIFY].| FROM Orders AS [QUALIFY]", "Orders QUALIFY"},
+		{"WINDOW clause", "FROM Orders WINDOW w AS (ORDER BY id) QUALIFY |", "Orders"},
+		{"WINDOW alias", "FROM Orders window SELECT window.|", "Orders window"},
 		{"OPTION", "SELECT | FROM Orders OPTION (RECOMPILE)", "Orders"},
 		{"TABLESAMPLE", "SELECT | FROM Orders TABLESAMPLE (10 PERCENT)", "Orders"},
 		{"TABLESAMPLE after the alias", "SELECT o.| FROM Orders o TABLESAMPLE SYSTEM (10 PERCENT)", "Orders o"},
@@ -54,6 +58,7 @@ func TestClauseWordsEndASelectWithNoFrom(t *testing.T) {
 		"SELECT [for] FROM t WHERE |":      "for",
 		"SELECT name [option] FROM t |":    "name=option",
 		"SELECT name FOR JSON AUTO, ROOT|": "name",
+		"SELECT 1 QUALIFY 1 = 1|":          "1",
 	} {
 		if got := selectItems(scopeAtCursor(t, sql).Query); got != want {
 			t.Errorf("%q: select = %q, want %q", sql, got, want)
@@ -66,6 +71,7 @@ func TestClauseWordsEndASelectWithNoFrom(t *testing.T) {
 func TestParseFromScopeSharesTheAliasRule(t *testing.T) {
 	for sql, want := range map[string]string{
 		"SELECT * FROM Orders FOR JSON PATH":         "Orders",
+		"SELECT * FROM Orders QUALIFY rn = 1":        "Orders",
 		"DELETE FROM Orders OUTPUT deleted.id":       "Orders",
 		"MERGE dbo.T AS t USING dbo.S AS s ON 1 = 1": "dbo.T t, dbo.S s",
 		"SELECT * FROM Orders output":                "Orders output",

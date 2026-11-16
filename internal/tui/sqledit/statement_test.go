@@ -121,6 +121,154 @@ func TestSelectStatementAtCursorNoSemicolonBetweenStatements(t *testing.T) {
 	}
 }
 
+func TestSelectStatementAtCursorFromFirst(t *testing.T) {
+	for _, query := range []string{
+		"FROM dbo.Customers c\nSELECT c.Name",
+		"FROM dbo.Customers c JOIN dbo.Orders o ON c.Id = o.CustomerId\nSELECT c.Name, o.Total",
+		"FROM dbo.Customers c CROSS APPLY dbo.f(c.Id) x OUTER APPLY dbo.g(x.Id) y\nSELECT c.Name, y.Id",
+		"WITH c AS (FROM dbo.Customers SELECT Name)\nFROM c SELECT Name",
+		"FROM t SELECT a UNION ALL FROM u SELECT b",
+		"INSERT INTO archive (a)\nFROM t SELECT a",
+		"CREATE VIEW v AS FROM t SELECT a",
+		"FROM t AS window SELECT a",
+		"FROM t SELECT a UNION SELECT b FROM u",
+		"SELECT * FROM t FOR SYSTEM_TIME FROM @a TO @b",
+		"DELETE FROM t FROM t JOIN u ON t.a = u.a",
+		"DECLARE c CURSOR FOR SELECT a FROM t",
+		"DECLARE c CURSOR FOR FROM t SELECT a",
+		"BULK INSERT t FROM 'data.csv'",
+		"RESTORE DATABASE d FROM DISK = 'backup.bak'",
+		"RECEIVE TOP (1) * FROM q",
+		"SELECT * FROM t WHERE a IS DISTINCT FROM b",
+		"SELECT * FROM t WHERE a IS NOT DISTINCT FROM b",
+		"SELECT * FROM t ORDER BY ALL DESC",
+	} {
+		t.Run(query, func(t *testing.T) {
+			e := newTestEditor("SELECT 0;\n" + query + ";\nSELECT 2;")
+			for offset := range len(query) {
+				before := query[:offset]
+				row := 1 + strings.Count(before, "\n")
+				col := len(before) - strings.LastIndex(before, "\n") - 1
+				setCursor(e, row, col)
+				if !SelectStatementAtCursor(e) || e.SelectedText() != query+";" {
+					t.Fatalf("cursor %d: selected %q, want %q", offset, e.SelectedText(), query+";")
+				}
+			}
+		})
+	}
+}
+
+func TestSelectStatementAtCursorFromFirstDoesNotAbsorbExec(t *testing.T) {
+	for _, query := range []string{
+		"FROM t",
+		"INSERT INTO archive FROM t",
+		"WITH c AS (FROM t) FROM c",
+		"FROM t SELECT a UNION ALL FROM u",
+	} {
+		for _, exec := range []string{"EXEC p", "EXECUTE p"} {
+			t.Run(query+"/"+exec, func(t *testing.T) {
+				e := newTestEditor(query + "\n" + exec)
+				setCursor(e, 0, 0)
+				if !SelectStatementAtCursor(e) || e.SelectedText() != query {
+					t.Fatalf("query selection = %q, want %q", e.SelectedText(), query)
+				}
+				setCursor(e, 1, 0)
+				if !SelectStatementAtCursor(e) || e.SelectedText() != exec {
+					t.Fatalf("EXEC selection = %q, want %q", e.SelectedText(), exec)
+				}
+			})
+		}
+	}
+}
+
+func TestSelectStatementAtCursorFromFirstWithoutProjection(t *testing.T) {
+	for _, source := range []string{
+		"FROM t",
+		"WITH c AS (FROM t) FROM c",
+		"INSERT INTO archive FROM t",
+		"FROM t SELECT a UNION ALL FROM u",
+	} {
+		for _, clause := range []string{
+			"WHERE a = 1", "GROUP BY a", "HAVING COUNT(*) > 0", "QUALIFY a = 1",
+			"ORDER BY ALL", "WINDOW w AS (ORDER BY a)", "FOR JSON PATH",
+		} {
+			query := source + " " + clause
+			t.Run(query, func(t *testing.T) {
+				e := newTestEditor(query + "\nSELECT 2")
+				setCursor(e, 0, 0)
+				if !SelectStatementAtCursor(e) || e.SelectedText() != query {
+					t.Fatalf("query selection = %q, want %q", e.SelectedText(), query)
+				}
+				setCursor(e, 1, 0)
+				if !SelectStatementAtCursor(e) || e.SelectedText() != "SELECT 2" {
+					t.Fatalf("next selection = %q, want SELECT 2", e.SelectedText())
+				}
+			})
+		}
+	}
+}
+
+func TestSelectStatementAtCursorFromFirstStacked(t *testing.T) {
+	for _, first := range []string{
+		"FROM t SELECT a",
+		"SELECT a FROM t",
+		"FROM t WHERE a = 1",
+		"WITH c AS (FROM t) FROM c SELECT a",
+		"FROM t SELECT a UNION SELECT b FROM u",
+	} {
+		t.Run(first, func(t *testing.T) {
+			second := "FROM v SELECT c"
+			e := newTestEditor(first + "\n" + second)
+			for row, want := range []string{first, second} {
+				setCursor(e, row, 0)
+				if !SelectStatementAtCursor(e) || e.SelectedText() != want {
+					t.Fatalf("row %d: selected %q, want %q", row, e.SelectedText(), want)
+				}
+			}
+		})
+	}
+}
+
+func TestSelectStatementAtCursorFromFirstAfterOtherStatements(t *testing.T) {
+	for _, first := range []string{
+		"USE db", "PRINT 1", "EXEC p", "SET NOCOUNT ON", "DECLARE @i int",
+		"INSERT INTO t VALUES (1)", "INSERT INTO t EXEC p", "BEGIN",
+	} {
+		t.Run(first, func(t *testing.T) {
+			second := "FROM u SELECT b"
+			e := newTestEditor(first + "\n" + second)
+			for row, want := range []string{first, second} {
+				setCursor(e, row, 0)
+				if !SelectStatementAtCursor(e) || e.SelectedText() != want {
+					t.Fatalf("row %d: selected %q, want %q", row, e.SelectedText(), want)
+				}
+			}
+		})
+	}
+}
+
+// A Service Broker statement's own FROM is not a FROM-first query: splitting
+// there made F5 run "FROM SERVICE ..." alone.
+func TestSelectStatementAtCursorServiceBrokerFromIsNotFromFirst(t *testing.T) {
+	for _, stmt := range []string{
+		"BEGIN DIALOG CONVERSATION @h\nFROM SERVICE [s] TO SERVICE 't'",
+		"BEGIN TRAN RECEIVE TOP (1) @m = message_body\nFROM q",
+		"IF @x = 1 GET CONVERSATION GROUP @g\nFROM q",
+	} {
+		t.Run(stmt, func(t *testing.T) {
+			e := newTestEditor(stmt + "\nFROM u SELECT b")
+			setCursor(e, 1, 0)
+			if !SelectStatementAtCursor(e) || e.SelectedText() != stmt {
+				t.Fatalf("selected %q, want %q", e.SelectedText(), stmt)
+			}
+			setCursor(e, 2, 0)
+			if !SelectStatementAtCursor(e) || e.SelectedText() != "FROM u SELECT b" {
+				t.Fatalf("selected %q, want the FROM-first query", e.SelectedText())
+			}
+		})
+	}
+}
+
 func TestSelectStatementAtCursorThreeStatementsNoSemicolons(t *testing.T) {
 	e := newTestEditor("SELECT * FROM Patients\nSELECT * FROM Doctors\nUPDATE Foo SET Bar = 1")
 

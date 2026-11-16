@@ -439,6 +439,44 @@ func TestSQLCompletionColumnContextWhenFromTypedAfterCursor(t *testing.T) {
 	}
 }
 
+func TestSQLCompletionFromFirst(t *testing.T) {
+	for _, tc := range []struct {
+		sql, want, absent string
+	}{
+		{"FROM dbo.Customers c SELECT |", "Name", "dbo.Customers"},
+		{"FROM dbo.Customers c JOIN dbo.Orders o ON c.Id = o.CustomerId SELECT o.|", "Total", "Name"},
+		{"FROM dbo.Customers c CROSS APPLY (SELECT Total FROM dbo.Orders) x SELECT x.|", "Total", "Name"},
+		{"FROM dbo.Customers c OUTER APPLY (SELECT Total FROM dbo.Orders) x SELECT x.|", "Total", "Name"},
+		{"WITH c AS (FROM dbo.Customers SELECT Name) FROM c SELECT |", "Name", "Email"},
+		{"FROM (FROM dbo.Customers SELECT Name) d SELECT d.|", "Name", "Email"},
+		{"FROM dbo.Customers SELECT Id UNION ALL FROM dbo.Orders o SELECT o.|", "Total", "Name"},
+		{"SELECT * FROM dbo.Customers WHERE EXISTS (FROM dbo.Orders SELECT |)", "Total", "Name"},
+		{"WITH c AS (FROM dbo.Customers) FROM c SELECT |", "Email", "dbo.Customers"},
+		{"FROM dbo.Customers SELECT Name ORDER BY ALL DESC\nSELECT |", "dbo.Customers", "Name"},
+		{"FROM dbo.Customers WHERE Id > 0\nSELECT |", "dbo.Customers", "Name"},
+		{"FROM dbo.Customers SELECT Name\nFROM dbo.Orders SELECT |", "Total", "Name"},
+		{"SELECT Name FROM dbo.Customers\nFROM dbo.Orders SELECT |", "Total", "Name"},
+		{"FROM dbo.Customers SELECT Name UNION SELECT Id FROM dbo.Customers\nFROM dbo.Orders SELECT |", "Total", "Name"},
+		{"WITH c AS (FROM dbo.Customers SELECT Name WINDOW w AS (ORDER BY Id)) SELECT c.| FROM c", "Name", "Email"},
+		{"FROM dbo.Customers WINDOW w AS (ORDER BY Id) QUALIFY Customers.|", "Name", "dbo.Customers"},
+		{"FROM dbo.Customers WINDOW w AS (ORDER BY |)", "Name", "dbo.Customers"},
+		{"FROM dbo.Customers window SELECT window.|", "Name", "dbo.Customers"},
+		{"INSERT INTO dbo.Customers (Id) VALUES (1)\nFROM dbo.Orders SELECT |", "Total", "Name"},
+		{"INSERT INTO dbo.Customers EXEC p\nFROM dbo.Orders SELECT |", "Total", "Name"},
+		{"FROM dbo.Customers c JOIN dbo.Orders o ON c.Id IS DISTINCT FROM o.CustomerId SELECT o.|", "Total", "Name"},
+		{"FROM dbo.Customers c JOIN dbo.Orders o ON c.Id IS NOT DISTINCT FROM o.CustomerId SELECT o.|", "Total", "Name"},
+	} {
+		t.Run(tc.sql, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			lines, row, col := linesAndCursor(t, tc.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if !containsLabel(items, tc.want) || containsLabel(items, tc.absent) {
+				t.Errorf("items %v: want %q and no %q", labels(items), tc.want, tc.absent)
+			}
+		})
+	}
+}
+
 func TestSQLCompletionAliasDotResolvesWhenFromTypedAfterCursor(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT c.|\nFROM dbo.Customers c")
