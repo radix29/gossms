@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/radix29/tuikit/controls"
@@ -39,7 +40,13 @@ func TestExportResultsWritesTheActiveSetAsShown(t *testing.T) {
 	exportSub(t, items[0], "To JSON File...").Action()
 	path := filepath.Join(t.TempDir(), "out.json")
 	a.fileDialog.OnChoose(path)
-	drainUntil(t, a, func() bool { _, err := os.Stat(path); return err == nil }, "the export file")
+	// Wait for the finished file, not merely its existence: the writer creates it
+	// before it fills and closes it, and Windows refuses a read of a file still
+	// open for writing.
+	drainUntil(t, a, func() bool {
+		b, err := os.ReadFile(path)
+		return err == nil && strings.HasSuffix(string(b), "]\n")
+	}, "the export file")
 
 	got, err := os.ReadFile(path)
 	if err != nil {

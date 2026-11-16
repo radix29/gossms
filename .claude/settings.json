@@ -6,7 +6,8 @@
       "Bash(go build *)",
       "Bash(go vet *)",
       "Bash(go test *)",
-      "Bash(gofmt *)"
+      "Bash(gofmt *)",
+      "Bash(scripts/wintest.sh *)"
     ]
   }
 }

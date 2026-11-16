@@ -43,7 +43,7 @@ func suffixMatch(root, ref string) bool {
 			}
 			return nil
 		}
-		if rel, err := filepath.Rel(root, path); err == nil && strings.HasSuffix(rel, "/"+ref) {
+		if rel, err := filepath.Rel(root, path); err == nil && strings.HasSuffix(filepath.ToSlash(rel), "/"+ref) {
 			found = true
 		}
 		return nil
