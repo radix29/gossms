@@ -152,8 +152,9 @@ type stmtSplitter struct {
 	pendingFromSelect bool // FROM-first source waiting for its optional SELECT
 	pendingCTEMain    bool // a CTE waiting for its main statement
 	permission        bool // GRANT/DENY/REVOKE before TO/FROM: verbs are permission names
-	fromSeen          bool
-	querySource       bool
+	fromSeen          bool // a top-level FROM already in this query block
+	querySource       bool // the statement is a query, so a second top-level FROM begins a FROM-first one
+	brokerFrom        bool // BEGIN DIALOG, RECEIVE or GET CONVERSATION GROUP: the next FROM is its own
 
 	pend     pendKind
 	pendTok  stmtToken
@@ -180,7 +181,7 @@ func (s *stmtSplitter) start(t stmtToken) {
 	s.pendingMainSelect = t.text == "INSERT"
 	s.pendingFromSelect = false
 	s.pendingCTEMain = false
-	s.fromSeen = false
+	s.fromSeen, s.brokerFrom = false, false
 	s.querySource = t.text == "SELECT" || t.text == "INSERT" || t.text == "FROM" || t.text == "WITH"
 	s.permission = t.text == "GRANT" || t.text == "DENY" || t.text == "REVOKE"
 }
@@ -258,9 +259,16 @@ func (s *stmtSplitter) advance(t stmtToken) {
 		}
 		return
 	}
+	if (w == "DIALOG" && s.prev == "BEGIN") || w == "RECEIVE" || (w == "CONVERSATION" && s.prev == "GET") {
+		s.brokerFrom = true // BEGIN DIALOG @h FROM SERVICE, RECEIVE ... FROM queue
+	}
 	continuesUnion := s.prev == "UNION" || s.prev == "EXCEPT" || s.prev == "INTERSECT" ||
 		(s.prev == "ALL" && s.prevPrev == "UNION")
 	if w == "FROM" {
+		if s.brokerFrom && !fromClauseLeaders[s.leader] {
+			s.brokerFrom = false
+			return
+		}
 		if (s.prev == "SYSTEM_TIME" && s.prevPrev == "FOR") ||
 			(s.prev == "DISTINCT" && (s.prevPrev == "IS" || s.prevPrev == "NOT")) {
 			return

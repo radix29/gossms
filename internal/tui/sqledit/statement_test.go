@@ -247,6 +247,28 @@ func TestSelectStatementAtCursorFromFirstAfterOtherStatements(t *testing.T) {
 	}
 }
 
+// A Service Broker statement's own FROM is not a FROM-first query: splitting
+// there made F5 run "FROM SERVICE ..." alone.
+func TestSelectStatementAtCursorServiceBrokerFromIsNotFromFirst(t *testing.T) {
+	for _, stmt := range []string{
+		"BEGIN DIALOG CONVERSATION @h\nFROM SERVICE [s] TO SERVICE 't'",
+		"BEGIN TRAN RECEIVE TOP (1) @m = message_body\nFROM q",
+		"IF @x = 1 GET CONVERSATION GROUP @g\nFROM q",
+	} {
+		t.Run(stmt, func(t *testing.T) {
+			e := newTestEditor(stmt + "\nFROM u SELECT b")
+			setCursor(e, 1, 0)
+			if !SelectStatementAtCursor(e) || e.SelectedText() != stmt {
+				t.Fatalf("selected %q, want %q", e.SelectedText(), stmt)
+			}
+			setCursor(e, 2, 0)
+			if !SelectStatementAtCursor(e) || e.SelectedText() != "FROM u SELECT b" {
+				t.Fatalf("selected %q, want the FROM-first query", e.SelectedText())
+			}
+		})
+	}
+}
+
 func TestSelectStatementAtCursorThreeStatementsNoSemicolons(t *testing.T) {
 	e := newTestEditor("SELECT * FROM Patients\nSELECT * FROM Doctors\nUPDATE Foo SET Bar = 1")
 
