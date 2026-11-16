@@ -19,7 +19,7 @@ var sqlKeywords = map[string]bool{
 	"IN": true, "IS": true, "NULL": true, "LIKE": true, "BETWEEN": true,
 	"JOIN": true, "INNER": true, "LEFT": true, "RIGHT": true, "FULL": true,
 	"OUTER": true, "ON": true, "AS": true, "ORDER": true, "BY": true,
-	"GROUP": true, "HAVING": true, "DISTINCT": true, "TOP": true, "LIMIT": true,
+	"GROUP": true, "HAVING": true, "QUALIFY": true, "DISTINCT": true, "TOP": true, "LIMIT": true,
 	"OFFSET": true, "UNION": true, "ALL": true, "EXISTS": true, "CASE": true,
 	"WHEN": true, "THEN": true, "ELSE": true, "END": true, "IF": true,
 	"BEGIN": true, "COMMIT": true, "ROLLBACK": true, "TRANSACTION": true,
@@ -83,7 +83,8 @@ var sqlKeywords = map[string]bool{
 	"AVG": true, "CHECKSUM_AGG": true, "COUNT": true, "COUNT_BIG": true,
 	"GROUPING": true, "GROUPING_ID": true, "MAX": true, "MIN": true,
 	"STDEV": true, "STDEVP": true, "STRING_AGG": true, "SUM": true, "VAR": true,
-	"VARP": true,
+	"VARP":   true,
+	"MEDIAN": true, "QUANTILE": true, "APPROX_MEDIAN": true, "APPROX_QUANTILE": true,
 
 	"ASCII": true, "CHARINDEX": true, "CONCAT": true, "CONCAT_WS": true,
 	"DIFFERENCE": true, "FORMAT": true, "LEN": true, "LOWER": true, "LTRIM": true,

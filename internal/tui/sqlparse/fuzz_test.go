@@ -23,6 +23,9 @@ func FuzzScope(f *testing.F) {
 		f.Add(s)
 	}
 	f.Add(strings.Join(fragments, "\n"))
+	for _, s := range forwardCases {
+		f.Add(s)
+	}
 	f.Fuzz(func(t *testing.T, text string) {
 		buf := []rune(text)
 		if len(buf) > fuzzMaxRunes {

@@ -25,6 +25,7 @@ func FuzzLexer(f *testing.F) {
 		"'it''s'", "[a]]b]", `"c""d"`, "/* /* */ GO */", "-- x\nGO",
 		"$5.00 @@ROWCOUNT ##t #@x", "名前 ä1  \r\n",
 		"WITH c AS (SELECT 1) SELECT * FROM c\nINSERT t SELECT 1 DELETE t",
+		"FROM t JOIN u ON t.id = u.id SELECT t.a UNION ALL FROM v SELECT a ORDER BY ALL DESC",
 		"[x\nGO\ny]", "'x\nGO\ny'", "/*\nGO\n*/", "GO 99999999999999999999",
 	} {
 		f.Add(s)

@@ -521,8 +521,12 @@ func TestPrefixCacheRandomEditSweep(t *testing.T) {
 // curated shape the scan has been wrong about is in there, which is what makes
 // the two paths share one set of expectations.
 func TestPrefixCacheMatchesCorpusWhileTyping(t *testing.T) {
-	for _, name := range sortedCorpusNames() {
-		script := diffCorpus[name]
+	scripts := make(map[string]string, len(diffCorpus)+len(forwardCases))
+	maps.Copy(scripts, diffCorpus)
+	for i, script := range forwardCases {
+		scripts[fmt.Sprintf("forward%03d", i)] = script
+	}
+	for name, script := range scripts {
 		t.Run(name, func(t *testing.T) {
 			d := &editDoc{lines: [][]rune{{}}, rev: TextRevision{Doc: &cacheDoc{}, Version: 1}}
 			c := &PrefixCache{}
@@ -566,6 +570,9 @@ func TestPrefixCacheMatchesCorpusCursorSweep(t *testing.T) {
 	maps.Copy(scripts, diffCorpus)
 	for i, script := range generatedScripts() {
 		scripts[fmt.Sprintf("script%03d", i)] = script
+	}
+	for i, script := range forwardCases {
+		scripts[fmt.Sprintf("forward%03d", i)] = script
 	}
 	c := &PrefixCache{}
 	for name, script := range scripts {

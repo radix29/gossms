@@ -193,7 +193,12 @@ func atMergeUsing(toks []Token, i int, inMerge bool) bool {
 // selectListEnders stop a select list. FROM is the usual one; the rest catch a
 // select list with no FROM at all.
 var selectListEnders = map[string]bool{
-	"FROM": true, "INTO": true, "WHERE": true, "GROUP": true, "ORDER": true, "HAVING": true,
+	"FROM": true, "INTO": true, "WHERE": true, "GROUP": true, "ORDER": true, "HAVING": true, "QUALIFY": true,
+}
+
+func windowClauseAt(toks []Token, i int) bool {
+	return i+2 < len(toks) && identFold(toks[i], "WINDOW") && !toks[i].Quoted &&
+		toks[i+1].Kind == TokenIdent && toks[i+2].Kind == TokenKeyword && toks[i+2].Text == "AS"
 }
 
 // parseChain parses one query and the UNION/EXCEPT/INTERSECT branches chained
@@ -372,6 +377,9 @@ func (p *queryParser) parseSelectList(q *Query) []SelectItem {
 			flush()
 			return items
 		case t.Kind == TokenKeyword && (selectListEnders[t.Text] || setOperators[t.Text]):
+			flush()
+			return items
+		case windowClauseAt(p.toks, p.i):
 			flush()
 			return items
 		case t.Kind == TokenIdent && !t.Quoted && (identFold(t, "FOR") || identFold(t, "OPTION")):
@@ -620,6 +628,9 @@ var clauseAliases = map[string]bool{"OUTPUT": true, "USING": true}
 // returns it with the index just past it. It is the one alias rule for the
 // tree parser and ParseFromScope.
 func aliasAt(toks []Token, i int) (string, int) {
+	if windowClauseAt(toks, i) {
+		return "", i
+	}
 	if i < len(toks) && toks[i].Kind == TokenKeyword && toks[i].Text == "AS" {
 		// After AS the word is the alias whatever it spells.
 		if i+1 < len(toks) && toks[i+1].Kind == TokenIdent {
@@ -694,7 +705,7 @@ func (p *queryParser) skipSystemTime() {
 // nested groups included.
 func (p *queryParser) parseParenGroup(q *Query) {
 	p.i++ // '('
-	if p.atKeyword("SELECT") || p.atKeyword("WITH") {
+	if p.atKeyword("SELECT") || p.atKeyword("WITH") || p.atKeyword("FROM") {
 		if sub := p.parseChain(); sub != nil {
 			q.Subqueries = append(q.Subqueries, sub)
 		}

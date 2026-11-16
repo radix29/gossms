@@ -83,6 +83,9 @@ func TestSQLHighlighterRecognizesNewKeywordCategories(t *testing.T) {
 		{"SELECT DATEADD(day, 1, GETDATE())", "DATEADD"},            // built-in function
 		{"SELECT JSON_VALUE(x, '$.a')", "JSON_VALUE"},               // JSON function
 		{"SELECT geometry::STGeomFromText(x, 0)", "STGEOMFROMTEXT"}, // spatial (uppercased match)
+
+		{"SELECT * FROM t QUALIFY rn = 1", "QUALIFY"},
+		{"select * from t qualify rn = 1", "qualify"},
 	}
 	for _, tt := range tests {
 		words := highlightWords(t, tt.line)
@@ -113,6 +116,30 @@ func TestSQLHighlighterBlockCommentSingleLine(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("highlightLineWords = %v, want a run for %q", words, "/* a comment */")
+	}
+}
+
+func TestSQLHighlighterFabricAggregatesAndOrderByAll(t *testing.T) {
+	for _, fn := range []struct{ name, args string }{
+		{"MEDIAN", "x"}, {"QUANTILE", "0.5, x"},
+		{"APPROX_MEDIAN", "x"}, {"APPROX_QUANTILE", "0.5, x"},
+	} {
+		for _, over := range []string{"", " OVER (PARTITION BY k)"} {
+			sql := "SELECT " + fn.name + "(" + fn.args + ")" + over + " FROM t"
+			if words := highlightWords(t, sql); !slices.Contains(words, fn.name) {
+				t.Errorf("highlightWords(%q) = %q, missing %s", sql, words, fn.name)
+			}
+		}
+	}
+	for _, direction := range []string{"", "ASC", "DESC"} {
+		sql := "SELECT * FROM t ORDER BY ALL " + direction
+		want := []string{"SELECT", "FROM", "ORDER", "BY", "ALL"}
+		if direction != "" {
+			want = append(want, direction)
+		}
+		if got := highlightWords(t, sql); !slices.Equal(got, want) {
+			t.Errorf("highlightWords(%q) = %q, want %q", sql, got, want)
+		}
 	}
 }
 
@@ -403,6 +430,7 @@ func TestSQLHighlighterLexesQuotedIdentifiersAndCarriesLiterals(t *testing.T) {
 	}{
 		{"keyword in brackets", []string{"SELECT [select], [from] FROM t"}, 0, []string{"SELECT", "FROM"}},
 		{"keyword in double quotes", []string{`SELECT "order" FROM t`}, 0, []string{"SELECT", "FROM"}},
+		{"QUALIFY in brackets", []string{"SELECT [QUALIFY] FROM t QUALIFY rn = 1"}, 0, []string{"SELECT", "FROM", "QUALIFY", "1"}},
 		{"comment opener in brackets", []string{"SELECT [a/*b] FROM t", "SELECT 1"}, 1, []string{"SELECT", "1"}},
 		{"comment opener in double quotes", []string{`SELECT "a/*b" FROM t`, "SELECT 1"}, 1, []string{"SELECT", "1"}},
 		{"doubled bracket stays inside", []string{"SELECT [a]]select] FROM t"}, 0, []string{"SELECT", "FROM"}},

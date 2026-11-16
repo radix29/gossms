@@ -246,6 +246,27 @@ func TestScopeAt(t *testing.T) {
 		sel:    "",
 		ctes:   "",
 	}, {
+		name:   "QUALIFY expects a column expression",
+		sql:    "SELECT name FROM dbo.Orders QUALIFY |",
+		clause: ClauseColumn,
+		from:   "dbo.Orders",
+		sel:    "name",
+		ctes:   "",
+	}, {
+		name:   "lowercase QUALIFY accepts an unchecked predicate",
+		sql:    "select o.name from dbo.Orders o qualify made_up(@x) > | order by o.name",
+		clause: ClauseColumn,
+		from:   "dbo.Orders o",
+		sel:    "o.name",
+		ctes:   "",
+	}, {
+		name:   "QUALIFY window expression in a CTE",
+		sql:    "WITH ranked AS (SELECT name FROM dbo.Orders QUALIFY ROW_NUMBER() OVER (PARTITION BY | ORDER BY id) = 1) SELECT * FROM ranked",
+		clause: ClauseColumn,
+		from:   "dbo.Orders",
+		sel:    "name",
+		ctes:   "ranked",
+	}, {
 		name:   "no tokens at all",
 		sql:    "|",
 		clause: ClauseUnknown,

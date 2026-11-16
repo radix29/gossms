@@ -388,7 +388,7 @@ func sqlKeywordCanonical(buf []rune, start, end int) (string, bool) {
 // is declared; sqlKeywordCanon derives from it.
 var sqlKeywordList = []string{
 	"SELECT", "FROM", "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "FULL",
-	"OUTER", "CROSS", "ON", "GROUP", "ORDER", "BY", "HAVING", "INSERT",
+	"OUTER", "CROSS", "ON", "GROUP", "ORDER", "BY", "HAVING", "QUALIFY", "INSERT",
 	"INTO", "VALUES", "UPDATE", "SET", "DELETE", "TRUNCATE", "TABLE",
 	"AS", "AND", "OR", "NOT", "NULL", "IS", "IN", "EXISTS", "BETWEEN",
 	"LIKE", "DISTINCT", "TOP", "UNION", "EXCEPT", "INTERSECT", "ALL",
