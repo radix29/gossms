@@ -7,6 +7,9 @@
 			"path": "../gosmo"
 		},
 		{
+			"path": "../tuikit"
+		},
+		{
 			"path": "../homebrew-tap"
 		},
 		{
@@ -17,9 +20,6 @@
 		},
 		{
 			"path": "../gotuipic"
-		},
-		{
-			"path": "../tuikit"
 		}
 	],
 	"settings": {}

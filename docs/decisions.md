@@ -1781,6 +1781,29 @@ it from the string 'NULL'.
     RGB data tables (the latter already share `mcSkin`); a builder would hide
     the table. `newTestEditor` stays in both repos: tuikittest importing
     `controls/editor` is an import cycle.
+- **Package-level `var`s are not mutable state to refactor** (review E2,
+  2026-11-16). A go/types pass over all three repos (~800 vars, test files
+  excluded) found every one is a sentinel error, regexp, lookup table, or a
+  test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,
+  `releaseFetcher`, …), except the few written at run time — each documented as
+  process-wide on purpose and safe for its callers: gossms `config.Tracked`
+  (shared by Query Store panel and Detail Browser), `db.entraCache`/
+  `entraUsed`/`deviceCodePrompt` (one Entra sign-in for every pool),
+  `savesInFlight` (spans Apps; FlushSaves and tests wait on it),
+  `clipboardOnce`/`clipboardMeth` (OS lookup); gosmo `browserReplies`
+  (mutex; per host, not per pool), `version.Version/Commit/Date` (`init`);
+  tuikit `theme.active` and `editor.defaultIndentWidth` (UI goroutine, read
+  per frame/construction). Moving them into an owning struct would thread a
+  handle through every caller for no fix.
+- **Contrast floor holds in every palette with no exemption list** (review
+  E4, 2026-11-16; tuikit `knownLowContrast` removed). Default: DialogAccent
+  is the editor keyword blue 86,156,214, DialogError VS Code dark's
+  244,135,113. Light: DialogAccent 0,106,177, both dim greys 105. mc skins:
+  MenuTextDim is Black, as mc's own `menuinactive = black;cyan`;
+  `mcColors.DialogDim`/`DialogRed` are Tango's Gray/Red unchanged and VGA's
+  60,60,60/128,0,0 — off the 16 colours, like `PanelShade`, because no VGA
+  colour reads on LightGray as dim or red text (mc draws neither in a grey
+  dialog).
 
 ### Distribution
 

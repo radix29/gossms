@@ -127,7 +127,7 @@ func (s *scriptServer) rules() {
 			return nil
 		}
 		return [][]any{{"Sales", "TABLE", "Customer", "", "", "MS_Description", "nvarchar", 0, 0, 18, "Customers"}}
-	}, "FROM   sys.extended_properties ep", "CROSS  JOIN (")
+	}, "FROM   sys.extended_properties ep", "AS me (sch, l1type, l1name)")
 	// A securable's own extended properties (a synonym's): none.
 	s.on(func(gosmotest.Query) [][]any { return nil },
 		"FROM   sys.extended_properties ep", "WHERE  ep.class = @p1 AND ep.major_id = @p2")

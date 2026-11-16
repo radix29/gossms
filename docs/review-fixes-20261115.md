@@ -278,8 +278,56 @@ Measure first; do not change without a benchmark.
    (… NEWNAME …)`; user Securables search/Add/cycle/Load Columns → `GRANT
    SELECT ON [dbo].[Patients]`; F1, Ctrl+N, Ctrl+Shift+Left/Right, Alt+Z.
    Nothing applied.
-9. **D1–D3** — benchmarks first; act only on evidence.
-10. **E2, E4** — classify globals; theme recolour.
+9. ~~**D1–D3** — benchmarks first; act only on evidence.~~
+   **DONE 2026-11-16**: D1 — a live probe
+   (`gosmo/live_script_scaling_test.go`,
+   `TestLiveScriptingManyTablesReadsPerCallNotPerTable`: Extended Events
+   `event_counter` on the scripting pool's app name, 50 then 500 tables, each
+   with key/default/check/index/FK and four extended properties) found the
+   prefetch was *not* per call: `ScriptDatabaseObjectList` read extended
+   properties once per table and again per foreign key (~1 query per scripted
+   object; 238 → 2,038 events). Fixed: `prefetchTables` reads every table's
+   properties as one more result set (`tableExtendedPropertiesSelect`,
+   driven from `sys.extended_properties` so its cost follows the property
+   count; same body as `objectExtendedProperties` via `objectExtPropBody`), and
+   `scriptExtendedProperties` uses it for a covered table. Now 20 queries at
+   both 50 and 500 tables (40 events with `sp_reset_connection`); the test
+   also checks a sample of tables against `ScriptTable` alone. Mutation-checked
+   (lookup disabled → per-table growth; constraints off → FK property lost).
+   Live on 17 and on 2016 (13): the new test, `TestLiveScriptDatabaseObjects*`,
+   the extended-property and `TestLiveRoundTrip*` tests. gossms: the CLI
+   fake's rule matched the old `CROSS  JOIN (` — now `AS me (sch, l1type,
+   l1name)` (`internal/cli/script_server_test.go`). Driven: `gossms script db
+   --objects --script-file` on a throwaway database (table, column, index,
+   FK, check, trigger and an `int` property) replayed into an empty one gave
+   identical `sys.extended_properties`. Remaining cost (~9 s warm for 500
+   tables) is server-side compile of the batch, not round trips or client CPU
+   — recorded in `~/go/gosmo/OPEN-THREADS.md` § the prefetch batch is slow to
+   compile, not acted on. D2 — `internal/fileutil/lock_bench_test.go`:
+   uncontended `WithLock` 0.13 ms, four concurrent savers ~0.35–0.4 ms per
+   save; no change. D3 — tuikit `BenchmarkFrameDataGridWideChars`
+   (`controls/frame_bench_test.go`: 100k × 30 CJK/emoji/combining cells,
+   scrolled to the middle both ways, guarded): 1.4–1.9 ms per frame, under
+   the 5 ms bar; `SetData` of the same is 6.5 ms once. No change.
+10. ~~**E2, E4** — classify globals; theme recolour.~~
+    **DONE 2026-11-16**: E2 — a go/types pass (package-level vars, writes
+    outside `init` and `_test.go`, cross-module) over all three repos: ~800
+    vars, all sentinels/regexps/tables/test seams except the few written at
+    run time, each already documented as deliberately process-wide
+    (`config.Tracked`, the Entra cache/prompt, `savesInFlight`, the clipboard
+    lookup, gosmo `browserReplies` and `version`, tuikit `theme.active` and
+    `editor.defaultIndentWidth`). No conversion; `decisions.md` § Code and
+    dependency hygiene records it. E4 — all nine pairs recoloured in tuikit
+    `theme/palette.go`: Default DialogAccent 86,156,214 (keyword blue),
+    DialogError 244,135,113; Light DialogAccent 0,106,177, Menu/DialogTextDim
+    105; mc skins MenuTextDim Black (mc's `menuinactive`), new
+    `mcColors.DialogDim`/`DialogRed` (Tango unchanged; VGA 60,60,60 /
+    128,0,0). `knownLowContrast` and its "now passes" branch removed, so
+    `TestEveryStyleMeetsTheContrastFloor` has no exemptions; open-threads §
+    Theme removed, `decisions.md` entry added. Driven in the binary in all
+    four themes: menu shortcut suffix, Options radio accent, file-dialog
+    listing error (dim), and the prompt's "Enter a value." (error, Dark and
+    mc - retro, on win10cli; nothing applied).
 11. **E1** — tag tuikit and gosmo, drop `replace`, then release (user's
     action).
 
