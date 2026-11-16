@@ -19,11 +19,25 @@ func (a *App) showEstimatedExecutionPlan() {
 	a.withQueryPanel(func(qp *QueryPanel) { qp.ShowEstimatedPlan() })
 }
 
+const fabricActualPlanUnavailable = "Actual execution plans and Live Query Statistics are not supported on Fabric DW (SET STATISTICS XML)."
+
+func (a *App) actualPlanAvailable() bool {
+	if qp := a.activeQueryPanel(); qp != nil && qp.conn != nil {
+		return qp.actualPlanSupported()
+	}
+	sc := a.activeServerConn()
+	return sc == nil || !sc.IsFabricDW
+}
+
 // toggleActualExecutionPlan flips whether Execute captures the actual
 // (post-run) execution plan alongside a query's results, rebuilding the toolbar
 // and Query menu to match. Turning it off turns Live Query Statistics off too,
 // which needs the capture (see App.liveStatsEnabled).
 func (a *App) toggleActualExecutionPlan() {
+	if !a.actualPlanAvailable() {
+		a.setStatus(fabricActualPlanUnavailable)
+		return
+	}
 	a.actualPlanEnabled = !a.actualPlanEnabled
 	status := "Include Actual Execution Plan: " + toggleStateWord(a.actualPlanEnabled)
 	if !a.actualPlanEnabled && a.liveStatsEnabled {
@@ -39,6 +53,10 @@ func (a *App) toggleActualExecutionPlan() {
 // runs, then the actual plan. Turning it on turns on the actual plan capture
 // it rides on (see App.liveStatsEnabled).
 func (a *App) toggleLiveQueryStatistics() {
+	if !a.actualPlanAvailable() {
+		a.setStatus(fabricActualPlanUnavailable)
+		return
+	}
 	a.liveStatsEnabled = !a.liveStatsEnabled
 	status := "Include Live Query Statistics: " + toggleStateWord(a.liveStatsEnabled)
 	if a.liveStatsEnabled && !a.actualPlanEnabled {

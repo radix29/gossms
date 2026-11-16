@@ -3,6 +3,10 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
+	"fmt"
+	"io"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -123,5 +127,154 @@ func TestDatabaseGeneralWritesNothingWhenUntouched(t *testing.T) {
 	}
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("an untouched page wrote:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+func TestDatabaseGeneralFabricLeavesUnavailableValuesBlank(t *testing.T) {
+	for _, tc := range []struct {
+		name                                string
+		fabric, missingSpace, missingBackup bool
+		zeroSpace                           bool
+	}{
+		{"SQL Server success", false, false, false, false},
+		{"Fabric success", true, false, false, false},
+		{"Fabric zero space", true, false, false, true},
+		{"Fabric missing space", true, true, false, false},
+		{"Fabric missing backups", true, false, true, false},
+		{"Fabric missing both", true, true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			responses := databaseGeneralResponses("appuser")
+			for i := range responses {
+				switch responses[i].match {
+				case "AS total_mb":
+					if tc.zeroSpace {
+						responses[i].rows = [][]driver.Value{{0.0, 0.0, 0.0, 0.0, 0.0}}
+					}
+					if tc.missingSpace {
+						responses[i].err = errors.New("FILEPROPERTY is not supported on Fabric DW")
+					}
+				case "msdb.dbo.backupset":
+					if tc.missingBackup {
+						responses[i].err = errors.New("msdb is not supported on Fabric DW")
+					}
+				}
+			}
+			sc, inst := newGConn(t, responses...)
+			sc.IsFabricDW, sc.Server.IsFabricDW = tc.fabric, tc.fabric
+			form, apply := loadPageG(t, pageDatabaseGeneral(sc, genDatabase), inst)
+			wantSize, wantAvailable, wantBackup := "12.00", "3.00", "Never"
+			if tc.zeroSpace {
+				wantSize, wantAvailable = "0.00", "0.00"
+			}
+			if tc.missingSpace {
+				wantSize, wantAvailable = "", ""
+			}
+			if tc.missingBackup {
+				wantBackup = ""
+			}
+			for label, want := range map[string]string{
+				"Size (MB)":                wantSize,
+				"Space available (MB)":     wantAvailable,
+				"Name":                     genDatabase,
+				"Page verify":              "CHECKSUM",
+				"Last database backup":     wantBackup,
+				"Last differential backup": wantBackup,
+				"Last log backup":          wantBackup,
+			} {
+				if got := staticValue(t, form, label); got != want {
+					t.Errorf("%s = %q, want %q", label, got, want)
+				}
+			}
+			if got := selectRow(t, form, "Owner").Value(); got != "appuser" {
+				t.Errorf("Owner = %q, want appuser", got)
+			}
+			if err := apply(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if stmts := inst.Statements(); len(stmts) != 0 {
+				t.Errorf("untouched page wrote %v", stmts)
+			}
+		})
+	}
+}
+
+func TestDatabaseGeneralDoesNotHideOtherReadErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fabric bool
+		match  string
+	}{
+		{"SQL Server space error", false, "AS total_mb"},
+		{"SQL Server history error", false, "msdb.dbo.backupset"},
+		{"Fabric options error", true, "page_verify_option_desc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := errors.New("permission denied")
+			responses := databaseGeneralResponses("appuser")
+			for i := range responses {
+				if responses[i].match == tc.match {
+					responses[i].err = want
+				}
+			}
+			sc, _ := newGConn(t, responses...)
+			sc.IsFabricDW, sc.Server.IsFabricDW = tc.fabric, tc.fabric
+			_, _, err := pageDatabaseGeneral(sc, genDatabase).load(context.Background())
+			if !errors.Is(err, want) {
+				t.Fatalf("load error = %v, want %v", err, want)
+			}
+		})
+	}
+}
+
+func TestDatabaseGeneralPropagatesMetadataFailures(t *testing.T) {
+	for _, match := range []string{"AS total_mb", "msdb.dbo.backupset"} {
+		for _, cause := range []error{
+			context.Canceled, context.DeadlineExceeded, io.EOF, driver.ErrBadConn,
+			&net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset")},
+		} {
+			t.Run(fmt.Sprintf("%s/%v", match, cause), func(t *testing.T) {
+				responses := databaseGeneralResponses("appuser")
+				for i := range responses {
+					if responses[i].match == match {
+						responses[i].err = fmt.Errorf("nested metadata read: %w", cause)
+					}
+				}
+				sc, _ := newGConn(t, responses...)
+				sc.IsFabricDW, sc.Server.IsFabricDW = true, true
+				form, apply, err := pageDatabaseGeneral(sc, genDatabase).load(context.Background())
+				if !errors.Is(err, cause) || form != nil || apply != nil {
+					t.Fatalf("load returned form=%v apply=%v error=%v, want only %v", form != nil, apply != nil, err, cause)
+				}
+			})
+		}
+	}
+}
+
+func TestFabricPropertyFallbackRejectsInactiveContexts(t *testing.T) {
+	for _, state := range []string{"live", "canceled", "deadline", "closed server"} {
+		t.Run(state, func(t *testing.T) {
+			sc, _ := newGConn(t)
+			sc.IsFabricDW, sc.Server.IsFabricDW = true, true
+			ctx := t.Context()
+			switch state {
+			case "canceled":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			case "deadline":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, time.Unix(1, 0))
+				defer cancel()
+			case "closed server":
+				sc.Close()
+				if sc.Server.Context().Err() == nil {
+					t.Fatal("server context is still live after Close")
+				}
+			}
+			if got, want := fabricPropertyUnavailable(ctx, sc, errors.New("metadata unavailable")), state == "live"; got != want {
+				t.Errorf("fallback allowed = %v, want %v", got, want)
+			}
+		})
 	}
 }

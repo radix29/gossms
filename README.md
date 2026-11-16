@@ -190,6 +190,20 @@ the statistic's identity and an explanatory note instead of an error.
 Unavailable DMV counters in General properties appear as `n/a`; DBCC-backed
 Details, Histogram, and Density Vector pages remain available.
 
+Fabric Database Properties omits Files, Filegroups, Query Store, Extended
+Properties, Scoped Configurations, and Resource Governance. Unavailable
+optional size and backup values in Database General, and row counts, space,
+and partitions in Table General/Storage, stay blank while the remaining
+properties load. Connection failures and cancellations still report an error.
+
+Actual Execution Plan and Live Query Statistics are disabled for Fabric DW
+query windows because `SET STATISTICS XML` is unsupported. If those global
+options were enabled on another connection, Fabric queries run normally without
+plan capture and report the limitation in Messages. Other connections retain
+their plan settings and behavior. Without an active query connection, these
+controls follow the selected Object Explorer connection. Estimated Execution
+Plan remains available for query windows.
+
 Always On peer discovery uses each replica's registered connection: one you
 have connected to through **File > Connect** or the prompt below. A unique
 short-name alias still uses the original saved address; ambiguous aliases are

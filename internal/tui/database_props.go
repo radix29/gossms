@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -38,7 +39,7 @@ const unsetItem = "(not set)"
 // Configurations covers the well-known options with a read-only dump of
 // the rest, and Query Store exposes its full configuration plus
 // Flush/Clear actions. On an Azure engine edition a read-only Resource
-// Governance page follows them.
+// Governance page follows them. Fabric DW omits unsupported pages.
 func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 	w := gate.DatabaseWriteRights()
 	pages := []propPage{
@@ -52,6 +53,16 @@ func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 		withRequires(pageDatabaseExtendedProperties(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseScopedConfig(sc, dbName), dbName, w...),
 	}
+	if sc != nil && sc.IsFabricDW {
+		return slices.DeleteFunc(pages, func(p propPage) bool {
+			switch p.title {
+			case "Files", "Filegroups", "Query Store", "Extended Properties", "Scoped Configurations":
+				return true
+			default:
+				return false
+			}
+		})
+	}
 	// Resource Governance last, and only on an Azure edition: the two views
 	// it reads exist nowhere else. Appended rather than inserted so the page
 	// order every other edition sees is untouched — nothing indexes this
@@ -60,6 +71,14 @@ func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 		pages = append(pages, pageDatabaseResourceGovernance(sc, dbName))
 	}
 	return pages
+}
+
+// Optional Fabric metadata may be unavailable, but cancellation, timeouts and
+// transient failures must still fail the load rather than report blank data.
+func fabricPropertyUnavailable(ctx context.Context, sc *db.ServerConn, err error) bool {
+	return err != nil && sc.IsFabricDW && ctx.Err() == nil && sc.Server.Context().Err() == nil &&
+		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) &&
+		!gosmo.IsTransient(err)
 }
 
 func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
@@ -71,8 +90,13 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				return nil, nil, err
 			}
 			space, err := d.SpaceUsed(ctx)
-			if err != nil {
+			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
+			}
+			sizeMB, availableMB := "", ""
+			if err == nil {
+				sizeMB = fmt.Sprintf("%.2f", space.TotalMB)
+				availableMB = fmt.Sprintf("%.2f", space.UnallocatedMB)
 			}
 			opts, err := d.Options(ctx)
 			if err != nil {
@@ -82,9 +106,9 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			history, err := sc.Server.BackupHistory(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
+			history, historyErr := sc.Server.BackupHistory(ctx, dbName)
+			if historyErr != nil && !fabricPropertyUnavailable(ctx, sc, historyErr) {
+				return nil, nil, historyErr
 			}
 			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
@@ -96,6 +120,9 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			}
 			slices.Sort(loginNames)
 			lastFull, lastDiff, lastLog := "Never", "Never", "Never"
+			if historyErr != nil {
+				lastFull, lastDiff, lastLog = "", "", ""
+			}
 			for _, b := range history {
 				switch b.SetType {
 				case gosmo.BackupSetDatabase:
@@ -141,8 +168,8 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				propsheet.Static("Status", string(d.State)),
 				ownerRow,
 				propsheet.Static("Date created", formatSQLDate(d.CreateDate)),
-				propsheet.Static("Size (MB)", fmt.Sprintf("%.2f", space.TotalMB)),
-				propsheet.Static("Space available (MB)", fmt.Sprintf("%.2f", space.UnallocatedMB)),
+				propsheet.Static("Size (MB)", sizeMB),
+				propsheet.Static("Space available (MB)", availableMB),
 				propsheet.Static("Number of users", userCount),
 				propsheet.Section("Maintenance"),
 				propsheet.Static("Collation", d.Collation),

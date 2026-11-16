@@ -1,8 +1,18 @@
 package tui
 
 import (
+	"database/sql/driver"
+	"encoding/csv"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	mssql "github.com/microsoft/go-mssqldb"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 // TestSetResultPlanInstallsExecutionPlanTab checks a normal Execute whose
@@ -187,5 +197,268 @@ func TestQueryMenuActualPlanLabelReflectsToggleState(t *testing.T) {
 	}
 	if len(off) != len(on) {
 		t.Errorf("actualPlanToggleIcon widths differ: off=%q (%d), on=%q (%d) — toggling would shift the toolbar's other buttons", off, len(off), on, len(on))
+	}
+}
+
+func TestFabricExecuteSkipsUnsupportedActualPlan(t *testing.T) {
+	for _, fabric := range []bool{false, true} {
+		for _, mode := range []struct {
+			name         string
+			actual, live bool
+		}{
+			{"off", false, false},
+			{"actual", true, false},
+			{"live", false, true},
+			{"both", true, true},
+		} {
+			t.Run(fmt.Sprintf("Fabric=%v/%s", fabric, mode.name), func(t *testing.T) {
+				a := newTestApp()
+				a.actualPlanEnabled, a.liveStatsEnabled = mode.actual, mode.live
+				stats := fakeResponse{match: "SET STATISTICS XML"}
+				if fabric {
+					stats.err = mssql.Error{Number: 15869, Class: 16, State: 2,
+						Message: "STATISTICS is not supported for SET."}
+				}
+				block := make(chan struct{})
+				releaseQuery := sync.OnceFunc(func() { close(block) })
+				qp, inst := hostedSessionPanel(t, a, 0, stats,
+					fakeResponse{match: "SELECT 42", cols: 1, colNames: []string{"answer"},
+						rows: [][]driver.Value{{int64(42)}}, block: block},
+					fakeResponse{match: "sys.dm_exec_query_profiles"})
+				t.Cleanup(qp.closeConnection)
+				t.Cleanup(releaseQuery)
+				qp.conn.IsFabricDW, qp.conn.Server.IsFabricDW = fabric, fabric
+
+				qp.startRun("SELECT 42", 0, "")
+				openedLive := qp.planView != nil && qp.planView.Live()
+				wantLive := mode.live && !fabric
+				if openedLive != wantLive {
+					t.Fatalf("opened live view = %v, want %v", openedLive, wantLive)
+				}
+				if wantLive {
+					drainUntil(t, a, func() bool {
+						return len(inst.Reads("sys.dm_exec_query_profiles")) > 0
+					}, "the live profiling read")
+				}
+				releaseQuery()
+				drainUntil(t, a, func() bool { return !qp.executing }, "the query result")
+				if qp.result == nil || qp.result.HasErrors() {
+					t.Fatalf("query failed: %+v", qp.result)
+				}
+				if len(qp.result.Sets) != 1 || len(qp.result.Sets[0].Rows) != 1 ||
+					qp.result.Sets[0].Rows[0][0] != "42" {
+					t.Errorf("result sets = %+v, want the normal query result", qp.result.Sets)
+				}
+				if got := len(inst.Reads("SELECT 42")); got != 1 {
+					t.Errorf("query ran %d times, want exactly once", got)
+				}
+				statements := 0
+				for _, q := range inst.Queries() {
+					if strings.Contains(q.Text, "SET STATISTICS") {
+						statements++
+					}
+				}
+				wantStatements := 0
+				if !fabric && (mode.actual || mode.live) {
+					wantStatements = 2
+				}
+				if statements != wantStatements {
+					t.Errorf("sent %d STATISTICS statements, want %d", statements, wantStatements)
+				}
+				if !wantLive && len(inst.Reads("sys.dm_exec_query_profiles")) != 0 {
+					t.Error("started live polling with Live Query Statistics unavailable or off")
+				}
+				noted := false
+				for _, m := range qp.result.Messages {
+					if !m.IsError && strings.Contains(m.Text, "Fabric DW") {
+						noted = true
+					}
+				}
+				if want := fabric && (mode.actual || mode.live); noted != want {
+					t.Errorf("plan-unavailable notice = %v, want %v", noted, want)
+				}
+				if a.actualPlanEnabled != mode.actual || a.liveStatsEnabled != mode.live {
+					t.Error("Fabric execution changed global SQL Server plan settings")
+				}
+			})
+		}
+	}
+}
+
+func TestFabricPlanControlsFollowActiveQueryConnection(t *testing.T) {
+	a := newTestApp()
+	explorerConn := addTestConn(a, "Object Explorer")
+	fabric := NewQueryPanel(a, "Fabric")
+	fabric.conn = &db.ServerConn{IsFabricDW: true}
+	fabricIdx := a.panels.AddPanel(fabric)
+	sqlServer := NewQueryPanel(a, "SQL Server")
+	sqlServer.conn = &db.ServerConn{}
+	sqlIdx := a.panels.AddPanel(sqlServer)
+	buttons := a.buildToolbar()
+	items := queryMenuItems(t, a.buildMenus())
+	for _, idx := range []int{fabricIdx, sqlIdx, fabricIdx} {
+		a.panels.SetActiveIndex(idx)
+		explorerConn.IsFabricDW = idx == sqlIdx
+		want := idx == sqlIdx
+		planButtons, estimatedButtons := 0, 0
+		for _, button := range buttons {
+			if button.Tooltip == "Show Estimated Execution Plan" {
+				estimatedButtons++
+				if button.Enabled != nil && !button.Enabled() {
+					t.Error("Estimated Plan was disabled for a query panel")
+				}
+			}
+			if button.Tooltip == "Include Actual Execution Plan" || button.Tooltip == "Include Live Query Statistics" {
+				planButtons++
+				if got := button.Enabled == nil || button.Enabled(); got != want {
+					t.Errorf("panel=%d button=%s enabled=%v, want %v", idx, button.Icon, got, want)
+				}
+			}
+		}
+		if planButtons != 2 || estimatedButtons != 1 {
+			t.Fatalf("found %d actual/live buttons and %d estimated buttons, want 2 and 1", planButtons, estimatedButtons)
+		}
+		estimated := findMenuItem(items, "Estimated Execution Plan")
+		if estimated == nil || (estimated.Enabled != nil && !estimated.Enabled()) {
+			t.Error("Estimated Plan menu was disabled for a query panel")
+		}
+		for _, label := range []string{actualExecutionPlanMenuLabel(false), liveQueryStatisticsMenuLabel(false)} {
+			item := findMenuItem(items, label)
+			if item == nil {
+				t.Fatalf("missing %s", label)
+			}
+			if got := item.Enabled == nil || item.Enabled(); got != want {
+				t.Errorf("panel=%d menu=%s enabled=%v, want %v", idx, label, got, want)
+			}
+		}
+	}
+}
+
+func TestFabricPlanToggleActionsDoNotChangeGlobalSettings(t *testing.T) {
+	a := &App{cfg: newTestApp().cfg}
+	a.buildUI()
+	a.screen = tuikittest.NewScreen(120, 40)
+	qp := NewQueryPanel(a, "Fabric")
+	qp.conn = &db.ServerConn{IsFabricDW: true}
+	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
+	for _, on := range []bool{false, true} {
+		a.actualPlanEnabled, a.liveStatsEnabled = on, on
+		a.toggleActualExecutionPlan()
+		if a.actualPlanEnabled != on || a.liveStatsEnabled != on || !strings.Contains(a.statusText, "Fabric DW") {
+			t.Error("Actual Plan action changed global settings or did not explain Fabric refusal")
+		}
+		a.toggleLiveQueryStatistics()
+		if a.actualPlanEnabled != on || a.liveStatsEnabled != on || !strings.Contains(a.statusText, "Fabric DW") {
+			t.Error("Live Statistics action changed global settings or did not explain Fabric refusal")
+		}
+	}
+}
+
+func TestFabricPlanControlsFollowExplorerWithoutQueryConnection(t *testing.T) {
+	for _, disconnectedQuery := range []bool{false, true} {
+		t.Run(fmt.Sprintf("disconnectedQuery=%v", disconnectedQuery), func(t *testing.T) {
+			a := newTestApp()
+			sqlServer := addTestConn(a, "SQL Server")
+			fabric := addTestConn(a, "Fabric")
+			fabric.IsFabricDW = true
+			if disconnectedQuery {
+				a.panels.SetActiveIndex(a.panels.AddPanel(NewQueryPanel(a, "Not connected")))
+			}
+			buttons := a.buildToolbar()
+			items := queryMenuItems(t, a.buildMenus())
+			for _, sc := range []*db.ServerConn{fabric, sqlServer, fabric} {
+				a.explorer.AddRoot(sc.Opts.Server, sc)
+				want := !sc.IsFabricDW
+				planButtons := 0
+				for _, button := range buttons {
+					if button.Tooltip == "Include Actual Execution Plan" || button.Tooltip == "Include Live Query Statistics" {
+						planButtons++
+						if got := button.Enabled == nil || button.Enabled(); got != want {
+							t.Errorf("Fabric=%v button=%s enabled=%v, want %v", sc.IsFabricDW, button.Icon, got, want)
+						}
+					}
+				}
+				if planButtons != 2 {
+					t.Fatalf("found %d actual/live buttons, want 2", planButtons)
+				}
+				for _, label := range []string{actualExecutionPlanMenuLabel(false), liveQueryStatisticsMenuLabel(false)} {
+					item := findMenuItem(items, label)
+					if item == nil {
+						t.Fatalf("missing %s", label)
+					}
+					if got := item.Enabled == nil || item.Enabled(); got != want {
+						t.Errorf("Fabric=%v menu=%s enabled=%v, want %v", sc.IsFabricDW, label, got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestFabricExplorerPlanActionsPreserveGlobalSettings(t *testing.T) {
+	a := newTestApp()
+	fabric := addTestConn(a, "Fabric")
+	fabric.IsFabricDW = true
+	if a.actualPlanAvailable() {
+		t.Fatal("Fabric explorer permits plan toggles without a query")
+	}
+	for _, on := range []bool{false, true} {
+		a.actualPlanEnabled, a.liveStatsEnabled = on, on
+		a.toggleActualExecutionPlan()
+		if a.actualPlanEnabled != on || a.liveStatsEnabled != on || !strings.Contains(a.statusText, "Fabric DW") {
+			t.Error("Actual Plan action changed global settings or did not explain Fabric refusal")
+		}
+		a.toggleLiveQueryStatistics()
+		if a.actualPlanEnabled != on || a.liveStatsEnabled != on || !strings.Contains(a.statusText, "Fabric DW") {
+			t.Error("Live Statistics action changed global settings or did not explain Fabric refusal")
+		}
+	}
+}
+
+func TestFabricResultsToFileSkipsPlanCaptureAndNotice(t *testing.T) {
+	for _, fabric := range []bool{false, true} {
+		t.Run(fmt.Sprintf("Fabric=%v", fabric), func(t *testing.T) {
+			a := newTestApp()
+			a.actualPlanEnabled, a.liveStatsEnabled = true, true
+			qp, inst := hostedSessionPanel(t, a, 0,
+				fakeResponse{match: "SET STATISTICS", err: mssql.Error{Number: 15869, Class: 16,
+					Message: "STATISTICS is not supported for SET."}},
+				fakeResponse{match: "SELECT 42", cols: 1, colNames: []string{"answer"}, rows: [][]driver.Value{{int64(42)}}})
+			t.Cleanup(qp.closeConnection)
+			qp.conn.IsFabricDW, qp.conn.Server.IsFabricDW = fabric, fabric
+			path := filepath.Join(t.TempDir(), "results.csv")
+			qp.startRun("SELECT 42", 0, path)
+			if qp.planView != nil {
+				t.Error("file export opened a live plan view")
+			}
+			drainUntil(t, a, func() bool { return !qp.executing }, "the exported query result")
+			if qp.result == nil || qp.result.HasErrors() || qp.result.RowsWritten != 1 || len(qp.result.Sets) != 0 {
+				t.Fatalf("export result = %+v, want one streamed row and no retained sets", qp.result)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			records, err := csv.NewReader(strings.NewReader(string(data))).ReadAll()
+			if err != nil || len(records) != 2 || len(records[0]) != 1 || records[0][0] != "answer" || records[1][0] != "42" {
+				t.Fatalf("CSV records = %v, error = %v, want header and 42", records, err)
+			}
+			if got := len(inst.Reads("SELECT 42")); got != 1 {
+				t.Errorf("query ran %d times, want exactly once", got)
+			}
+			for _, q := range inst.Queries() {
+				if strings.Contains(q.Text, "SET STATISTICS") || strings.Contains(q.Text, "sys.dm_exec_query_profiles") {
+					t.Errorf("file export sent profiling query: %s", q.Text)
+				}
+			}
+			for _, message := range qp.result.Messages {
+				if message.Text == fabricActualPlanUnavailable {
+					t.Error("file export received an irrelevant plan-unavailable notice")
+				}
+			}
+			if !a.actualPlanEnabled || !a.liveStatsEnabled {
+				t.Error("file export changed global SQL Server plan settings")
+			}
+		})
 	}
 }
