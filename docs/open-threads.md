@@ -21,7 +21,7 @@ column fails the whole read and `go test ./...` says nothing. Expected
 refusals: every on-prem major refuses the seven Azure-only reads (six DMVs
 plus database-scoped XEvent sessions); 13 also refuses six 2017+ reads with
 `ErrUnsupportedVersion` (two Query Store wait reads, three external-library
-reads, graph tables). Last run on 13: 2026-11-05, 439 calls, 0 failed.
+reads, graph tables). Last run on 13: 439 calls, 0 failed.
 Compare failures, not call totals (those vary with each instance's
 logins/jobs). Zero failures proves nothing if a read was never reached — log
 the `call` labels to confirm.
@@ -56,15 +56,14 @@ support); this section covers only the environment.
 - **No instance has a case-sensitive *server* collation**, so nothing that
   compares server-scoped names under it has run live. gosmo's login-database
   retarget (`connection_retarget.go`: `retarget`, and Connect's `master`
-  check) compares under `ServerInfo.Collation` since review step B5
-  (2026-11-12), pinned only offline by
+  check) compares under `ServerInfo.Collation` since review step B5, pinned only offline by
   `TestWriteOnLoginDatabaseFollowsServerCollation` and
   `TestRefusedDialOnCaseSensitiveServerMovesMASTER`. To check: connect with
   `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
   Document's keyword case (below) waits on the same instance.
 - **Two gosmo live tests fail only inside the full `-short` run on
-  win10cli** (2026-11-15, 20 min): `TestLiveStartTime` and
+  win10cli** (20 min run): `TestLiveStartTime` and
   `TestLiveReplicationMonitor` both failed there and both passed run alone
   straight after. Unexplained; the failure text was lost to the run's
   filter. Rerun them in the full suite with `-v` before trusting a failure.
@@ -77,14 +76,6 @@ support); this section covers only the environment.
 ## Format Document: what is left
 
 Settled design: `docs/decisions.md` § Format Document.
-
-- **`FuzzFormatSQL` finds a refused format** (found 2026-11-14, not fixed):
-  `(seleCt()CAse''seleCt end As A)` fails the safety check ("SQL differs at
-  token 3") with `IndentWidth: 0`, so Format Document refuses it — nothing is
-  corrupted. Unrelated to line endings. Seed kept out of `testdata/` so
-  `go test ./...` stays green; restore it as
-  `internal/format/testdata/fuzz/FuzzFormatSQL/1a90800885e3d06b` with the fix
-  (`go test fuzz v1` / `string("(seleCt()CAse''seleCt end As A)")`).
 
 - **Keyword case on a case-sensitive *server* is untried.** Run live in a
   `Latin1_General_CS_AS` database only, where INT, VARCHAR, XML, SYSNAME and
@@ -123,14 +114,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-
-## tuikit: what is left
-
-- **No tag yet — a release blocker.** tuikit became its own module
-  (`github.com/radix29/tuikit`, `~/go/tuikit`) on 2026-11-12. `go.mod`
-  requires the `v0.0.0-…` placeholder and builds only through
-  `replace … => ../tuikit`; before a gossms tag, commit, tag and push tuikit,
-  then bump the `require` and drop the `replace` (as for gosmo).
 
 ## Fix order
 

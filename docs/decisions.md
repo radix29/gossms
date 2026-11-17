@@ -1301,8 +1301,8 @@ Unverified on Managed Instance and on non-Enterprise editions:
 
 ## T-SQL lexing: one lexer, two statement splitters — settled, do not re-raise
 
-`internal/sqltext` (outside tuikit since 2026-11-12: tuikit knows no T-SQL;
-the editor's SQL pieces are `internal/tui/sqledit`).
+`internal/sqltext` (outside tuikit, which knows no T-SQL; the editor's SQL pieces are
+`internal/tui/sqledit`).
 
 - **One lexer.** `sqltext.Next` is the only T-SQL lexer: the executor's
   `SplitBatches`, Ctrl+Enter's `StatementAt`, the SQL highlighter and
@@ -1323,8 +1323,7 @@ the editor's SQL pieces are `internal/tui/sqledit`).
   (which adds `$`, `#`, `@`, as T-SQL's identifier rule does) for the rest, so
   `Price$` is one word to them and two to Ctrl+arrow. Nothing requires the two
   rules to agree.
-- **`GO 0` skips its batch with no message**, as SSMS 22 does (checked
-  2026-11-13: `select 1` / `GO 0` / `select 2` shows only the second result
+- **`GO 0` skips its batch with no message**, as SSMS 22 does (checked: `select 1` / `GO 0` / `select 2` shows only the second result
   and "(1 row affected)"; ODBC `sqlcmd` does the same). The "Batch execution
   completed n times." notice is for counts above 1 only
   (`TestExecuteRunsGoBatchesByTheEditorsRule`).
@@ -1438,7 +1437,7 @@ it from the string 'NULL'.
   `N/A` in one row. If ever slow, add the batch as a fast path with the fan-out
   as fallback — never as a replacement.
 - **Dialog prefetches read serially; parallelising them was measured and
-  declined** (2026-11-11, review C3). Mean of 7 runs, fresh
+  declined** (review C3). Mean of 7 runs, fresh
   `db.Connect` per run, win10cli: New Sequence (3 reads after
   `DatabaseByName`) and New Job (6 independent reads) took 19/38 ms serial vs
   45/126 ms in parallel on SQL2017 (~0.05 s login), and 14/30 ms vs
@@ -1724,21 +1723,20 @@ it from the string 'NULL'.
   reader.
 - **`gate.AlterAnyLinkedSrv` and `gate.CreateTable` read as unused**,
   deliberately (the reason is at `AlterAnyLinkedSrv`, `gate/gate.go`).
-- **`fileutil.WithLock` breaks a stale lock under a second lock, not flock**
-  (reopened 2026-11-15; was "race accepted"). A stale `.lock` (older than
+- **`fileutil.WithLock` breaks a stale lock under a second lock, not flock**. A stale `.lock` (older than
   `lockStale`, 10 s) is removed only while holding `.lock.break` and after
   re-checking staleness inside it, and release removes the lock only while it
   still holds the holder's token — portable O_EXCL files, no GOOS branch. Left:
   a crash inside the microsecond break window leaves a stale `.break`, which
   is removed outright (`breakStaleLock`).
 - **`widgets.InputField.HandleKey` keeps its exception to the `HandleKey`
-  rule** (settled 2026-11-15). It claims every key it binds, Left at column 0
+  rule**. It claims every key it binds, Left at column 0
   and Right at the end included, where grid/editor/tree/list hand edge keys to
   their host: caret keys in a text field never move focus (a property-sheet
   field's Left-at-start does not jump to the page list). tuikit's
   `ARCHITECTURE.md` § Widgets and grids names it.
 - **An open Show Value popup swallows clicks anywhere, Object Explorer and
-  the menu row included, until Esc or Close** (2026-11-15). Since panels
+  the menu row included, until Esc or Close**. Since panels
   report their overlay (`layout.OverlayPanel`), `App.handleMouse` offers it
   every press first, and `controls.ValueViewer` takes every press while open,
   as it already did on its own panel — the `core.Overlay` contract, kept modal.
@@ -1749,8 +1747,8 @@ it from the string 'NULL'.
   `ARCHITECTURE.md` § Package map), it unquotes closed identifiers only (the
   unclosed one at the cursor is no token), and the function is a dozen lines
   over runes: widening the leaf rule for it does not pay.
-- **What the 2026-11-14 duplication review left duplicated, on purpose**
-  (`dupl -t 90` over gossms, gosmo, tuikit, 2026-11-14). Re-flagging any of
+- **What the duplication review (`dupl -t 90` over gossms, gosmo, tuikit) left
+  duplicated, on purpose**. Re-flagging any of
   these costs a re-read for the same answer:
   - *View vs stored-procedure Object Explorer menus*
     (`explorer_objects.go`) differ in one item; the `…MenuItems` builders
@@ -1781,8 +1779,7 @@ it from the string 'NULL'.
     RGB data tables (the latter already share `mcSkin`); a builder would hide
     the table. `newTestEditor` stays in both repos: tuikittest importing
     `controls/editor` is an import cycle.
-- **Package-level `var`s are not mutable state to refactor** (review E2,
-  2026-11-16). A go/types pass over all three repos (~800 vars, test files
+- **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,
   `releaseFetcher`, …), except the few written at run time — each documented as
@@ -1795,8 +1792,7 @@ it from the string 'NULL'.
   tuikit `theme.active` and `editor.defaultIndentWidth` (UI goroutine, read
   per frame/construction). Moving them into an owning struct would thread a
   handle through every caller for no fix.
-- **Contrast floor holds in every palette with no exemption list** (review
-  E4, 2026-11-16; tuikit `knownLowContrast` removed). Default: DialogAccent
+- **Contrast floor holds in every palette with no exemption list** (review E4). Default: DialogAccent
   is the editor keyword blue 86,156,214, DialogError VS Code dark's
   244,135,113. Light: DialogAccent 0,106,177, both dim greys 105. mc skins:
   MenuTextDim is Black, as mc's own `menuinactive = black;cyan`;
@@ -1926,7 +1922,7 @@ The contract is `docs/cli.md`; these are the alternatives turned down.
   name); `CREATE/ALTER/DROP` before an administration object is admin
   wherever it stands.
   - **`master.dbo.xp_…` stays `read`; `dbo.xp_…` elsewhere is `write`.**
-    Probed on win10cli (17), 2026-11-14: in a user database `EXEC
+    Probed on win10cli (17): in a user database `EXEC
     dbo.xp_msver` runs the database's own `dbo.xp_msver` (while `dbo.sp_who`
     still runs the system one). In master, `CREATE PROCEDURE
     dbo.xp_fixeddrives` succeeds beside `sys.xp_fixeddrives`, yet `EXEC
@@ -2239,7 +2235,7 @@ down.
   `d.ServiceBroker()`, `d.FullText()`, `s.Mail()`, `s.XEvents()`/`d.XEvents()`;
   rule in `~/go/gosmo/CLAUDE.md` § Conventions) give the same discoverability
   without that. Resource Governor, Backup and `Server.FullTextInfo` stay
-  unprefixed on `Server` (review 2026-11-12 A2): RG's singleton already owns
+  unprefixed on `Server` (review A2): RG's singleton already owns
   the name, Backup is operations rather than a family, and a one-method
   facet adds nothing.
 
