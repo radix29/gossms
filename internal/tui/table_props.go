@@ -58,7 +58,7 @@ func pageTableGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
 			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
 			}
-			rowCountText := ""
+			rowCountText := unavailableValue
 			if err == nil {
 				rowCountText = strconv.FormatInt(rowCount, 10)
 			}
@@ -229,7 +229,7 @@ func pageTableStorage(sc *db.ServerConn, dbName, schema, name string) propPage {
 			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
 			}
-			reservedKB, dataKB, indexKB, lobKB, unusedKB, filegroup := "", "", "", "", "", ""
+			reservedKB, dataKB, indexKB, lobKB, unusedKB, filegroup := unavailableValue, unavailableValue, unavailableValue, unavailableValue, unavailableValue, unavailableValue
 			if err == nil {
 				reservedKB = strconv.FormatInt(space.ReservedKB, 10)
 				dataKB = strconv.FormatInt(space.DataKB, 10)
@@ -242,7 +242,7 @@ func pageTableStorage(sc *db.ServerConn, dbName, schema, name string) propPage {
 			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
 			}
-			rowCountText := ""
+			rowCountText := unavailableValue
 			if err == nil {
 				rowCountText = strconv.FormatInt(rowCount, 10)
 			}

@@ -278,6 +278,8 @@ func (p *QueryPanel) runRefused(queryText string, retry func()) bool {
 	return true
 }
 
+// actualPlanSupported reports whether this window's connection can capture an
+// actual plan; Fabric DW refuses SET STATISTICS XML (see App.actualPlanAvailable).
 func (p *QueryPanel) actualPlanSupported() bool {
 	return p.conn == nil || !p.conn.IsFabricDW
 }

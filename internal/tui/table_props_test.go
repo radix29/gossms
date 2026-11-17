@@ -101,7 +101,7 @@ func TestTablePropertiesFabricRowCountIsOptional(t *testing.T) {
 					}
 					want := "19"
 					if unavailable {
-						want = ""
+						want = "n/a"
 					}
 					if got := staticValue(t, form, "Row count"); got != want {
 						t.Errorf("Row count = %q, want %q", got, want)
@@ -159,15 +159,15 @@ func TestTableStorageFabricSpaceAndPartitionsAreOptional(t *testing.T) {
 				}
 				wantCount := "19"
 				if allUnavailable {
-					wantCount = ""
+					wantCount = "n/a"
 				}
 				if got := staticValue(t, form, "Row count"); got != wantCount {
 					t.Errorf("Row count = %q, want %q", got, wantCount)
 				}
 				if match == "AS reserved_kb" || allUnavailable {
 					for _, label := range []string{"Reserved (KB)", "Data (KB)", "Indexes (KB)", "LOB data (KB)", "Unused (KB)", "Filegroup"} {
-						if got := staticValue(t, form, label); got != "" {
-							t.Errorf("%s = %q, want blank", label, got)
+						if got := staticValue(t, form, label); got != "n/a" {
+							t.Errorf("%s = %q, want n/a", label, got)
 						}
 					}
 				}

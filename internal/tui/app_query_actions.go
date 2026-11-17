@@ -19,8 +19,15 @@ func (a *App) showEstimatedExecutionPlan() {
 	a.withQueryPanel(func(qp *QueryPanel) { qp.ShowEstimatedPlan() })
 }
 
+// fabricActualPlanUnavailable is the status line for a refused toggle and the
+// Messages note for a Fabric run that skipped the requested plan capture.
 const fabricActualPlanUnavailable = "Actual execution plans and Live Query Statistics are not supported on Fabric DW (SET STATISTICS XML)."
 
+// actualPlanAvailable reports whether the Actual Plan and Live Query Statistics
+// controls apply: the active query window's connection decides, or, with none
+// connected, the selected Object Explorer connection. Fabric DW refuses SET
+// STATISTICS XML, so both are disabled there; the global toggles themselves are
+// left alone so other connections keep them.
 func (a *App) actualPlanAvailable() bool {
 	if qp := a.activeQueryPanel(); qp != nil && qp.conn != nil {
 		return qp.actualPlanSupported()

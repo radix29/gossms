@@ -42,6 +42,17 @@ const unsetItem = "(not set)"
 // Governance page follows them. Fabric DW omits unsupported pages.
 func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 	w := gate.DatabaseWriteRights()
+	// Fabric DW has no files, filegroups, Query Store, extended properties,
+	// scoped configurations or resource governance to show: its list is the
+	// supported subset, in the same order, built rather than filtered by title.
+	if sc != nil && sc.IsFabricDW {
+		return []propPage{
+			withRequires(pageDatabaseGeneral(sc, dbName), dbName, w...),
+			withRequires(pageDatabaseOptions(sc, dbName), dbName, w...),
+			withRequires(pageDatabaseChangeTracking(sc, dbName), dbName, w...),
+			withRequires(pageDatabasePermissions(sc, dbName), dbName, gate.ControlDB, gate.AlterAnyDatabase),
+		}
+	}
 	pages := []propPage{
 		withRequires(pageDatabaseGeneral(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseFiles(sc, dbName), dbName, w...),
@@ -53,16 +64,6 @@ func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 		withRequires(pageDatabaseExtendedProperties(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseScopedConfig(sc, dbName), dbName, w...),
 	}
-	if sc != nil && sc.IsFabricDW {
-		return slices.DeleteFunc(pages, func(p propPage) bool {
-			switch p.title {
-			case "Files", "Filegroups", "Query Store", "Extended Properties", "Scoped Configurations":
-				return true
-			default:
-				return false
-			}
-		})
-	}
 	// Resource Governance last, and only on an Azure edition: the two views
 	// it reads exist nowhere else. Appended rather than inserted so the page
 	// order every other edition sees is untouched — nothing indexes this
@@ -73,8 +74,15 @@ func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 	return pages
 }
 
-// Optional Fabric metadata may be unavailable, but cancellation, timeouts and
-// transient failures must still fail the load rather than report blank data.
+// unavailableValue fills a property Fabric DW cannot report, as the Fabric
+// statistics page does.
+const unavailableValue = "n/a"
+
+// fabricPropertyUnavailable reports whether err from an optional metadata read
+// (space, row counts, partitions, backup history) means Fabric DW simply lacks
+// it, so the page shows unavailableValue there and loads the rest. Off Fabric,
+// and for cancellation, timeouts and transient failures, the load still fails
+// rather than reporting missing data.
 func fabricPropertyUnavailable(ctx context.Context, sc *db.ServerConn, err error) bool {
 	return err != nil && sc.IsFabricDW && ctx.Err() == nil && sc.Server.Context().Err() == nil &&
 		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) &&
@@ -93,7 +101,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
 			}
-			sizeMB, availableMB := "", ""
+			sizeMB, availableMB := unavailableValue, unavailableValue
 			if err == nil {
 				sizeMB = fmt.Sprintf("%.2f", space.TotalMB)
 				availableMB = fmt.Sprintf("%.2f", space.UnallocatedMB)
@@ -121,7 +129,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			slices.Sort(loginNames)
 			lastFull, lastDiff, lastLog := "Never", "Never", "Never"
 			if historyErr != nil {
-				lastFull, lastDiff, lastLog = "", "", ""
+				lastFull, lastDiff, lastLog = unavailableValue, unavailableValue, unavailableValue
 			}
 			for _, b := range history {
 				switch b.SetType {

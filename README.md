@@ -193,7 +193,7 @@ Details, Histogram, and Density Vector pages remain available.
 Fabric Database Properties omits Files, Filegroups, Query Store, Extended
 Properties, Scoped Configurations, and Resource Governance. Unavailable
 optional size and backup values in Database General, and row counts, space,
-and partitions in Table General/Storage, stay blank while the remaining
+and partitions in Table General/Storage, show `n/a` while the remaining
 properties load. Connection failures and cancellations still report an error.
 
 Actual Execution Plan and Live Query Statistics are disabled for Fabric DW

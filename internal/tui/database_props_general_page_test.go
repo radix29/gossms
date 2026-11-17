@@ -130,7 +130,7 @@ func TestDatabaseGeneralWritesNothingWhenUntouched(t *testing.T) {
 	}
 }
 
-func TestDatabaseGeneralFabricLeavesUnavailableValuesBlank(t *testing.T) {
+func TestDatabaseGeneralFabricShowsUnavailableValuesAsNA(t *testing.T) {
 	for _, tc := range []struct {
 		name                                string
 		fabric, missingSpace, missingBackup bool
@@ -168,10 +168,10 @@ func TestDatabaseGeneralFabricLeavesUnavailableValuesBlank(t *testing.T) {
 				wantSize, wantAvailable = "0.00", "0.00"
 			}
 			if tc.missingSpace {
-				wantSize, wantAvailable = "", ""
+				wantSize, wantAvailable = "n/a", "n/a"
 			}
 			if tc.missingBackup {
-				wantBackup = ""
+				wantBackup = "n/a"
 			}
 			for label, want := range map[string]string{
 				"Size (MB)":                wantSize,
