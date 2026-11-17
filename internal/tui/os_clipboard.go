@@ -2,18 +2,17 @@ package tui
 
 import (
 	"context"
-	"encoding/binary"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf16"
 )
 
-// OS-native clipboard, shelled out to the platform's clipboard tool. This is
-// the primary clipboard path; clipboard.go falls back to tcell's OSC 52 terminal
+// OS-native clipboard, shelled out to the platform's clipboard tool (on
+// Windows, the Win32 API: os_clipboard_windows.go). This is the primary
+// clipboard path; clipboard.go falls back to tcell's OSC 52 terminal
 // clipboard when no native tool is available (e.g. a bare SSH session) or an
 // invocation fails.
 
@@ -28,6 +27,10 @@ var (
 	clipboardOnce sync.Once
 	clipboardMeth *clipboardMethod
 )
+
+// win32Clipboard is the Windows method, set by os_clipboard_windows.go's init
+// and nil in every other build.
+var win32Clipboard *clipboardMethod
 
 // resolveClipboardMethod detects and caches which native clipboard tool to
 // use, once per process.
@@ -55,26 +58,8 @@ func detectClipboardMethod(lookPath func(string) (string, error)) *clipboardMeth
 			}
 		}
 	case "windows":
-		if found("clip") {
-			return &clipboardMethod{
-				// clip.exe reads plain stdin in the console's OEM code page, not UTF-8: "ö"
-				// (C3 B6) landed on the clipboard as "├╢" under CP437. A UTF-16LE stream with a
-				// BOM is the one input it takes as Unicode, whatever the code page.
-				copy: func(text string) bool { return runClipboardCmd(utf16LEWithBOM(text), "clip") },
-				paste: func() (string, bool) {
-					// PowerShell writes redirected stdout in [Console]::OutputEncoding, the OEM code
-					// page, so Get-Clipboard alone turns "ö" into a lone 0x94 byte. Switch it to
-					// BOM-less UTF-8 first. A cold PowerShell start takes seconds, hence the longer
-					// timeout: a paste that times out falls back to OSC 52, which Windows Terminal
-					// does not answer, so it pasted nothing.
-					out, ok := runClipboardOutCmdTimeout(powerShellTimeout, "powershell", "-NoProfile", "-NonInteractive", "-Command", windowsPasteScript)
-					if !ok {
-						return "", false
-					}
-					return trimPowerShellOutput(out), true
-				},
-			}
-		}
+		// The Win32 API, not a tool: see os_clipboard_windows.go.
+		return win32Clipboard
 	default: // linux and other Unix-likes
 		if os.Getenv("WAYLAND_DISPLAY") != "" && found("wl-copy") && found("wl-paste") {
 			return &clipboardMethod{
@@ -98,41 +83,8 @@ func detectClipboardMethod(lookPath func(string) (string, error)) *clipboardMeth
 	return nil
 }
 
-// windowsPasteScript reads the clipboard with PowerShell's stdout switched to
-// BOM-less UTF-8; see the Windows paste in detectClipboardMethod.
-const windowsPasteScript = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; Get-Clipboard -Raw"
-
-// trimPowerShellOutput removes what PowerShell adds to the clipboard text: a
-// BOM, and the one line terminator its pipeline output appends even with -Raw
-// (unlike xclip/xsel/pbpaste/wl-paste's exact bytes). Exactly one: trimming
-// every trailing CR/LF also ate the newlines the copied text ended with.
-func trimPowerShellOutput(out string) string {
-	out = strings.TrimPrefix(out, "\uFEFF")
-	if s, ok := strings.CutSuffix(out, "\r\n"); ok {
-		return s
-	}
-	return strings.TrimSuffix(out, "\n")
-}
-
-// clipboardTimeout bounds a clipboard tool's run; powerShellTimeout is the
-// Windows paste's, which starts PowerShell.
-const (
-	clipboardTimeout  = 2 * time.Second
-	powerShellTimeout = 5 * time.Second
-)
-
-// utf16LEWithBOM encodes text as UTF-16LE preceded by a byte-order mark, the
-// form clip.exe takes as Unicode. The result is raw bytes carried in a string,
-// for runClipboardCmd's stdin.
-func utf16LEWithBOM(text string) string {
-	units := utf16.Encode([]rune(text))
-	b := make([]byte, 0, 2+2*len(units))
-	b = append(b, 0xFF, 0xFE)
-	for _, u := range units {
-		b = binary.LittleEndian.AppendUint16(b, u)
-	}
-	return string(b)
-}
+// clipboardTimeout bounds a clipboard tool's run.
+const clipboardTimeout = 2 * time.Second
 
 // runClipboardCmd runs name(args...) with text piped to stdin, for a copy
 // command. Returns false if the tool isn't available or the invocation fails.
@@ -148,15 +100,9 @@ func runClipboardCmd(text string, name string, args ...string) bool {
 // paste command. ok=false means the tool isn't available or failed, not a
 // legitimately empty clipboard (ok=true, text==""). Output is byte-for-byte (no
 // newline trimming) since xclip/xsel/pbpaste/wl-paste (--no-newline) emit the
-// clipboard's exact bytes; a tool that doesn't (PowerShell) is trimmed by its
-// caller.
+// clipboard's exact bytes.
 func runClipboardOutCmd(name string, args ...string) (string, bool) {
-	return runClipboardOutCmdTimeout(clipboardTimeout, name, args...)
-}
-
-// runClipboardOutCmdTimeout is runClipboardOutCmd with its own timeout.
-func runClipboardOutCmdTimeout(timeout time.Duration, name string, args ...string) (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.Output()
