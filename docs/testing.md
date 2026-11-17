@@ -81,7 +81,11 @@ reads, the pre-2019 `BackupDirectory` registry read, `RESTORE HEADERONLY`.
 **After a lexer or parser change, fuzz it:** `go test ./internal/sqltext
 -run XXX -fuzz FuzzLexer -fuzztime 60s -fuzzminimizetime 0`, likewise `FuzzScope`
 in `./internal/tui/sqlparse` (their seeds run in plain `go test`; without
-`-fuzzminimizetime 0` the minimizer stalls them). A crasher is a bug to fix,
+`-fuzzminimizetime 0` the minimizer stalls them). A change to either T-SQL
+lexer — `sqltext.Next` or gosmo's `tsql.Spans` — also gets `-fuzz
+FuzzLexersAgree` in `./internal/sqltext`: `internal/cli/safety` classifies with
+one and unquotes with the other, so they must find the same comments, literals
+and quoted identifiers. A crasher is a bug to fix,
 and its `testdata/fuzz/` file stays as the regression seed. A Format Document
 formatter change gets the same with `FuzzFormatSQL`/`FuzzFormatXML`/
 `FuzzFormatJSON` in `./internal/format` — five minutes for SQL: its first

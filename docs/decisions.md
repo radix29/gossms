@@ -789,7 +789,7 @@ Every result below was probed with `WITHOUT LOGIN` users on 13, 14,
   encrypts must be opened by password first (Msg 15581) — page and dialogs ask.
   **No Delete** (Msg 15580 while anything depends on it; otherwise a query
   window's job). New Certificate/New Asymmetric Key create it on demand
-  (`ensureMasterKey`); New Symmetric Key doesn't need it.
+  (gosmo's `EnsureMasterKey`); New Symmetric Key doesn't need it.
 - **New Symmetric Key doesn't offer encryption by another symmetric key** (the
   parent must be open — the Encryption page's decryptor does that). Create with
   a password and add it there. `KEY_SOURCE` and `IDENTITY_VALUE` are required

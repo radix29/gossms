@@ -161,16 +161,34 @@ var readMsdbProcs = map[string]bool{
 	"sp_help_schedule": true, "sp_help_jobactivity": true, "sp_help_jobschedule": true,
 }
 
-// ddlProcs are the system procedures that do what a ddl statement does:
-// sp_updatestats is UPDATE STATISTICS over every table, sp_createstats CREATE
-// STATISTICS — so maint update-stats --all and query run agree (D1).
-var ddlProcs = map[string]bool{
-	"sp_updatestats": true, "sp_createstats": true,
+// ddlProcs are the system procedures that do what a ddl statement does, each
+// with the reason a classified call gives: sp_updatestats is UPDATE STATISTICS
+// over every table, sp_createstats CREATE STATISTICS — so maint update-stats
+// --all and query run agree (D1); sp_rename is ALTER … WITH NAME, sp_addtype
+// CREATE TYPE, sp_bindrule and sp_tableoption an ALTER TABLE. sp_rename of a
+// database and sp_settriggerorder of a server trigger are admin
+// (execTarget).
+var ddlProcs = map[string]string{
+	"sp_updatestats": "changes statistics", "sp_createstats": "changes statistics",
+	"sp_autostats": "changes statistics",
+
+	"sp_rename": "changes the schema", "sp_refreshview": "changes the schema",
+	"sp_refreshsqlmodule": "changes the schema", "sp_recompile": "changes the schema",
+	"sp_addextendedproperty": "changes the schema", "sp_updateextendedproperty": "changes the schema",
+	"sp_dropextendedproperty": "changes the schema", "sp_bindrule": "changes the schema",
+	"sp_unbindrule": "changes the schema", "sp_bindefault": "changes the schema",
+	"sp_unbindefault": "changes the schema", "sp_settriggerorder": "changes the schema",
+	"sp_tableoption": "changes the schema", "sp_indexoption": "changes the schema",
+	"sp_changeobjectowner": "changes the schema", "sp_addtype": "changes the schema",
+	"sp_droptype": "changes the schema", "sp_create_plan_guide": "changes the schema",
+	"sp_create_plan_guide_from_handle": "changes the schema", "sp_control_plan_guide": "changes the schema",
 }
 
 // adminProcs are system procedures that change the server, its security or its
 // databases. Every xp_ procedure not in readSystemProcs, every sp_trace_ and sp_OA
-// procedure, and every msdb sp_ procedure (Agent) is admin too.
+// procedure, every procedure msdb ships (msdbProcs: Agent, Database Mail, backup
+// history, log shipping, …) and every sp_ one called as msdb.<schema>.<name> is
+// admin too.
 var adminProcs = map[string]bool{
 	"sp_configure": true, "sp_addlogin": true, "sp_droplogin": true, "sp_password": true,
 	"sp_grantlogin": true, "sp_revokelogin": true, "sp_denylogin": true,
@@ -180,9 +198,8 @@ var adminProcs = map[string]bool{
 	"sp_changedbowner": true, "sp_change_users_login": true, "sp_addlinkedserver": true,
 	"sp_dropserver": true, "sp_addlinkedsrvlogin": true, "sp_droplinkedsrvlogin": true,
 	"sp_serveroption": true, "sp_dboption": true, "sp_detach_db": true, "sp_attach_db": true,
-	"sp_attach_single_file_db": true, "sp_renamedb": true, "sp_add_job": true,
-	"sp_start_job": true, "sp_stop_job": true, "sp_delete_job": true, "sp_update_job": true,
-	"sp_add_jobstep": true, "sp_add_jobserver": true, "sp_add_schedule": true,
-	"sp_attach_schedule": true, "sp_procoption": true, "sp_addumpdevice": true,
-	"sp_dropdevice": true, "sp_cycle_errorlog": true, "sp_setapprole": true,
+	"sp_attach_single_file_db": true, "sp_renamedb": true, "sp_procoption": true,
+	"sp_addumpdevice": true, "sp_dropdevice": true, "sp_cycle_errorlog": true,
+	"sp_setapprole": true, "sp_addmessage": true, "sp_altermessage": true,
+	"sp_dropmessage": true,
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -182,13 +183,12 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 	}
 
 	ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
-	if err != nil {
-		return nil, err
-	}
 	switch {
-	case ep == nil:
+	case errors.Is(err, gosmo.ErrNotFound):
 		pf.blocker = fmt.Sprintf("%s has no database mirroring endpoint. Every replica needs one before a group can name it. Use \"New Database Mirroring Endpoint...\" on the Always On High Availability node to create one on this instance and each of its peers, exchanging certificates between them, then reopen this dialog.", sc.Opts.Server)
 		return pf, nil
+	case err != nil:
+		return nil, err
 	case ep.State != gosmo.EndpointStarted:
 		pf.blocker = fmt.Sprintf("%s's database mirroring endpoint %q is %s, not STARTED. A replica behind a stopped endpoint never connects.", sc.Opts.Server, ep.Name, ep.State)
 		return pf, nil

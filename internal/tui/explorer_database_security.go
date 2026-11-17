@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
@@ -136,11 +137,11 @@ func loadSymmetricKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 		return nil, err
 	}
 	mk, err := dbObj.MasterKey(l.ctx)
+	if errors.Is(err, gosmo.ErrNotFound) {
+		return keys, nil
+	}
 	if err != nil {
 		return nil, err
-	}
-	if mk == nil {
-		return keys, nil
 	}
 	n := l.node(masterKeyNodeLabel, NodeMasterKey, "", "", node.data.DBName)
 	n.data.CreateDate = mk.CreateDate

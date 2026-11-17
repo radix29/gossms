@@ -139,7 +139,7 @@ func findCertificateIfAny(ctx context.Context, d *gosmo.Database, name string) (
 // and reads the public half back. masterKeyPass protects a master key it has to
 // create.
 func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPeer, masterKeyPass string) error {
-	if err := ensureMasterKey(ctx, p.master, masterKeyPass); err != nil {
+	if _, err := p.master.EnsureMasterKey(ctx, masterKeyPass); err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 
@@ -258,10 +258,10 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 // login CONNECT on it. req says what a created endpoint is like.
 func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer, all []*endpointPeer, req endpointRequest) error {
 	ep, err := p.server.DatabaseMirroringEndpoint(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, gosmo.ErrNotFound) {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
-	if ep == nil {
+	if err != nil {
 		// gosmo passes the AUTHENTICATION clause through verbatim (it is a small
 		// grammar, not one keyword), so the certificate name inside it is quoted here.
 		spec := gosmo.CreateDatabaseMirroringEndpointRequest{

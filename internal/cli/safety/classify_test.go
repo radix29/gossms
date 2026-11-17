@@ -200,6 +200,7 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"SEND ON CONVERSATION @h ('x')", write},
 		{"CREATE TRIGGER tr ON ALL SERVER FOR CREATE_DATABASE AS PRINT 1", admin},
 		{"INSERT #t EXEC sp_configure", admin},
+		{"EXEC sp_addmessage 50001, 16, N'x'", admin},
 	} {
 		if got := Classify(tt.script).Class; got != tt.want {
 			t.Errorf("Classify(%q) = %s, want %s\n%+v", tt.script, got, tt.want, Classify(tt.script).Statements)
@@ -477,6 +478,103 @@ func TestClassifyFlags(t *testing.T) {
 	}
 }
 
+// C1 (review 2026-11-17): system procedures that change the schema are ddl,
+// as the statements they stand for are; renaming a database and ordering a
+// server trigger are admin.
+func TestClassifySchemaProcedures(t *testing.T) {
+	for _, tt := range []struct {
+		script string
+		want   spec.Class
+	}{
+		{"EXEC sp_rename 'dbo.t', 't2'", ddl},
+		{"EXEC sp_rename 'dbo.t.c', 'c2', 'COLUMN'", ddl},
+		{"EXEC sp_rename N'dbo.t.ix', N'ix2', N'index'", ddl},
+		{"EXEC sp_rename @objname = 'dbo.t', @newname = 't2', @objtype = NULL", ddl},
+		{"EXEC sp_rename 'd', 'd2', 'DATABASE'", admin},
+		{"EXEC sp_rename @objtype = N'database', @objname = 'd', @newname = 'd2'", admin},
+		{"EXEC sp_rename 'x', 'y', @t", admin},
+		{"INSERT #t EXEC sp_rename 'd', 'd2', 'DATABASE'", admin},
+		{"sp_rename 'dbo.t', 't2'", ddl},
+		{"EXEC sys.sp_refreshview 'dbo.v'", ddl},
+		{"EXEC sp_refreshsqlmodule 'dbo.p'", ddl},
+		{"EXEC sp_recompile 'dbo.t'", ddl},
+		{"EXEC sp_addextendedproperty 'MS_Description', 'x'", ddl},
+		{"EXEC sp_updateextendedproperty 'MS_Description', 'x'", ddl},
+		{"EXEC sp_dropextendedproperty 'MS_Description'", ddl},
+		{"EXEC sp_bindrule 'r', 'dbo.t.c'", ddl},
+		{"EXEC sp_unbindrule 'dbo.t.c'", ddl},
+		{"EXEC sp_bindefault 'd', 'dbo.t.c'", ddl},
+		{"EXEC sp_unbindefault 'dbo.t.c'", ddl},
+		{"EXEC sp_settriggerorder 'dbo.tr', 'First', 'INSERT'", ddl},
+		{"EXEC sp_settriggerorder 'tr', 'First', 'CREATE_TABLE', 'DATABASE'", ddl},
+		{"EXEC sp_settriggerorder 'tr', 'First', 'CREATE_DATABASE', 'SERVER'", admin},
+		{"EXEC sp_settriggerorder @triggername = 'tr', @order = 'Last', @stmttype = 'LOGON', @namespace = 'SERVER'", admin},
+		{"EXEC sp_tableoption 'dbo.t', 'table lock on bulk load', 1", ddl},
+		{"EXEC sp_changeobjectowner 'dbo.t', 's'", ddl},
+		{"EXEC sp_addtype 'ssn', 'varchar(11)'", ddl},
+		{"EXEC sp_droptype 'ssn'", ddl},
+	} {
+		if got := Classify(tt.script).Class; got != tt.want {
+			t.Errorf("Classify(%q) = %s, want %s\n%+v", tt.script, got, tt.want, Classify(tt.script).Statements)
+		}
+	}
+}
+
+// C2 (review 2026-11-17): a procedure msdb ships is admin however it is
+// qualified — after USE msdb, which is read, the bare name is msdb's own. An
+// Agent read keeps its rule: read as msdb.dbo., write elsewhere.
+func TestClassifyMsdbProcedureAnyQualification(t *testing.T) {
+	for _, tt := range []struct {
+		script string
+		want   spec.Class
+	}{
+		{"EXEC msdb.dbo.sp_send_dbmail @recipients = 'a@b'", admin},
+		{"EXEC sp_send_dbmail @recipients = 'a@b'", admin},
+		{"USE msdb; EXEC sp_send_dbmail @recipients = 'a@b'", admin},
+		{"USE msdb\nGO\nsp_send_dbmail @recipients = 'a@b'", admin},
+		{"EXEC dbo.sp_purge_jobhistory", admin},
+		{"EXEC sp_delete_backuphistory '2020-01-01'", admin},
+		{"EXEC sp_update_alert @name = 'a'", admin},
+		{"EXEC sp_add_operator @name = 'o'", admin},
+		{"EXEC sysmail_delete_mailitems_sp @sent_before = '2020-01-01'", admin},
+		{"EXEC msdb.dbo.sysmail_add_account_sp @account_name = 'a'", admin},
+		{"EXEC sp_start_job 'j'", admin},
+		{"IF 1=1 EXEC sp_send_dbmail", admin},
+		{"EXEC sp_help_job", write},
+		{"EXEC msdb.dbo.sp_help_job", read},
+	} {
+		if got := Classify(tt.script).Class; got != tt.want {
+			t.Errorf("Classify(%q) = %s, want %s\n%+v", tt.script, got, tt.want, Classify(tt.script).Statements)
+		}
+	}
+}
+
+// C3 (review 2026-11-17): RAISERROR … WITH LOG writes the error log, as
+// xp_logevent does: admin, wherever it stands. Without LOG it stays read.
+func TestClassifyRaiserrorWithLog(t *testing.T) {
+	for _, tt := range []struct {
+		script string
+		want   spec.Class
+	}{
+		{"RAISERROR('x', 10, 1)", read},
+		{"RAISERROR('x', 10, 1) WITH NOWAIT", read},
+		{"RAISERROR('x', 10, 1) WITH NOWAIT, SETERROR", read},
+		{"RAISERROR('log', 10, 1)", read},
+		{"RAISERROR(N'x %s', 10, 1, 'LOG') WITH NOWAIT", read},
+		{"RAISERROR('x', 10, 1) WITH NOWAIT SELECT log FROM t", read},
+		{"RAISERROR('x', 10, 1) WITH LOG", admin},
+		{"raiserror ('x', 20, 1) with log", admin},
+		{"RAISERROR('x', 10, 1) WITH NOWAIT, LOG", admin},
+		{"RAISERROR(@m, 16, 1) WITH SETERROR, NOWAIT, LOG", admin},
+		{"IF @@ERROR <> 0 RAISERROR('x', 16, 1) WITH LOG", admin},
+		{"BEGIN CATCH RAISERROR('x', 16, 1) WITH LOG END CATCH", admin},
+	} {
+		if got := Classify(tt.script).Class; got != tt.want {
+			t.Errorf("Classify(%q) = %s, want %s\n%+v", tt.script, got, tt.want, Classify(tt.script).Statements)
+		}
+	}
+}
+
 // The reason names why a statement is above its leader's class.
 func TestClassifyReasons(t *testing.T) {
 	for _, tt := range []struct{ script, want string }{
@@ -492,6 +590,11 @@ func TestClassifyReasons(t *testing.T) {
 		{"EXEC dbo.xp_msver", "procedure dbo.xp_msver is not on the read allow-list: xp_msver is read only unqualified, as sys.xp_msver or as master.dbo.xp_msver"},
 		{"EXEC sp_help_job", "procedure sp_help_job is read only as msdb.dbo.sp_help_job: elsewhere the name is the current database's own procedure"},
 		{"EXEC sp_spaceused @updateusage = 'true'", "sp_spaceused @updateusage runs DBCC UPDATEUSAGE"},
+		{"EXEC sp_rename 'dbo.t', 't2'", "procedure sp_rename changes the schema"},
+		{"EXEC sp_updatestats", "procedure sp_updatestats changes statistics"},
+		{"EXEC sp_rename 'd', 'd2', 'DATABASE'", "sp_rename @objtype DATABASE renames a database"},
+		{"EXEC sp_send_dbmail", "procedure sp_send_dbmail is an msdb procedure, administration"},
+		{"RAISERROR('x', 16, 1) WITH LOG", "RAISERROR … WITH LOG writes the server error log (line 1)"},
 	} {
 		if got := Classify(tt.script).Statements[0].Reason; got != tt.want {
 			t.Errorf("Classify(%q) reason = %q, want %q", tt.script, got, tt.want)

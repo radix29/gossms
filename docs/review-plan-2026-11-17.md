@@ -187,17 +187,34 @@ Cheap and independent first; the guardrail before API work; library changes
 in one gosmo change set and one tuikit change set, each built and tested in
 the library before gossms.
 
-1. **D1, Q1** — doc drift and the staticcheck nit (minutes, no risk).
-2. **C1, C2, C3** — classifier tables and `leaderRule`, with test rows and
+1. ~~**D1, Q1** — doc drift and the staticcheck nit (minutes, no risk).~~
+   **Done 2026-11-17.**
+2. ~~**C1, C2, C3** — classifier tables and `leaderRule`, with test rows and
    the `docs/cli.md` class table in the same change. Highest user-facing
-   value: they are guardrail promises.
-3. **G1 + G2 + G3** — one gosmo change set (`go test`, `go vet -tags
+   value: they are guardrail promises.~~ **Done 2026-11-17.** C2 took the
+   name set (`msdb_procs.go`, 460 names from 17; 13's are a subset); C3
+   lives in the floor, not `leaderRule`, so a nested `IF … RAISERROR … WITH
+   LOG` counts too.
+3. ~~**G1 + G2 + G3** — one gosmo change set (`go test`, `go vet -tags
    livedb`, `staticcheck`, then the live tests for master key, mirroring
    endpoint and Service Broker endpoint on 13 and 17), then the gossms
    callers. Drive New Certificate/New Asymmetric Key with and without an
-   existing master key, and Script Changes for both, in the tmux harness.
-4. **A3** — the differential fuzz test (guards later lexer edits; no
-   behaviour change).
+   existing master key, and Script Changes for both, in the tmux harness.~~
+   **Done 2026-11-17.** Live tests on 13, 14 and 17. G1 found a ninth gossms
+   caller the grep missed (`explorer_database_security.go`, `MasterKey(l.ctx)`):
+   it would have failed the Symmetric Keys folder of every database without a
+   master key. `TestLiveVersionSweep` counts `ErrNotFound` from the two
+   reflected singletons as the read working. Driven: New Certificate with and
+   without a master key (Script Changes and OK); New Asymmetric Key shares
+   `keyProtectionFields.apply` and was not driven separately, nor was New
+   Database Mirroring Endpoint (needs an HADR instance).
+4. ~~**A3** — the differential fuzz test (guards later lexer edits; no
+   behaviour change).~~ **Done 2026-11-17.** `FuzzLexersAgree`
+   (`internal/sqltext/lexers_agree_test.go`) compares kind, byte range and
+   closedness, the `N` normalised away; 56 seeds (the 28 edge cases, invalid
+   UTF-8 among them, plus `lexCorpus`), 8.1M execs in 2 min with no
+   disagreement. Mutation-checked: ending `--` at LF only, and dropping `]]`
+   escaping, each fail a seed. Named in `docs/testing.md`'s fuzz paragraph.
 5. **A2** — context through `internal/format`; drive Format Document on a
    large file and type during the format.
 6. **W1** — Windows clipboard drive on win10cli (needs an interactive

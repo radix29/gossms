@@ -123,7 +123,7 @@ func pageOperatorNotifications(sc *db.ServerConn, operatorName *string) propPage
 			}
 			// NotifyingAlerts needs SQLAgentOperatorRole (gosmo); below it
 			// the alert half becomes a note and the job half still lists.
-			var alertRow propsheet.Row = propsheet.Note(operatorAlertsWithheldNote)
+			alertRow := propsheet.Note(operatorAlertsWithheldNote)
 			if agentAlertsReadable(ctx, sc) {
 				alerts, err := o.NotifyingAlerts(ctx)
 				switch {

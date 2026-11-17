@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -30,20 +31,18 @@ const masterKeyNodeLabel = "Database Master Key"
 var masterKeyRights = []gate.Right{gate.ControlDB}
 
 // findMasterKey reads the master key of dbName, or fails when there is none
-// the caller can see (MasterKey's (nil, nil)).
+// the caller can see (MasterKey's ErrNotFound), saying so in the database's
+// terms.
 func findMasterKey(ctx context.Context, sc *db.ServerConn, dbName string) (*gosmo.MasterKey, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
 	m, err := d.MasterKey(ctx)
-	if err != nil {
-		return nil, err
+	if errors.Is(err, gosmo.ErrNotFound) {
+		return nil, fmt.Errorf("%s has no database master key, or it is not visible to this login: %w", dbName, err)
 	}
-	if m == nil {
-		return nil, fmt.Errorf("%s has no database master key, or it is not visible to this login", dbName)
-	}
-	return m, nil
+	return m, err
 }
 
 // masterKeyEncryptionText names one of the master key's encryptions. Its

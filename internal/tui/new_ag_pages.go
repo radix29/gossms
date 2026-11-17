@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -504,11 +505,11 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 // endpoint, and one that is not started.
 func replicaEndpoint(ctx context.Context, sc *db.ServerConn) (*gosmo.DatabaseMirroringEndpoint, error) {
 	ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
+	if errors.Is(err, gosmo.ErrNotFound) {
+		return nil, fmt.Errorf("%s has no database mirroring endpoint — create one there first; a replica without one can never connect", sc.Server.Name())
+	}
 	if err != nil {
 		return nil, err
-	}
-	if ep == nil {
-		return nil, fmt.Errorf("%s has no database mirroring endpoint — create one there first; a replica without one can never connect", sc.Server.Name())
 	}
 	if ep.State != gosmo.EndpointStarted {
 		return nil, fmt.Errorf("%s's database mirroring endpoint %q is %s, not STARTED", sc.Server.Name(), ep.Name, ep.State)

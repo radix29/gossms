@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -108,14 +109,14 @@ func endpointPayloadTitle(payload string) string {
 
 func endpointMirroringForm(ctx context.Context, e *gosmo.Endpoint) (*propsheet.Form, propApply, error) {
 	d, err := e.MirroringDetail(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if d == nil {
+	if errors.Is(err, gosmo.ErrNotFound) {
 		return propsheet.NewForm(
 			propsheet.Section("Database mirroring"),
 			propsheet.Note("The mirroring detail for this endpoint could not be read."),
 		), nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 	return propsheet.NewForm(
 		propsheet.Section("Database mirroring"),
@@ -130,14 +131,14 @@ func endpointMirroringForm(ctx context.Context, e *gosmo.Endpoint) (*propsheet.F
 
 func endpointServiceBrokerForm(ctx context.Context, e *gosmo.Endpoint) (*propsheet.Form, propApply, error) {
 	d, err := e.ServiceBrokerDetail(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if d == nil {
+	if errors.Is(err, gosmo.ErrNotFound) {
 		return propsheet.NewForm(
 			propsheet.Section("Service Broker"),
 			propsheet.Note("The Service Broker detail for this endpoint could not be read."),
 		), nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 	rows := []propsheet.Row{
 		propsheet.Section("Service Broker"),

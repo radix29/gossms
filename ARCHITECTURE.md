@@ -602,7 +602,7 @@ gossms/
 │       ├── new_symmetric_key_dialog.go  # New Symmetric Key: AES_128/192/256, encrypted by a certificate, an asymmetric key and/or a password, optional KEY_SOURCE / IDENTITY_VALUE (scripted as placeholders)
 │       ├── master_key_props.go   # the database master key's node: Properties (General, and Encryption — the service master key's and password encryptions) and its Details view
 │       ├── master_key_dialogs.go # Back Up Master Key and Regenerate Master Key, opening the key by password when the service master key does not
-│       ├── master_key.go         # ensureMasterKey — the create-the-database-master-key-if-absent step the endpoint and key dialogs share — and keyProtectionFields, the private-key / master-key sections of New Certificate and New Asymmetric Key
+│       ├── master_key.go         # keyProtectionFields, the private-key / master-key sections of New Certificate and New Asymmetric Key
 │       ├── database_snapshot_props.go # read-only Properties for a database snapshot: General + Files
 │       ├── replication_monitor_panel.go      # Replication Monitor (W13): state, construction, layout of the four stacked grids (publications, subscriptions and agents, sessions, actions), the one-per-server entry point
 │       ├── replication_monitor_panel_load.go # its reads (snapshot of every distribution database, an agent's sessions, a session's actions with MSrepl_errors detail), selection kept by key across refreshes, the refresh timer

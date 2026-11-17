@@ -31,6 +31,7 @@ package tui
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"strings"
@@ -217,10 +218,10 @@ func TestLiveEndpointExchangeNamesNamedInstances(t *testing.T) {
 	before := map[string]*gosmo.DatabaseMirroringEndpoint{}
 	for _, sc := range []*db.ServerConn{local, named1, named2} {
 		ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, gosmo.ErrNotFound) {
 			t.Fatalf("%s: read endpoint: %v", sc.Server.Name(), err)
 		}
-		before[sc.Server.Name()] = ep
+		before[sc.Server.Name()] = ep // nil when there is none
 	}
 	if before[names[0]] == nil {
 		t.Fatalf("%s has no database mirroring endpoint; -live-ep-server must name an instance that "+
@@ -317,11 +318,11 @@ func TestLiveEndpointExchangeNamesNamedInstances(t *testing.T) {
 	// The one instance that had none gets the endpoint, authenticated by its
 	// own certificate under the mapped name.
 	ep, err := named1.Server.DatabaseMirroringEndpoint(ctx)
+	if errors.Is(err, gosmo.ErrNotFound) {
+		t.Fatalf("%s still has no endpoint after the run", names[1])
+	}
 	if err != nil {
 		t.Fatalf("%s: re-read endpoint: %v", names[1], err)
-	}
-	if ep == nil {
-		t.Fatalf("%s still has no endpoint after the run", names[1])
 	}
 	if ep.State != gosmo.EndpointStarted {
 		t.Errorf("%s's endpoint is %s, not STARTED", names[1], ep.State)

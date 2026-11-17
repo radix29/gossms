@@ -17,26 +17,10 @@ import (
 // symmetric key is encrypted by a certificate's or asymmetric key's public half
 // or a password, none of which needs it (probed 2026-09-22).
 //
-// This is the only place gossms creates one; the master key's own node
+// All three go through gosmo's Database.EnsureMasterKey, which creates it only when
+// absent; its check is a read, so under Script Changes it still asks the real
+// server and only the CREATE is collected. The master key's own node
 // (master_key_props.go) works on one that exists.
-
-// ensureMasterKey creates d's database master key, protected by password, if
-// it has none; an existing one is left alone and password is unused.
-//
-// The check is a read, so under Script Changes it still asks the real server
-// and only the CREATE is collected: a script for a database that already has a
-// master key does not try to make a second.
-func ensureMasterKey(ctx context.Context, d *gosmo.Database, password string) error {
-	has, err := d.HasMasterKey(ctx)
-	if err != nil {
-		return err
-	}
-	if has {
-		return nil
-	}
-	_, err = d.CreateMasterKey(ctx, gosmo.CreateMasterKeyRequest{Password: password})
-	return err
-}
 
 // Private-key protection choices, in keyProtectionFields' radio order.
 const (
@@ -124,7 +108,8 @@ func (k *keyProtectionFields) apply(ctx context.Context, d *gosmo.Database) (str
 	if k.byPassword() {
 		return k.keyPass.Value(), nil
 	}
-	return "", ensureMasterKey(ctx, d, k.mkPass.Value())
+	_, err := d.EnsureMasterKey(ctx, k.mkPass.Value())
+	return "", err
 }
 
 // keyProtectionInput is keyProtectionFields' values, apart from the form so
