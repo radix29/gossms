@@ -164,9 +164,9 @@ func (a *App) notifyClipboardEdit(target clipboardTarget) {
 }
 
 // writeClipboard sends text to the clipboard off the UI thread: the native OS
-// clipboard (xclip/xsel/wl-copy/pbcopy/clip.exe, see os_clipboard.go) first,
-// falling back to tcell's OSC 52 terminal clipboard when no native tool handled
-// it. The shell-out runs on a background goroutine so a stalled tool can't freeze
+// clipboard (xclip/xsel/wl-copy/pbcopy, the Win32 API on Windows; see
+// os_clipboard.go) first, falling back to tcell's OSC 52 terminal clipboard
+// when no native tool handled it. The shell-out runs on a background goroutine so a stalled tool can't freeze
 // the event loop; the OSC 52 fallback returns to the UI thread, since SetClipboard
 // writes to the terminal.
 //
@@ -284,7 +284,7 @@ func (a *App) pasteInto(target clipboardTarget, token any, text string) {
 	if clipboardTargetToken(a.modals.Top()) != token {
 		return
 	}
-	target.Paste(text)
+	target.Paste(stripBOMs(text))
 	a.notifyClipboardEdit(target)
 }
 
@@ -337,7 +337,7 @@ func (a *App) bufferPastedKey(ev *tcell.EventKey) {
 // rewriting the text. One Paste call is also one undo step.
 func (a *App) endBracketedPaste() {
 	a.paste.bracketed = false
-	text := a.paste.buf.String()
+	text := stripBOMs(a.paste.buf.String())
 	a.paste.buf.Reset()
 	if text == "" {
 		return
@@ -346,6 +346,17 @@ func (a *App) endBracketedPaste() {
 		t.Paste(text)
 		a.notifyClipboardEdit(t)
 	}
+}
+
+// stripBOMs removes every U+FEFF from pasted text. It is invisible in the
+// editor, but SQL Server rejects it as a syntax error near a seemingly empty
+// token, and clipboards carry it: clip.exe (gossms's Windows copy until it moved
+// to the Win32 API, and other tools still) leaves a BOM on the clipboard as a
+// leading U+FEFF, which a paste into the middle of a line buries mid-text. As a
+// zero-width no-break space it is deprecated in favour of U+2060, so dropping it
+// everywhere loses nothing meant.
+func stripBOMs(text string) string {
+	return strings.ReplaceAll(text, "\uFEFF", "")
 }
 
 // selectAllInTarget runs Select All (Ctrl+A / Edit > Select All) on whichever

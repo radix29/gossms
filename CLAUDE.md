@@ -8,7 +8,10 @@ rather than repeating them.
 goSSMS is a portable terminal TUI reimplementation of SQL Server Management
 Studio in Go 1.27: one build for Linux/macOS/Windows, no CGO, no build tags.
 `runtime.GOOS` branches only in `internal/tui/os_clipboard.go` and
-`internal/version/version.go`.
+`internal/version/version.go`; the one GOOS-suffixed file is
+`internal/tui/os_clipboard_windows.go` (Win32 clipboard — `syscall.NewLazyDLL`
+exists only in Windows builds, and shelling out to clip.exe/PowerShell was
+either wrong or slow).
 
 - Module `github.com/radix29/gossms`. Depends on `github.com/radix29/gosmo`
   (the author's own SMO-style library, sibling checkout `~/go/gosmo`),

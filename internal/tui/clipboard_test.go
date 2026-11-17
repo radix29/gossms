@@ -403,3 +403,29 @@ func TestOSC52CopyStatusHedgesOnlyWhenUnadvertised(t *testing.T) {
 		})
 	}
 }
+
+// TestPasteDropsBOMs: clip.exe leaves its input's BOM on the Windows clipboard
+// as a U+FEFF, and a terminal paste (Windows Terminal's Ctrl+V) brought it into
+// the editor, invisible, where SQL Server rejected it as a syntax error near a
+// seemingly empty token. Pasted mid-line it lands mid-text, so every one goes, on both paths.
+func TestPasteDropsBOMs(t *testing.T) {
+	const in, want = "\uFEFFSELECT 1\uFEFF;", "SELECT 1;"
+
+	a := newClipboardTestApp()
+	qp := focusedQueryPanel(t, a)
+	a.beginBracketedPaste()
+	for _, r := range in {
+		a.bufferPastedKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+	}
+	a.endBracketedPaste()
+	if got := qp.editor.Text(); got != want {
+		t.Fatalf("editor text after bracketed paste = %q, want %q", got, want)
+	}
+
+	a = newClipboardTestApp()
+	qp = focusedQueryPanel(t, a)
+	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), in)
+	if got := qp.editor.Text(); got != want {
+		t.Fatalf("editor text after clipboard paste = %q, want %q", got, want)
+	}
+}

@@ -353,6 +353,7 @@ gossms/
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
 │       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields, incl. bracketed-paste buffering
 │       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
+│       ├── os_clipboard_windows.go # the Windows clipboard through the Win32 API (CF_UNICODETEXT); the one GOOS-suffixed file
 │       │
 │       │  ── Query panel & IntelliSense ──
 │       ├── query_panel.go        # QueryPanel state/layout, implements layout.Panel
