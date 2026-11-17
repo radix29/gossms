@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -38,9 +39,20 @@ const unsetItem = "(not set)"
 // Configurations covers the well-known options with a read-only dump of
 // the rest, and Query Store exposes its full configuration plus
 // Flush/Clear actions. On an Azure engine edition a read-only Resource
-// Governance page follows them.
+// Governance page follows them. Fabric DW omits unsupported pages.
 func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 	w := gate.DatabaseWriteRights()
+	// Fabric DW has no files, filegroups, Query Store, extended properties,
+	// scoped configurations or resource governance to show: its list is the
+	// supported subset, in the same order, built rather than filtered by title.
+	if sc != nil && sc.IsFabricDW {
+		return []propPage{
+			withRequires(pageDatabaseGeneral(sc, dbName), dbName, w...),
+			withRequires(pageDatabaseOptions(sc, dbName), dbName, w...),
+			withRequires(pageDatabaseChangeTracking(sc, dbName), dbName, w...),
+			withRequires(pageDatabasePermissions(sc, dbName), dbName, gate.ControlDB, gate.AlterAnyDatabase),
+		}
+	}
 	pages := []propPage{
 		withRequires(pageDatabaseGeneral(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseFiles(sc, dbName), dbName, w...),
@@ -62,6 +74,21 @@ func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 	return pages
 }
 
+// unavailableValue fills a property Fabric DW cannot report, as the Fabric
+// statistics page does.
+const unavailableValue = "n/a"
+
+// fabricPropertyUnavailable reports whether err from an optional metadata read
+// (space, row counts, partitions, backup history) means Fabric DW simply lacks
+// it, so the page shows unavailableValue there and loads the rest. Off Fabric,
+// and for cancellation, timeouts and transient failures, the load still fails
+// rather than reporting missing data.
+func fabricPropertyUnavailable(ctx context.Context, sc *db.ServerConn, err error) bool {
+	return err != nil && sc.IsFabricDW && ctx.Err() == nil && sc.Server.Context().Err() == nil &&
+		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) &&
+		!gosmo.IsTransient(err)
+}
+
 func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "General",
@@ -71,8 +98,13 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				return nil, nil, err
 			}
 			space, err := d.SpaceUsed(ctx)
-			if err != nil {
+			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
+			}
+			sizeMB, availableMB := unavailableValue, unavailableValue
+			if err == nil {
+				sizeMB = fmt.Sprintf("%.2f", space.TotalMB)
+				availableMB = fmt.Sprintf("%.2f", space.UnallocatedMB)
 			}
 			opts, err := d.Options(ctx)
 			if err != nil {
@@ -82,9 +114,9 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			history, err := sc.Server.BackupHistory(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
+			history, historyErr := sc.Server.BackupHistory(ctx, dbName)
+			if historyErr != nil && !fabricPropertyUnavailable(ctx, sc, historyErr) {
+				return nil, nil, historyErr
 			}
 			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
@@ -96,6 +128,9 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			}
 			slices.Sort(loginNames)
 			lastFull, lastDiff, lastLog := "Never", "Never", "Never"
+			if historyErr != nil {
+				lastFull, lastDiff, lastLog = unavailableValue, unavailableValue, unavailableValue
+			}
 			for _, b := range history {
 				switch b.SetType {
 				case gosmo.BackupSetDatabase:
@@ -141,8 +176,8 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				propsheet.Static("Status", string(d.State)),
 				ownerRow,
 				propsheet.Static("Date created", formatSQLDate(d.CreateDate)),
-				propsheet.Static("Size (MB)", fmt.Sprintf("%.2f", space.TotalMB)),
-				propsheet.Static("Space available (MB)", fmt.Sprintf("%.2f", space.UnallocatedMB)),
+				propsheet.Static("Size (MB)", sizeMB),
+				propsheet.Static("Space available (MB)", availableMB),
 				propsheet.Static("Number of users", userCount),
 				propsheet.Section("Maintenance"),
 				propsheet.Static("Collation", d.Collation),

@@ -278,6 +278,12 @@ func (p *QueryPanel) runRefused(queryText string, retry func()) bool {
 	return true
 }
 
+// actualPlanSupported reports whether this window's connection can capture an
+// actual plan; Fabric DW refuses SET STATISTICS XML (see App.actualPlanAvailable).
+func (p *QueryPanel) actualPlanSupported() bool {
+	return p.conn == nil || !p.conn.IsFabricDW
+}
+
 // startRun executes queryText, clearing the results area first. firstLine is as
 // for runQuery. exportPath is non-empty only for a Results To File run, which
 // streams every row there instead of retaining it, bounded by the file rather than
@@ -288,8 +294,10 @@ func (p *QueryPanel) startRun(queryText string, firstLine int, exportPath string
 	// Plan" toggle can change while it runs. Live Query Statistics rides on the actual
 	// plan's profiling and has nothing to watch in a Results To File run, which
 	// captures no plan.
-	capturePlan := p.app.actualPlanEnabled || p.app.liveStatsEnabled
-	live := p.app.liveStatsEnabled && exportPath == ""
+	planRequested := p.app.actualPlanEnabled || p.app.liveStatsEnabled
+	planUnavailable := planRequested && !p.actualPlanSupported()
+	capturePlan := planRequested && !planUnavailable
+	live := p.app.liveStatsEnabled && capturePlan && exportPath == ""
 	prog := &query.Progress{}
 	// The cap is read here, so an Options change takes effect on the next run.
 	opts := []query.Option{query.WithProgress(prog), query.WithLineOffset(firstLine),
@@ -318,6 +326,9 @@ func (p *QueryPanel) startRun(queryText string, firstLine int, exportPath string
 		}
 	}
 	p.launch("query execution", "Executing query...", prog, run, func(res *query.Result, cancelled bool) {
+		if planUnavailable && exportPath == "" {
+			res.Messages = append(res.Messages, query.Message{Text: fabricActualPlanUnavailable})
+		}
 		p.setRunResult(res, cancelled)
 		if exportPath != "" {
 			p.reportExport(res, exportPath, res.RowsWritten, exportKept, exportErr)

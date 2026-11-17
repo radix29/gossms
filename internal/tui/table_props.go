@@ -55,8 +55,12 @@ func pageTableGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
 				return nil, nil, err
 			}
 			rowCount, err := t.RowCount(ctx)
-			if err != nil {
+			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
+			}
+			rowCountText := unavailableValue
+			if err == nil {
+				rowCountText = strconv.FormatInt(rowCount, 10)
 			}
 			fks, err := t.ForeignKeys(ctx)
 			if err != nil {
@@ -79,7 +83,7 @@ func pageTableGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
 				propsheet.Static("Created", formatSQLDate(t.CreateDate)),
 				propsheet.Static("Last modified", formatSQLDate(t.ModifyDate)),
 				propsheet.Static("Table type", "User table"),
-				propsheet.Static("Row count", strconv.FormatInt(rowCount, 10)),
+				propsheet.Static("Row count", rowCountText),
 				propsheet.Static("Data space", detail.DataSpace),
 				propsheet.Static("Lock escalation", detail.LockEscalation),
 				propsheet.Section("Object details"),
@@ -222,16 +226,32 @@ func pageTableStorage(sc *db.ServerConn, dbName, schema, name string) propPage {
 				return nil, nil, err
 			}
 			space, err := t.SpaceUsed(ctx)
-			if err != nil {
+			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
 			}
+			reservedKB, dataKB, indexKB, lobKB, unusedKB, filegroup := unavailableValue, unavailableValue, unavailableValue, unavailableValue, unavailableValue, unavailableValue
+			if err == nil {
+				reservedKB = strconv.FormatInt(space.ReservedKB, 10)
+				dataKB = strconv.FormatInt(space.DataKB, 10)
+				indexKB = strconv.FormatInt(space.IndexKB, 10)
+				lobKB = strconv.FormatInt(space.LOBKB, 10)
+				unusedKB = strconv.FormatInt(space.UnusedKB, 10)
+				filegroup = space.FileGroup
+			}
 			rowCount, err := t.RowCount(ctx)
-			if err != nil {
+			if err != nil && !fabricPropertyUnavailable(ctx, sc, err) {
 				return nil, nil, err
+			}
+			rowCountText := unavailableValue
+			if err == nil {
+				rowCountText = strconv.FormatInt(rowCount, 10)
 			}
 			parts, err := t.Partitions(ctx)
 			if err != nil {
-				return nil, nil, err
+				if !fabricPropertyUnavailable(ctx, sc, err) {
+					return nil, nil, err
+				}
+				parts = nil
 			}
 
 			rows := make([][]string, len(parts))
@@ -244,14 +264,14 @@ func pageTableStorage(sc *db.ServerConn, dbName, schema, name string) propPage {
 
 			f := propsheet.NewForm(
 				propsheet.Section("Space"),
-				propsheet.Static("Row count", strconv.FormatInt(rowCount, 10)),
-				propsheet.Static("Reserved (KB)", strconv.FormatInt(space.ReservedKB, 10)),
-				propsheet.Static("Data (KB)", strconv.FormatInt(space.DataKB, 10)),
-				propsheet.Static("Indexes (KB)", strconv.FormatInt(space.IndexKB, 10)),
-				propsheet.Static("LOB data (KB)", strconv.FormatInt(space.LOBKB, 10)),
-				propsheet.Static("Unused (KB)", strconv.FormatInt(space.UnusedKB, 10)),
+				propsheet.Static("Row count", rowCountText),
+				propsheet.Static("Reserved (KB)", reservedKB),
+				propsheet.Static("Data (KB)", dataKB),
+				propsheet.Static("Indexes (KB)", indexKB),
+				propsheet.Static("LOB data (KB)", lobKB),
+				propsheet.Static("Unused (KB)", unusedKB),
 				propsheet.Section("Data location"),
-				propsheet.Static("Filegroup", space.FileGroup),
+				propsheet.Static("Filegroup", filegroup),
 				propsheet.Section("Partitions"),
 				propsheet.NewGridRow(grid, 8),
 			)
