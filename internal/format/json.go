@@ -2,6 +2,7 @@ package format
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -15,7 +16,10 @@ import (
 // Exactly one top-level value is accepted. Empty {} and [] stay on one line.
 // Trailing whitespace is dropped and one final newline kept iff src ended
 // with one.
-func formatJSON(src string, o Options) (string, error) {
+//
+// encoding/json takes no context, so ctx is checked only between validating
+// and indenting.
+func formatJSON(ctx context.Context, src string, o Options) (string, error) {
 	body := strings.TrimRight(src, " \t\r\n")
 	// Validate before indenting: Indent writes each level's indentation
 	// before it finds an error, so a bad document nested thousands deep
@@ -35,6 +39,9 @@ func formatJSON(src string, o Options) (string, error) {
 		}
 		line, col := position(body, off)
 		return "", &SyntaxError{Lang: LangJSON, Line: line, Col: col, Msg: se.Error()}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	var b bytes.Buffer
 	if err := json.Indent(&b, []byte(body), "", o.indent()); err != nil {

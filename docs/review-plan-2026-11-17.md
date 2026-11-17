@@ -215,8 +215,19 @@ the library before gossms.
    UTF-8 among them, plus `lexCorpus`), 8.1M execs in 2 min with no
    disagreement. Mutation-checked: ending `--` at LF only, and dropping `]]`
    escaping, each fail a seed. Named in `docs/testing.md`'s fuzz paragraph.
-5. **A2** — context through `internal/format`; drive Format Document on a
-   large file and type during the format.
+5. ~~**A2** — context through `internal/format`; drive Format Document on a
+   large file and type during the format.~~ **Done 2026-11-17.**
+   `Format`/`Verify` take `ctx` first; checked between phases, at every line
+   break in `lexSQL`, every 512 tokens in the SQL layout, the SQL guard's
+   comparison and both XML passes; JSON between phases only (encoding/json
+   takes none). A cancel is ctx's error, never `ErrGuard`
+   (`TestFormatStopsAtEveryCheckPoint` cancels at each check point through a
+   countdown context). Beyond the plan: an edit that makes the result
+   unusable now cancels the run (`abandonStaleFormat`, after every event in
+   `handleEvent`; `TestFormatDocumentAsyncEditCancelsRun`, mutation-checked).
+   Driven on a 5 MB script: a full format takes 2.2 s; typing 0.3 s in stops
+   it (process CPU flat from the next 250 ms sample, status "stopped", the
+   typing kept); a repeat 0.4 s in stops the first and applies the second.
 6. **W1** — Windows clipboard drive on win10cli (needs an interactive
    session there).
 7. **T1 → A1** — `Stack.Open` in tuikit, then lazy dialogs in gossms. Optional:

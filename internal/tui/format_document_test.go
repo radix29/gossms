@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 
@@ -308,7 +310,7 @@ func slowFormat(t *testing.T) (entered chan int, gate [4]chan struct{}) {
 	var n atomic.Int32
 	oldSync, oldText := formatSyncBytes, formatText
 	formatSyncBytes = -1
-	formatText = func(format.Language, string, string, format.Options) (string, error) {
+	formatText = func(context.Context, format.Language, string, string, format.Options) (string, error) {
 		k := int(n.Add(1))
 		entered <- k
 		<-gate[k]
@@ -477,5 +479,56 @@ func TestFormatDocumentSelectionInsideValueIsRefusedAsync(t *testing.T) {
 		if got := qp.editor.Text(); got != want {
 			t.Errorf("async=%v control: text = %q, want %q (status %q)", async, got, want, a.statusText)
 		}
+	}
+}
+
+// Typing during a background Format Document stops the run at once, through
+// its context, instead of letting it finish only for the result to be
+// dropped; moving the caret, which leaves the result applicable, does not.
+func TestFormatDocumentAsyncEditCancelsRun(t *testing.T) {
+	old, oldText := formatSyncBytes, formatText
+	formatSyncBytes = -1
+	entered := make(chan struct{}, 1)
+	stopped := make(chan error, 1)
+	release := make(chan struct{})
+	formatText = func(ctx context.Context, _ format.Language, _, src string, _ format.Options) (string, error) {
+		entered <- struct{}{}
+		select {
+		case <-ctx.Done():
+			stopped <- ctx.Err()
+			return "", ctx.Err()
+		case <-release:
+			return "OUT", nil
+		}
+	}
+	t.Cleanup(func() { formatSyncBytes, formatText = old, oldText })
+
+	a, qp := newFormatTestPanel(t, format.LangSQL, "select 1")
+	a.formatActiveDocument()
+	<-entered
+	a.handleEvent(tcell.NewEventKey(tcell.KeyRight, "", tcell.ModNone))
+	if qp.formatRun.Idle() || a.statusText != "Formatting as SQL..." {
+		t.Fatalf("a caret move stopped the run (status %q)", a.statusText)
+	}
+	a.handleEvent(tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone))
+	typed := qp.editor.Text()
+	if typed == "select 1" {
+		t.Fatal("the key did not reach the editor")
+	}
+	select {
+	case err := <-stopped:
+		if err != context.Canceled {
+			t.Fatalf("formatter saw %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("typing did not cancel the running format")
+	}
+	if !qp.formatRun.Idle() || qp.formatJob != nil || !strings.Contains(a.statusText, "stopped") {
+		t.Fatalf("after the edit: idle %v, job %v, status %q", qp.formatRun.Idle(), qp.formatJob, a.statusText)
+	}
+	waitAndDrain(t, a) // the cancelled run's result is posted and dropped
+	if got := qp.editor.Text(); got != typed {
+		t.Fatalf("text = %q, want the typing %q kept", got, typed)
 	}
 }

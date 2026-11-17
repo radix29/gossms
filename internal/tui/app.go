@@ -376,6 +376,7 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	// top-of-loop sync still runs so input routing sees drainPending's
 	// changes.
 	a.modals.Sync()
+	a.abandonStaleFormat()
 	return false, need
 }
 

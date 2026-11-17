@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -27,10 +28,10 @@ import (
 // row name can return it) makes the whole document mixed content, so it comes
 // back unchanged. A leading BOM is kept. Trailing whitespace is dropped and
 // one final newline kept iff src ended with one.
-func formatXML(src string, o Options) (string, error) {
+func formatXML(ctx context.Context, src string, o Options) (string, error) {
 	// The strict well-formedness pass is half the work on a big showplan and
 	// shares nothing with the layout, so the two run side by side. Its error,
-	// when there is one, wins: it is the more precise.
+	// when there is one, wins: it is the more precise (a cancel ends both).
 	// This goroutine is outside every safego in internal/tui: a panic here
 	// would kill the process past main's recover, skipping screen.Fini and
 	// EmergencySave. Recover it into an error instead; checked is buffered,
@@ -42,9 +43,9 @@ func formatXML(src string, o Options) (string, error) {
 				checked <- fmt.Errorf("format: XML check panicked: %v", r)
 			}
 		}()
-		checked <- xmlCheck(src)
+		checked <- xmlCheck(ctx, src)
 	}()
-	out, err := layoutXML(src, o)
+	out, err := layoutXML(ctx, src, o)
 	if cerr := <-checked; cerr != nil {
 		return "", cerr
 	}
@@ -52,8 +53,8 @@ func formatXML(src string, o Options) (string, error) {
 }
 
 // layoutXML is formatXML without the well-formedness check.
-func layoutXML(src string, o Options) (string, error) {
-	toks, err := xmlTokens(src)
+func layoutXML(ctx context.Context, src string, o Options) (string, error) {
+	toks, err := xmlTokens(ctx, src)
 	if err != nil {
 		return "", err
 	}
@@ -66,6 +67,9 @@ func layoutXML(src string, o Options) (string, error) {
 	}
 	if xmlTextual(src, root) {
 		return src, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	f := xmlFmt{src: src, ind: o.indent()}
 	if strings.HasPrefix(src, bom) {
@@ -91,11 +95,16 @@ var xmlCheck = checkXML
 // match end tags to start tags — xmlTree does that. The encoding a
 // declaration names is irrelevant: the text is already decoded, so a
 // showplan's encoding="utf-16" must not be an error.
-func checkXML(src string) error {
+func checkXML(ctx context.Context, src string) error {
 	d := xml.NewDecoder(strings.NewReader(src))
 	d.Strict = true
 	d.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) { return r, nil }
-	for {
+	for n := 1; ; n++ {
+		if n%checkEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
 		_, err := d.RawToken()
 		if err == io.EOF {
 			return nil
@@ -139,8 +148,9 @@ type xmlTok struct {
 
 // xmlTokens splits src into tokens whose spans tile it exactly (a leading BOM
 // aside). It is the formatter's lexer and the guard's (verify.go), so it
-// must not panic on any input; an unterminated construct is a SyntaxError.
-func xmlTokens(src string) ([]xmlTok, error) {
+// must not panic on any input; an unterminated construct is a SyntaxError,
+// and ctx ending is ctx's error.
+func xmlTokens(ctx context.Context, src string) ([]xmlTok, error) {
 	// Every token but text starts at a '<', and text lies between them.
 	toks := make([]xmlTok, 0, 2*strings.Count(src, "<")+1)
 	i := 0
@@ -152,6 +162,11 @@ func xmlTokens(src string) ([]xmlTok, error) {
 		return nil, &SyntaxError{Lang: LangXML, Line: line, Col: col, Msg: "unterminated " + what}
 	}
 	for i < len(src) {
+		if len(toks)%checkEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		rest := src[i:]
 		if rest[0] != '<' {
 			n := strings.IndexByte(rest, '<')

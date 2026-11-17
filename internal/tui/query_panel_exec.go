@@ -118,6 +118,7 @@ func (p *QueryPanel) Close() {
 	p.textRun.Cancel()
 	p.sortRun.Abandon()
 	p.formatRun.Abandon()
+	p.formatJob = nil
 	p.closeConnection()
 }
 

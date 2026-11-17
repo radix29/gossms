@@ -2,6 +2,7 @@ package format
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -41,7 +42,7 @@ func golden(t *testing.T, l Language, styleID, in, outPath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := Format(l, styleID, string(src), Options{})
+	got, err := Format(t.Context(), l, styleID, string(src), Options{})
 	if err != nil {
 		t.Fatalf("Format: %v", err)
 	}
@@ -58,14 +59,14 @@ func golden(t *testing.T, l Language, styleID, in, outPath string) {
 	if got != string(want) {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
-	again, err := Format(l, styleID, got, Options{})
+	again, err := Format(t.Context(), l, styleID, got, Options{})
 	if err != nil || again != got {
 		t.Errorf("not idempotent (err %v):\n%s", err, again)
 	}
 }
 
 func TestFormatJSONIndentWidth(t *testing.T) {
-	got, err := Format(LangJSON, "", `{"a":[1]}`, Options{IndentWidth: 2})
+	got, err := Format(t.Context(), LangJSON, "", `{"a":[1]}`, Options{IndentWidth: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestFormatJSONKeepsTokenSpelling(t *testing.T) {
 		`"zeta"`, `"alpha"`, // key order: zeta stays before alpha
 	}
 	src := esc(`{"zeta":[1.0,1e5,-0.5E-3,12345678901234567890123,-0],"alpha":["%u00e9","%uD83D%uDE00","\/","<&>","` + string(rune(0x2028)) + `"]}`)
-	got, err := Format(LangJSON, "", src, Options{})
+	got, err := Format(t.Context(), LangJSON, "", src, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +110,7 @@ func TestFormatJSONTrailingNewline(t *testing.T) {
 		"[]  ":            "[]",
 		"\n\n  {\"a\":1}": "{\n    \"a\": 1\n}",
 	} {
-		got, err := Format(LangJSON, "", src, Options{})
+		got, err := Format(t.Context(), LangJSON, "", src, Options{})
 		if err != nil || got != want {
 			t.Errorf("Format(%q) = %q, %v; want %q", src, got, err, want)
 		}
@@ -130,7 +131,7 @@ func TestFormatJSONSyntaxErrorPosition(t *testing.T) {
 		{"[\"unterminated\n", 1, 15},           // raw newline inside a string
 		{strings.Repeat("[", 10001), 1, 10001}, // json's nesting limit
 	} {
-		_, err := Format(LangJSON, "", tc.src, Options{})
+		_, err := Format(t.Context(), LangJSON, "", tc.src, Options{})
 		se, ok := errors.AsType[*SyntaxError](err)
 		if !ok {
 			t.Errorf("Format(%.20q): err %v, want *SyntaxError", tc.src, err)
@@ -166,7 +167,7 @@ func TestStyleRegistry(t *testing.T) {
 	if _, ok := StyleByID(LangText, ""); ok {
 		t.Error("StyleByID(Text) found a style; plain text has no formatter")
 	}
-	if _, err := Format(LangText, "", "x", Options{}); !errors.Is(err, ErrNoFormatter) {
+	if _, err := Format(t.Context(), LangText, "", "x", Options{}); !errors.Is(err, ErrNoFormatter) {
 		t.Errorf("Format(Text) err %v, want ErrNoFormatter", err)
 	}
 	for _, l := range []Language{LangXML, LangJSON} {
@@ -189,35 +190,35 @@ func TestStyleRegistry(t *testing.T) {
 // The guard refuses output that differs from the input in more than
 // whitespace, whatever the formatter claims.
 func TestGuardRefusesChangedOutput(t *testing.T) {
-	for name, fn := range map[string]func(string, Options) (string, error){
-		"drops a token":      func(string, Options) (string, error) { return `{"a":1}`, nil },
-		"edits a string":     func(string, Options) (string, error) { return `{"a":1,"b":"x y"}`, nil },
-		"reorders keys":      func(string, Options) (string, error) { return `{"b":"xy","a":1}`, nil },
-		"rewrites a number":  func(string, Options) (string, error) { return `{"a":1.0,"b":"xy"}`, nil },
-		"unescapes a string": func(string, Options) (string, error) { return esc(`{"a":1,"b":"%u0078y"}`), nil },
+	for name, fn := range map[string]func(context.Context, string, Options) (string, error){
+		"drops a token":      func(context.Context, string, Options) (string, error) { return `{"a":1}`, nil },
+		"edits a string":     func(context.Context, string, Options) (string, error) { return `{"a":1,"b":"x y"}`, nil },
+		"reorders keys":      func(context.Context, string, Options) (string, error) { return `{"b":"xy","a":1}`, nil },
+		"rewrites a number":  func(context.Context, string, Options) (string, error) { return `{"a":1.0,"b":"xy"}`, nil },
+		"unescapes a string": func(context.Context, string, Options) (string, error) { return esc(`{"a":1,"b":"%u0078y"}`), nil },
 	} {
 		st := Style{ID: "broken", fn: plain(fn)}
-		out, err := run(LangJSON, st, `{"a":1,"b":"xy"}`, Options{})
+		out, err := run(t.Context(), LangJSON, st, `{"a":1,"b":"xy"}`, Options{})
 		if !errors.Is(err, ErrGuard) || out != "" {
 			t.Errorf("%s: got %q, %v; want ErrGuard and no output", name, out, err)
 		}
 	}
-	ok := Style{ID: "spaces", fn: plain(func(string, Options) (string, error) { return "{ \"a\" :\n\t1 , \"b\":\"xy\" }", nil })}
-	if _, err := run(LangJSON, ok, `{"a":1,"b":"xy"}`, Options{}); err != nil {
+	ok := Style{ID: "spaces", fn: plain(func(context.Context, string, Options) (string, error) { return "{ \"a\" :\n\t1 , \"b\":\"xy\" }", nil })}
+	if _, err := run(t.Context(), LangJSON, ok, `{"a":1,"b":"xy"}`, Options{}); err != nil {
 		t.Errorf("whitespace-only change refused: %v", err)
 	}
 	// Whitespace inside a string is a token, not layout.
-	if err := verify(LangJSON, `["a b"]`, `["ab"]`); !errors.Is(err, ErrGuard) {
+	if err := verify(t.Context(), LangJSON, `["a b"]`, `["ab"]`); !errors.Is(err, ErrGuard) {
 		t.Errorf("verify missed a space removed from a string: %v", err)
 	}
-	if err := verify(LangJSON, `["a\"b", 1]`, "[\n\"a\\\"b\",\n1]"); err != nil {
+	if err := verify(t.Context(), LangJSON, `["a\"b", 1]`, "[\n\"a\\\"b\",\n1]"); err != nil {
 		t.Errorf("verify tripped on an escaped quote: %v", err)
 	}
 }
 
 // A language with a formatter but no verify case fails closed.
 func TestGuardFailsClosedWithoutACheck(t *testing.T) {
-	if err := verify(LangText, "x", "x"); !errors.Is(err, ErrGuard) {
+	if err := verify(t.Context(), LangText, "x", "x"); !errors.Is(err, ErrGuard) {
 		t.Errorf("verify(Text) = %v, want ErrGuard: Text has no check", err)
 	}
 }
@@ -246,7 +247,7 @@ func FuzzFormatJSON(f *testing.F) {
 	f.Add(`{"a":[1,{"b":"c\"d"}],"e":null}`)
 	f.Add(`[1,2,]`)
 	f.Fuzz(func(t *testing.T, src string) {
-		got, err := Format(LangJSON, "", src, Options{IndentWidth: 2})
+		got, err := Format(t.Context(), LangJSON, "", src, Options{IndentWidth: 2})
 		if valid := json.Valid([]byte(src)); valid != (err == nil) {
 			t.Fatalf("json.Valid %v but Format err %v", valid, err)
 		}
@@ -260,7 +261,7 @@ func FuzzFormatJSON(f *testing.F) {
 		if json.Compact(&a, []byte(src)) != nil || json.Compact(&b, []byte(got)) != nil || a.String() != b.String() {
 			t.Fatalf("tokens changed:\n%q\n%q", src, got)
 		}
-		if again, err := Format(LangJSON, "", got, Options{IndentWidth: 2}); err != nil || again != got {
+		if again, err := Format(t.Context(), LangJSON, "", got, Options{IndentWidth: 2}); err != nil || again != got {
 			t.Fatalf("not idempotent: %q -> %q (%v)", got, again, err)
 		}
 	})
