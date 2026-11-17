@@ -261,8 +261,11 @@ func (a *App) showAbout() {
 		{Key: "Version", Value: version.Version},
 		{Key: "Commit", Value: version.Commit},
 		{Key: "Built", Value: version.Date},
-		{Key: "Author", Value: "radix29"},
+		{Key: "Author", Value: "Radu Colceriu"},
 		{Key: "Repository", Value: "github.com/radix29/gossms"},
+
+		PropertySection("Contributors"),
+		{Key: "Jovan Popovic", Value: "https://www.linkedin.com/in/jovan-popovic/"},
 
 		PropertySection("License"),
 		{Key: "License", Value: version.License},

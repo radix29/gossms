@@ -66,6 +66,12 @@ on gosmo v0.3.0 and tuikit v0.0.3.
 - `internal/textenc`, `internal/textutil` and a shared Log Viewer/XEvent
   viewer panel replace duplicated helpers.
 
+### Contributors
+
+- [Jovan Popovic](https://www.linkedin.com/in/jovan-popovic/): Fabric Data
+  Warehouse support (#22, #30, #33, #34) and the saved profile name on the
+  Object Explorer root (#26).
+
 ## [0.2.0] - 2026-11-10
 
 The command-line release: `gossms <command>` runs goSSMS without its
@@ -242,6 +248,11 @@ defaults. Built on gosmo v0.1.1.
 - Faster drawing (`core.FillRect`), asynchronous config saves, DataGrid column
   and selection code split into their own files, new logo.
 - Wiki split into 25 pages; the old single page and screenshots removed.
+
+### Contributors
+
+- [Jovan Popovic](https://www.linkedin.com/in/jovan-popovic/): peer
+  credentials pinned to registered destinations (#6).
 
 ## [0.1.0] - 2026-10-20
 

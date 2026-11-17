@@ -189,7 +189,10 @@ which owns them; the entries here say how goSSMS applies them.
   `modals.Top()`.** Ctrl+C/X/V are handled centrally in `App.handleKey`; the
   target is the frontmost dialog's focused field via `core.ClipboardHost`. The
   old switch named 3 of 30 dialogs and fell through, so Ctrl+X in Find cut the
-  editor behind it. Dialogs without text entry are deliberately not hosts. A
+  editor behind it. Dialogs without text entry are deliberately not hosts —
+  except a read-only key/value list whose values are worth copying
+  (tuikit's `PropertiesDialog`: About, Object Dependencies), which hosts its
+  cursor row and copies that row's Value. A
   new dialog with a text field implements `FocusedClipboardTarget`, returning an
   **explicit** nil on a miss (a typed nil is not a nil interface).
   `TestEveryDialogWithTextEntryIsAClipboardHost` catches a missing host, not a

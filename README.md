@@ -449,9 +449,14 @@ authentication or encryption settings by hand invalidates its saved password.
 - [Report an issue](https://github.com/radix29/gossms/issues)
 - [Discord server](https://discord.gg/7YVKzB3vZ) — questions, feedback and release announcements
 
+## Contributors
+
+- [Jovan Popovic](https://www.linkedin.com/in/jovan-popovic/) — Microsoft
+  Fabric Data Warehouse support
+
 ## License
 
-goSSMS is © 2026 radix29 and licensed under
+goSSMS is © 2026 Radu Colceriu and licensed under
 [GPL-3.0-or-later](LICENSE). The bundled
 [sp_WhoIsActive](https://github.com/amachanic/sp_whoisactive) is © 2007–2026
 Adam Machanic and retains its own GPL-3.0 copyright.

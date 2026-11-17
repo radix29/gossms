@@ -28,7 +28,7 @@ const Name = "gossms"
 // notice). Keep in step with LICENSE.
 const (
 	License   = "GPL-3.0-or-later"
-	Copyright = "© 2026 radix29"
+	Copyright = "© 2026 Radu Colceriu"
 )
 
 var (
