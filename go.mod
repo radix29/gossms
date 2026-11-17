@@ -9,9 +9,9 @@ require (
 	github.com/golang-sql/sqlexp v0.1.0
 	github.com/microsoft/go-mssqldb v1.11.2
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
-	github.com/radix29/gosmo v0.2.0
+	github.com/radix29/gosmo v0.3.0
 	github.com/radix29/gotuipic v0.0.2
-	github.com/radix29/tuikit v0.0.2
+	github.com/radix29/tuikit v0.0.3
 	golang.org/x/image v0.48.0
 	golang.org/x/term v0.48.0
 )
@@ -42,6 +42,6 @@ require (
 	golang.org/x/text v0.44.0 // indirect
 )
 
-replace github.com/radix29/gosmo => ../gosmo
+//replace github.com/radix29/gosmo => ../gosmo
 
-replace github.com/radix29/tuikit => ../tuikit
+//replace github.com/radix29/tuikit => ../tuikit

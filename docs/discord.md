@@ -1,20 +1,19 @@
-# **🚀 goSSMS v0.2.0**
-The command-line release: scripts and AI agents can now drive goSSMS.
+# **🚀 goSSMS v0.2.1**
+Fabric Data Warehouse support, a clipboard menu everywhere and a picture viewer.
 
 ## ✨ New
-- `gossms <command>` CLI: profiles, queries, plans, monitoring, security, jobs, maintenance
-- Safety ceiling, `--dry-run` and an audit log
-- Generate Scripts... for a database
-- New Server Role dialog
-- SQL format style option
+- Microsoft Fabric DW: own tree, menus, statistics and properties
+- Fabric T-SQL in the editor: `QUALIFY`, `WINDOW`, `QUANTILE`
+- Right-click Cut/Copy/Paste on every text field
+- Picture viewer for binary cells; export to CSV, TSV, JSON, XML
 
 ## 🔧 Fixes
-- SQL Agent alerts follow permissions
-- Application Roles as principals
-- Theme contrast
+- Service Broker `FROM` statements run whole
+- Ctrl+C/paste in plan and Log Viewer panels
+- Line endings and encodings preserved
 
 ## ⚡ Changes
-- `gosmo` v0.2.0
+- `gosmo` v0.3.0, `tuikit` v0.0.3
 
 ## 📦 Install or upgrade
 ```
@@ -23,4 +22,4 @@ brew install radix29/tap/gossms
 APT, downloads, checksums: <https://github.com/radix29/gossms#installation>
 
 📋 Notes — <https://github.com/radix29/gossms/blob/main/RELEASE.md>
-⬇️ Downloads — <https://github.com/radix29/gossms/releases/tag/v0.2.0>
+⬇️ Downloads — <https://github.com/radix29/gossms/releases/tag/v0.2.1>

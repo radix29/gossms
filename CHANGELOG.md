@@ -4,6 +4,68 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.2.1] - 2026-11-17
+
+A Fabric and polish release: Microsoft Fabric Data Warehouse connections get
+their own Object Explorer, editor syntax and property pages, every text field
+gains a right-click clipboard menu, and result grids can show pictures. Built
+on gosmo v0.3.0 and tuikit v0.0.3.
+
+### Added
+
+- **Fabric Data Warehouse** (hostnames ending in
+  `datawarehouse.fabric.microsoft.com`): a per-connection Object Explorer
+  tree (Databases and Security only, External Data Sources and External
+  Functions, no Constraints/Triggers/Indexes), context menus without the
+  actions Fabric lacks (Back Up, Restore, Rename, Delete, Shrink, New User,
+  Rebuild All Indexes), statistics read through `sys.stats` with
+  `DBCC SHOW_STATISTICS` details, and database/table property pages that show
+  `n/a` for metadata Fabric does not expose. Actual Execution Plan and Live
+  Query Statistics are disabled there; Estimated Plan still works.
+- **Fabric T-SQL in the editor**: `QUALIFY`, FROM-first queries, named
+  `WINDOW` clauses, and highlighting for `MEDIAN`, `QUANTILE`,
+  `APPROX_MEDIAN` and `APPROX_QUANTILE`.
+- **Right-click clipboard menu** (Cut, Copy, Paste, Select All) on every text
+  field in every dialog; read-only text views get Copy and Select All. The
+  query Messages and Results-to-Text views, plan XML tabs and the Log Viewer
+  filter box use it too.
+- **Picture viewer**: Show Value on a binary result cell that holds a PNG,
+  JPEG, GIF, BMP, TIFF or WebP image opens it with fit, zoom, pan and Save.
+- **Result export** to CSV, tab-separated, JSON and XML files.
+- **Saved profile name** on the Object Explorer root.
+- **Database security** nodes (users, roles, schemas, keys, audit
+  specifications) with create and manage menus, and role member add/remove.
+- New database mirroring endpoint configuration and more Query Store reports.
+
+### Fixed
+
+- Service Broker `BEGIN DIALOG ... FROM SERVICE`, `RECEIVE ... FROM` and
+  `GET CONVERSATION GROUP ... FROM` no longer split at `FROM`, so F5 runs the
+  whole statement.
+- Ctrl+C did nothing in the Plan, Live Plan, Plan Compare, Query Store and
+  Replication Monitor panels; the Log Viewer filter box ignored Ctrl+C/X/V and
+  terminal paste; Restore's File Locations folder fields had no clipboard.
+- Application Roles are listed in permission matrices and principal lists.
+- Query text keeps its file's line endings; lone CR counts as a line break
+  when formatting, and the audit hash covers the original script.
+- Text files are decoded and re-encoded by byte-order mark (UTF-8, UTF-8 BOM,
+  UTF-16), and a lossy decode is refused on the command line.
+- Update Statistics performs a full scan when required.
+- Backup and restore planning refuses snapshots and log/differential backups
+  without a prerequisite full backup, with clearer messages.
+- Unknown connection encryption modes are refused instead of passed through.
+- Stale config lock files are broken safely when several instances wait.
+- Status messages no longer overlap, and overlays take mouse input correctly.
+- Config tests no longer touch the real `config.json` on Windows and macOS (#23).
+
+### Changed
+
+- `gosmo` v0.3.0 and `tuikit` v0.0.3; the local `replace` directives are off.
+- The **Reset** button in the connection dialog is now **New**.
+- `xp_` read procedures are classified by an explicit list.
+- `internal/textenc`, `internal/textutil` and a shared Log Viewer/XEvent
+  viewer panel replace duplicated helpers.
+
 ## [0.2.0] - 2026-11-10
 
 The command-line release: `gossms <command>` runs goSSMS without its
