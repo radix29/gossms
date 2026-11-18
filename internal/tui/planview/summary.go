@@ -63,7 +63,7 @@ func summaryRow(n *showplan.Node, stmtTotal float64) []string {
 		fmt.Sprintf("%.1f", n.Cost(stmtTotal)*100),
 		fmt.Sprintf("%d", n.Rows()),
 		fmt.Sprintf("%d ms", n.ElapsedMS()),
-		n.PhysicalOp,
+		n.DisplayOp(),
 		obj,
 		status,
 	}

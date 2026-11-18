@@ -378,16 +378,16 @@ func planCompareRows(diffs []showplan.NodeDiff) [][]string {
 	return rows
 }
 
-// operatorLabel names an operator as the plan tree does: the physical operator,
-// and the object it reads where there is one.
+// operatorLabel names an operator as the plan tree does: its display name (see
+// showplan.Node.DisplayOp), and the object it reads where there is one.
 func operatorLabel(n *showplan.Node) string {
 	if n == nil {
 		return ""
 	}
 	if n.Object.IsZero() {
-		return n.PhysicalOp
+		return n.DisplayOp()
 	}
-	return n.PhysicalOp + " " + n.Object.Short()
+	return n.DisplayOp() + " " + n.Object.Short()
 }
 
 // nodeCost, nodeEstRows and nodeActualRows render one side of a comparison row,

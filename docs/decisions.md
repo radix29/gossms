@@ -1657,6 +1657,11 @@ it from the string 'NULL'.
   `TestLivePlanEveryShowplanSetHoldsOneRow`), so only
   `TestScanNextKeepsEveryShowplanRow` (scripted driver) kills an overwriting
   mutant.
+- **A columnstore scan is labelled "Columnstore Scan"**, not the docs'
+  "Columnstore Index Scan" (`showplan.Node.DisplayOp`). A plan tile is 20
+  columns, so the 22-column name would clip on every tile. The label is
+  display-only: `PhysicalOp`, plan-compare matching and CLI output keep the
+  XML's "Clustered Index Scan"/"Index Scan".
 
 ### Activity Monitor
 

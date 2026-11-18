@@ -197,7 +197,7 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	if badge != "" {
 		nameW -= core.DisplayWidth(badge) + 1
 	}
-	core.DrawTextClipped(s, inner.X, inner.Y, nameW, textStyle, t.node.PhysicalOp)
+	core.DrawTextClipped(s, inner.X, inner.Y, nameW, textStyle, t.node.DisplayOp())
 
 	line2 := t.node.LogicalOp
 	if line2 == "" || line2 == t.node.PhysicalOp {

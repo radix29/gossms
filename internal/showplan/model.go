@@ -143,6 +143,23 @@ type Node struct {
 	Children      []*Node
 }
 
+// DisplayOp returns the operator name the Plan and Tree views show: PhysicalOp,
+// except that a scan of a columnstore index (an Index Scan or Clustered Index
+// Scan whose Storage is ColumnStore) reads "Columnstore Scan" — the plan XML
+// names it like a rowstore scan. PhysicalOp itself stays the XML's value: plan
+// comparison matches operators on it and the CLI prints it.
+func (n *Node) DisplayOp() string {
+	switch n.PhysicalOp {
+	case "Clustered Index Scan", "Index Scan":
+		for _, kv := range n.Props {
+			if kv.Key == "Storage" && kv.Value == "ColumnStore" {
+				return "Columnstore Scan"
+			}
+		}
+	}
+	return n.PhysicalOp
+}
+
 // Cost returns the node's own cost as a fraction of stmtTotal (SSMS's
 // per-operator cost), 0 when stmtTotal is not positive.
 func (n *Node) Cost(stmtTotal float64) float64 {

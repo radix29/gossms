@@ -279,7 +279,7 @@ func (v *PlanView) treeRowText(tr treeRow) string {
 			sb.WriteString("▼ ")
 		}
 	}
-	sb.WriteString(tr.node.PhysicalOp)
+	sb.WriteString(tr.node.DisplayOp())
 	if tr.node.LogicalOp != "" && tr.node.LogicalOp != tr.node.PhysicalOp {
 		sb.WriteString(" (")
 		sb.WriteString(tr.node.LogicalOp)
