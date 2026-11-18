@@ -127,7 +127,8 @@ func (v *PlanView) layoutTree() {
 
 // expensiveCostThreshold is the cost-percentage cutoff above which an operator
 // is flagged expensive (🔴 badge, red border/text) on Plan tiles and Tree rows,
-// as in SSMS.
+// as in SSMS. Half and a quarter of it add 🟠 and 🟡 badges only (no border or
+// text color), and lose to a ⚠ warning badge where 🔴 wins over it.
 const expensiveCostThreshold = 0.80
 
 // nodeCostPct returns n's cost as a fraction of the statement's total, 0 if no

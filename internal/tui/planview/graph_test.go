@@ -75,6 +75,29 @@ func TestGraph_CostBadgesAndBorders(t *testing.T) {
 	}
 }
 
+// TestGraph_BadgeDoesNotOverwriteOperatorName checks a long operator name is
+// clipped one column short of the corner badge instead of being drawn under it
+// ("Table Valued Function" read as "Table Valued Fun🟡").
+func TestGraph_BadgeDoesNotOverwriteOperatorName(t *testing.T) {
+	v := newGraphTabView(t)
+	v.currentStatement().SubTreeCost = 100
+	v.graphCanvasRect = core.Rect{W: 80, H: 24}
+	n := &showplan.Node{ID: 9001, PhysicalOp: "Table Valued Function", EstSubtreeCost: 21}
+	tl := tile{node: n, rect: core.Rect{W: graphTileW, H: graphTileH}}
+	s := tuikittest.NewScreen(80, 24)
+	v.drawTile(s, tl, theme.Active())
+	x, y, ok := s.Find("🟡")
+	if !ok {
+		t.Fatal("no 🟡 badge for a 21% operator")
+	}
+	if got, _, _ := s.Get(x-1, y); got != " " {
+		t.Errorf("cell left of the badge = %q, want a blank gap; row %q", got, s.Row(y))
+	}
+	if _, _, ok := s.Find("Table Valued Fu"); !ok {
+		t.Errorf("operator name lost its visible prefix; row %q", s.Row(y))
+	}
+}
+
 // TestGraphScrollbarDragScrolls confirms dragging either of the canvas's
 // scrollbars (horizontal along the bottom edge, vertical along the right
 // edge) scrolls the canvas instead of being read as a click that selects

@@ -169,8 +169,35 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 		textStyle = textStyle.Foreground(pal.TextDim)
 	}
 
+	// Corner badge: at most one of cost/warning, same priority as the border
+	// color above. Right-aligned by the glyph's display width, not a fixed
+	// offset: the circle glyphs are double-width and would hit the border.
+	var badge string
+	var badgeStyle tcell.Style
+	switch {
+	case costPct >= expensiveCostThreshold:
+		badge = "🔴"
+		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
+	case len(t.node.Warnings) > 0:
+		badge = "⚠"
+		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
+	case costPct >= expensiveCostThreshold/2:
+		badge = "🟠"
+		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
+	case costPct >= expensiveCostThreshold/4:
+		badge = "🟡"
+		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
+	}
+
+	// The operator name stops one column short of the badge rather than
+	// running under it: overdrawn, "Table Valued Function" read as
+	// "Table Valued Fun🟡", the badge glued to a cut word.
 	inner := screenRect.Inner(1)
-	core.DrawTextClipped(s, inner.X, inner.Y, inner.W, textStyle, t.node.PhysicalOp)
+	nameW := inner.W
+	if badge != "" {
+		nameW -= core.DisplayWidth(badge) + 1
+	}
+	core.DrawTextClipped(s, inner.X, inner.Y, nameW, textStyle, t.node.PhysicalOp)
 
 	line2 := t.node.LogicalOp
 	if line2 == "" || line2 == t.node.PhysicalOp {
@@ -193,25 +220,6 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 		core.DrawTextClipped(s, inner.X, inner.Y+2, inner.W, textStyle, metrics)
 	}
 
-	// Corner badge: at most one of cost/warning, same priority as the border
-	// color above. Right-aligned by the glyph's display width, not a fixed
-	// offset: the circle glyphs are double-width and would hit the border.
-	var badge string
-	var badgeStyle tcell.Style
-	switch {
-	case costPct >= expensiveCostThreshold:
-		badge = "🔴"
-		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
-	case len(t.node.Warnings) > 0:
-		badge = "⚠"
-		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
-	case costPct >= expensiveCostThreshold/2:
-		badge = "🟠"
-		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
-	case costPct >= expensiveCostThreshold/4:
-		badge = "🟡"
-		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
-	}
 	if badge != "" {
 		core.DrawText(s, inner.Right()-core.DisplayWidth(badge), inner.Y, badgeStyle, badge)
 	}
