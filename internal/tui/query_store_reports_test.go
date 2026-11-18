@@ -324,3 +324,21 @@ func TestRegressedQueriesComparesTheTwoHalvesOfItsWindow(t *testing.T) {
 			opts.BaselineTo, opts.From)
 	}
 }
+
+// D1 of the 2026-11-18 review: the value column is named from gosmo's
+// Effective, so a zero Metric or Statistic is labelled with the default the
+// query ranked by, not with nothing.
+func TestQSValueLabelNamesGosmosDefaults(t *testing.T) {
+	for _, c := range []struct {
+		opts gosmo.QueryStoreReportOptions
+		want string
+	}{
+		{gosmo.QueryStoreReportOptions{}, "Avg Duration"},
+		{gosmo.QueryStoreReportOptions{Statistic: gosmo.QSStatMax}, "Max Duration"},
+		{gosmo.QueryStoreReportOptions{Metric: gosmo.QSMetricCPUTime}, "Avg CPU time"},
+	} {
+		if got := qsValueLabel(c.opts); got != c.want {
+			t.Errorf("qsValueLabel(%+v) = %q, want %q", c.opts, got, c.want)
+		}
+	}
+}

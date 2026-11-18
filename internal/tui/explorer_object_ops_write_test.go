@@ -40,7 +40,7 @@ func opTestNode(sc *db.ServerConn, typ NodeType, schema, name, table string) *ex
 // checkbox first — Tab twice from Yes reaches the box on a two-button prompt.
 func answerConfirm(t *testing.T, a *App, tickOption bool) {
 	t.Helper()
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("no confirmation is open")
 	}
 	if tickOption {
@@ -48,11 +48,11 @@ func answerConfirm(t *testing.T, a *App, tickOption bool) {
 		// back reaches it whatever the button count is — Tab's distance to it
 		// changed when Delete grew its Script button. The Tab afterwards lands
 		// back on the first button, which is Yes in every showing.
-		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyBacktab, "", tcell.ModNone))
-		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
-		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+		a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyBacktab, "", tcell.ModNone))
+		a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
+		a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 	}
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 }
 
 func TestDeleteTableCascadeFollowsTheCheckbox(t *testing.T) {
@@ -160,11 +160,11 @@ func TestDeleteAndMoveDoNothingWhenRefused(t *testing.T) {
 	sc, inst := opTestConn(t)
 
 	a.deleteObject(opTestNode(sc, NodeTable, "sales", "Orders", ""))
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 
 	node := opTestNode(sc, NodeView, "sales", "vOrders", "")
 	a.confirmMoveToSchema(sc, node, objectOpFor(NodeView), "archive")
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("a refused delete/move executed %q", stmts)
@@ -177,7 +177,7 @@ func TestMoveToSchemaWithoutAConnectionDoesNothing(t *testing.T) {
 	a := newTestApp()
 	node := opNode(NodeView, "sales", "vOrders", "")
 	a.moveObjectToSchema(node)
-	if a.confirmDialog.Visible() {
+	if a.confirmDialog().Visible() {
 		t.Error("a disconnected Move to Schema opened its confirmation")
 	}
 }
@@ -199,14 +199,14 @@ func TestObjectOpsMenuActionsAreWired(t *testing.T) {
 // trimming and the "unchanged name" check are exercised too.
 func answerPrompt(t *testing.T, a *App, name string) {
 	t.Helper()
-	if !a.promptDialog.Visible() {
+	if !a.promptDialog().Visible() {
 		t.Fatal("no prompt is open")
 	}
-	a.promptDialog.HandleKey(tcell.NewEventKey(tcell.KeyCtrlU, "", tcell.ModNone))
+	a.promptDialog().HandleKey(tcell.NewEventKey(tcell.KeyCtrlU, "", tcell.ModNone))
 	for _, r := range name {
-		a.promptDialog.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+		a.promptDialog().HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
 	}
-	a.promptDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.promptDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 }
 
 // Renaming a column addresses sp_rename's three-part table.column form, built
@@ -221,7 +221,7 @@ func TestRenameColumnRenamesInItsOwnTable(t *testing.T) {
 
 	a.renameObject(node)
 	answerPrompt(t, a, "is_flagged")
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("the column rename went ahead without asking about dependent objects")
 	}
 	answerConfirm(t, a, false)
@@ -252,12 +252,12 @@ func TestDecliningTheColumnRenameWarningWritesNothing(t *testing.T) {
 
 	a.renameObject(node)
 	answerPrompt(t, a, "is_flagged")
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("no confirmation is open")
 	}
 	// Tab moves off Yes to No, Enter answers it.
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	// No wait: declining posts no callback, so there is nothing to drain and
 	// waiting for one is what would fail here.
 	if stmts := inst.StatementsIn("appdb"); len(stmts) != 0 {

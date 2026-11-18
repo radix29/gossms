@@ -426,7 +426,7 @@ func (d *RestoreDialog) confirmOverwrite(target string, proceed func()) {
 	if len(runes) > 4 {
 		prefix = string(runes[:4])
 	}
-	d.app.confirmTypedDialog.ShowTypedConfirm(
+	d.app.confirmTypedDialog().ShowTypedConfirm(
 		"Confirm Overwrite",
 		fmt.Sprintf("Database %q already exists. Restoring will overwrite it.", target),
 		prefix,

@@ -158,21 +158,21 @@ func (pt *amProcTab) confirmKill(spid int, as *gosmo.ActiveSession, err error) {
 	app.setStatus("")
 	switch {
 	case errors.Is(err, gosmo.ErrNotFound):
-		app.alertDialog.ShowAlert("Kill Process", fmt.Sprintf("Session %d has ended.", spid))
+		app.alertDialog().ShowAlert("Kill Process", fmt.Sprintf("Session %d has ended.", spid))
 		pt.refresh()
 		return
 	case err != nil:
-		app.alertDialog.ShowAlert("Kill Process", fmt.Sprintf("Session %d could not be read: %v", spid, err))
+		app.alertDialog().ShowAlert("Kill Process", fmt.Sprintf("Session %d could not be read: %v", spid, err))
 		return
 	case isOwnActivityMonitorSession(as):
 		// Every Activity Monitor connection of this process, not only the one
 		// the KILL would go out on: the server refuses that one (Msg 6104), and
 		// killing another leaves a tab or the dashboard failing on its next run.
-		app.alertDialog.ShowAlert("Kill Process", fmt.Sprintf(
+		app.alertDialog().ShowAlert("Kill Process", fmt.Sprintf(
 			"Session %d is this Activity Monitor's own connection and cannot be killed from here.", spid))
 		return
 	}
-	app.confirmDialog.ShowConfirmDefaultNo("Kill Process", killPrompt(as), func(confirmed bool) {
+	app.confirmDialog().ShowConfirmDefaultNo("Kill Process", killPrompt(as), func(confirmed bool) {
 		if confirmed {
 			pt.kill(spid)
 		}
@@ -485,7 +485,7 @@ func (pt *amProcTab) confirmInstallInMaster() {
 		text = "Replace " + pt.proc.Qualified(activity.ProcMaster) +
 			" with this build's version? Its current definition differs and is overwritten."
 	}
-	pt.am.app.confirmDialog.ShowConfirm(title, text,
+	pt.am.app.confirmDialog().ShowConfirm(title, text,
 		func(confirmed bool) {
 			if confirmed {
 				pt.installInMaster()

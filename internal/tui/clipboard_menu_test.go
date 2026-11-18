@@ -31,7 +31,7 @@ func connectDialogOnStack(t *testing.T) (*App, *ConnectDialog) {
 	t.Helper()
 	d := twoPaneConnectDialog(t)
 	a := d.app
-	a.connectDialog = d
+	installDialog(a, d)
 	a.modals = dialogs.Stack{}
 	a.modals.Register(d)
 	a.modals.Sync()

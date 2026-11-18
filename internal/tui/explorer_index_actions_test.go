@@ -133,8 +133,8 @@ func TestIndexMaintenanceIssuesItsStatement(t *testing.T) {
 
 				a.maintainIndex(sc, node, c.verb)
 				if !confirm {
-					a.confirmDialog.HandleKey(esc())
-					if a.confirmDialog.Visible() {
+					a.confirmDialog().HandleKey(esc())
+					if a.confirmDialog().Visible() {
 						t.Fatal("Escape left the confirmation open")
 					}
 					if stmts := inst.StatementsIn(idxDatabase); len(stmts) != 0 {

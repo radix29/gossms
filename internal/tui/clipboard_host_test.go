@@ -5,7 +5,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/tuikit/controls/editor"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/propsheet"
@@ -45,8 +44,7 @@ func textEntryTypes() []reflect.Type {
 // exist yet, and it deliberately says nothing about dialogs with no text entry
 // (Help, About, Confirm): an inert clipboard is the right answer there.
 func TestEveryDialogWithTextEntryIsAClipboardHost(t *testing.T) {
-	a := &App{cfg: &config.Config{}}
-	a.buildUI()
+	a := newAppWithEveryDialog()
 
 	hostType := reflect.TypeFor[core.ClipboardHost]()
 	focuserType := reflect.TypeFor[core.ClipboardFocuser]()

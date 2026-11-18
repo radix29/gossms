@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/radix29/gosmo"
@@ -302,5 +303,21 @@ func TestCellParserInvertsCells(t *testing.T) {
 		if !sameValue(got, c.want) {
 			t.Errorf("%s(%d) %q = %#v, want %#v", c.col.Type, c.col.Scale, c.text, got, c.want)
 		}
+	}
+}
+
+// TestTruncateForErrorKeepsUTF8Valid: a multi-byte rune straddling byte 40
+// is dropped whole, not cut in half (an invalid sequence in the message).
+func TestTruncateForErrorKeepsUTF8Valid(t *testing.T) {
+	s := strings.Repeat("a", 39) + "é" + strings.Repeat("b", 10) // é is bytes 39–40
+	got := truncateForError(s)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncateForError(%q) = %q, not valid UTF-8", s, got)
+	}
+	if want := strings.Repeat("a", 39) + "…"; got != want {
+		t.Errorf("truncateForError(%q) = %q, want %q", s, got, want)
+	}
+	if short := "é"; truncateForError(short) != short {
+		t.Errorf("a short string must come back unchanged")
 	}
 }

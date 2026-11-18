@@ -24,13 +24,13 @@ func TestOpenQueryFilePicksLanguageByExtension(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			a := newTestApp()
-			a.fileDialog = dialogs.NewFileDialog(nil)
+			installDialog(a, dialogs.NewFileDialog())
 			path := filepath.Join(t.TempDir(), tt.name)
 			if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			a.openQueryFile()
-			a.fileDialog.OnChoose(path)
+			a.fileDialog().OnChoose(path)
 			qp := a.activeQueryPanel()
 			if qp == nil {
 				t.Fatal("no query panel opened")
@@ -74,13 +74,13 @@ func TestValuePanelLanguage(t *testing.T) {
 // save would otherwise turn into a SQL panel.
 func TestSaveAsRederivesLanguage(t *testing.T) {
 	a := newTestApp()
-	a.fileDialog = dialogs.NewFileDialog(nil)
+	installDialog(a, dialogs.NewFileDialog())
 	a.openValuePanel("c", format.LangJSON, `{"a":1}`)
 	qp := a.activeQueryPanel()
 	dir := t.TempDir()
 
 	a.saveQueryPanel(qp, true, nil)
-	if got := a.fileDialog.FocusedField().Value(); got != "query.json" {
+	if got := a.fileDialog().FocusedField().Value(); got != "query.json" {
 		t.Errorf("Save As offers %q, want query.json", got)
 	}
 

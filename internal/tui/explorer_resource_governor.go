@@ -304,7 +304,7 @@ func (a *App) enableResourceGovernor(sc *db.ServerConn, node *explorerNode) {
 // disableResourceGovernor disables the governor, confirmed: every session
 // from then on is classified into default and no pool limit applies.
 func (a *App) disableResourceGovernor(sc *db.ServerConn, node *explorerNode) {
-	a.confirmDialog.ShowConfirm("Disable Resource Governor",
+	a.confirmDialog().ShowConfirm("Disable Resource Governor",
 		"Disable Resource Governor? New sessions stop being classified and run in the default group, and no pool or group limit applies until it is enabled again. The stored configuration is kept.",
 		func(ok bool) {
 			if ok {
@@ -323,7 +323,7 @@ func (a *App) reconfigureResourceGovernor(sc *db.ServerConn, node *explorerNode)
 // resetResourceGovernorStatistics restarts the pools' and groups' cumulative
 // counters, confirmed: nothing on screen brings them back.
 func (a *App) resetResourceGovernorStatistics(sc *db.ServerConn, node *explorerNode) {
-	a.confirmDialog.ShowConfirm("Reset Statistics",
+	a.confirmDialog().ShowConfirm("Reset Statistics",
 		"Reset Resource Governor statistics? The cumulative counters of every pool and workload group restart from zero.",
 		func(ok bool) {
 			if ok {

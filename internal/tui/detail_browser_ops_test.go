@@ -261,7 +261,7 @@ func TestTheDeletePathItselfRefusesABatchOfPrincipals(t *testing.T) {
 
 	a.confirmDeleteObjects(sc, objs, func() {})
 
-	if a.confirmDialog.Visible() {
+	if a.confirmDialog().Visible() {
 		t.Fatal("two logins were offered a plain Yes/No confirmation")
 	}
 	if len(inst.Statements()) != 0 {

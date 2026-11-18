@@ -38,7 +38,7 @@ func TestPropDialogAsksBeforeApplyingAWarnedEdit(t *testing.T) {
 	a := newTestApp()
 	sc, _ := newGConn(t)
 	d := NewPropDialog(a)
-	a.propDialog = d
+	installDialog(a, d)
 	var real, scripted int
 	pages, form := warningPage(&real, &scripted)
 
@@ -50,12 +50,12 @@ func TestPropDialogAsksBeforeApplyingAWarnedEdit(t *testing.T) {
 	editSelect(t, form, "Risky", "ON")
 
 	d.runApply(false)
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("Apply wrote a warned edit without asking")
 	}
 	// No starts nothing, so there is nothing to wait for: had it started the
 	// run, the count below would already be racing it, which -race reports.
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 	if real != 0 {
 		t.Fatalf("answering No still applied (%d runs)", real)
 	}
@@ -65,7 +65,7 @@ func TestPropDialogAsksBeforeApplyingAWarnedEdit(t *testing.T) {
 
 	d.runScript()
 	waitAndDrain(t, a)
-	if a.confirmDialog.Visible() {
+	if a.confirmDialog().Visible() {
 		t.Fatal("Script Changes asked the apply warning")
 	}
 	if scripted != 1 || real != 0 {

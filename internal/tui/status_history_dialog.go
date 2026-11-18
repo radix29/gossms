@@ -40,7 +40,7 @@ type StatusHistoryDialog struct {
 // NewStatusHistoryDialog creates the status history dialog.
 func NewStatusHistoryDialog(app *App) *StatusHistoryDialog {
 	d := &StatusHistoryDialog{}
-	d.InitModal(app.screen, "Status History", 90, 26)
+	d.InitModal("Status History", 90, 26)
 	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.editor.Focus(true)

@@ -379,7 +379,7 @@ func TestManagedInstanceMergeStartsOnSystemHealth(t *testing.T) {
 	sc, _ := newGConnOnAzure(t, 8)
 	a := newTestApp()
 	a.promptMergeXEventFiles(sc)
-	if got := a.promptDialog.Value(); got != "system_health*.xel" {
+	if got := a.promptDialog().Value(); got != "system_health*.xel" {
 		t.Errorf("pattern %q, want system_health*.xel", got)
 	}
 }

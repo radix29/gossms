@@ -266,7 +266,7 @@ func (a *App) generateScript(sc *db.ServerConn, n nodeData, v scriptVerb, then f
 // LF-separated UTF-8, the shape a gossms-generated script has; there is no
 // source file whose encoding could be preserved (see writeQueryFile).
 func (a *App) saveScriptAs(n nodeData, text string) {
-	a.fileDialog.ShowSave("Script To File", scriptFileName(n), func(path string) {
+	a.fileDialog().ShowSave("Script To File", scriptFileName(n), func(path string) {
 		if err := fileutil.WriteAtomic(path, []byte(text), 0o644); err != nil {
 			a.setStatus(fmt.Sprintf("Save failed: %v", err))
 			return

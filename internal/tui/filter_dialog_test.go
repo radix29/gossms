@@ -13,10 +13,10 @@ func showTestFilterDialog(t *testing.T) (*App, *FilterDialog, *explorerNode) {
 	t.Helper()
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")
-	a.filterDialog = NewFilterDialog(a)
+	installDialog(a, withScreen(NewFilterDialog(a), a.screen))
 	node := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, DBName: "HealthClinic", conn: sc}}
-	a.filterDialog.show(node, filterProps(node.data.Type), "server-one")
-	return a, a.filterDialog, node
+	a.filterDialog().show(node, filterProps(node.data.Type), "server-one")
+	return a, a.filterDialog(), node
 }
 
 // showTestFilterDialogOnScreen opens the dialog on a Tables folder against a
@@ -26,12 +26,12 @@ func showTestFilterDialogOnScreen(t *testing.T, w, h int) *FilterDialog {
 	t.Helper()
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")
-	a.screen = tuikittest.NewScreen(w, h)
-	a.filterDialog = NewFilterDialog(a)
+	a.setScreen(tuikittest.NewScreen(w, h))
+	installDialog(a, withScreen(NewFilterDialog(a), a.screen))
 	node := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, DBName: "HealthClinic", conn: sc}}
-	a.filterDialog.show(node, filterProps(NodeTables), "server-one")
-	a.filterDialog.layout() // Draw's job; the test isn't drawing
-	return a.filterDialog
+	a.filterDialog().show(node, filterProps(NodeTables), "server-one")
+	a.filterDialog().layout() // Draw's job; the test isn't drawing
+	return a.filterDialog()
 }
 
 // Every row's widgets must stay inside the dialog's borders at any terminal

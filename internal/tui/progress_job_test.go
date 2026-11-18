@@ -40,19 +40,19 @@ func TestCancelStopsADeleteBatchAtTheObjectInFlight(t *testing.T) {
 	refreshed := false
 
 	a.runDeletes(sc, []nodeData{beta, gamma}, []*objectOp{op, op}, false, func() { refreshed = true })
-	if !a.progressDialog.Visible() {
+	if !a.progressDialog().Visible() {
 		t.Fatal("no progress dialog while the drops run")
 	}
 	waitForStatement(t, inst, "DROP TABLE [sales].[Beta]")
 
-	a.progressDialog.HandleKey(escapeKey())
-	if !a.progressDialog.Visible() {
+	a.progressDialog().HandleKey(escapeKey())
+	if !a.progressDialog().Visible() {
 		t.Fatal("Cancel closed the dialog before the drop in flight returned")
 	}
 	waitAndDrain(t, a)
 
-	if a.progressDialog.Visible() || a.progressBusy {
-		t.Errorf("dialog visible = %v, busy = %v after the batch returned, want both false", a.progressDialog.Visible(), a.progressBusy)
+	if a.progressDialog().Visible() || a.progressBusy {
+		t.Errorf("dialog visible = %v, busy = %v after the batch returned, want both false", a.progressDialog().Visible(), a.progressBusy)
 	}
 	if joined := strings.Join(inst.Statements(), "\n"); strings.Contains(joined, "[sales].[Gamma]") {
 		t.Errorf("the batch ran on past the cancel:\n%s", joined)
@@ -78,12 +78,12 @@ func TestDeleteBatchReportsTheObjectInFlight(t *testing.T) {
 	a.runDeletes(sc, []nodeData{beta, gamma}, []*objectOp{op, op}, false, func() {})
 	for range 400 {
 		a.drainPending()
-		if strings.Contains(a.progressDialog.Message(), "2 of 2") {
+		if strings.Contains(a.progressDialog().Message(), "2 of 2") {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if msg := a.progressDialog.Message(); !strings.Contains(msg, "2 of 2") || !strings.Contains(msg, "Gamma") {
+	if msg := a.progressDialog().Message(); !strings.Contains(msg, "2 of 2") || !strings.Contains(msg, "Gamma") {
 		t.Errorf("dialog message = %q, want it on object 2 of 2, Gamma", msg)
 	}
 	close(hold)
@@ -117,12 +117,12 @@ func TestUninterruptibleJobIgnoresCancel(t *testing.T) {
 		func(err error, cancelled bool) { gotErr, gotCancelled, finished = err, cancelled, true })
 
 	ctx := <-started
-	a.progressDialog.HandleKey(escapeKey())
-	a.progressDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.progressDialog().HandleKey(escapeKey())
+	a.progressDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	if ctx.Err() != nil {
 		t.Fatalf("the uninterruptible job's context was cancelled: %v", ctx.Err())
 	}
-	if !a.progressDialog.Visible() {
+	if !a.progressDialog().Visible() {
 		t.Fatal("the dialog closed while the uninterruptible job ran")
 	}
 	close(release)
@@ -152,7 +152,7 @@ func TestCancelAfterTheWorkSucceededReportsSuccess(t *testing.T) {
 		func(err error, cancelled bool) { gotErr, gotCancelled = err, cancelled })
 
 	<-started
-	a.progressDialog.HandleKey(escapeKey())
+	a.progressDialog().HandleKey(escapeKey())
 	close(release)
 	waitAndDrain(t, a)
 	if gotErr != nil || gotCancelled {
@@ -171,9 +171,9 @@ func TestProgressJobLatchClearsWhenTheWorkPanics(t *testing.T) {
 		func(context.Context, progressReport) error { panic("boom") },
 		func(error, bool) { t.Error("done ran for a job that panicked") })
 	waitAndDrain(t, a)
-	if a.progressBusy || a.progressDialog.Visible() || !repaired {
+	if a.progressBusy || a.progressDialog().Visible() || !repaired {
 		t.Fatalf("after the panic: busy=%v visible=%v repaired=%v, want false, false, true",
-			a.progressBusy, a.progressDialog.Visible(), repaired)
+			a.progressBusy, a.progressDialog().Visible(), repaired)
 	}
 
 	var gotErr error

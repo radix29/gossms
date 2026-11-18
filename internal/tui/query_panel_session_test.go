@@ -44,7 +44,7 @@ func TestCloseWithOpenTransactionCommitsOnYes(t *testing.T) {
 	qp, inst := hostedSessionPanel(t, a, 1)
 
 	a.requestClosePanel(0)
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("closed a panel holding an open transaction without asking")
 	}
 	answer(a, 0)
@@ -84,7 +84,7 @@ func TestCloseWithOpenTransactionCancelKeepsEverything(t *testing.T) {
 // the session and rolls back exactly the work the user asked to keep.
 func TestFailedCommitKeepsThePanelOpen(t *testing.T) {
 	a := newTestApp()
-	a.alertDialog = dialogs.NewAlertDialog(a.screen)
+	installDialog(a, dialogs.NewAlertDialog())
 	qp, _ := hostedSessionPanel(t, a, 1,
 		fakeResponse{match: "COMMIT TRANSACTION", err: errors.New("commit refused")})
 
@@ -97,7 +97,7 @@ func TestFailedCommitKeepsThePanelOpen(t *testing.T) {
 	if qp.tranCount != 1 {
 		t.Errorf("tranCount = %d after a failed commit, want it still 1", qp.tranCount)
 	}
-	if !a.alertDialog.Visible() {
+	if !a.alertDialog().Visible() {
 		t.Error("a failed commit was not reported")
 	}
 }
@@ -109,7 +109,7 @@ func TestCloseWithoutOpenTransactionDoesNotAsk(t *testing.T) {
 	qp.markSaved()
 
 	a.requestClosePanel(0)
-	if a.confirmDialog.Visible() || a.panelHosted(qp) {
+	if a.confirmDialog().Visible() || a.panelHosted(qp) {
 		t.Fatal("asked about, or failed to close, a panel with nothing to lose")
 	}
 }
@@ -173,7 +173,7 @@ func TestConnInfoShowsSPIDAndOpenTransactions(t *testing.T) {
 func TestFailedQueryPanelDialKeepsTheDatabase(t *testing.T) {
 	for _, wanted := range []bool{true, false} {
 		a := newTestApp()
-		a.alertDialog = dialogs.NewAlertDialog(a.screen)
+		installDialog(a, dialogs.NewAlertDialog())
 		qp, _ := hostedSessionPanel(t, a, 0)
 		qp.closeConnection()
 
@@ -200,7 +200,7 @@ func TestFailedQueryPanelDialKeepsTheDatabase(t *testing.T) {
 // the alert says so, instead of "the transaction is still there".
 func TestCommitFailedOnALostSessionDisconnectsThePanel(t *testing.T) {
 	a := newTestApp()
-	a.alertDialog = dialogs.NewAlertDialog(a.screen)
+	installDialog(a, dialogs.NewAlertDialog())
 	qp, _ := hostedSessionPanel(t, a, 1,
 		fakeResponse{match: "COMMIT TRANSACTION", err: errors.New("connection reset"), dropsConn: true})
 
@@ -214,10 +214,10 @@ func TestCommitFailedOnALostSessionDisconnectsThePanel(t *testing.T) {
 		t.Errorf("connected = %v, session = %v, tranCount = %d; want a disconnected panel",
 			qp.connected(), qp.session, qp.tranCount)
 	}
-	if !a.alertDialog.Visible() {
+	if !a.alertDialog().Visible() {
 		t.Fatal("a failed commit was not reported")
 	}
-	msg := a.alertDialog.Message()
+	msg := a.alertDialog().Message()
 	if !strings.Contains(msg, "rolled the transactions back") || strings.Contains(msg, "still there") {
 		t.Errorf("alert = %q, want it to say the server rolled the work back", msg)
 	}

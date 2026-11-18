@@ -21,7 +21,7 @@ func (a *App) showNewJobDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newJobDialog.show(sc)
+	a.newJobDialog().show(sc)
 }
 
 // showNewScheduleDialog opens New Schedule, from Agent > Schedules.
@@ -29,7 +29,7 @@ func (a *App) showNewScheduleDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newScheduleDialog.show(sc)
+	a.newScheduleDialog().show(sc)
 }
 
 // showNewAlertDialog opens New Alert, from Agent > Alerts > SQL Server Event
@@ -38,7 +38,7 @@ func (a *App) showNewAlertDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newAlertDialog.show(sc)
+	a.newAlertDialog().show(sc)
 }
 
 // showNewOperatorDialog opens New Operator, from Agent > Operators.
@@ -46,7 +46,7 @@ func (a *App) showNewOperatorDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newOperatorDialog.show(sc)
+	a.newOperatorDialog().show(sc)
 }
 
 // agentGate gates an Agent write (folders' New items; leaves' Start/Stop,

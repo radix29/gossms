@@ -246,10 +246,7 @@ func (d Deps) securityUsers(ctx context.Context, inv *spec.Invocation) (*output.
 	}
 	// A user database on Azure SQL Database cannot see the server's logins,
 	// so a missing login says nothing there.
-	loginsHidden := false
-	if info := dbase.Server().Info(); info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase {
-		loginsHidden = true
-	}
+	loginsHidden := dbase.Server().Info().IsDatabaseScoped()
 
 	set := output.Set{Name: "users", Columns: []output.Column{
 		{Name: "name", Type: "nvarchar(128)"}, {Name: "type", Type: "nvarchar(60)"},

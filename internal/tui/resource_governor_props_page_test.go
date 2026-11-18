@@ -465,7 +465,7 @@ func TestRGNewClassifierClosesTheDialog(t *testing.T) {
 	a := newTestApp()
 	sc, _ := newGConn(t, rgReads(rgConfigWith(false, "", "", 0))...)
 	d := NewPropDialog(a)
-	a.propDialog = d
+	installDialog(a, d)
 	pages := func() []propPage { return []propPage{pageRGGeneral(d, sc)} }
 	open := func() *propsheet.Form {
 		t.Helper()
@@ -490,10 +490,10 @@ func TestRGNewClassifierClosesTheDialog(t *testing.T) {
 	editCheck(t, f, "Enabled", true)
 	queries = a.queryPanelCnt
 	rgNewClassifier(d, sc)
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("an unsaved edit was dropped without asking")
 	}
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 	if !d.Visible() || !f.Dirty() || a.queryPanelCnt != queries {
 		t.Fatalf("No: dialog visible %v, edit kept %v, windows opened %d; want true, true, 0",
 			d.Visible(), f.Dirty(), a.queryPanelCnt-queries)

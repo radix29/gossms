@@ -55,7 +55,7 @@ func dirtyForm(t *testing.T, edited string) (*propsheet.Form, *propsheet.TextRow
 // receives each page's edited row.
 func newSheetDialog(t *testing.T, pages []propPage, applies map[int]propApply, rowFor func(int, *propsheet.TextRow)) *PropDialog {
 	t.Helper()
-	sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Test Properties")
+	sheet := withScreen(propsheet.NewPropertySheet("Test Properties"), tuikittest.NewScreen(120, 40))
 	d := &PropDialog{PropertySheet: sheet, pages: pages, applyFn: applies}
 
 	titles := make([]string, len(pages))

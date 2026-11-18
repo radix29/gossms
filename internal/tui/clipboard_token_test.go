@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/widgets"
@@ -99,8 +98,7 @@ func TestPasteAppliesWhenFocusHasNotMoved(t *testing.T) {
 // itself. That covers the next host built this way, which is the point —
 // nothing else about it looks wrong.
 func TestASelfTargetingClipboardHostCarriesAToken(t *testing.T) {
-	a := &App{cfg: &config.Config{}}
-	a.buildUI()
+	a := newAppWithEveryDialog()
 
 	hostType := reflect.TypeFor[core.ClipboardHost]()
 	tokenerType := reflect.TypeFor[core.ClipboardTargetTokener]()

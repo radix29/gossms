@@ -282,7 +282,7 @@ func TestMaintRestoreRefusals(t *testing.T) {
 		{"x --from /b/app.bak --verify-only --confirm x --allow admin", nil, output.CodeUsageError, 0, "--confirm is not for --verify-only"},
 		{"x --from /b/app.bak", nil, output.CodeBlocked, 0, ""},
 		{"x --from /b/app.bak --allow admin", func(c *maintServer) {
-			c.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase)
+			c.Info.EngineEdition = gosmo.EngineAzureSQLDatabase
 		}, output.CodeUnsupported, 1, "Azure SQL Database"},
 		{"x --from /b/none.bak --allow admin", nil, output.CodeNotFound, 1, "no backup set on /b/none.bak"},
 		{"x --from /b/multi.bak --move-to-default --allow admin", nil, output.CodeUsageError, 1, "holds 2 backup sets"},

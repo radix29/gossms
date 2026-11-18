@@ -7,12 +7,12 @@ RESULT_SETS: 3
 
 === RESULT 1 (4 of 18,432 rows, truncated: yes) ===
 
-| name               | note    |
-|--------------------|---------|
-| Customer           | 日本語  |
-| Café               | NULL    |
-| multi<br>line here | <a & b> |
-| short              |         |
+| name               | note              |
+|--------------------|-------------------|
+| Customer           | 日本語            |
+| Café               | NULL              |
+| multi<br>line here | &lt;a &amp; b&gt; |
+| short              |                   |
 
 NOTE: Output truncated by --max-rows 200. Use --max-rows 0 or --out-file to get all rows.
 

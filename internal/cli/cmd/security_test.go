@@ -126,7 +126,7 @@ func TestSecurityUsersList(t *testing.T) {
 
 	// Azure SQL Database hides the logins: orphaned cannot be told.
 	srv := newSecServer(t)
-	srv.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase)
+	srv.Info.EngineEdition = gosmo.EngineAzureSQLDatabase
 	res, _ = runSecurity(t, srv, "users", "list")
 	if got := column(res.Sets[0], "orphaned"); slices.ContainsFunc(got, func(s string) bool { return s != "NULL" }) {
 		t.Errorf("Azure orphaned %q, want all NULL", got)

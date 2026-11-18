@@ -594,7 +594,7 @@ func (v *XEventViewer) offerTarget() {
 	if v.host.Server.Info().IsAzure() {
 		t, what = gosmo.RingBufferTarget(0), "a ring_buffer target"
 	}
-	a.confirmDialog.ShowConfirm("Add Target",
+	a.confirmDialog().ShowConfirm("Add Target",
 		fmt.Sprintf("%s has no event_file or ring_buffer target, so there is nothing to watch. Add %s to it and start watching?", v.session, what),
 		func(yes bool) {
 			if !yes || !a.panelHosted(v) {

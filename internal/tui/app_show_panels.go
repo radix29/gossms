@@ -34,7 +34,7 @@ func (a *App) activateObjectExplorerDetails() {
 
 // showQueryList runs Tools > Query List.
 func (a *App) showQueryList() {
-	a.queryListDialog.Show()
+	a.queryListDialog().Show()
 }
 
 // showActivityMonitor runs Tools > Activity Monitor and the toolbar's 📈 button

@@ -414,5 +414,5 @@ func (a *App) showNewAGDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newAGDialog.show(sc, node)
+	a.newAGDialog().show(sc, node)
 }

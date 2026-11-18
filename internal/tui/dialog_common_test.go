@@ -271,9 +271,9 @@ func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
 	}
 
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	b := NewBackupDialog(a)
-	a.screen = nil
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	b := withScreen(NewBackupDialog(a), a.screen)
+	a.setScreen(nil)
 	b.show(&db.ServerConn{}, "testdb")
 	for range b.focusable {
 		key(b, tcell.KeyTab)
@@ -300,9 +300,9 @@ func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
 	}
 
 	a = newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	r := NewRestoreDialog(a)
-	a.screen = nil
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	r := withScreen(NewRestoreDialog(a), a.screen)
+	a.setScreen(nil)
 	r.show(&db.ServerConn{}, "testdb")
 	key(r, tcell.KeyBacktab)
 	if !r.onButtons {

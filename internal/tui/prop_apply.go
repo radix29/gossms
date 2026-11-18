@@ -558,7 +558,7 @@ func (d *PropDialog) runApply(hideOnSuccess bool) {
 	if !d.validateDirty() {
 		return
 	}
-	d.app.confirmDialog.ShowConfirm("Apply Changes", strings.Join(warnings, " ")+" Continue?",
+	d.app.confirmDialog().ShowConfirm("Apply Changes", strings.Join(warnings, " ")+" Continue?",
 		func(confirmed bool) {
 			if confirmed {
 				d.applyNow(hideOnSuccess)

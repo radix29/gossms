@@ -894,7 +894,7 @@ func TestExecuteDisconnectedOpensConnectDialog(t *testing.T) {
 
 	qp.Execute()
 
-	d := a.connectDialog
+	d := a.connectDialog()
 	if !d.Visible() || d.target != qp || d.targetThen == nil {
 		t.Fatalf("visible=%v target=%p then=%v, want the dialog open for qp with a retry",
 			d.Visible(), d.target, d.targetThen != nil)

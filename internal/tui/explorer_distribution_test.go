@@ -82,8 +82,8 @@ func TestDistributionDatabaseDeleteAndRenameRefuse(t *testing.T) {
 	called := false
 	a.confirmDeleteObjects(sc, []nodeData{n}, func() { called = true })
 	a.renameObject(&explorerNode{label: "distribution", data: n})
-	if called || a.promptDialog.Visible() {
-		t.Errorf("Delete or Rename went ahead on a distribution database (after=%v prompt=%v)", called, a.promptDialog.Visible())
+	if called || a.promptDialog().Visible() {
+		t.Errorf("Delete or Rename went ahead on a distribution database (after=%v prompt=%v)", called, a.promptDialog().Visible())
 	}
 }
 

@@ -13,8 +13,8 @@ import (
 func keyDiagDialogForTest(t *testing.T) (*App, *KeyDiagnosticsDialog) {
 	t.Helper()
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewKeyDiagnosticsDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewKeyDiagnosticsDialog(a), a.screen)
 	d.Show()
 	return a, d
 }

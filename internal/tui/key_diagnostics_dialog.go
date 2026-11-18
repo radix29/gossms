@@ -46,7 +46,7 @@ type KeyDiagnosticsDialog struct {
 // NewKeyDiagnosticsDialog creates the key diagnostics dialog.
 func NewKeyDiagnosticsDialog(app *App) *KeyDiagnosticsDialog {
 	d := &KeyDiagnosticsDialog{app: app}
-	d.InitModal(app.screen, "Key Diagnostics", 70, 24)
+	d.InitModal("Key Diagnostics", 70, 24)
 	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.editor.Focus(true)

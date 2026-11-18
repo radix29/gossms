@@ -44,7 +44,7 @@ func TestDBScopedConfigList(t *testing.T) {
 		}
 	}
 	// Azure reports 12 and has the column.
-	s.Info.ProductVersion, s.Info.EngineEdition = "12.0.2000.8", int(gosmo.EngineAzureManagedInst)
+	s.Info.ProductVersion, s.Info.EngineEdition = "12.0.2000.8", gosmo.EngineAzureManagedInst
 	res, _, _ = s.run(t, "scoped-config list app")
 	if r := setRows(res.Sets[0])[0]; r[3] != "1" {
 		t.Errorf("Azure: %q", r)
@@ -354,7 +354,7 @@ func TestDBSetServerChecks(t *testing.T) {
 		t.Errorf("%v, writes %q", err, s.writes)
 	}
 	s = newDBSetServer(t)
-	s.Info.ProductVersion, s.Info.EngineEdition = "12.0.2000.8", int(gosmo.EngineAzureManagedInst)
+	s.Info.ProductVersion, s.Info.EngineEdition = "12.0.2000.8", gosmo.EngineAzureManagedInst
 	if _, _, err := s.run(t, "set app --option COMPATIBILITY_LEVEL=170 --allow admin"); err != nil ||
 		!slices.Equal(s.writes, []string{alterApp + "COMPATIBILITY_LEVEL = 170"}) {
 		t.Errorf("Azure: %v, writes %q", err, s.writes)

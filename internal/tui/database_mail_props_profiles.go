@@ -269,7 +269,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 			rows = append(rows,
 				propsheet.Note("A message goes through the first account; the next is tried only when one fails. Accounts added on the Accounts page are offered here at once; a profile added here is offered on Profile Security at once. A renamed profile or account keeps its old name on the other pages until Apply."),
 			)
-			if info := sc.Server.Info(); info != nil && info.EngineEdition == int(gosmo.EngineAzureManagedInst) {
+			if sc.Server.Info().IsManagedInstance() {
 				rows = append(rows, propsheet.Note("Managed Instance: SQL Server Agent sends its notifications only through a profile named "+mailManagedInstanceProfile+"."))
 			}
 

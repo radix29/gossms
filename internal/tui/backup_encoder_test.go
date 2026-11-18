@@ -377,7 +377,7 @@ func TestBackupCompressionPinnedOnExpressAndWeb(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			sc := backupFake(t, func(i *gosmotest.Info) {
 				i.Edition = tc.edition
-				i.EngineEdition = int(tc.engine)
+				i.EngineEdition = gosmo.EngineEdition(tc.engine)
 			})
 
 			_, d := backupDialogOn(t, sc)

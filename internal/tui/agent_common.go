@@ -116,7 +116,7 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 	if !a.requireConn(sc) {
 		return
 	}
-	a.confirmDialog.ShowConfirm(title, message, func(confirmed bool) {
+	a.confirmDialog().ShowConfirm(title, message, func(confirmed bool) {
 		if !confirmed {
 			return
 		}

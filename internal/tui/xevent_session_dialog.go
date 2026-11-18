@@ -369,11 +369,11 @@ func eventSessionPropPages(d *PropDialog, sc *db.ServerConn, scope xeScope, name
 // showEventSessionPropertiesFor opens Session Properties — the session node's
 // menu and a Sessions folder Details row's.
 func (a *App) showEventSessionPropertiesFor(sc *db.ServerConn, scope xeScope, name string) {
-	a.propDialog.show(sc, scope.db, "Session Properties", "Session: "+name, scope.label(sc),
-		func() []propPage { return eventSessionPropPages(a.propDialog, sc, scope, name) })
+	a.propDialog().show(sc, scope.db, "Session Properties", "Session: "+name, scope.label(sc),
+		func() []propPage { return eventSessionPropPages(a.propDialog(), sc, scope, name) })
 	// Data Storage adds and drops targets, which are the session node's
 	// children: without this they stay as they were until a Refresh.
-	a.propDialog.onSaved = func() { a.refreshXESession(sc, scope, name) }
+	a.propDialog().onSaved = func() { a.refreshXESession(sc, scope, name) }
 }
 
 // -- New Session ----------------------------------------------------------------
@@ -451,10 +451,10 @@ func (a *App) showNewXESessionDialog(sc *db.ServerConn, scope xeScope) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newXESessionDialog.scope = scope
-	a.newXESessionDialog.show(sc)
+	a.newXESessionDialog().scope = scope
+	a.newXESessionDialog().show(sc)
 	if scope.db != "" {
-		a.newXESessionDialog.SetHeader("Database: "+scope.db, "Connected: yes")
+		a.newXESessionDialog().SetHeader("Database: "+scope.db, "Connected: yes")
 	}
 }
 

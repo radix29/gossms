@@ -62,7 +62,7 @@ func TestTriggerToggleIssuesItsStatement(t *testing.T) {
 			node.data.IsEnabled = c.wasEnabled
 
 			a.toggleTrigger(sc, node)
-			if got := a.confirmDialog.Visible(); got != c.wasEnabled {
+			if got := a.confirmDialog().Visible(); got != c.wasEnabled {
 				t.Fatalf("confirmation shown = %v, want %v (only a disable asks)", got, c.wasEnabled)
 			}
 			if c.wasEnabled {

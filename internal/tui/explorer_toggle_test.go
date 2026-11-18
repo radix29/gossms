@@ -42,7 +42,7 @@ func TestTriggerTogglesIssueTheirOwnStatement(t *testing.T) {
 			node.data.IsEnabled = c.wasEnabled
 
 			c.toggle(a, node)
-			if got := a.confirmDialog.Visible(); got != c.wasEnabled {
+			if got := a.confirmDialog().Visible(); got != c.wasEnabled {
 				t.Fatalf("confirmation shown = %v, want %v (only a disable asks)", got, c.wasEnabled)
 			}
 			if c.wasEnabled {
@@ -79,7 +79,7 @@ func TestSecurityPolicyToggleNamesThePolicyQualified(t *testing.T) {
 	node.data.IsEnabled = true
 
 	a.toggleSecurityPolicy(sc, node)
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("disabling a security policy ran without asking")
 	}
 	answerConfirm(t, a, false)

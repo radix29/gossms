@@ -100,28 +100,29 @@ func entraPrincipalsOffered(info *gosmo.ServerInfo) bool {
 }
 
 // resourceGovernorHidden reports whether Management leaves out the Resource
-// Governor node altogether: on Azure SQL Database (EngineEdition 5) the
-// platform governs and nothing is configurable. A Managed Instance keeps it,
+// Governor node altogether: on a single-database engine (Azure SQL Database,
+// SQL database in Fabric) the platform governs and nothing is configurable. A Managed Instance keeps it,
 // shown and unverified (docs/open-threads.md V4) — which is why this reads the engine
 // edition and not serverIsAzure, which is true of both.
 func resourceGovernorHidden(info *gosmo.ServerInfo) bool {
-	return info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
+	return info.IsDatabaseScoped()
 }
 
 // databaseMailHidden reports whether Management leaves out the Database Mail
-// node: Azure SQL Database (EngineEdition 5) has no msdb and no Database
-// Mail. A Managed Instance keeps it, shown and unverified (V4).
+// node: a single-database engine (Azure SQL Database, SQL database in Fabric)
+// has no msdb and no Database Mail. A Managed Instance keeps it, shown and unverified (V4).
 func databaseMailHidden(info *gosmo.ServerInfo) bool {
-	return info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
+	return info.IsDatabaseScoped()
 }
 
 // replicationHidden reports whether the server leaves out the Replication
-// folder: Azure SQL Database (EngineEdition 5) can only be a push subscriber
-// and keeps no replication catalog to read, and gosmo refuses every
+// folder: a single-database engine (Azure SQL Database, SQL database in
+// Fabric) can only be a push subscriber and keeps no replication catalog to
+// read, and gosmo refuses every
 // replication read there. A Managed Instance publishes and distributes, and
 // keeps it (shown and unverified, docs/decisions.md § Replication).
 func replicationHidden(info *gosmo.ServerInfo) bool {
-	return info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
+	return info.IsDatabaseScoped()
 }
 
 // gateResourceGovernorEdition withholds a Resource Governor node's item on an
@@ -150,7 +151,7 @@ func resourceGovernorSupported(info *gosmo.ServerInfo) bool {
 	if info == nil {
 		return true
 	}
-	switch gosmo.EngineEdition(info.EngineEdition) {
+	switch info.EngineEdition {
 	case gosmo.EngineEnterprise, gosmo.EngineAzureManagedInst:
 		return true
 	case gosmo.EngineStandard:

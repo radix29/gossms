@@ -63,7 +63,7 @@ func TestOfferPeerConnectOpensThePromptOnlyForARefusal(t *testing.T) {
 	a := newTestApp()
 	parent := &db.ServerConn{Opts: config.Connection{Server: "ubusql1", User: "sa", Password: "pw"}}
 
-	if a.offerPeerConnect(parent, errors.New("login failed"), nil) || a.connectDialog.Visible() {
+	if a.offerPeerConnect(parent, errors.New("login failed"), nil) || a.connectDialog().Visible() {
 		t.Fatal("an ordinary error opened the Connect prompt")
 	}
 
@@ -71,7 +71,7 @@ func TestOfferPeerConnectOpensThePromptOnlyForARefusal(t *testing.T) {
 	if !a.offerPeerConnect(parent, refusal, nil) {
 		t.Fatal("a wrapped refusal did not open the Connect prompt")
 	}
-	d := a.connectDialog
+	d := a.connectDialog()
 	if !d.Visible() || !d.forPeer {
 		t.Fatal("the Connect dialog is not open in peer mode")
 	}
@@ -104,12 +104,12 @@ func TestOfferPeerConnectOpensThePromptOnlyForARefusal(t *testing.T) {
 // does, and does not run the operation it was opened for.
 func TestFailedPeerConnectKeepsThePromptAndSkipsTheRetry(t *testing.T) {
 	a := newTestApp()
-	a.alertDialog = dialogs.NewAlertDialog(nil)
+	installDialog(a, dialogs.NewAlertDialog())
 	parent := &db.ServerConn{Opts: config.Connection{Server: "ubusql1", User: "sa", Password: "pw"}}
 	ran := false
 	// Loopback port 1 refuses at once.
 	a.offerPeerConnect(parent, &db.PeerNotRegisteredError{Server: "127.0.0.1,1"}, func() { ran = true })
-	d := a.connectDialog
+	d := a.connectDialog()
 	d.startConnect(d.currentOptions())
 	waitAndDrain(t, a)
 
@@ -119,7 +119,7 @@ func TestFailedPeerConnectKeepsThePromptAndSkipsTheRetry(t *testing.T) {
 	if !d.Visible() || !d.forPeer {
 		t.Error("the prompt closed (or left peer mode) on a failed connect")
 	}
-	if !a.alertDialog.Visible() {
+	if !a.alertDialog().Visible() {
 		t.Error("the connect failure was not reported")
 	}
 	if _, ok := a.peerCredentialsFor("127.0.0.1,1"); ok {
@@ -148,7 +148,7 @@ func TestUnregisteredPrimaryNoteOpensThePrompt(t *testing.T) {
 	if !a.explorer.handleActivate(note.id) {
 		t.Fatal("activating the note did nothing")
 	}
-	if d := a.connectDialog; !d.Visible() || !d.forPeer || d.fServer.Value() != "UBUSQL2" {
+	if d := a.connectDialog(); !d.Visible() || !d.forPeer || d.fServer.Value() != "UBUSQL2" {
 		t.Error("activating the note did not open the prompt for its primary")
 	}
 }
@@ -158,11 +158,11 @@ func TestUnregisteredPrimaryNoteOpensThePrompt(t *testing.T) {
 // A refusal the user does nothing about leaves the page's error in place.
 func TestRefusedPropertiesPageOffersThePromptAndReloads(t *testing.T) {
 	a := newTestApp()
-	a.propDialog = NewPropDialog(a)
+	installDialog(a, NewPropDialog(a))
 	sc := addTestConn(a, "ubusql1")
 
 	var loads atomic.Int32
-	d := a.propDialog
+	d := a.propDialog()
 	d.show(sc, "", "Availability Group Properties", "AAG1", "Server: ubusql1", func() []propPage {
 		return []propPage{{
 			title: "General",
@@ -176,7 +176,7 @@ func TestRefusedPropertiesPageOffersThePromptAndReloads(t *testing.T) {
 	})
 	drainUntil(t, a, func() bool { return d.PageState(0) == propsheet.PageError }, "the refused page to report")
 
-	cd := a.connectDialog
+	cd := a.connectDialog()
 	if !cd.Visible() || !cd.forPeer || cd.fServer.Value() != "UBUSQL2" {
 		t.Fatal("a refused page load did not offer the Connect prompt for the primary")
 	}
@@ -194,11 +194,11 @@ func TestRefusedPropertiesPageOffersThePromptAndReloads(t *testing.T) {
 // into a later showing of the same dialog (another object's pages).
 func TestPeerPromptRetryIsDroppedForAClosedPropertiesDialog(t *testing.T) {
 	a := newTestApp()
-	a.propDialog = NewPropDialog(a)
+	installDialog(a, NewPropDialog(a))
 	sc := addTestConn(a, "ubusql1")
 
 	var loads atomic.Int32
-	d := a.propDialog
+	d := a.propDialog()
 	d.show(sc, "", "Availability Group Properties", "AAG1", "Server: ubusql1", func() []propPage {
 		return []propPage{{
 			title: "General",
@@ -209,8 +209,8 @@ func TestPeerPromptRetryIsDroppedForAClosedPropertiesDialog(t *testing.T) {
 		}}
 	})
 	drainUntil(t, a, func() bool { return d.PageState(0) == propsheet.PageError }, "the refused page to report")
-	then := a.connectDialog.peerThen
-	a.connectDialog.Hide()
+	then := a.connectDialog().peerThen
+	a.connectDialog().Hide()
 	d.Dismiss()
 
 	var later atomic.Int32
@@ -259,7 +259,7 @@ func TestRefusedNewObjectPrefetchOffersThePromptAndRefetches(t *testing.T) {
 	d.show(sc)
 	drainUntil(t, a, func() bool { return d.PageState(0) == propsheet.PageError }, "the refused prefetch to report")
 
-	cd := a.connectDialog
+	cd := a.connectDialog()
 	if !cd.Visible() || !cd.forPeer {
 		t.Fatal("a refused prefetch did not offer the Connect prompt")
 	}

@@ -15,10 +15,11 @@ import (
 func TestQueryListDialogLastRowAboveButtons(t *testing.T) {
 	a := newTestApp()
 	scr := tuikittest.NewScreen(80, 30)
-	a.screen = scr
+	a.setScreen(scr)
 
 	d := &QueryListDialog{app: a}
-	d.InitModal(a.screen, "Query List", 56, 16)
+	d.InitModal("Query List", 56, 16)
+	d.SetScreen(a.screen)
 	for i := range 20 {
 		d.titles = append(d.titles, "Query "+strconv.Itoa(i))
 		d.indices = append(d.indices, i)
@@ -39,12 +40,12 @@ func TestQueryListDialogLastRowAboveButtons(t *testing.T) {
 func TestTasksDialogLastRowAboveButtons(t *testing.T) {
 	a := newTestApp()
 	scr := tuikittest.NewScreen(80, 30)
-	a.screen = scr
+	a.setScreen(scr)
 	for i := range 20 {
 		a.tasks = append(a.tasks, &Task{Label: "Task " + strconv.Itoa(i)})
 	}
 
-	d := NewTasksDialog(a)
+	d := withScreen(NewTasksDialog(a), a.screen)
 	d.Show()
 	for range len(a.tasks) {
 		d.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
@@ -65,9 +66,9 @@ func TestTasksDialogLastRowAboveButtons(t *testing.T) {
 func TestUpdateDialogRowsAboveSeparator(t *testing.T) {
 	a := newTestApp()
 	scr := tuikittest.NewScreen(80, 30)
-	a.screen = scr
+	a.setScreen(scr)
 
-	d := NewUpdateDialog(a)
+	d := withScreen(NewUpdateDialog(a), a.screen)
 	d.ModalDialog.Show()
 	d.ShowResult("v1.0.0", githubRelease{}, errors.New("LAST-LINE"))
 	d.SetSize(d.Rect().W, len(d.lines)+6) // borders, padding row, separator, button row, row under it
@@ -85,13 +86,13 @@ func TestUpdateDialogRowsAboveSeparator(t *testing.T) {
 func TestListDialogsButtonRowIsTabReachable(t *testing.T) {
 	key := func(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, "", tcell.ModNone) }
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(80, 30)
+	a.setScreen(tuikittest.NewScreen(80, 30))
 	dialogs := map[string]interface {
 		Dialog
 		Show()
 	}{
-		"Query List":       NewQueryListDialog(a),
-		"Background Tasks": NewTasksDialog(a),
+		"Query List":       withScreen(NewQueryListDialog(a), a.screen),
+		"Background Tasks": withScreen(NewTasksDialog(a), a.screen),
 	}
 	for name, d := range dialogs {
 		d.Show()

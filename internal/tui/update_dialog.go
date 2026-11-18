@@ -28,7 +28,7 @@ func NewUpdateDialog(app *App) *UpdateDialog {
 	// result (see ShowResult) spans two lines, and at H=13 the link row
 	// lands on the same screen row as DrawSeparator's line, which is drawn
 	// after the content and paints over it.
-	d.InitModal(app.screen, "Check for Updates", 74, 15)
+	d.InitModal("Check for Updates", 74, 15)
 	return d
 }
 

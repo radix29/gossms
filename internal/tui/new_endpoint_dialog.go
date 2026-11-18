@@ -442,5 +442,5 @@ func (a *App) showNewEndpointDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newEndpointDialog.show(sc, node)
+	a.newEndpointDialog().show(sc, node)
 }

@@ -163,5 +163,5 @@ func (a *App) showNewAsymmetricKeyDialog(sc *db.ServerConn, node *explorerNode) 
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newAsymmetricKeyDialog.show(sc, node)
+	a.newAsymmetricKeyDialog().show(sc, node)
 }

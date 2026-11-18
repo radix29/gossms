@@ -145,18 +145,18 @@ func TestPageActionLatchClearsWhenTheActionPanics(t *testing.T) {
 // it run against a closed connection.
 func TestPropertiesOnAClosedConnectionNeverBuildsItsPages(t *testing.T) {
 	a := newTestApp()
-	a.propDialog = NewPropDialog(a)
+	installDialog(a, NewPropDialog(a))
 	sc := addTestConn(a, "server-one")
 	sc.Close()
 
 	built := 0
-	a.propDialog.show(sc, "master", "Database Properties", "Database: master", "Server: server-one",
+	a.propDialog().show(sc, "master", "Database Properties", "Database: master", "Server: server-one",
 		func() []propPage { built++; return []propPage{{title: "General"}} })
 
 	if built != 0 {
 		t.Errorf("the page builder ran %d times against a closed connection, want 0", built)
 	}
-	if a.propDialog.Visible() {
+	if a.propDialog().Visible() {
 		t.Error("the dialog opened on a closed connection — every page would load into an error")
 	}
 	if a.statusText != notConnectedMessage {
@@ -169,20 +169,20 @@ func TestPropertiesOnAClosedConnectionNeverBuildsItsPages(t *testing.T) {
 // above passes for a dialog that never opens at all.
 func TestPropertiesOnAnOpenConnectionBuildsItsPages(t *testing.T) {
 	a := newTestApp()
-	a.propDialog = NewPropDialog(a)
+	installDialog(a, NewPropDialog(a))
 	sc := addTestConn(a, "server-one")
 
 	built := 0
-	a.propDialog.show(sc, "master", "Database Properties", "Database: master", "Server: server-one",
+	a.propDialog().show(sc, "master", "Database Properties", "Database: master", "Server: server-one",
 		func() []propPage { built++; return []propPage{{title: "General"}, {title: "Files"}} })
 
 	if built != 1 {
 		t.Errorf("the page builder ran %d times, want exactly 1", built)
 	}
-	if !a.propDialog.Visible() {
+	if !a.propDialog().Visible() {
 		t.Error("the dialog did not open on a live connection")
 	}
-	if got := len(a.propDialog.pages); got != 2 {
+	if got := len(a.propDialog().pages); got != 2 {
 		t.Errorf("the dialog holds %d pages, want the 2 the builder returned", got)
 	}
 }
@@ -194,10 +194,10 @@ func TestPropertiesOnAnOpenConnectionBuildsItsPages(t *testing.T) {
 // rest of the showing and F5 is the only way out of it.
 func TestPropertiesPageLoadRecoversWhenTheLoaderPanics(t *testing.T) {
 	a := newTestApp()
-	a.propDialog = NewPropDialog(a)
+	installDialog(a, NewPropDialog(a))
 	sc := addTestConn(a, "server-one")
 
-	d := a.propDialog
+	d := a.propDialog()
 	d.show(sc, "master", "Database Properties", "Database: master", "Server: server-one",
 		func() []propPage {
 			return []propPage{{
@@ -221,11 +221,11 @@ func TestPropertiesPageLoadRecoversWhenTheLoaderPanics(t *testing.T) {
 // a page says it failed.
 func TestPropertiesPageReloadsAfterALoaderPanic(t *testing.T) {
 	a := newTestApp()
-	a.propDialog = NewPropDialog(a)
+	installDialog(a, NewPropDialog(a))
 	sc := addTestConn(a, "server-one")
 
 	loads := 0
-	d := a.propDialog
+	d := a.propDialog()
 	d.show(sc, "master", "Database Properties", "Database: master", "Server: server-one",
 		func() []propPage {
 			return []propPage{{
@@ -305,8 +305,8 @@ func TestApplyReloadsThePagesAfterACommittedFailure(t *testing.T) {
 // header keeps the name the server still has.
 func TestApplyRenameUpdatesTheHeader(t *testing.T) {
 	a := newTestApp()
-	a.propDialog = NewPropDialog(a)
-	d := a.propDialog
+	installDialog(a, NewPropDialog(a))
+	d := a.propDialog()
 	sc := addTestConn(a, "server-one")
 
 	name := "old_login"
@@ -350,7 +350,7 @@ func TestPropDialogCommitsPagesBeforeApplyAndScript(t *testing.T) {
 		{"Script Changes", func(d *PropDialog) { d.runScript() }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Test Properties")
+			sheet := withScreen(propsheet.NewPropertySheet("Test Properties"), tuikittest.NewScreen(120, 40))
 			d := &PropDialog{PropertySheet: sheet, app: newTestApp(), ctx: context.Background(), applyFn: map[int]propApply{}}
 			d.SetPages([]string{"Files"})
 			row := propsheet.Text("Name", "", 40)
@@ -394,7 +394,7 @@ func TestPropDialogReportsApplyNotes(t *testing.T) {
 		{"OK", func(d *PropDialog) { d.runApply(true) }, "Properties saved. " + note, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Test Properties")
+			sheet := withScreen(propsheet.NewPropertySheet("Test Properties"), tuikittest.NewScreen(120, 40))
 			d := &PropDialog{PropertySheet: sheet, app: newTestApp(), ctx: context.Background(), applyFn: map[int]propApply{}}
 			d.SetPages([]string{"Files"})
 			d.OnLoadPage = func(page, seq int) {

@@ -69,7 +69,7 @@ func (a *App) promptMergeXEventFiles(sc *db.ServerConn) {
 	if serverIsAzure(sc) {
 		help, pattern = xeMergeHelpAzure, xeMergeDefaultPatternAzure
 	}
-	a.promptDialog.ShowPrompt("Merge Extended Event Files", help, "Files:", pattern,
+	a.promptDialog().ShowPrompt("Merge Extended Event Files", help, "Files:", pattern,
 		func(pattern string) { a.openMergedXEventFiles(sc, pattern) })
 }
 

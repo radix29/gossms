@@ -14,7 +14,7 @@ import (
 
 func newDeviceCodeTestApp() *App {
 	a := newTestApp()
-	a.deviceCodeDialog = NewDeviceCodeDialog(a)
+	installDialog(a, NewDeviceCodeDialog(a))
 	return a
 }
 
@@ -33,7 +33,7 @@ func TestDeviceCodeDialogClosesWhenTheSignInEnds(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.drainPending()
-	d := a.deviceCodeDialog
+	d := a.deviceCodeDialog()
 	if !d.Visible() || d.msg.UserCode != testDeviceCode.UserCode {
 		t.Fatalf("after the prompt: visible %v, code %q", d.Visible(), d.msg.UserCode)
 	}
@@ -57,7 +57,7 @@ func TestDeviceCodeDialogIgnoresTheEndOfAnEarlierSignIn(t *testing.T) {
 	cancelFirst()
 	// The first sign-in's end is posted by a goroutine; wait for it to land.
 	waitAndDrain(t, a)
-	if d := a.deviceCodeDialog; !d.Visible() || d.msg.UserCode != "SECOND" {
+	if d := a.deviceCodeDialog(); !d.Visible() || d.msg.UserCode != "SECOND" {
 		t.Errorf("after the first sign-in ended: visible %v, code %q; want the second still showing", d.Visible(), d.msg.UserCode)
 	}
 }
@@ -78,12 +78,12 @@ func TestDeviceCodeDialogCancelCancelsTheSignIn(t *testing.T) {
 	} {
 		a := newDeviceCodeTestApp()
 		ctx, cancel := context.WithCancel(context.Background())
-		a.deviceCodeDialog.showCode(testDeviceCode, cancel, ctx.Done())
-		act(a.deviceCodeDialog)
+		a.deviceCodeDialog().showCode(testDeviceCode, cancel, ctx.Done())
+		act(a.deviceCodeDialog())
 		if !errors.Is(ctx.Err(), context.Canceled) {
 			t.Errorf("%s: the sign-in was not cancelled", name)
 		}
-		if a.deviceCodeDialog.Visible() {
+		if a.deviceCodeDialog().Visible() {
 			t.Errorf("%s: the dialog is still open", name)
 		}
 		cancel()
@@ -94,9 +94,9 @@ func TestDeviceCodeDialogCancelCancelsTheSignIn(t *testing.T) {
 // Paste cannot change it.
 func TestDeviceCodeDialogCopiesTheCode(t *testing.T) {
 	a := newDeviceCodeTestApp()
-	a.deviceCodeDialog.showCode(testDeviceCode, nil, nil)
+	a.deviceCodeDialog().showCode(testDeviceCode, nil, nil)
 	a.modals = dialogs.Stack{}
-	a.modals.Register(a.deviceCodeDialog)
+	a.modals.Register(a.deviceCodeDialog())
 	a.modals.Sync()
 	target := a.activeClipboardTarget()
 	if target == nil || !target.HasSelection() || target.SelectedText() != testDeviceCode.UserCode {

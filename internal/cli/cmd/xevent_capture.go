@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/gosmo/tsql"
 	"github.com/radix29/gossms/internal/cli/output"
 	"github.com/radix29/gossms/internal/cli/spec"
 	"github.com/radix29/gossms/internal/db"
@@ -323,7 +322,7 @@ func (d Deps) xeventCapture(ctx context.Context, inv *spec.Invocation) (*output.
 	}
 	defer sc.Close()
 
-	if info := sc.Server.Info(); info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase {
+	if sc.Server.Info().IsDatabaseScoped() {
 		return res, output.NewError(output.CodeUnsupported,
 			"xevent capture creates a server-scoped event session, which Azure SQL Database does not have", "")
 	}
@@ -428,7 +427,7 @@ func cleanupCapture(parent context.Context, xe gosmo.XEvents, es *gosmo.EventSes
 		}
 		if err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("could not check whether event session %s was "+
-				"created: %v. If xevent sessions lists it, drop it with DROP EVENT SESSION %s ON SERVER.", name, err, tsql.QuoteName(name)))
+				"created: %v. If xevent sessions lists it, drop it with DROP EVENT SESSION %s ON SERVER.", name, err, gosmo.QuoteName(name)))
 			return
 		}
 		es, started = found, found.IsRunning
@@ -442,7 +441,7 @@ func cleanupCapture(parent context.Context, xe gosmo.XEvents, es *gosmo.EventSes
 	res.Fields = append(res.Fields, output.Field{Key: "sessionDropped", Value: strconv.FormatBool(err == nil)})
 	if err != nil {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("event session %s was not dropped: %v. Drop it with "+
-			"DROP EVENT SESSION %s ON SERVER.", name, err, tsql.QuoteName(name)))
+			"DROP EVENT SESSION %s ON SERVER.", name, err, gosmo.QuoteName(name)))
 	}
 }
 

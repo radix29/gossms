@@ -117,7 +117,7 @@ func (a *App) maintainIndex(sc *db.ServerConn, node *explorerNode, verb indexVer
 	case indexDisable:
 		doing, done = "Disabling", "disabled"
 	}
-	a.confirmDialog.ShowConfirm(title, prompt, func(confirmed bool) {
+	a.confirmDialog().ShowConfirm(title, prompt, func(confirmed bool) {
 		if !confirmed {
 			return
 		}

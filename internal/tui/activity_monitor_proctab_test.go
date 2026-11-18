@@ -330,7 +330,7 @@ func TestActivityMonitorProcTabUpdateInMasterNeedsControlServer(t *testing.T) {
 func killTarget(t *testing.T, session []driver.Value) (*ActivityMonitor, *amProcTab, *gFake) {
 	t.Helper()
 	am := hostedProcMonitor(t, amTabBlock)
-	am.app.alertDialog = dialogs.NewAlertDialog(nil)
+	installDialog(am.app, dialogs.NewAlertDialog())
 	am.conn = probedConn(t, "", []string{"ALTER ANY CONNECTION"}, nil, nil, nil)
 	var rows [][]driver.Value
 	if session != nil {
@@ -394,10 +394,10 @@ func TestKillProcessConfirmsThenKills(t *testing.T) {
 	am, pt, inst := killTarget(t, sessionRow("SSMS", 4242))
 	a := am.app
 	killItem(t, pt).Action()
-	drainUntil(t, a, a.confirmDialog.Visible, "the kill confirmation")
+	drainUntil(t, a, a.confirmDialog().Visible, "the kill confirmation")
 	for _, want := range []string{"session 57", "appuser", "ws7", "appdb"} {
-		if !strings.Contains(a.confirmDialog.Message(), want) {
-			t.Errorf("confirmation %q does not name %q", a.confirmDialog.Message(), want)
+		if !strings.Contains(a.confirmDialog().Message(), want) {
+			t.Errorf("confirmation %q does not name %q", a.confirmDialog().Message(), want)
 		}
 	}
 	answerConfirm(t, a, false) // Enter on the opening focus
@@ -406,9 +406,9 @@ func TestKillProcessConfirmsThenKills(t *testing.T) {
 	}
 
 	killItem(t, pt).Action()
-	drainUntil(t, a, a.confirmDialog.Visible, "the kill confirmation")
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	drainUntil(t, a, a.confirmDialog().Visible, "the kill confirmation")
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	drainUntil(t, a, func() bool { return a.statusText == "Session 57 killed" }, "the kill to finish")
 	if got := killStatements(inst); len(got) != 1 || got[0] != "KILL 57" {
 		t.Errorf("statements = %q, want KILL 57", got)
@@ -432,9 +432,9 @@ func TestKillProcessRefusesTheMonitorsOwnSession(t *testing.T) {
 			am, pt, inst := killTarget(t, c.session)
 			a := am.app
 			killItem(t, pt).Action()
-			drainUntil(t, a, func() bool { return a.alertDialog.Visible() || a.confirmDialog.Visible() }, "an answer")
-			if got := a.alertDialog.Visible(); got != c.refused {
-				t.Errorf("refused = %v, want %v (alert %q)", got, c.refused, a.alertDialog.Message())
+			drainUntil(t, a, func() bool { return a.alertDialog().Visible() || a.confirmDialog().Visible() }, "an answer")
+			if got := a.alertDialog().Visible(); got != c.refused {
+				t.Errorf("refused = %v, want %v (alert %q)", got, c.refused, a.alertDialog().Message())
 			}
 			if len(killStatements(inst)) != 0 {
 				t.Error("KILL sent before a confirmation")
@@ -447,7 +447,7 @@ func TestKillProcessRefusesTheMonitorsOwnSession(t *testing.T) {
 	other[22] = false
 	am, pt, _ := killTarget(t, other)
 	killItem(t, pt).Action()
-	drainUntil(t, am.app, am.app.confirmDialog.Visible, "the kill confirmation")
+	drainUntil(t, am.app, am.app.confirmDialog().Visible, "the kill confirmation")
 }
 
 // A session that ended since the grid was filled is said so, not killed —
@@ -456,11 +456,11 @@ func TestKillProcessOfAnEndedSession(t *testing.T) {
 	am, pt, inst := killTarget(t, nil)
 	a := am.app
 	killItem(t, pt).Action()
-	drainUntil(t, a, a.alertDialog.Visible, "the ended-session alert")
-	if !strings.Contains(a.alertDialog.Message(), "Session 57 has ended") {
-		t.Errorf("alert = %q", a.alertDialog.Message())
+	drainUntil(t, a, a.alertDialog().Visible, "the ended-session alert")
+	if !strings.Contains(a.alertDialog().Message(), "Session 57 has ended") {
+		t.Errorf("alert = %q", a.alertDialog().Message())
 	}
-	if a.confirmDialog.Visible() || len(killStatements(inst)) != 0 {
+	if a.confirmDialog().Visible() || len(killStatements(inst)) != 0 {
 		t.Error("an ended session was offered for killing")
 	}
 }
@@ -489,7 +489,7 @@ func TestActivityMonitorProcTabInstallRefusalNamesTheRightOnlyWhenDenied(t *test
 	if got, want := am.app.statusText, "Install in master: "+gate.RequiresText(gate.ControlServer); got != want {
 		t.Errorf("denied: status = %q, want %q", got, want)
 	}
-	if am.app.confirmDialog.Visible() {
+	if am.app.confirmDialog().Visible() {
 		t.Error("a withheld Install still asked for confirmation")
 	}
 

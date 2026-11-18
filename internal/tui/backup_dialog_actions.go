@@ -20,7 +20,7 @@ func (d *BackupDialog) browseDest() {
 	if start == "" {
 		start = d.autoDest()
 	}
-	d.app.fileDialog.ShowSaveOn(fs, "Backup Destination", start, func(path string) {
+	d.app.fileDialog().ShowSaveOn(fs, "Backup Destination", start, func(path string) {
 		d.fDest.SetValue(path)
 		// The picked path is the user's own choice now, so syncAutoDest must
 		// stop treating the field as still holding a generated default and
@@ -122,7 +122,7 @@ func (d *BackupDialog) checkDestThen(dest gosmo.BackupTarget, run func()) {
 				d.setStatusMsg("The destination is a folder — add a file name.", true)
 			default:
 				d.setStatusMsg(d.restingStatus(), false)
-				app.confirmDialog.ShowConfirmDefaultNo("Overwrite Backup File",
+				app.confirmDialog().ShowConfirmDefaultNo("Overwrite Backup File",
 					path+" already exists on the server. Overwrite it? The backups it holds will be lost.",
 					func(yes bool) {
 						if yes && d.Visible() && d.mode == backupModeForm {

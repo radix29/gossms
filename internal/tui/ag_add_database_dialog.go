@@ -229,5 +229,5 @@ func (a *App) showAGAddDatabaseDialog(sc *db.ServerConn, agName string, node *ex
 	if !a.requireConn(sc) {
 		return
 	}
-	a.agAddDatabaseDialog.show(sc, agName, node)
+	a.agAddDatabaseDialog().show(sc, agName, node)
 }

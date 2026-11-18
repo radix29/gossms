@@ -74,12 +74,12 @@ func (v *XEventViewer) applyViewSetting(name string, s config.XEventViewSetting)
 // saveViewSettingAs asks for a name and saves the display under it, asking
 // before replacing a setting of that name.
 func (v *XEventViewer) saveViewSettingAs() {
-	v.app.promptDialog.ShowPrompt("Save Settings",
+	v.app.promptDialog().ShowPrompt("Save Settings",
 		"Save the columns shown, the filter, the grouping and the aggregation under a name, to apply to any Extended Events viewer later.",
 		"Name:", v.session, func(name string) {
 			s := v.currentViewSetting()
 			if _, exists := v.app.cfg.XEventViewSettings[name]; exists {
-				v.app.confirmDialog.ShowConfirm("Save Settings", fmt.Sprintf("Replace the saved settings %q?", name), func(yes bool) {
+				v.app.confirmDialog().ShowConfirm("Save Settings", fmt.Sprintf("Replace the saved settings %q?", name), func(yes bool) {
 					if yes {
 						v.storeViewSetting(name, &s)
 					}
@@ -134,7 +134,7 @@ func (v *XEventViewer) showSettingsMenu() {
 			v.applyViewSetting(name, v.app.cfg.XEventViewSettings[name])
 		}})
 		del = append(del, controls.MenuItem{Label: name, Action: func() {
-			v.app.confirmDialog.ShowConfirm("Delete Settings", fmt.Sprintf("Delete the saved settings %q?", name), func(yes bool) {
+			v.app.confirmDialog().ShowConfirm("Delete Settings", fmt.Sprintf("Delete the saved settings %q?", name), func(yes bool) {
 				if yes {
 					v.storeViewSetting(name, nil)
 				}

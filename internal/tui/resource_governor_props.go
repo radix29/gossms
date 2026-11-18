@@ -85,7 +85,7 @@ type rgFocus struct {
 // showResourceGovernorPropertiesFor opens Resource Governor Properties on sc,
 // at focus.
 func (a *App) showResourceGovernorPropertiesFor(sc *db.ServerConn, focus rgFocus) {
-	d := a.propDialog
+	d := a.propDialog()
 	opened := d.showPlanned(sc, "", "Resource Governor Properties", "Resource Governor", "Server: "+sc.Opts.Server,
 		func() []propPage { return rgPropPages(d, sc, focus) },
 		func(ctx context.Context, plan *applyPlan) error { return runResourceGovernorPlan(ctx, sc, plan) })
@@ -235,7 +235,7 @@ func rgNewClassifier(d *PropDialog, sc *db.ServerConn) {
 		open()
 		return
 	}
-	d.app.confirmDialog.ShowConfirm("New Classifier",
+	d.app.confirmDialog().ShowConfirm("New Classifier",
 		"Writing a classifier closes Resource Governor Properties, and its unsaved changes are lost. Close it and open the template?",
 		func(confirmed bool) {
 			if confirmed {

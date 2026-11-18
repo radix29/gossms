@@ -171,13 +171,13 @@ func (p *QueryPanel) endTransactions(commit bool, then func()) {
 				// that lost its session.
 				p.closeConnection()
 				p.app.setStatus("Connection lost — the session's state is gone; use Query > Reconnect")
-				p.app.alertDialog.ShowAlert("Commit Failed",
+				p.app.alertDialog().ShowAlert("Commit Failed",
 					fmt.Sprintf("The open transactions in %s could not be committed: %v\n\nThe connection to the server was lost, and the server rolled the transactions back. The window was left open; use Query > Reconnect to start a new session.", p.Title(), err))
 				return
 			}
 			if err != nil && commit {
 				p.app.setStatus("Commit failed — " + p.Title() + " was left open")
-				p.app.alertDialog.ShowAlert("Commit Failed",
+				p.app.alertDialog().ShowAlert("Commit Failed",
 					fmt.Sprintf("The open transactions in %s could not be committed: %v\n\nThe window was left open; the transaction is still there to deal with.", p.Title(), err))
 				return
 			}
@@ -266,7 +266,7 @@ func (p *QueryPanel) runRefused(queryText string, retry func()) bool {
 		p.resultsNotice = p.notConnectedMessage()
 		if p.connectingTo == "" && !p.executing {
 			p.results.SetData([]string{"Message"}, [][]string{{"No active connection"}})
-			p.app.connectDialog.ShowForQueryPanel(p, retry)
+			p.app.connectDialog().ShowForQueryPanel(p, retry)
 		}
 	case p.executing:
 		p.app.setStatus("A query is already executing in this panel")

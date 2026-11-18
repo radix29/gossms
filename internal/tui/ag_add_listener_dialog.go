@@ -270,5 +270,5 @@ func (a *App) showAGAddListenerDialog(sc *db.ServerConn, agName string, node *ex
 	if !a.requireConn(sc) {
 		return
 	}
-	a.agAddListenerDialog.show(sc, agName, node)
+	a.agAddListenerDialog().show(sc, agName, node)
 }

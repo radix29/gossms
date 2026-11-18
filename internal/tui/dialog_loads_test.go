@@ -23,10 +23,10 @@ import (
 // the restore never began.
 func TestRestoreHistoryLoadDoesNotDropTheTargetCheck(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewRestoreDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewRestoreDialog(a), a.screen)
 	quietLog(t)
-	a.screen = nil
+	a.setScreen(nil)
 	d.show(&db.ServerConn{}, "testdb")
 	d.fFile.SetValue(`C:\backups\testdb.bak`)
 
@@ -45,10 +45,10 @@ func TestRestoreHistoryLoadDoesNotDropTheTargetCheck(t *testing.T) {
 // result still on its way is dropped, and cancelled, so its query stops now.
 func TestRestoreHideAbandonsItsLoads(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewRestoreDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewRestoreDialog(a), a.screen)
 	quietLog(t)
-	a.screen = nil
+	a.setScreen(nil)
 	d.show(&db.ServerConn{}, "testdb")
 	d.fFile.SetValue(`C:\backups\testdb.bak`)
 
@@ -66,10 +66,10 @@ func TestRestoreHideAbandonsItsLoads(t *testing.T) {
 
 func TestBackupHideAbandonsTheDatabaseList(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewBackupDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewBackupDialog(a), a.screen)
 	quietLog(t)
-	a.screen = nil
+	a.setScreen(nil)
 	d.show(&db.ServerConn{}, "testdb")
 	seq := d.dbListRun.seq
 	if d.dbListRun.Idle() {
@@ -86,10 +86,10 @@ func TestBackupHideAbandonsTheDatabaseList(t *testing.T) {
 // filling the grid with paths for a snapshot no longer described.
 func TestSnapshotNameChangeAbandonsTheDefaultsRead(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewNewSnapshotDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewNewSnapshotDialog(a), a.screen)
 	quietLog(t)
-	a.screen = nil
+	a.setScreen(nil)
 	d.show(&db.ServerConn{}, "src")
 	d.buildPages(&snapshotPrefetch{sources: []string{"src"}, existing: newNameSet("")})
 
@@ -130,8 +130,8 @@ func TestSnapshotNameChangeAbandonsTheDefaultsRead(t *testing.T) {
 // run to childFetchTimeout.
 func TestDependenciesCloseAbandonsTheFetch(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewPropertiesDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewPropertiesDialog(a), a.screen)
 	_, seq := d.run.Begin(t.Context())
 	d.ShowProperties("Dependencies: dbo.t", nil)
 	d.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))

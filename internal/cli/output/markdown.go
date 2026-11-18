@@ -8,10 +8,12 @@ import (
 )
 
 // renderMarkdown writes the text envelope with each Verbatim field as a fenced
-// code block under its marker and each result set as a GitHub table: the marker line, a blank line (a table cannot interrupt a
-// paragraph), then the table. A cell's | is escaped and its line breaks are
-// <br>, so a value cannot end its row or the table. --no-headers does not
-// apply: a GitHub table has no form without a header row.
+// code block under its marker and each result set as a GitHub table: the
+// marker line, a blank line (a table cannot interrupt a paragraph), then the
+// table. A cell's | is escaped, & < > are entities and its line breaks are
+// <br>, so a value cannot end its row or the table or read as HTML.
+// --no-headers does not apply: a GitHub table has no form without a header
+// row.
 func renderMarkdown(w io.Writer, r *Result, o Options) error {
 	return writeSections(w, textSections(r, o, func(n int, s Set) []string {
 		out := []string{setMarker(n, s)}
@@ -77,11 +79,16 @@ func markdownTable(head []string, rows [][]string, ncols int) []string {
 	return out
 }
 
-// markdownCell is a cell made safe inside a GitHub table row.
+// markdownCell is a cell made safe inside a GitHub table row. GitHub renders
+// inline HTML in a cell, so &, < and > become entities: unescaped, an xml
+// column's <root a="1"/> renders as nothing, &lt; reads as <, and a value
+// holding the text <br> would look like a line break. One pass, so the <br>
+// written for a line break stays markup and an & is never escaped twice.
 func markdownCell(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, "|", `\|`)
-	s = strings.ReplaceAll(s, "\r\n", "<br>")
-	return strings.NewReplacer("\n", "<br>", "\r", "<br>", "\t", " ",
-		"\v", " ", "\f", " ", "\u0085", "<br>", " ", "<br>", " ", "<br>").Replace(s)
+	return markdownCellReplacer.Replace(strings.ReplaceAll(s, "\r\n", "\n"))
 }
+
+var markdownCellReplacer = strings.NewReplacer(`\`, `\\`, "|", `\|`,
+	"&", "&amp;", "<", "&lt;", ">", "&gt;",
+	"\n", "<br>", "\r", "<br>", "\t", " ", "\v", " ", "\f", " ",
+	"\u0085", "<br>", "\u2028", "<br>", "\u2029", "<br>")

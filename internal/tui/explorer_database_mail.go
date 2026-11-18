@@ -164,7 +164,7 @@ func (a *App) startDatabaseMail(sc *db.ServerConn, node *explorerNode) {
 // refuses every message (Msg 14641) rather than queueing it — whatever sends
 // mail through Database Mail on this server fails until Start.
 func (a *App) stopDatabaseMail(sc *db.ServerConn, node *explorerNode) {
-	a.confirmDialog.ShowConfirm("Stop Database Mail",
+	a.confirmDialog().ShowConfirm("Stop Database Mail",
 		"Stop Database Mail? Until it is started again, every message sent through it is refused, not queued — whatever this server sends by Database Mail, such as Agent alerts and job notifications, fails meanwhile.",
 		func(ok bool) {
 			if ok {

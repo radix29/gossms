@@ -75,11 +75,11 @@ func TestRestoreWithRecoveryRecoversAndReloadsTheFolder(t *testing.T) {
 		t.Fatal("a RESTORING database offers no Restore With Recovery")
 	}
 	item.Action()
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("Restore With Recovery ran without asking")
 	}
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) // Yes
-	drainUntil(t, a, func() bool { return !a.progressDialog.Visible() }, "the recovery to finish")
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) // Yes
+	drainUntil(t, a, func() bool { return !a.progressDialog().Visible() }, "the recovery to finish")
 
 	if want := "RESTORE DATABASE [appdb] WITH RECOVERY"; !slices.Contains(inst.Statements(), want) {
 		t.Errorf("statements = %q, want %q", inst.Statements(), want)
@@ -106,8 +106,8 @@ func TestStateToggleOnASystemDatabaseReloadsSystemDatabases(t *testing.T) {
 	dbs, sys, _, master := recoverTree(t, a, sc)
 
 	a.toggleDatabaseOffline(sc, master)
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) // Yes
-	drainUntil(t, a, func() bool { return !a.progressDialog.Visible() }, "the toggle to finish")
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) // Yes
+	drainUntil(t, a, func() bool { return !a.progressDialog().Visible() }, "the toggle to finish")
 
 	if want := "ALTER DATABASE [master] SET OFFLINE WITH ROLLBACK IMMEDIATE"; !slices.Contains(inst.Statements(), want) {
 		t.Fatalf("statements = %q, want %q", inst.Statements(), want)

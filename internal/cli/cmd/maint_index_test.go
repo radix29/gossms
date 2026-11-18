@@ -242,7 +242,7 @@ func TestMaintIndexRebuildRefusals(t *testing.T) {
 	// --online on Standard: exit 11 before anything is sent, dry run too.
 	for _, argv := range []string{"index-rebuild dbo.Orders --online --allow ddl", "index-rebuild dbo.Orders --online --allow ddl --dry-run"} {
 		cat := newIndexServer(t)
-		cat.Info.EngineEdition, cat.Info.Edition = int(gosmo.EngineStandard), "Standard Edition (64-bit)"
+		cat.Info.EngineEdition, cat.Info.Edition = gosmo.EngineStandard, "Standard Edition (64-bit)"
 		res, _, err := runIndex(t, cat, argv)
 		if errCode(err) != output.CodeUnsupported || len(cat.writes) != 0 || hasField(res, "tsql") {
 			t.Errorf("%s on Standard: %v, sent %q", argv, err, cat.writes)
@@ -250,7 +250,7 @@ func TestMaintIndexRebuildRefusals(t *testing.T) {
 	}
 	// --reorganize is always online: fine on Standard.
 	cat := newIndexServer(t)
-	cat.Info.EngineEdition = int(gosmo.EngineStandard)
+	cat.Info.EngineEdition = gosmo.EngineStandard
 	if _, _, err := runIndex(t, cat, "index-rebuild dbo.Orders --reorganize --allow ddl"); err != nil {
 		t.Errorf("reorganize on Standard: %v", err)
 	}

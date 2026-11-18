@@ -20,7 +20,7 @@ func openProfile(t *testing.T, d *ConnectDialog, i int) *ProfileDialog {
 	d.applyHistory(i)
 	d.btnFocus = connectBtnProfile
 	d.doButton()
-	pd := d.app.profileDialog
+	pd := d.app.profileDialog()
 	if !pd.Visible() {
 		t.Fatal("Profile... did not open the Profile dialog")
 	}
@@ -133,7 +133,7 @@ func TestConnectProfileIsGatedWithoutASelection(t *testing.T) {
 	}
 	d.btnFocus = connectBtnProfile
 	d.doButton()
-	if d.app.profileDialog.Visible() {
+	if d.app.profileDialog().Visible() {
 		t.Error("a gated Profile... opened the dialog")
 	}
 }
@@ -159,7 +159,7 @@ func TestProfileDialogButtonRowByKeyboard(t *testing.T) {
 // The Profile dialog takes text, so it hosts the clipboard; on a button it
 // answers an explicit nil.
 func TestProfileDialogClipboardTarget(t *testing.T) {
-	pd := NewProfileDialog(nil)
+	pd := NewProfileDialog()
 	pd.ShowProfile(config.Connection{Server: "a"}, nil)
 	if pd.FocusedClipboardTarget() == nil {
 		t.Error("no clipboard target on the name field")

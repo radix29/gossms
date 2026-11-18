@@ -84,11 +84,10 @@ func (s xeScope) label(sc *db.ServerConn) string {
 }
 
 // databaseScopedXEvents reports whether sc's sessions are database-scoped —
-// an Azure SQL Database, where sys.server_event_sessions does not exist and
+// a single-database engine (Azure SQL Database, SQL database in Fabric), where sys.server_event_sessions does not exist and
 // each database has an Extended Events folder of its own.
 func databaseScopedXEvents(sc *db.ServerConn) bool {
-	return sc != nil && sc.Server != nil && sc.Server.Info() != nil &&
-		gosmo.EngineEdition(sc.Server.Info().EngineEdition) == gosmo.EngineAzureSQLDatabase
+	return sc != nil && sc.Server != nil && sc.Server.Info().IsDatabaseScoped()
 }
 
 // refreshXESessions reloads scope's Sessions folder on sc, where the tree has
@@ -291,7 +290,7 @@ func (a *App) setEventSessionState(sc *db.ServerConn, node *explorerNode, start 
 		run()
 		return
 	}
-	a.confirmDialog.ShowConfirm("Stop Event Session",
+	a.confirmDialog().ShowConfirm("Stop Event Session",
 		fmt.Sprintf("Stop %s? It stops collecting, and what a ring_buffer, histogram or pair_matching target holds in memory is discarded. event_file targets keep their files.", name),
 		func(confirmed bool) {
 			if confirmed {

@@ -177,5 +177,5 @@ func (a *App) showNewServerRoleDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newServerRoleDialog.show(sc)
+	a.newServerRoleDialog().show(sc)
 }

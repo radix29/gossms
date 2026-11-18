@@ -95,7 +95,7 @@ type SendTestMailDialog struct {
 // NewSendTestMailDialog creates the dialog and wires its callbacks.
 func NewSendTestMailDialog(app *App) *SendTestMailDialog {
 	d := &SendTestMailDialog{app: app}
-	d.PropertySheet = propsheet.NewPropertySheet(app.screen, "Send Test E-Mail")
+	d.PropertySheet = propsheet.NewPropertySheet("Send Test E-Mail")
 	d.OnLoadPage = d.onLoadPage
 	d.OnApply = func() { d.send(false) }
 	d.OnOK = func() { d.send(true) }
@@ -110,7 +110,7 @@ func (a *App) showSendTestMailFor(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.sendTestMailDialog.show(sc)
+	a.sendTestMailDialog().show(sc)
 }
 
 func (d *SendTestMailDialog) show(sc *db.ServerConn) {

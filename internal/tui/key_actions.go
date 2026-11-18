@@ -100,7 +100,7 @@ func (a *App) removePrivateKey(sc *db.ServerConn, node *explorerNode, what strin
 			"private key cannot be backed up first: nothing encrypted by it can be decrypted again.", name)
 	}
 	title := "Remove Private Key"
-	a.confirmDialog.ShowConfirm(title, msg, func(confirmed bool) {
+	a.confirmDialog().ShowConfirm(title, msg, func(confirmed bool) {
 		if !confirmed {
 			return
 		}

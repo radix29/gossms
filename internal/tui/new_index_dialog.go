@@ -411,7 +411,7 @@ func (a *App) showNewIndexDialog(sc *db.ServerConn, node *explorerNode, kind new
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newIndexDialog.show(sc, node, kind)
+	a.newIndexDialog().show(sc, node, kind)
 }
 
 // showNewStatisticsDialog opens New Statistics for a table's Statistics
@@ -420,5 +420,5 @@ func (a *App) showNewStatisticsDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newStatisticsDialog.show(sc, node)
+	a.newStatisticsDialog().show(sc, node)
 }

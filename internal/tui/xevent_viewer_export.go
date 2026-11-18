@@ -71,7 +71,7 @@ func (v *XEventViewer) exportToFile(f xeExportFormat) {
 		return
 	}
 	ext := map[xeExportFormat]string{xeExportCSV: ".csv", xeExportTSV: ".txt", xeExportInserts: ".sql"}[f]
-	v.app.fileDialog.ShowSave("Export Events", v.exportBaseName()+"-events"+ext, func(path string) {
+	v.app.fileDialog().ShowSave("Export Events", v.exportBaseName()+"-events"+ext, func(path string) {
 		// Rendered here, on the UI goroutine: shown grows under a live feed.
 		data, err := v.exportBytes(f)
 		if err != nil {

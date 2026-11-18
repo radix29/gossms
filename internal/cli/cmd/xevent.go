@@ -69,7 +69,7 @@ func (d Deps) xeventSessions(ctx context.Context, inv *spec.Invocation) (*output
 	// refused read reports.
 	xe := sc.Server.XEvents()
 	scope := "server"
-	if info := sc.Server.Info(); info != nil && gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase {
+	if sc.Server.Info().IsDatabaseScoped() {
 		dbase, err := currentDatabase(ctx, sc.Server, res)
 		if err != nil {
 			return res, err

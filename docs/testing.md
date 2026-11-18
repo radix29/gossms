@@ -118,6 +118,16 @@ connections into the user's `%APPDATA%` config (issue #23). Find the config
 directory through them, not by joining `"gossms"` onto the temp dir (macOS
 nests it under `Library/Application Support`).
 
+**Code that needs the Windows desktop (the clipboard) can't be driven over
+ssh to win10cli**: ssh processes run in a non-interactive window station, not
+the user's session. Build a test binary there (`go test -c`) and run it in the
+user's session through a scheduled task — `schtasks /create /tn X /tr
+"C:\src\run.cmd" /sc once /st 23:59 /sd 01/01/2030 /ru radu_ /it /f`, then
+`schtasks /run /tn X` — with output redirected to a file. It works while the
+session is disconnected and locked. `/create … /f` again to change the command
+(`/change` asks for a password), and give `-test.timeout` and a minute or two
+of start latency. Delete the task and files after.
+
 **A timing test over pure channels and timers runs in `synctest.Test`.** The
 bubble's clock is fake, so a window holds exactly the ticks the schedule
 predicts: assert exact counts and wait with `synctest.Sleep`, not a

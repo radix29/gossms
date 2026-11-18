@@ -85,7 +85,7 @@ func (a *App) compareShowplanFrom(from openPlan) {
 	if pp, ok := from.panel.(*PlanPanel); ok && pp.filePath != "" {
 		start = filepath.Dir(pp.filePath)
 	}
-	a.fileDialog.ShowOpen("Compare Showplan", start, func(path string) {
+	a.fileDialog().ShowOpen("Compare Showplan", start, func(path string) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			a.setStatus(fmt.Sprintf("Open failed: %v", err))

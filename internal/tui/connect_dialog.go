@@ -170,7 +170,7 @@ type ConnectDialog struct {
 // NewConnectDialog creates the connection dialog.
 func NewConnectDialog(app *App) *ConnectDialog {
 	d := &ConnectDialog{app: app}
-	d.InitModal(app.screen, connectDialogTitle, connectOnePaneWidth, connectDialogHeight)
+	d.InitModal(connectDialogTitle, connectOnePaneWidth, connectDialogHeight)
 
 	methods := config.AllAuthMethods()
 	authItems := make([]string, len(methods))

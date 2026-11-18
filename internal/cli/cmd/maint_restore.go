@@ -222,7 +222,7 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 	defer sc.Close()
 
 	info := sc.Server.Info()
-	if info != nil && info.EngineEdition == int(gosmo.EngineAzureSQLDatabase) {
+	if info.IsDatabaseScoped() {
 		return res, output.NewError(output.CodeUnsupported, "Azure SQL Database takes no RESTORE from a backup file",
 			"Restore through the Azure portal or CLI (point-in-time restore), or import a .bacpac.")
 	}

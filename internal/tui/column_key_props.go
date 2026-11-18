@@ -234,12 +234,12 @@ func (a *App) showNewColumnMasterKeyDialog(sc *db.ServerConn, node *explorerNode
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newCMKDialog.show(sc, node)
+	a.newCMKDialog().show(sc, node)
 }
 
 func (a *App) showNewColumnEncryptionKeyDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newCEKDialog.show(sc, node)
+	a.newCEKDialog().show(sc, node)
 }

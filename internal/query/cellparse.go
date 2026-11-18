@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/radix29/gosmo"
 )
@@ -223,5 +224,11 @@ func truncateForError(s string) string {
 	if len(s) <= 40 {
 		return s
 	}
-	return s[:40] + "…"
+	// Back off to a rune boundary: a cut through a multi-byte sequence
+	// leaves invalid UTF-8 in the message.
+	n := 40
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
 }

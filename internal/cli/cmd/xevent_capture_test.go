@@ -378,7 +378,7 @@ func TestXEventCaptureRefused(t *testing.T) {
 		{"--session-database " + strings.Repeat("x", 129) + " --allow admin", nil, output.CodeUsageError, 0},
 		{"", nil, output.CodeBlocked, 0},
 		{"--allow ddl --dry-run", nil, output.CodeBlocked, 0},
-		{"--allow admin", func(x *xeServer) { x.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase) }, output.CodeUnsupported, 1},
+		{"--allow admin", func(x *xeServer) { x.Info.EngineEdition = gosmo.EngineAzureSQLDatabase }, output.CodeUnsupported, 1},
 		{"--allow admin", func(x *xeServer) { x.noVSS = true }, output.CodePermissionDenied, 1},
 		{"--allow admin --dry-run", func(x *xeServer) { x.noVSS = true }, output.CodePermissionDenied, 1},
 		{"--allow admin", func(x *xeServer) { x.caps = denied() }, output.CodePermissionDenied, 1},

@@ -33,7 +33,7 @@ func operatorPropPages(sc *db.ServerConn, operatorName string) []propPage {
 // showOperatorProperties opens Operator Properties from Object Explorer's
 // context menu.
 func (a *App) showOperatorProperties(sc *db.ServerConn, operatorName string) {
-	a.propDialog.showReloading(sc, "msdb", "Operator Properties", "Operator: "+operatorName, "Server: "+sc.Opts.Server,
+	a.propDialog().showReloading(sc, "msdb", "Operator Properties", "Operator: "+operatorName, "Server: "+sc.Opts.Server,
 		func() []propPage { return operatorPropPages(sc, operatorName) }, folderOf("", NodeAgentOperators))
 }
 

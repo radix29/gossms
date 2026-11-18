@@ -18,8 +18,8 @@ func TestHelpDialogLosesNoTail(t *testing.T) {
 	want := strings.Fields(strings.Join(helpLines, " "))
 	for _, sz := range [][2]int{{40, 20}, {62, 28}, {80, 24}, {100, 40}, {200, 50}} {
 		a := newTestApp()
-		a.screen = tuikittest.NewScreen(sz[0], sz[1])
-		d := NewHelpDialog(a)
+		a.setScreen(tuikittest.NewScreen(sz[0], sz[1]))
+		d := withScreen(NewHelpDialog(a), a.screen)
 		d.Show()
 
 		r := d.Rect()
@@ -47,8 +47,8 @@ func TestHelpDialogLosesNoTail(t *testing.T) {
 // line shows every line unwrapped, as written.
 func TestHelpDialogWideTerminalNeedsNoWrap(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(200, 50)
-	d := NewHelpDialog(a)
+	a.setScreen(tuikittest.NewScreen(200, 50))
+	d := withScreen(NewHelpDialog(a), a.screen)
 	if len(d.lines) != len(helpLines) {
 		t.Fatalf("at 200 columns: %d rows, want %d (no wrapping)", len(d.lines), len(helpLines))
 	}

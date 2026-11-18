@@ -286,7 +286,7 @@ func (s *dbServer) rules() {
 			var rows [][]any
 			for _, c := range s.cfgs[q.Database] {
 				row := *c // two reads are two copies, as from the server
-				if m := s.scopedMajor(); m < 14 && s.Info.EngineEdition != int(gosmo.EngineAzureManagedInst) {
+				if m := s.scopedMajor(); m < 14 && s.Info.EngineEdition != gosmo.EngineAzureManagedInst {
 					row.IsValueDefault = false // 2016 has no is_value_default
 				}
 				rows = append(rows, clitest.ScopedConfigRow(&row))

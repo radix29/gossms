@@ -53,7 +53,7 @@ func (r githubRelease) releasesURL() string {
 // land in this one, where a late failure would overwrite this showing's
 // success.
 func (a *App) checkForUpdates() {
-	d := a.updateDialog
+	d := a.updateDialog()
 	d.ShowChecking(version.Version)
 	ctx, seq := d.check.BeginTimeout(context.Background(), 10*time.Second)
 

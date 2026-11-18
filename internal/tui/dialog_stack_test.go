@@ -22,9 +22,9 @@ func TestDialogStackNestingAndPruning(t *testing.T) {
 		t.Fatalf("modals.Top() before anything shown = %v, want nil", got)
 	}
 
-	a.helpDialog.Show()
+	a.helpDialog().Show()
 	a.modals.Sync()
-	if got := a.modals.Top(); got != a.helpDialog {
+	if got := a.modals.Top(); got != a.helpDialog() {
 		t.Errorf("modals.Top() after showing help = %v, want helpDialog", got)
 	}
 	if len(a.modals.Open()) != 1 {
@@ -33,19 +33,19 @@ func TestDialogStackNestingAndPruning(t *testing.T) {
 
 	// Nesting: a second dialog opens while help is still visible — the
 	// path a dialog spawning a child takes, e.g. Backup > Browse.
-	a.optionsDialog.Show()
+	a.optionsDialog().Show()
 	a.modals.Sync()
-	if got := a.modals.Top(); got != a.optionsDialog {
+	if got := a.modals.Top(); got != a.optionsDialog() {
 		t.Errorf("modals.Top() after nested show = %v, want optionsDialog on top", got)
 	}
-	if len(a.modals.Open()) != 2 || a.modals.Open()[0] != Dialog(a.helpDialog) {
+	if len(a.modals.Open()) != 2 || a.modals.Open()[0] != Dialog(a.helpDialog()) {
 		t.Errorf("stack = %v, want [help, options]", a.modals.Open())
 	}
 
 	// Closing the top dialog drops it on the next sync, uncovering help.
-	a.optionsDialog.Hide()
+	a.optionsDialog().Hide()
 	a.modals.Sync()
-	if got := a.modals.Top(); got != a.helpDialog {
+	if got := a.modals.Top(); got != a.helpDialog() {
 		t.Errorf("modals.Top() after closing options = %v, want helpDialog uncovered", got)
 	}
 	if len(a.modals.Open()) != 1 {
@@ -53,13 +53,13 @@ func TestDialogStackNestingAndPruning(t *testing.T) {
 	}
 
 	// Re-showing a dialog already in the stack must not duplicate it.
-	a.helpDialog.Show()
+	a.helpDialog().Show()
 	a.modals.Sync()
 	if len(a.modals.Open()) != 1 {
 		t.Errorf("re-showing an already-open dialog duplicated it: stack = %v", a.modals.Open())
 	}
 
-	a.helpDialog.Hide()
+	a.helpDialog().Hide()
 	a.modals.Sync()
 	if got := a.modals.Top(); got != nil {
 		t.Errorf("modals.Top() after closing the last dialog = %v, want nil", got)
@@ -69,18 +69,17 @@ func TestDialogStackNestingAndPruning(t *testing.T) {
 	}
 }
 
-// TestTasksDialogParticipatesInStack guards against the one mistake this
-// architecture can still make silently: adding a new dialog type without
-// registering it in buildUI. If tasksDialog were never registered,
-// modals.Sync would never notice it becoming visible and it
+// TestTasksDialogParticipatesInStack guards against a dialog that is built
+// but never registered (dialogOf registers on first use). If tasksDialog were
+// never registered, modals.Sync would never notice it becoming visible and it
 // would draw over everything with no way to route input to it.
 func TestTasksDialogParticipatesInStack(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()
 
-	a.tasksDialog.Show()
+	a.tasksDialog().Show()
 	a.modals.Sync()
-	if got := a.modals.Top(); got != a.tasksDialog {
+	if got := a.modals.Top(); got != a.tasksDialog() {
 		t.Errorf("modals.Top() after showing tasksDialog = %v, want tasksDialog", got)
 	}
 }
@@ -109,13 +108,13 @@ func TestLayoutAllRefitsOpenDialogsToTheNewScreenSize(t *testing.T) {
 	a := newLatchTestApp()
 	scr := a.screen.(*tuikittest.Screen)
 
-	a.alertDialog.ShowAlert("Alert", "Something happened.")
+	a.alertDialog().ShowAlert("Alert", "Something happened.")
 	a.modals.Sync()
 
 	scr.SetSize(44, 12)
 	a.layoutAll()
 
-	r := a.alertDialog.Rect()
+	r := a.alertDialog().Rect()
 	if sw, sh := scr.Size(); r.Right() > sw || r.Bottom() > sh {
 		t.Errorf("dialog rect %+v extends past the %dx%d screen after resize", r, sw, sh)
 	}
@@ -125,7 +124,7 @@ func TestLayoutAllRefitsOpenDialogsToTheNewScreenSize(t *testing.T) {
 	scr.SetSize(16, 4)
 	a.layoutAll()
 
-	r = a.alertDialog.Rect()
+	r = a.alertDialog().Rect()
 	if sw, sh := scr.Size(); r.Right() > sw || r.Bottom() > sh {
 		t.Errorf("dialog rect %+v extends past the %dx%d screen (below layoutAll's size floor)", r, sw, sh)
 	}
@@ -137,18 +136,18 @@ func TestDialogStackRoutesInputToTopOnly(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()
 
-	a.helpDialog.Show()
+	a.helpDialog().Show()
 	a.modals.Sync()
-	a.optionsDialog.Show()
+	a.optionsDialog().Show()
 	a.modals.Sync()
 
 	top := a.modals.Top()
-	if top != a.optionsDialog {
+	if top != a.optionsDialog() {
 		t.Fatalf("top = %v, want optionsDialog", top)
 	}
 	// helpDialog, though still open underneath, is not what modals.Top()
 	// returns — routing HandleKey/HandleMouse to top alone leaves it inert.
-	if top == Dialog(a.helpDialog) {
+	if top == Dialog(a.helpDialog()) {
 		t.Errorf("top resolved to the covered dialog, not the frontmost one")
 	}
 }

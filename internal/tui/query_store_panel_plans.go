@@ -31,7 +31,7 @@ func (p *QueryStorePanel) setPlanForced(force bool) {
 	// the confirm dialog doesn't stop F5 reaching the panel; a Load begun while the
 	// question was up would clear busy from under the write it knows nothing about.
 	p.busy = true
-	p.app.confirmDialog.ShowConfirm(verb+" Plan", qsForceMessage(force, dbName, queryID, planID), func(confirmed bool) {
+	p.app.confirmDialog().ShowConfirm(verb+" Plan", qsForceMessage(force, dbName, queryID, planID), func(confirmed bool) {
 		if !confirmed {
 			p.busy = false
 			return

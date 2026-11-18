@@ -469,8 +469,11 @@ the text format's summary, on success too; the exit code carries the status.
 ### `markdown`
 
 The text envelope with each set as a GitHub table, after a blank line: `|`
-and `\` escaped, line breaks as `<br>`. `--no-headers` does not apply (a
-GitHub table needs its header row).
+and `\` escaped, `&`, `<` and `>` as `&amp;`, `&lt;` and `&gt;` (GitHub
+renders HTML in a cell, so an `xml` value would otherwise vanish), line
+breaks as `<br>` — the only markup a cell holds, so a value containing the
+text `<br>` reads `&lt;br&gt;`. Read raw, the source shows the entities.
+`--no-headers` does not apply (a GitHub table needs its header row).
 
 ### Limits
 

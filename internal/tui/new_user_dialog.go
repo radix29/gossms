@@ -66,9 +66,7 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 		return nil, err
 	}
 	pf := &nuserPrefetch{existingNames: newNameSet(databaseCollation(d)), entra: entraPrincipalsOffered(sc.Server.Info())}
-	if info := sc.Server.Info(); info != nil {
-		pf.everyContained = gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
-	}
+	pf.everyContained = sc.Server.Info().IsDatabaseScoped()
 
 	principals, err := loadDatabasePrincipals(ctx, d)
 	if err != nil {
@@ -444,5 +442,5 @@ func (a *App) showNewUserDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newUserDialog.show(sc, node)
+	a.newUserDialog().show(sc, node)
 }

@@ -108,7 +108,7 @@ func TestStatusHistoryRecordDefersSyncWhileHidden(t *testing.T) {
 // reopen it to see new messages.
 func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
 	d := &StatusHistoryDialog{}
-	d.InitModal(nil, "Status History", 90, 26)
+	d.InitModal("Status History", 90, 26)
 	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.ModalDialog.Show()
@@ -135,7 +135,7 @@ func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
 // version before the mutex.
 func TestStatusHistoryRecordIsSafeFromBackgroundGoroutines(t *testing.T) {
 	d := &StatusHistoryDialog{}
-	d.InitModal(nil, "Status History", 90, 26)
+	d.InitModal("Status History", 90, 26)
 	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.ModalDialog.Show()

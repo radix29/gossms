@@ -15,10 +15,11 @@ import (
 // this way would be especially disruptive.
 func TestQueryListDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(80, 30)
+	a.setScreen(tuikittest.NewScreen(80, 30))
 
 	d := &QueryListDialog{app: a}
-	d.InitModal(a.screen, "Query List", 56, 16)
+	d.InitModal("Query List", 56, 16)
+	d.SetScreen(a.screen)
 	d.titles = make([]string, 20)
 	d.indices = make([]int, 20)
 	for i := range d.titles {
@@ -54,12 +55,12 @@ func TestQueryListDialogScrollbarDragScrolls(t *testing.T) {
 // scrollbar checked first.
 func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(80, 30)
+	a.setScreen(tuikittest.NewScreen(80, 30))
 	for i := range 20 {
 		a.tasks = append(a.tasks, &Task{Label: "Task " + strconv.Itoa(i)})
 	}
 
-	d := NewTasksDialog(a)
+	d := withScreen(NewTasksDialog(a), a.screen)
 	d.Show()
 
 	inner := d.InnerRect()
@@ -92,8 +93,8 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 // controls/scrollbar_drag_test.go.
 func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(80, 30)
-	d := NewHelpDialog(a)
+	a.setScreen(tuikittest.NewScreen(80, 30))
+	d := withScreen(NewHelpDialog(a), a.screen)
 	d.Show()
 
 	inner := d.InnerRect()

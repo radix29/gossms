@@ -368,5 +368,5 @@ func (a *App) showShrinkFilesDialog(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.shrinkFilesDialog.show(sc, dbName)
+	a.shrinkFilesDialog().show(sc, dbName)
 }

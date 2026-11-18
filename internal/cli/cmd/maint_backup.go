@@ -238,7 +238,7 @@ func (d Deps) maintBackup(ctx context.Context, inv *spec.Invocation) (*output.Re
 	defer sc.Close()
 
 	info := sc.Server.Info()
-	if info != nil && info.EngineEdition == int(gosmo.EngineAzureSQLDatabase) {
+	if info.IsDatabaseScoped() {
 		return res, output.NewError(output.CodeUnsupported, "Azure SQL Database takes no BACKUP: its backups are automatic",
 			"Restore one through the Azure portal or CLI (point-in-time restore), or copy the database with CREATE DATABASE … AS COPY OF.")
 	}

@@ -184,5 +184,5 @@ func (a *App) showNewCertificateDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newCertificateDialog.show(sc, node)
+	a.newCertificateDialog().show(sc, node)
 }

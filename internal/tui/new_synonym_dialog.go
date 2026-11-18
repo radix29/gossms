@@ -176,5 +176,5 @@ func (a *App) showNewSynonymDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newSynonymDialog.show(sc, node)
+	a.newSynonymDialog().show(sc, node)
 }

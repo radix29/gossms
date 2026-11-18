@@ -271,5 +271,5 @@ func (a *App) showNewSnapshotDialog(sc *db.ServerConn, source string) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newSnapshotDialog.show(sc, source)
+	a.newSnapshotDialog().show(sc, source)
 }

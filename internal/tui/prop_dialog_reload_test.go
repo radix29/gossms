@@ -61,7 +61,7 @@ func TestPropertiesApplyReloadsTheFolderListingTheObject(t *testing.T) {
 			sc, f := newGConn(t)
 			f.OnFunc(func(gosmotest.Query) bool { return true }, gosmotest.Fail(errors.New("not scripted: the page load")))
 			a := newTestApp()
-			a.propDialog = NewPropDialog(a)
+			installDialog(a, NewPropDialog(a))
 			a.connections = append(a.connections, sc)
 			a.explorer.AddRoot("testsrv", sc)
 			root := a.explorer.Selected()
@@ -86,11 +86,11 @@ func TestPropertiesApplyReloadsTheFolderListingTheObject(t *testing.T) {
 			// load makes fails, and the case waits for it to finish. Left
 			// running against no rules, its read failed the test as
 			// unanswered whenever it beat the case's end.
-			drainUntil(t, a, func() bool { return len(a.propDialog.pageRuns) == 0 }, "the first page's load")
-			if a.propDialog.onSaved == nil {
+			drainUntil(t, a, func() bool { return len(a.propDialog().pageRuns) == 0 }, "the first page's load")
+			if a.propDialog().onSaved == nil {
 				t.Fatal("the dialog sets no onSaved hook")
 			}
-			a.propDialog.onSaved()
+			a.propDialog().onSaved()
 			for leaf, d := range leafOf {
 				want := false
 				for _, w := range tc.want {

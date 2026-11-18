@@ -449,7 +449,7 @@ func TestNoLogViewerToolbarButtonIsUnreachableAtAnyWidth(t *testing.T) {
 // would have.
 func TestTheLogViewerOverflowMenuRunsTheHiddenAction(t *testing.T) {
 	a, lv, _ := newRecycleTestViewer(t)
-	a.logSearchDialog = NewLogSearchDialog(a) // newTestApp builds no dialogs
+	installDialog(a, NewLogSearchDialog(a)) // a fresh one, whatever an earlier step built
 	lv.entries = testLogEntries()
 	lv.applyFilter()
 
@@ -470,7 +470,7 @@ func TestTheLogViewerOverflowMenuRunsTheHiddenAction(t *testing.T) {
 	}
 	chooseMenuItem(t, a, "Search...")
 
-	if !a.logSearchDialog.Visible() {
+	if !a.logSearchDialog().Visible() {
 		t.Error("choosing Search from the More menu did not open the search dialog")
 	}
 }

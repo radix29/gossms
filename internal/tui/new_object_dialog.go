@@ -212,7 +212,7 @@ func (d *newObjectDialog[P]) runPageActionOnce(inFlight *bool, fn func(ctx conte
 func (d *newObjectDialog[P]) init(app *App, cfg newObjectConfig[P]) {
 	d.app = app
 	d.newObjectConfig = cfg
-	d.PropertySheet = propsheet.NewPropertySheet(app.screen, cfg.title)
+	d.PropertySheet = propsheet.NewPropertySheet(cfg.title)
 	d.OnLoadPage = d.onLoadPage
 	d.OnApply = func() { d.runApply(false) }
 	d.OnOK = func() { d.runApply(true) }

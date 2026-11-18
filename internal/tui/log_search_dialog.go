@@ -59,7 +59,7 @@ type LogSearchDialog struct {
 // NewLogSearchDialog builds the dialog.
 func NewLogSearchDialog(app *App) *LogSearchDialog {
 	d := &LogSearchDialog{app: app}
-	d.InitModal(app.screen, "Search Log", logSearchDialogW, logSearchDialogH)
+	d.InitModal("Search Log", logSearchDialogW, logSearchDialogH)
 	d.fText1 = widgets.NewInputField("Contains:     ", logSearchFieldW, false)
 	d.fText2 = widgets.NewInputField("And contains: ", logSearchFieldW, false)
 	d.fFrom = widgets.NewInputField("From:         ", logSearchFieldW, false)

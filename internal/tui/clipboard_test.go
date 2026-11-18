@@ -16,9 +16,9 @@ import (
 // dereferences on its way to the query panel.
 func newClipboardTestApp() *App {
 	a := newTestApp()
-	a.fileDialog = dialogs.NewFileDialog(nil)
-	a.propDialog = NewPropDialog(a)
-	a.connectDialog = NewConnectDialog(a)
+	installDialog(a, dialogs.NewFileDialog())
+	installDialog(a, NewPropDialog(a))
+	installDialog(a, NewConnectDialog(a))
 	return a
 }
 
@@ -167,8 +167,8 @@ func newConnectDialogApp(t *testing.T) (*App, *QueryPanel) {
 	a := newClipboardTestApp()
 	qp := focusedQueryPanel(t, a)
 	a.modals = dialogs.Stack{}
-	a.modals.Register(a.connectDialog)
-	a.connectDialog.Show()
+	a.modals.Register(a.connectDialog())
+	a.connectDialog().Show()
 	a.modals.Sync()
 	return a, qp
 }
@@ -183,17 +183,17 @@ func TestPasteIsDroppedWhenItsTargetIsNoLongerFocused(t *testing.T) {
 	a, qp := newConnectDialogApp(t)
 	target := a.activeClipboardTarget()
 	token := clipboardTargetToken(a.modals.Top())
-	if target != clipboardTarget(a.connectDialog.fServer) {
+	if target != clipboardTarget(a.connectDialog().fServer) {
 		t.Fatalf("setup: target = %T, want the Connect dialog's server field", target)
 	}
 	before := qp.editor.Text()
 
 	// The read comes back after the user has closed the dialog.
-	a.connectDialog.Hide()
+	a.connectDialog().Hide()
 	a.modals.Sync()
 	a.pasteInto(target, token, "ubusql2")
 
-	if got := a.connectDialog.fServer.Value(); got != "" {
+	if got := a.connectDialog().fServer.Value(); got != "" {
 		t.Errorf("server field = %q, want it untouched — the dialog was closed", got)
 	}
 	if got := qp.editor.Text(); got != before {
@@ -212,7 +212,7 @@ func TestPasteLandsOnlyInTheFieldItWasAimedAt(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
 	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), "ubus")
 
-	d := a.connectDialog
+	d := a.connectDialog()
 	if got := d.fServer.Value(); got != "ubus" {
 		t.Fatalf("server field = %q, want %q", got, "ubus")
 	}
@@ -391,7 +391,7 @@ func TestOSC52CopyStatusHedgesOnlyWhenUnadvertised(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestApp()
 			s := &osc52Screen{da52: tc.da52, termName: tc.termName}
-			a.screen = s
+			a.screen = s // a stub: no dialog sizes against it
 			a.copyWithStatus("SELECT 1")
 			waitAndDrain(t, a)
 			if string(s.got) != "SELECT 1" {

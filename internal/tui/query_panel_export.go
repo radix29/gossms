@@ -72,7 +72,7 @@ func (s *csvSink) finish(cancelled bool, res *query.Result) (kept bool, err erro
 // the destination has to be known by the time the query starts. This also matches SSMS, which asks for the filename when you execute in
 // Results To File mode.
 func (p *QueryPanel) promptResultsFile(run func(path string)) {
-	p.app.fileDialog.ShowSave("Results To File", "results.csv", run)
+	p.app.fileDialog().ShowSave("Results To File", "results.csv", run)
 }
 
 // reportExport appends the outcome of a streamed export to res so it shows up
@@ -169,7 +169,7 @@ func (p *QueryPanel) exportResults(f export.Format, ext string) {
 			rows = sortedResultSet{set: set, perm: s.perm}
 		}
 	}
-	p.app.fileDialog.ShowSave("Export Results", p.exportFileName(ext), func(path string) {
+	p.app.fileDialog().ShowSave("Export Results", p.exportFileName(ext), func(path string) {
 		n := rows.Len()
 		p.app.safego("exporting results", func() {
 			err := writeResultSet(path, f, set, rows)

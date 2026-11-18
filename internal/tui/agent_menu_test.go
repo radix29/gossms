@@ -13,7 +13,7 @@ import (
 // the write addresses the object by name, so a ByName read first is a round
 // trip that buys nothing. Each case sends exactly its write and reads nothing.
 func TestAgentMenuWritesReadNothingFirst(t *testing.T) {
-	yes := func(a *App) { a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) }
+	yes := func(a *App) { a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) }
 	for _, c := range []struct {
 		name, label, want string
 		act               func(a *App, sc *db.ServerConn, n *explorerNode)
@@ -71,7 +71,7 @@ func TestAgentMenuReportsAJobDeletedUnderneath(t *testing.T) {
 		{"disable", func(a *App, sc *db.ServerConn, n *explorerNode) { a.setAgentJobEnabled(sc, n, false) }},
 		{"delete", func(a *App, sc *db.ServerConn, n *explorerNode) {
 			a.deleteAgentJob(sc, n)
-			a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+			a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
