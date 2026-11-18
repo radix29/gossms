@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls"
 )
@@ -608,16 +609,28 @@ func sameObject(a, b *explorerNode) bool {
 	return a.data.Name != "" || a.label == b.label
 }
 
+// profileOf is the profile name opts is saved under, or "" when it has none.
+// Display only: the connection itself is never renamed. Nil-safe.
+func (a *App) profileOf(opts config.Connection) string {
+	if a == nil || a.cfg == nil {
+		return ""
+	}
+	if saved, err := a.cfg.ProfileByName(opts.GeneratedName()); err == nil {
+		return saved.Profile
+	}
+	return ""
+}
+
 func (oe *ObjectExplorer) flatten(flat []controls.TreeNode, n *explorerNode, depth int) []controls.TreeNode {
 	// The suffix is added here rather than written into n.label, so clearing the
 	// filter needn't unpick it from a string the loaders own.
 	label := n.label
 	// A server root saved under a profile name leads with it. Display only:
-	// n.label stays the connection label the status-bar breadcrumb and the
-	// Details title use, and sameObject matches by.
+	// n.label stays the connection label sameObject matches by (the status-bar
+	// breadcrumb and the Details title add the profile name themselves).
 	if depth == 0 && n.data.Type == NodeServer && n.data.conn != nil {
-		if saved, err := oe.app.cfg.ProfileByName(n.data.conn.Opts.GeneratedName()); err == nil && saved.Profile != "" {
-			label = saved.Profile + " (" + label + ")"
+		if profile := oe.app.profileOf(n.data.conn.Opts); profile != "" {
+			label = profile + " (" + label + ")"
 		}
 	}
 	if n.data.Filter.active() {
@@ -773,6 +786,25 @@ func FormatNodePath(n *explorerNode) string {
 	}
 	slices.Reverse(parts)
 	return strings.Join(parts, " > ")
+}
+
+// nodePath is FormatNodePath for the status bar: a server root saved under a
+// profile is called by the profile name, as in the Details title.
+func (a *App) nodePath(n *explorerNode) string {
+	path := FormatNodePath(n)
+	if n == nil {
+		return path
+	}
+	root := n
+	for root.parent != nil {
+		root = root.parent
+	}
+	if root.data.Type == NodeServer && root.data.conn != nil {
+		if profile := a.profileOf(root.data.conn.Opts); profile != "" {
+			return profile + path[len(root.label):]
+		}
+	}
+	return path
 }
 
 // resolveConn walks up the explorer tree to find the owning connection. Every

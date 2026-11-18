@@ -70,6 +70,11 @@ type QueryPanel struct {
 	// cleared with connectingTo. qp.database stays the previous connection's until
 	// the dial succeeds.
 	connectingDB string
+	// profile is the saved profile conn was opened from, "" for none: the
+	// connection bar's name for the server. Kept here because conn's own options
+	// carry the database the panel opened in, which matches no saved entry when
+	// it differs from the profile's.
+	profile string
 
 	// tranCount is the session's @@TRANCOUNT as its last run left it, deciding
 	// whether closing, reconnecting or quitting must first ask to commit. Nothing

@@ -690,7 +690,7 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 	}
 	if qp := d.target; qp != nil {
 		then := d.targetThen
-		d.app.dialQueryPanel(ctx, qp, opts, phase, done, func() {
+		d.app.dialQueryPanel(ctx, qp, opts, d.app.profileOf(opts), phase, done, func() {
 			d.app.rememberConnection(opts)
 			if then != nil {
 				then()

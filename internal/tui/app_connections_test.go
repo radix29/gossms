@@ -95,17 +95,37 @@ func TestExplorerRootShowsSavedProfile(t *testing.T) {
 			details := NewDetailBrowser("Details")
 			details.cache[root] = &detailResult{cols: []string{"Property", "Value"}}
 			details.ShowNodeDetails(a, root)
-			wantTitle := "Object Explorer Details \u2014 " + fullLabel
+			wantTitle := "Object Explorer Details \u2014 finance-prod (" + fullLabel + ")"
 			if got := details.Title(); got != wantTitle {
-				t.Errorf("Details title = %q, want unchanged %q", got, wantTitle)
+				t.Errorf("Details title = %q, want the profile name %q", got, wantTitle)
 			}
-			details.Retitle(root)
+			details.Retitle(a, root)
 			if got := details.Title(); got != wantTitle {
-				t.Errorf("retitled Details = %q, want unchanged %q", got, wantTitle)
+				t.Errorf("retitled Details = %q, want the profile name %q", got, wantTitle)
+			}
+			// A query window opened on another database of the profiled server
+			// still names the profile: its connection's own options carry that
+			// database, which matches no saved entry.
+			qp := NewQueryPanel(a, "q")
+			qp.profile = a.queryPanelProfile(qp, sc)
+			panelConn := &db.ServerConn{Opts: sc.CloneOpts()}
+			panelConn.Opts.Database = "otherdb"
+			qp.conn, qp.database = panelConn, "otherdb"
+			if got := qp.connInfoText(); !strings.HasPrefix(got, "finance-prod | sa | otherdb") {
+				t.Errorf("query connection bar = %q, want it to lead with the profile name", got)
+			}
+			if got := a.queryPanelProfile(qp, panelConn); got != "finance-prod" {
+				t.Errorf("Reconnect's profile = %q, want the panel's kept", got)
+			}
+			if got := a.queryPanelProfile(NewQueryPanel(a, "q2"), panelConn); got != "" {
+				t.Errorf("another panel's connection profile = %q, want none", got)
 			}
 			child := &explorerNode{label: "Databases", parent: root}
 			if got := FormatNodePath(child); got != fullLabel+" > Databases" {
 				t.Errorf("child status = %q, want full connection breadcrumb", got)
+			}
+			if got := a.nodePath(child); got != "finance-prod > Databases" {
+				t.Errorf("status-bar breadcrumb = %q, want it to lead with the profile name", got)
 			}
 			if sc.Opts != tc.opts {
 				t.Error("displaying a profile changed the active connection options")

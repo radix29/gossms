@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"time"
@@ -51,7 +52,8 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 	p.editor.DrawOverlay(s)
 }
 
-// connInfoText builds the bar above the editor: "server | user (spid) | db", as
+// connInfoText builds the bar above the editor: "server | user (spid) | db"
+// (server is the profile name when the connection is saved under one), as
 // SSMS's connection status bar: the one place in the panel that says what this
 // query is actually running against, distinct from the tab bar's title. An open
 // transaction is called out at the end: it holds locks, and closing the window
@@ -73,7 +75,7 @@ func (p *QueryPanel) connInfoText() string {
 	if p.session != nil {
 		user += fmt.Sprintf(" (%d)", p.session.SPID())
 	}
-	text := fmt.Sprintf("%s | %s | %s", p.conn.Opts.Server, user, p.database)
+	text := fmt.Sprintf("%s | %s | %s", cmp.Or(p.profile, p.conn.Opts.Server), user, p.database)
 	if !p.connected() {
 		return text + " (disconnected)"
 	}

@@ -163,13 +163,13 @@ func refreshStateLabel[S stateApplier](a *App, sc *db.ServerConn, t NodeType, wh
 			}
 			st.applyTo(node)
 			a.explorer.rebuild()
-			a.detailBrowser.Retitle(node)
+			a.detailBrowser.Retitle(a, node)
 		})
 	})
 }
 
 func (a *App) onNodeSelected(node *explorerNode) {
-	a.setStatus(FormatNodePath(node))
+	a.setStatus(a.nodePath(node))
 	if node.data.Type == NodeStatistic {
 		if sc := resolveConn(node); sc != nil && sc.IsFabricDW {
 			a.activateObjectExplorerDetails()
@@ -185,8 +185,8 @@ func (a *App) onNodeSelected(node *explorerNode) {
 // write's "deleted"/"renamed" message isn't replaced by the reload that
 // follows.
 func (a *App) onNodeReselected(from, node *explorerNode) {
-	if a.statusText == FormatNodePath(from) {
-		a.setStatus(FormatNodePath(node))
+	if a.statusText == a.nodePath(from) {
+		a.setStatus(a.nodePath(node))
 	}
 	a.primeDatabaseCapabilities(node)
 	a.detailBrowser.ShowNodeDetails(a, node)

@@ -174,7 +174,7 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 		return
 	}
 
-	db.title = fmt.Sprintf("Object Explorer Details — %s", node.label)
+	db.title = detailTitle(app, node)
 	sc := resolveConn(node)
 
 	if !app.isConnected(sc) {
@@ -280,11 +280,24 @@ func isPropertyValueColumns(cols []string) bool {
 // label re-read in place (the Resource Governor and Database Mail nodes' state)
 // lands after the Refresh that re-fetched the grid, which titled the pane with
 // the old label. Nil-safe like Invalidate.
-func (db *DetailBrowser) Retitle(node *explorerNode) {
+func (db *DetailBrowser) Retitle(app *App, node *explorerNode) {
 	if db == nil || node == nil || db.currentNode != node {
 		return
 	}
-	db.title = fmt.Sprintf("Object Explorer Details — %s", node.label)
+	db.title = detailTitle(app, node)
+}
+
+// detailTitle names node in the pane's title; a server root saved under a
+// profile leads with the profile name, the login and version kept after it in
+// parentheses, as the tree root shows it.
+func detailTitle(app *App, node *explorerNode) string {
+	label := node.label
+	if node.parent == nil && node.data.Type == NodeServer && node.data.conn != nil {
+		if profile := app.profileOf(node.data.conn.Opts); profile != "" {
+			label = profile + " (" + label + ")"
+		}
+	}
+	return fmt.Sprintf("Object Explorer Details — %s", label)
 }
 
 // Invalidate drops any cached detail data for node, so every Refresh action

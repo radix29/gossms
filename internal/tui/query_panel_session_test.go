@@ -180,7 +180,7 @@ func TestFailedQueryPanelDialKeepsTheDatabase(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // the dial fails at once, without touching the network
 		answered := false
-		a.dialQueryPanel(ctx, qp, config.Connection{Server: "elsewhere", Database: "OtherDB"},
+		a.dialQueryPanel(ctx, qp, config.Connection{Server: "elsewhere", Database: "OtherDB"}, "",
 			nil, func(error) bool { answered = true; return wanted }, nil)
 		if got, want := qp.connInfoText(), "Connecting to elsewhere | OtherDB..."; got != want {
 			t.Errorf("connInfoText() while dialling = %q, want %q", got, want)

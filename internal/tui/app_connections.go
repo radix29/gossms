@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -243,24 +244,41 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	if parent.Err() != nil {
 		parent = context.Background()
 	}
-	a.dialQueryPanel(parent, qp, opts, nil, nil, onConnected)
+	a.dialQueryPanel(parent, qp, opts, a.queryPanelProfile(qp, sc), nil, nil, onConnected)
+}
+
+// queryPanelProfile is the profile name a query panel connecting from sc shows,
+// "" for none. It is looked up on sc's options, before connectForQueryPanel's
+// database replaces the saved one the lookup matches by. Reconnect hands in the
+// panel's own connection, whose database is the panel's and matches no saved
+// entry, so that keeps the name the panel already has.
+func (a *App) queryPanelProfile(qp *QueryPanel, sc *db.ServerConn) string {
+	if profile := a.profileOf(sc.Opts); profile != "" {
+		return profile
+	}
+	if sc == qp.conn {
+		return qp.profile
+	}
+	return ""
 }
 
 // dialQueryPanel is connectForQueryPanel's dial, and the Connect dialog's when
 // opened for a query window (ConnectDialog.ShowForQueryPanel): opts as given,
-// qp's previous connection, if any, replaced once the new one is up.
+// qp's previous connection, if any, replaced once the new one is up. profile is
+// the saved profile opts came from ("" for none), which the connection bar
+// shows in place of the server.
 //
 // phase and done are the dialog's, as for connectServer: phase (nil from
 // connectForQueryPanel) also runs the sign-in phase first; done reports whether
 // the caller still wants the attempt, and a failure it still wants gets an
 // alert as well as the status bar.
-func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Connection,
+func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Connection, profile string,
 	phase func(label string), done func(err error) bool, onConnected func()) {
 	// qp.database is left alone until the dial succeeds: a failed or cancelled
 	// attempt keeps the previous connection, and pairing it with the attempt's
 	// database would send Reconnect, IntelliSense and the next Connect prompt
 	// to the old server in a database it may not have.
-	qp.connectingTo, qp.connectingDB = opts.Server, opts.Database
+	qp.connectingTo, qp.connectingDB = cmp.Or(profile, opts.Server), opts.Database
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 
 	a.safego("connecting the query panel", func() {
@@ -312,6 +330,7 @@ func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Co
 			}
 			newConn.SetPeerCredentials(a.peerCredentialsFor)
 			qp.conn = newConn
+			qp.profile = profile
 			qp.session = sess
 			qp.tranCount = state.TranCount
 			qp.database = state.Database

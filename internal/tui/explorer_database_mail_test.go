@@ -227,12 +227,12 @@ func TestDetailBrowserRetitlesOnlyTheShownNode(t *testing.T) {
 	db.currentNode, db.title = shown, "Object Explorer Details — Database Mail (Disabled)"
 
 	other := &explorerNode{label: "Resource Governor"}
-	db.Retitle(other)
+	db.Retitle(nil, other)
 	shown.label = "Database Mail"
 	if db.title != "Object Explorer Details — Database Mail (Disabled)" {
 		t.Errorf("title = %q after retitling a node not shown", db.title)
 	}
-	db.Retitle(shown)
+	db.Retitle(nil, shown)
 	if db.title != "Object Explorer Details — Database Mail" {
 		t.Errorf("title = %q, want the node's new label", db.title)
 	}
