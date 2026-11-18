@@ -193,17 +193,23 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 		core.DrawTextClipped(s, inner.X, inner.Y+2, inner.W, textStyle, metrics)
 	}
 
-	// Corner badge: at most one of error/warning, same priority as the border
+	// Corner badge: at most one of cost/warning, same priority as the border
 	// color above. Right-aligned by the glyph's display width, not a fixed
-	// offset: the error glyph is double-width and would hit the border.
+	// offset: the circle glyphs are double-width and would hit the border.
 	var badge string
 	var badgeStyle tcell.Style
 	switch {
 	case costPct >= expensiveCostThreshold:
-		badge = "❌"
+		badge = "🔴"
 		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
 	case len(t.node.Warnings) > 0:
 		badge = "⚠"
+		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
+	case costPct >= expensiveCostThreshold/2:
+		badge = "🟠"
+		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
+	case costPct >= expensiveCostThreshold/4:
+		badge = "🟡"
 		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
 	}
 	if badge != "" {

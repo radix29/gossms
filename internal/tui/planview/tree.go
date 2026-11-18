@@ -126,7 +126,7 @@ func (v *PlanView) layoutTree() {
 }
 
 // expensiveCostThreshold is the cost-percentage cutoff above which an operator
-// is flagged expensive (❌ badge, red border/text) on Plan tiles and Tree rows,
+// is flagged expensive (🔴 badge, red border/text) on Plan tiles and Tree rows,
 // as in SSMS.
 const expensiveCostThreshold = 0.80
 
@@ -278,9 +278,13 @@ func (v *PlanView) treeRowText(tr treeRow) string {
 	fmt.Fprintf(&sb, " (%.0f%%)", v.nodeCostPct(tr.node)*100)
 	switch {
 	case v.nodeCostPct(tr.node) >= expensiveCostThreshold:
-		sb.WriteString(" ❌")
+		sb.WriteString(" 🔴")
 	case len(tr.node.Warnings) > 0:
 		sb.WriteString(" ⚠")
+	case v.nodeCostPct(tr.node) >= expensiveCostThreshold/2:
+		sb.WriteString(" 🟠")
+	case v.nodeCostPct(tr.node) >= expensiveCostThreshold/4:
+		sb.WriteString(" 🟡")
 	}
 	if tr.node.Parallel {
 		sb.WriteString(" ⇄")

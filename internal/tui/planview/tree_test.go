@@ -6,6 +6,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/showplan"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 func namedKey(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, "", tcell.ModNone) }
@@ -65,10 +67,10 @@ func TestTree_DefaultSelectionIsRoot(t *testing.T) {
 	}
 }
 
-// TestTreeRowText_ErrorBadgeTakesPriorityOverWarning checks the ❌ (expensive
+// TestTreeRowText_CostBadgeTakesPriorityOverWarning checks the 🔴 (expensive
 // operator, cost >= expensiveCostThreshold) badge wins over ⚠ (warning) when
 // both apply, the same priority the border/text color switches already use.
-func TestTreeRowText_ErrorBadgeTakesPriorityOverWarning(t *testing.T) {
+func TestTreeRowText_CostBadgeTakesPriorityOverWarning(t *testing.T) {
 	v := newTreeTabView(t)
 	st := v.currentStatement()
 	n := &showplan.Node{
@@ -78,11 +80,11 @@ func TestTreeRowText_ErrorBadgeTakesPriorityOverWarning(t *testing.T) {
 		Warnings:       []string{"Missing Index"},
 	}
 	text := v.treeRowText(treeRow{node: n})
-	if !strings.Contains(text, "❌") {
-		t.Errorf("treeRowText = %q, want a ❌ badge for a node over expensiveCostThreshold", text)
+	if !strings.Contains(text, "🔴") {
+		t.Errorf("treeRowText = %q, want a 🔴 badge for a node over expensiveCostThreshold", text)
 	}
 	if strings.Contains(text, "⚠") {
-		t.Errorf("treeRowText = %q, should not also show ⚠ when ❌ applies", text)
+		t.Errorf("treeRowText = %q, should not also show ⚠ when 🔴 applies", text)
 	}
 }
 
@@ -90,18 +92,57 @@ func TestTreeRowText_ErrorBadgeTakesPriorityOverWarning(t *testing.T) {
 // warned node that isn't over the cost threshold.
 func TestTreeRowText_WarningBadgeWhenNotExpensive(t *testing.T) {
 	v := newTreeTabView(t)
+	v.currentStatement().SubTreeCost = 100
 	n := &showplan.Node{ID: 9002, PhysicalOp: "Cheap Scan", Warnings: []string{"Missing Index"}}
-	text := v.treeRowText(treeRow{node: n})
-	if !strings.Contains(text, "⚠") {
-		t.Errorf("treeRowText = %q, want a ⚠ badge for a warned, inexpensive node", text)
+	v.treeSt.rows = []treeRow{{node: n}}
+	v.selectedID = -1
+	for _, cost := range []float64{0, 20, 40, 79.99} {
+		n.EstSubtreeCost = cost
+		text := v.treeRowText(treeRow{node: n})
+		if !strings.Contains(text, "⚠") {
+			t.Errorf("treeRowText = %q, want a ⚠ badge for a warned, inexpensive node", text)
+		}
+		if strings.ContainsAny(text, "🔴🟠🟡") {
+			t.Errorf("treeRowText = %q, should not show cost badges instead of a warning", text)
+		}
+		s := tuikittest.NewScreen(120, 40)
+		v.drawTreePane(s)
+		if _, style, _ := s.Get(v.treePaneRect.X, v.treePaneRect.Y); style.GetForeground() != theme.Active().Warning {
+			t.Errorf("cost %.2f: row color = %v, want Warning", cost, style.GetForeground())
+		}
 	}
-	if strings.Contains(text, "❌") {
-		t.Errorf("treeRowText = %q, should not show ❌ under the cost threshold", text)
+}
+
+func TestTreeRowText_CostThresholds(t *testing.T) {
+	v := newTreeTabView(t)
+	v.currentStatement().SubTreeCost = 100
+	v.selectedID = -1
+	s := tuikittest.NewScreen(120, 40)
+	for _, tt := range []struct {
+		cost float64
+		want string
+	}{{19.99, ""}, {20, "🟡"}, {39.99, "🟡"}, {40, "🟠"}, {79.99, "🟠"}, {80, "🔴"}} {
+		n := &showplan.Node{ID: 9001, PhysicalOp: "Scan", EstSubtreeCost: tt.cost}
+		text := v.treeRowText(treeRow{node: n})
+		for _, badge := range []string{"🔴", "🟠", "🟡"} {
+			if strings.Contains(text, badge) != (badge == tt.want) {
+				t.Errorf("cost %.2f: treeRowText = %q, want badge %q", tt.cost, text, tt.want)
+			}
+		}
+		v.treeSt.rows = []treeRow{{node: n}}
+		v.drawTreePane(s)
+		want := theme.Active().Text
+		if tt.cost >= 80 {
+			want = theme.Active().Error
+		}
+		if _, style, _ := s.Get(v.treePaneRect.X, v.treePaneRect.Y); style.GetForeground() != want {
+			t.Errorf("cost %.2f: row color = %v, want %v", tt.cost, style.GetForeground(), want)
+		}
 	}
 }
 
 // TestTreeRowText_ParallelIcon checks ⇄ shows for a parallel operator,
-// independent of the error/warning badge.
+// independent of the cost/warning badge.
 func TestTreeRowText_ParallelIcon(t *testing.T) {
 	v := newTreeTabView(t)
 	n := &showplan.Node{ID: 9003, PhysicalOp: "Gather Streams", Parallel: true}
