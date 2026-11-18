@@ -84,9 +84,10 @@ support); this section covers only the environment.
   `datawarehouse.fabric.microsoft.com` suffix. A Synapse pool behind a DNS
   alias is therefore taken for Fabric. To check, with the Fabric contributor:
   connect to a warehouse (and, if one is reachable, a Synapse serverless pool),
-  confirm it reports EngineEdition 11 (from the documentation only), and read `DATABASEPROPERTYEX(DB_NAME(), 'Edition')` and `@@VERSION`; if
-  either differs, make it the test in `detectFabricDW` and keep the hostname
-  only as the fallback.
+  confirm it reports EngineEdition 11 (known so far only from the
+  documentation), and read `DATABASEPROPERTYEX(DB_NAME(), 'Edition')` and
+  `@@VERSION`; if either differs, make it the test in `detectFabricDW` and
+  keep the hostname only as the fallback.
 
 ## Windows clipboard: what is left
 
