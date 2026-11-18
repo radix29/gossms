@@ -94,7 +94,8 @@ func maintIndexCommands(d Deps) []*spec.Command {
 			Path:    []string{"maint", "index-rebuild"},
 			Summary: "Rebuild or reorganize a table's or indexed view's indexes: one, or all of them",
 			Description: "ALTER INDEX … REBUILD (or REORGANIZE with --reorganize) on the object in the connection's " +
-				"database (-d): the index --index names, or every index on it (ALTER INDEX ALL). Needs --allow ddl " +
+				"database (-d): the index --index names, or every index on it (ALTER INDEX ALL; on SQL database in " +
+				"Fabric, which refuses ALL, one ALTER INDEX per index). Needs --allow ddl " +
 				"(query run classes ALTER INDEX so too) and ALTER on the object. A rebuild takes --online (the " +
 				"object stays readable and writable; Enterprise, Developer and Azure only — another edition is exit " +
 				"11 before anything is sent), --maxdop n (1-64) and --fill-factor n (1-100, stored as the index's " +
@@ -329,7 +330,7 @@ func (tv tableOrView) statistics(ctx context.Context) ([]*gosmo.Statistic, error
 	return tv.view.Statistics(ctx)
 }
 
-// rebuildAll is ALTER INDEX ALL … REBUILD on tv.
+// rebuildAll is ALTER INDEX ALL … REBUILD on tv (per index on Fabric: gosmo).
 func (tv tableOrView) rebuildAll(ctx context.Context, opts gosmo.IndexRebuildOptions) error {
 	if tv.view != nil {
 		return tv.view.RebuildAllIndexesWith(ctx, opts)
@@ -337,7 +338,7 @@ func (tv tableOrView) rebuildAll(ctx context.Context, opts gosmo.IndexRebuildOpt
 	return tv.table.RebuildAllIndexesWith(ctx, opts)
 }
 
-// reorganizeAll is ALTER INDEX ALL … REORGANIZE on tv.
+// reorganizeAll is ALTER INDEX ALL … REORGANIZE on tv (per index on Fabric: gosmo).
 func (tv tableOrView) reorganizeAll(ctx context.Context) error {
 	if tv.view != nil {
 		return tv.view.ReorganizeAllIndexes(ctx)

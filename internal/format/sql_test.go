@@ -50,7 +50,7 @@ func FuzzFormatSQL(f *testing.F) {
 			o     Options
 		}{{"", Options{IndentWidth: 2}}, {"", Options{IndentWidth: 4, LineIndent: "  "}}, {"lowercase", Options{}}} {
 			o := c.o
-			got, err := Format(LangSQL, c.style, src, o)
+			got, err := Format(t.Context(), LangSQL, c.style, src, o)
 			if err != nil {
 				if _, ok := errors.AsType[*SyntaxError](err); !ok {
 					t.Fatalf("Format(%q, %+v): %v", src, o, err)
@@ -63,7 +63,7 @@ func FuzzFormatSQL(f *testing.F) {
 			if o.LineIndent != "" {
 				continue // a prefixed result is not itself unprefixed input
 			}
-			again, err := Format(LangSQL, c.style, got, o)
+			again, err := Format(t.Context(), LangSQL, c.style, got, o)
 			if err != nil || again != got {
 				t.Fatalf("not idempotent (%v):\n%q\n->\n%q\n->\n%q", err, src, got, again)
 			}
@@ -99,7 +99,7 @@ func batchCounts(s string) string {
 
 func formatSQLOrFail(t *testing.T, src string) string {
 	t.Helper()
-	got, err := Format(LangSQL, "", src, Options{})
+	got, err := Format(t.Context(), LangSQL, "", src, Options{})
 	if err != nil {
 		t.Fatalf("Format(%q): %v", src, err)
 	}
@@ -236,7 +236,7 @@ func TestFormatSQLSyntaxErrors(t *testing.T) {
 		{"select (1\ngo\nselect 2)", 1, 8, `"(" is never closed`},
 		{"select 'é😀' + \xff", 1, 15, "invalid UTF-8"}, // columns count runes
 	} {
-		_, err := Format(LangSQL, "", tc.src, Options{})
+		_, err := Format(t.Context(), LangSQL, "", tc.src, Options{})
 		se, ok := errors.AsType[*SyntaxError](err)
 		if !ok {
 			t.Errorf("Format(%q): err %v, want *SyntaxError", tc.src, err)
@@ -265,7 +265,7 @@ func TestFormatSQLTrailingNewlineAndIndent(t *testing.T) {
 			t.Errorf("Format(%q) = %q, want %q", src, got, want)
 		}
 	}
-	got, err := Format(LangSQL, "", "if 1 = 1 begin select a, b from t end", Options{IndentWidth: 2})
+	got, err := Format(t.Context(), LangSQL, "", "if 1 = 1 begin select a, b from t end", Options{IndentWidth: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestFormatSQLTrailingNewlineAndIndent(t *testing.T) {
 // LineIndent prefixes the lines the layout starts, never a line inside a
 // multi-line token: that line is part of the literal or comment.
 func TestFormatSQLLineIndent(t *testing.T) {
-	got, err := Format(LangSQL, "", "select 'a\nb' /* c\nd */ from t", Options{LineIndent: "\t  "})
+	got, err := Format(t.Context(), LangSQL, "", "select 'a\nb' /* c\nd */ from t", Options{LineIndent: "\t  "})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,22 +300,22 @@ func TestGuardSQL(t *testing.T) {
 		"makes a new batch":    "SELECT Name FROM t -- c\ngo\nSELECT\ngo\n'x'",
 		"joins two tokens":     "SELECT Name FROM t -- c\ngo\nSELECTN'x'",
 	} {
-		if err := verify(LangSQL, src, out); !errors.Is(err, ErrGuard) {
+		if err := verify(t.Context(), LangSQL, src, out); !errors.Is(err, ErrGuard) {
 			t.Errorf("%s: verify = %v, want ErrGuard", name, err)
 		}
 		// The input's lexing, as formatSQL hands it over, guards the same.
-		in, err := lexSQL(src)
+		in, err := lexSQL(t.Context(), src)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := verifyLexed(LangSQL, src, in, out); !errors.Is(err, ErrGuard) {
+		if err := verifyLexed(t.Context(), LangSQL, src, in, out); !errors.Is(err, ErrGuard) {
 			t.Errorf("%s: verifyLexed = %v, want ErrGuard", name, err)
 		}
 	}
-	if err := verify(LangSQL, src, "SELECT  Name\n FROM T -- c  \n go \n  SELECT\n'x'"); err == nil {
+	if err := verify(t.Context(), LangSQL, src, "SELECT  Name\n FROM T -- c  \n go \n  SELECT\n'x'"); err == nil {
 		t.Error("verify accepted a re-cased table name T")
 	}
-	if err := verify(LangSQL, src, "SELECT  Name\n FROM t -- c  \n go \n  SELECT\n'x'"); err != nil {
+	if err := verify(t.Context(), LangSQL, src, "SELECT  Name\n FROM t -- c  \n go \n  SELECT\n'x'"); err != nil {
 		t.Errorf("verify refused a layout-only change: %v", err)
 	}
 }
@@ -365,7 +365,7 @@ func TestFormatSQLLowercase(t *testing.T) {
 		{"select a from t as x", "select a\nfrom\n    t as x"},
 		{"grant select on t to u as dbo", "grant select on t to u as dbo"},
 	} {
-		got, err := Format(LangSQL, "lowercase", tc.src, Options{})
+		got, err := Format(t.Context(), LangSQL, "lowercase", tc.src, Options{})
 		if err != nil {
 			t.Errorf("Format(%q): %v", tc.src, err)
 			continue
@@ -386,7 +386,7 @@ func TestGuardSQLAliasSwap(t *testing.T) {
 		{"select x as x", "select x = x"},
 		{"select a as x", "select a as x"}, // not moving is fine too
 	} {
-		if err := verify(LangSQL, tc.in, tc.out); err != nil {
+		if err := verify(t.Context(), LangSQL, tc.in, tc.out); err != nil {
 			t.Errorf("verify(%q, %q) = %v, want nil", tc.in, tc.out, err)
 		}
 	}
@@ -406,7 +406,7 @@ func TestGuardSQLAliasSwap(t *testing.T) {
 		"an item past FROM":    {"select a from t where b as c", "select a from t where c = b"},
 		"a DISTINCT in prefix": {"select distinct a as x", "select x = distinct a"},
 	} {
-		if err := verify(LangSQL, tc.in, tc.out); !errors.Is(err, ErrGuard) {
+		if err := verify(t.Context(), LangSQL, tc.in, tc.out); !errors.Is(err, ErrGuard) {
 			t.Errorf("%s: verify = %v, want ErrGuard", name, err)
 		}
 	}
@@ -427,7 +427,7 @@ func BenchmarkFormatSQL(b *testing.B) {
 	script := sb.String()
 	b.SetBytes(int64(len(script)))
 	for b.Loop() {
-		if _, err := Format(LangSQL, "", script, Options{}); err != nil {
+		if _, err := Format(b.Context(), LangSQL, "", script, Options{}); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -159,10 +159,10 @@ func (a *App) forgetPeerFailure(server string) {
 // second refusal (two probes in flight) must not replace the first prompt.
 func (a *App) offerPeerConnect(parent *db.ServerConn, err error, then func()) bool {
 	refused, ok := errors.AsType[*db.PeerNotRegisteredError](err)
-	if !ok || parent == nil || a.connectDialog.Visible() {
+	if !ok || parent == nil || a.connectDialog().Visible() {
 		return false
 	}
-	a.connectDialog.ShowForPeer(peerConnectTemplate(parent.Opts, refused.Server), then)
+	a.connectDialog().ShowForPeer(peerConnectTemplate(parent.Opts, refused.Server), then)
 	a.setStatus(fmt.Sprintf("%s has no saved connection — connect to it to continue", refused.Server))
 	return true
 }

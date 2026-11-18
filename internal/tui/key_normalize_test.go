@@ -48,13 +48,13 @@ func TestNormalizeCtrlRune(t *testing.T) {
 }
 
 // newKeyTestApp is newTestApp plus the dialogs handleKey touches.
-func newKeyTestApp(t *testing.T) *App {
+func newKeyTestApp(t testing.TB) *App {
 	t.Helper()
 	a := newTestApp()
-	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
-	a.connectDialog = NewConnectDialog(a)
-	a.fileDialog = dialogs.NewFileDialog(nil)
-	a.helpDialog = NewHelpDialog(a)
+	installDialog(a, NewKeyDiagnosticsDialog(a))
+	installDialog(a, NewConnectDialog(a))
+	installDialog(a, dialogs.NewFileDialog())
+	installDialog(a, NewHelpDialog(a))
 	a.menuBar = controls.NewMenuBar()
 	a.contextMenu = new(controls.ContextMenu{})
 	return a
@@ -80,10 +80,10 @@ func TestConnectDialogKeyBindings(t *testing.T) {
 			if a.handleKey(tt.ev) {
 				t.Fatal("handleKey signalled quit")
 			}
-			if got := a.connectDialog.Visible(); got != tt.wantConnect {
+			if got := a.connectDialog().Visible(); got != tt.wantConnect {
 				t.Fatalf("connect dialog visible = %v, want %v", got, tt.wantConnect)
 			}
-			if !tt.wantConnect && !a.fileDialog.Visible() {
+			if !tt.wantConnect && !a.fileDialog().Visible() {
 				t.Fatal("Ctrl+O did not open the file dialog")
 			}
 		})

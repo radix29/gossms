@@ -141,7 +141,7 @@ func TestQueryWindowHasNoResultsPaneBeforeItsFirstRun(t *testing.T) {
 	}
 	t.Cleanup(s.Fini)
 	a := newTestApp()
-	a.screen = s
+	a.setScreen(s)
 	a.openQueryWithText(nil, "", "SELECT 1")
 	qp := a.activeQueryPanel()
 	if qp == nil {

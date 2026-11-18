@@ -20,9 +20,9 @@ func esc() *tcell.EventKey { return tcell.NewEventKey(tcell.KeyEscape, "", tcell
 // Enter — 0 Yes, 1 No, 2 Cancel.
 func answer(a *App, button int) {
 	for range button {
-		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+		a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 	}
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 }
 
 // With nothing unsaved there's nothing to ask about, so Ctrl+Q still quits
@@ -37,7 +37,7 @@ func TestRequestQuitWithNothingDirtyQuitsImmediately(t *testing.T) {
 	if !a.quitGate.quitting {
 		t.Error("app did not quit with no dirty panels")
 	}
-	if a.confirmDialog.Visible() {
+	if a.confirmDialog().Visible() {
 		t.Error("prompted about nothing")
 	}
 }
@@ -55,7 +55,7 @@ func TestRequestQuitPromptsBeforeDiscardingUnsavedWork(t *testing.T) {
 	if a.quitGate.quitting {
 		t.Fatal("app quit without asking about an unsaved query panel")
 	}
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("no prompt shown for an unsaved query panel")
 	}
 }
@@ -73,7 +73,7 @@ func TestRequestQuitCancelledLeavesEverythingOpen(t *testing.T) {
 	if a.panels.Count() != 1 {
 		t.Errorf("panel count after Cancel = %d, want 1 — Cancel closes nothing", a.panels.Count())
 	}
-	if a.confirmDialog.Visible() {
+	if a.confirmDialog().Visible() {
 		t.Error("prompt still up after Cancel")
 	}
 }
@@ -85,7 +85,7 @@ func TestRequestQuitEscapeIsCancelNotDiscard(t *testing.T) {
 	dirtyPanel(a, "Query 1", "SELECT 1")
 	a.requestQuit()
 
-	a.confirmDialog.HandleKey(esc())
+	a.confirmDialog().HandleKey(esc())
 
 	if a.quitGate.quitting {
 		t.Error("Escape on the exit prompt quit and discarded the unsaved query")
@@ -102,7 +102,7 @@ func TestRequestQuitAsksAboutEveryDirtyPanel(t *testing.T) {
 
 	a.requestQuit()
 	for i := range 3 {
-		if !a.confirmDialog.Visible() {
+		if !a.confirmDialog().Visible() {
 			t.Fatalf("no prompt for dirty panel %d", i+1)
 		}
 		if a.quitGate.quitting {
@@ -138,10 +138,10 @@ func TestCloseQueryEscapeKeepsThePanel(t *testing.T) {
 	dirtyPanel(a, "Query 1", "SELECT 1")
 
 	a.requestClosePanel(0)
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("no prompt shown when closing a dirty panel")
 	}
-	a.confirmDialog.HandleKey(esc())
+	a.confirmDialog().HandleKey(esc())
 
 	if a.panels.Count() != 1 {
 		t.Error("Escape on the close prompt discarded the unsaved query")

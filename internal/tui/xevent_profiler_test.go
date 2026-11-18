@@ -128,10 +128,10 @@ func TestClosingTheProfilersViewerAsksToStopDefaultingToNo(t *testing.T) {
 	v.profiler, v.conn = true, ownConn(t)
 	a.panels.AddPanel(v)
 	a.requestClosePanel(a.panels.FindIndex(func(p layout.Panel) bool { return p == v }))
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("no question on closing the Profiler's viewer")
 	}
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	if a.progressBusy { // a Yes would be stopping the session now
 		waitAndDrain(t, a)
 	}
@@ -144,8 +144,8 @@ func TestClosingTheProfilersViewerAsksToStopDefaultingToNo(t *testing.T) {
 	a.panels.AddPanel(v)
 	a.requestClosePanel(a.panels.FindIndex(func(p layout.Panel) bool { return p == v }))
 	// Yes has to be chosen: Tab from No wraps round to it.
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	waitAndDrain(t, a)
 	if want := "ALTER EVENT SESSION [gossms_QuickSessionStandard] ON SERVER STATE = STOP"; !slices.Equal(inst.Statements(), []string{want}) {
 		t.Errorf("Yes: statements %q", inst.Statements())
@@ -155,7 +155,7 @@ func TestClosingTheProfilersViewerAsksToStopDefaultingToNo(t *testing.T) {
 	w.conn = ownConn(t)
 	a.panels.AddPanel(w)
 	a.requestClosePanel(a.panels.FindIndex(func(p layout.Panel) bool { return p == w }))
-	if a.confirmDialog.Visible() || a.panelHosted(w) {
+	if a.confirmDialog().Visible() || a.panelHosted(w) {
 		t.Error("a viewer the Profiler did not open asked before closing")
 	}
 }
@@ -296,7 +296,7 @@ func TestWatchingASessionWithNoTargetOffersToAddOne(t *testing.T) {
 	task, _ = a.startTask(context.Background(), "watch")
 	_, seq = v.feed.run.Begin(context.Background())
 	v.feedEnded(seq, task, errXENoTarget)
-	if a.confirmDialog.Visible() || len(inst.Statements()) != 0 {
+	if a.confirmDialog().Visible() || len(inst.Statements()) != 0 {
 		t.Error("offered to a login that may not add a target")
 	}
 }

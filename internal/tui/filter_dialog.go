@@ -89,7 +89,7 @@ const filterRowFixedW = 5
 
 func NewFilterDialog(app *App) *FilterDialog {
 	d := &FilterDialog{app: app}
-	d.InitModal(app.screen, "Filter Settings", filterDialogW, 16)
+	d.InitModal("Filter Settings", filterDialogW, 16)
 	return d
 }
 
@@ -105,7 +105,7 @@ func (a *App) showFilterDialog(node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.filterDialog.show(node, props, sc.Opts.Server)
+	a.filterDialog().show(node, props, sc.Opts.Server)
 }
 
 func (d *FilterDialog) show(node *explorerNode, props []filterProp, server string) {

@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/pkg/browser"
-	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls"
@@ -99,77 +99,15 @@ type App struct {
 	// Flipped by toggleGroupBySchema (View menu, Alt+G).
 	groupBySchema bool
 
-	connectDialog               *ConnectDialog
-	findDialog                  *FindReplaceDialog
-	helpDialog                  *HelpDialog
-	keyDiagDialog               *KeyDiagnosticsDialog
-	updateDialog                *UpdateDialog
-	statusHistoryDialog         *StatusHistoryDialog
-	propsDialog                 *PropertiesDialog
-	propDialog                  *PropDialog
-	newDatabaseDialog           *NewDatabaseDialog
-	newLoginDialog              *NewLoginDialog
-	newJobDialog                *NewJobDialog
-	newScheduleDialog           *NewScheduleDialog
-	newAlertDialog              *NewAlertDialog
-	newOperatorDialog           *NewOperatorDialog
-	newCredentialDialog         *NewCredentialDialog
-	sendTestMailDialog          *SendTestMailDialog
-	generateScriptsDialog       *GenerateScriptsDialog
-	newBackupDeviceDialog       *NewBackupDeviceDialog
-	newAuditDialog              *NewAuditDialog
-	newXESessionDialog          *NewXESessionDialog
-	newAuditSpecificationDialog *NewAuditSpecificationDialog
-	newDBAuditSpecDialog        *NewDatabaseAuditSpecificationDialog
-	newDBScopedCredDialog       *NewDatabaseScopedCredentialDialog
-	newIndexDialog              *NewIndexDialog
-	newStatisticsDialog         *NewStatisticsDialog
-	newCMKDialog                *NewColumnMasterKeyDialog
-	newCEKDialog                *NewColumnEncryptionKeyDialog
-	newFullTextCatalogDialog    *NewFullTextCatalogDialog
-	newFullTextStoplistDialog   *NewFullTextStoplistDialog
-	newSearchPropListDialog     *NewSearchPropertyListDialog
-	newFullTextIndexDialog      *NewFullTextIndexDialog
-	agAddDatabaseDialog         *AGAddDatabaseDialog
-	agAddListenerDialog         *AGAddListenerDialog
-	agAddReplicaDialog          *AGAddReplicaDialog
-	newAGDialog                 *NewAGDialog
-	newEndpointDialog           *NewEndpointDialog
-	newCertificateDialog        *NewCertificateDialog
-	newUserDialog               *NewUserDialog
-	newSchemaDialog             *NewSchemaDialog
-	newRoleDialog               *NewRoleDialog
-	newServerRoleDialog         *NewServerRoleDialog
-	newApplicationRoleDialog    *NewApplicationRoleDialog
-	newSequenceDialog           *NewSequenceDialog
-	newSynonymDialog            *NewSynonymDialog
-	newAsymmetricKeyDialog      *NewAsymmetricKeyDialog
-	newSymmetricKeyDialog       *NewSymmetricKeyDialog
-	backupCertificateDialog     *BackupCertificateDialog
-	backupMasterKeyDialog       *BackupMasterKeyDialog
-	regenerateMasterKeyDialog   *RegenerateMasterKeyDialog
-	detachDatabaseDialog        *DetachDatabaseDialog
-	shrinkDatabaseDialog        *ShrinkDatabaseDialog
-	shrinkFilesDialog           *ShrinkFilesDialog
-	attachDatabaseDialog        *AttachDatabaseDialog
-	newSnapshotDialog           *NewSnapshotDialog
-	fileDialog                  *dialogs.FileDialog
-	queryListDialog             *QueryListDialog
-	optionsDialog               *OptionsDialog
-	filterDialog                *FilterDialog
-	logSearchDialog             *LogSearchDialog
-	promptDialog                *dialogs.PromptDialog
-	profileDialog               *ProfileDialog
-	tasksDialog                 *TasksDialog
-	confirmDialog               *dialogs.ConfirmDialog
-	confirmTypedDialog          *dialogs.TypedConfirmDialog
-	alertDialog                 *dialogs.AlertDialog
-	progressDialog              *dialogs.ProgressDialog
-	deviceCodeDialog            *DeviceCodeDialog
-	backupDialog                *BackupDialog
-	restoreDialog               *RestoreDialog
+	// statusHistoryDialog records every status message from startup, open or
+	// not, and logStatus feeds it from loader goroutines, so unlike every other
+	// dialog (app_dialogs.go) it is built eagerly in buildUI.
+	statusHistoryDialog *StatusHistoryDialog
 
-	// modals holds every dialog, registered once by registerDialog, and the
+	// dialogSlots holds each dialog built so far, by type (dialogOf).
+	dialogSlots map[reflect.Type]Dialog
+
+	// modals holds every dialog built so far, registered by dialogOf, and the
 	// live z-order of the open ones (see dialog_stack.go).
 	modals dialogs.Stack
 
@@ -260,7 +198,7 @@ func (a *App) Run() error {
 	if err != nil {
 		return fmt.Errorf("init screen: %w", err)
 	}
-	a.screen = s
+	a.setScreen(s)
 	defer s.Fini()
 
 	applyColorTheme(s, a.cfg.Theme)
@@ -272,7 +210,7 @@ func (a *App) Run() error {
 	// must run before the first draw: draw() renders the open dialogs, which are
 	// otherwise synced only inside the event loop, so the dialog wouldn't
 	// appear until the first keypress.
-	a.connectDialog.Show()
+	a.connectDialog().Show()
 	a.modals.Sync()
 	a.draw()
 
@@ -376,6 +314,7 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	// top-of-loop sync still runs so input routing sees drainPending's
 	// changes.
 	a.modals.Sync()
+	a.abandonStaleFormat()
 	return false, need
 }
 
@@ -522,93 +461,9 @@ func (a *App) buildUI() {
 
 	a.contextMenu = new(controls.ContextMenu{})
 
-	// Every dialog is constructed through registerDialog, which is what puts it
-	// in modals. Registration order is only a tie-break for dialogs that
-	// became visible in the same tick; see dialogs.Stack.Sync.
-	a.connectDialog = registerDialog(a, NewConnectDialog(a))
-	a.findDialog = registerDialog(a, NewFindReplaceDialog(a))
-	a.helpDialog = registerDialog(a, NewHelpDialog(a))
-	a.keyDiagDialog = registerDialog(a, NewKeyDiagnosticsDialog(a))
-	a.updateDialog = registerDialog(a, NewUpdateDialog(a))
-	a.statusHistoryDialog = registerDialog(a, NewStatusHistoryDialog(a))
-	a.propsDialog = registerDialog(a, NewPropertiesDialog(a))
-	a.propDialog = registerDialog(a, NewPropDialog(a))
-	a.newDatabaseDialog = registerDialog(a, NewNewDatabaseDialog(a))
-	a.newLoginDialog = registerDialog(a, NewNewLoginDialog(a))
-	a.newJobDialog = registerDialog(a, NewNewJobDialog(a))
-	a.newScheduleDialog = registerDialog(a, NewNewScheduleDialog(a))
-	a.newAlertDialog = registerDialog(a, NewNewAlertDialog(a))
-	a.newOperatorDialog = registerDialog(a, NewNewOperatorDialog(a))
-	a.newCredentialDialog = registerDialog(a, NewNewCredentialDialog(a))
-	a.sendTestMailDialog = registerDialog(a, NewSendTestMailDialog(a))
-	a.generateScriptsDialog = registerDialog(a, NewGenerateScriptsDialog(a))
-	a.newBackupDeviceDialog = registerDialog(a, NewNewBackupDeviceDialog(a))
-	a.newAuditDialog = registerDialog(a, NewNewAuditDialog(a))
-	a.newXESessionDialog = registerDialog(a, NewNewXESessionDialog(a))
-	a.newAuditSpecificationDialog = registerDialog(a, NewNewAuditSpecificationDialog(a))
-	a.newDBAuditSpecDialog = registerDialog(a, NewNewDatabaseAuditSpecificationDialog(a))
-	a.newDBScopedCredDialog = registerDialog(a, NewNewDatabaseScopedCredentialDialog(a))
-	a.newIndexDialog = registerDialog(a, NewNewIndexDialog(a))
-	a.newStatisticsDialog = registerDialog(a, NewNewStatisticsDialog(a))
-	a.newCMKDialog = registerDialog(a, NewNewColumnMasterKeyDialog(a))
-	a.newCEKDialog = registerDialog(a, NewNewColumnEncryptionKeyDialog(a))
-	a.newFullTextCatalogDialog = registerDialog(a, NewNewFullTextCatalogDialog(a))
-	a.newFullTextStoplistDialog = registerDialog(a, NewNewFullTextStoplistDialog(a))
-	a.newSearchPropListDialog = registerDialog(a, NewNewSearchPropertyListDialog(a))
-	a.newFullTextIndexDialog = registerDialog(a, NewNewFullTextIndexDialog(a))
-	a.logSearchDialog = registerDialog(a, NewLogSearchDialog(a))
-	a.agAddDatabaseDialog = registerDialog(a, NewAGAddDatabaseDialog(a))
-	a.agAddListenerDialog = registerDialog(a, NewAGAddListenerDialog(a))
-	a.agAddReplicaDialog = registerDialog(a, NewAGAddReplicaDialog(a))
-	a.newAGDialog = registerDialog(a, NewNewAGDialog(a))
-	a.newEndpointDialog = registerDialog(a, NewNewEndpointDialog(a))
-	a.newCertificateDialog = registerDialog(a, NewNewCertificateDialog(a))
-	a.newUserDialog = registerDialog(a, NewNewUserDialog(a))
-	a.newSchemaDialog = registerDialog(a, NewNewSchemaDialog(a))
-	a.newRoleDialog = registerDialog(a, NewNewRoleDialog(a))
-	a.newServerRoleDialog = registerDialog(a, NewNewServerRoleDialog(a))
-	a.newApplicationRoleDialog = registerDialog(a, NewNewApplicationRoleDialog(a))
-	a.newSequenceDialog = registerDialog(a, NewNewSequenceDialog(a))
-	a.newSynonymDialog = registerDialog(a, NewNewSynonymDialog(a))
-	a.newAsymmetricKeyDialog = registerDialog(a, NewNewAsymmetricKeyDialog(a))
-	a.newSymmetricKeyDialog = registerDialog(a, NewNewSymmetricKeyDialog(a))
-	a.backupCertificateDialog = registerDialog(a, NewBackupCertificateDialog(a))
-	a.backupMasterKeyDialog = registerDialog(a, NewBackupMasterKeyDialog(a))
-	a.regenerateMasterKeyDialog = registerDialog(a, NewRegenerateMasterKeyDialog(a))
-	a.detachDatabaseDialog = registerDialog(a, NewDetachDatabaseDialog(a))
-	a.shrinkDatabaseDialog = registerDialog(a, NewShrinkDatabaseDialog(a))
-	a.shrinkFilesDialog = registerDialog(a, NewShrinkFilesDialog(a))
-	a.attachDatabaseDialog = registerDialog(a, NewAttachDatabaseDialog(a))
-	a.newSnapshotDialog = registerDialog(a, NewNewSnapshotDialog(a))
-	a.fileDialog = registerDialog(a, dialogs.NewFileDialog(a.screen))
-	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
-		// gosmo.ServerPathBase, not filepath.Base: the path uses the SQL Server
-		// host's separator, so filepath.Base of `C:\Backup\db.bak` on Linux is
-		// the whole string.
-		a.confirmDialog.ShowConfirm("Confirm Save As",
-			gosmo.ServerPathBase(path)+" already exists. Overwrite it?",
-			func(confirmed bool) {
-				if confirmed {
-					proceed()
-				}
-			})
-	}
-	a.queryListDialog = registerDialog(a, NewQueryListDialog(a))
-	a.optionsDialog = registerDialog(a, NewOptionsDialog(a))
-	a.tasksDialog = registerDialog(a, NewTasksDialog(a))
-	a.filterDialog = registerDialog(a, NewFilterDialog(a))
-	a.promptDialog = registerDialog(a, dialogs.NewPromptDialog(a.screen))
-	a.profileDialog = registerDialog(a, NewProfileDialog(a.screen))
-	a.confirmDialog = registerDialog(a, dialogs.NewConfirmDialog(a.screen))
-	a.confirmTypedDialog = registerDialog(a, dialogs.NewTypedConfirmDialog(a.screen))
-	a.alertDialog = registerDialog(a, dialogs.NewAlertDialog(a.screen))
-	a.progressDialog = registerDialog(a, dialogs.NewProgressDialog(a.screen))
-	a.progressDialog.RevealDelay = progressRevealDelay
-	a.progressDialog.CancellingText = "Cancelling — waiting for the server to stop"
-	// After the Connect dialog, which a device code opens over.
-	a.deviceCodeDialog = registerDialog(a, NewDeviceCodeDialog(a))
-	a.backupDialog = registerDialog(a, NewBackupDialog(a))
-	a.restoreDialog = registerDialog(a, NewRestoreDialog(a))
+	// Every other dialog is built on first use (app_dialogs.go).
+	a.statusHistoryDialog = NewStatusHistoryDialog(a)
+	a.modals.Register(a.statusHistoryDialog)
 }
 
 // installEntraSignIn points the two things a Microsoft Entra sign-in shows
@@ -639,16 +494,6 @@ func newVerticalSplitter() *layout.Splitter {
 func installEntraSignIn(a *App) {
 	db.SetDeviceCodePrompt(a.promptDeviceCode)
 	browser.Stdout, browser.Stderr = io.Discard, io.Discard
-}
-
-// registerDialog registers d in a.modals and hands it back, so a dialog is
-// constructed and registered in one expression. modals.Sync considers only
-// registered dialogs, so a dialog assigned to its App field and not registered
-// is built and shown but never drawn or given input —
-// TestEveryAppDialogFieldIsRegisteredInAllDialogs checks for that.
-func registerDialog[T Dialog](a *App, d T) T {
-	a.modals.Register(d)
-	return d
 }
 
 // layoutAll recalculates every region from current screen size.

@@ -180,9 +180,9 @@ func TestScriptToFileAndClipboardOpensInTheObjectsDatabase(t *testing.T) {
 	t.Run("File", func(t *testing.T) {
 		a, m := newApp(t)
 		dest(m, "File...")()
-		drainUntil(t, a, a.fileDialog.Visible, "the save prompt")
+		drainUntil(t, a, a.fileDialog().Visible, "the save prompt")
 		path := filepath.Join(t.TempDir(), "drop.sql")
-		a.fileDialog.OnChoose(path)
+		a.fileDialog().OnChoose(path)
 		b, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

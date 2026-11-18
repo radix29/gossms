@@ -167,7 +167,7 @@ func (m *mailModel) listenProfiles(fn func()) {
 
 // showDatabaseMailPropertiesFor opens Database Mail Properties on sc, at page.
 func (a *App) showDatabaseMailPropertiesFor(sc *db.ServerConn, page int) {
-	d := a.propDialog
+	d := a.propDialog()
 	opened := d.showPlanned(sc, "", "Database Mail Properties", "Database Mail", "Server: "+sc.Opts.Server,
 		func() []propPage { return databaseMailPropPages(d, sc) },
 		func(ctx context.Context, plan *applyPlan) error { return runDatabaseMailPlan(ctx, sc, plan) })

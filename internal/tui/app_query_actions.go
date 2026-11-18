@@ -198,7 +198,7 @@ func (a *App) saveQueryPanel(qp *QueryPanel, saveAs bool, then func()) {
 	if saveAs {
 		title = "Save Query As"
 	}
-	a.fileDialog.ShowSave(title, initial, func(path string) {
+	a.fileDialog().ShowSave(title, initial, func(path string) {
 		if a.writeQueryFile(qp, path) && then != nil {
 			then()
 		}

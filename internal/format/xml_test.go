@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestFormatXMLIndentWidth(t *testing.T) {
-	got, err := Format(LangXML, "", `<a><b><c/></b></a>`, Options{IndentWidth: 2})
+	got, err := Format(t.Context(), LangXML, "", `<a><b><c/></b></a>`, Options{IndentWidth: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +30,7 @@ func TestFormatXMLTrailingNewline(t *testing.T) {
 		"\n\n  <a/>  ":     `<a/>`,
 		"<a/>\r\n<b/>\r\n": "<a/>\n<b/>\n",
 	} {
-		got, err := Format(LangXML, "", src, Options{})
+		got, err := Format(t.Context(), LangXML, "", src, Options{})
 		if err != nil || got != want {
 			t.Errorf("Format(%q) = %q, %v; want %q", src, got, err, want)
 		}
@@ -47,7 +48,7 @@ func TestFormatXMLKeepsValueWhitespace(t *testing.T) {
 		"<a xml:space=\"preserve\"><b/>\n  <c/></a>",
 		"lead<a><b/></a>", // top-level text: whole document mixed
 	} {
-		got, err := Format(LangXML, "", src, Options{})
+		got, err := Format(t.Context(), LangXML, "", src, Options{})
 		if err != nil || got != src {
 			t.Errorf("Format(%q) = %q, %v; want it unchanged", src, got, err)
 		}
@@ -70,7 +71,7 @@ func TestFormatXMLSyntaxErrorPosition(t *testing.T) {
 		{"<é x='é😀' y=2/>", 1, 13, "unquoted"}, // columns count runes, not bytes
 		{"  \n ", 1, 1, "no XML content"},
 	} {
-		_, err := Format(LangXML, "", tc.src, Options{})
+		_, err := Format(t.Context(), LangXML, "", tc.src, Options{})
 		se, ok := errors.AsType[*SyntaxError](err)
 		if !ok {
 			t.Errorf("Format(%q): err %v, want *SyntaxError", tc.src, err)
@@ -86,7 +87,7 @@ func TestFormatXMLSyntaxErrorPosition(t *testing.T) {
 // encoding/xml does, whatever '>' or '<' sits inside it.
 func TestXMLTokensDelimiters(t *testing.T) {
 	src := `<!DOCTYPE r [<!ENTITY e "a>b"><!-- > -->]><r a='>' b="<?"><!-- <x> --><?p >?><![CDATA[<y>]]></r>`
-	toks, err := xmlTokens(src)
+	toks, err := xmlTokens(t.Context(), src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,8 +103,8 @@ func TestXMLTokensDelimiters(t *testing.T) {
 		t.Errorf("names %q %q", toks[1].name, toks[5].name)
 	}
 	for _, bad := range []string{"<!><a/>", "<!-- x", "<![CDATA[ x", "<?p x", "<!DOCTYPE x", "<a b='>", "</a"} {
-		if _, err := xmlTokens(bad); err == nil {
-			t.Errorf("xmlTokens(%q) accepted an unterminated construct", bad)
+		if _, err := xmlTokens(t.Context(), bad); err == nil {
+			t.Errorf("xmlTokens(t.Context(), %q) accepted an unterminated construct", bad)
 		}
 	}
 }
@@ -120,17 +121,17 @@ func TestXMLGuardRefusesChangedOutput(t *testing.T) {
 		"respaces inside a tag":    `<a  x="1"><b> v </b><c>t <d/> u</c><![CDATA[k]]><!--n--></a>`,
 		"adds whitespace by CDATA": "<a x=\"1\"><b> v </b><c>t <d/> u</c>\n<![CDATA[k]]><!--n--></a>",
 	} {
-		if err := verify(LangXML, src, out); !errors.Is(err, ErrGuard) {
+		if err := verify(t.Context(), LangXML, src, out); !errors.Is(err, ErrGuard) {
 			t.Errorf("%s: verify = %v, want ErrGuard", name, err)
 		}
 	}
-	if err := verify(LangXML, "<a><b/><c>x</c></a>", "<a>\n  <b/>\n\t<c>x</c>\n</a>\n"); err != nil {
+	if err := verify(t.Context(), LangXML, "<a><b/><c>x</c></a>", "<a>\n  <b/>\n\t<c>x</c>\n</a>\n"); err != nil {
 		t.Errorf("whitespace between elements refused: %v", err)
 	}
-	if err := verify(LangXML, "<a> </a>", "<a></a>"); !errors.Is(err, ErrGuard) {
+	if err := verify(t.Context(), LangXML, "<a> </a>", "<a></a>"); !errors.Is(err, ErrGuard) {
 		t.Errorf("verify let a whitespace-only value go: %v", err)
 	}
-	if err := verify(LangXML, bom+"<a/>", "<a/>"); !errors.Is(err, ErrGuard) {
+	if err := verify(t.Context(), LangXML, bom+"<a/>", "<a/>"); !errors.Is(err, ErrGuard) {
 		t.Errorf("verify let a BOM go: %v", err)
 	}
 }
@@ -149,7 +150,7 @@ func FuzzFormatXML(f *testing.F) {
 	f.Add(`<a><b x="1">t</b><c/></a>`)
 	f.Add(`<a><b></a>`)
 	f.Fuzz(func(t *testing.T, src string) {
-		got, err := Format(LangXML, "", src, Options{IndentWidth: 2})
+		got, err := Format(t.Context(), LangXML, "", src, Options{IndentWidth: 2})
 		want, oracleErr := decodedXML(src)
 		if errors.Is(err, ErrGuard) {
 			t.Fatalf("guard tripped on formatter output: %v", err)
@@ -170,7 +171,7 @@ func FuzzFormatXML(f *testing.F) {
 		if !slices.Equal(have, want) {
 			t.Fatalf("tokens changed:\n%q\n%q", src, got)
 		}
-		if again, err := Format(LangXML, "", got, Options{IndentWidth: 2}); err != nil || again != got {
+		if again, err := Format(t.Context(), LangXML, "", got, Options{IndentWidth: 2}); err != nil || again != got {
 			t.Fatalf("not idempotent: %q -> %q (%v)", got, again, err)
 		}
 	})
@@ -233,7 +234,7 @@ func BenchmarkFormatXMLShowplan(b *testing.B) {
 	src := sb.String()
 	b.SetBytes(int64(len(src)))
 	for b.Loop() {
-		if _, err := Format(LangXML, "", src, Options{}); err != nil {
+		if _, err := Format(b.Context(), LangXML, "", src, Options{}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -242,8 +243,8 @@ func BenchmarkFormatXMLShowplan(b *testing.B) {
 func TestFormatXMLRecoversCheckPanic(t *testing.T) {
 	saved := xmlCheck
 	t.Cleanup(func() { xmlCheck = saved })
-	xmlCheck = func(string) error { panic("boom") }
-	_, err := Format(LangXML, "", `<a><b/></a>`, Options{})
+	xmlCheck = func(context.Context, string) error { panic("boom") }
+	_, err := Format(t.Context(), LangXML, "", `<a><b/></a>`, Options{})
 	if err == nil || !strings.Contains(err.Error(), "XML check panicked: boom") {
 		t.Fatalf("err = %v, want the recovered panic", err)
 	}

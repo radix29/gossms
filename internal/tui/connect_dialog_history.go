@@ -39,7 +39,7 @@ func (d *ConnectDialog) deleteSelectedHistory() {
 		return
 	}
 	name := d.historyConns[i].GeneratedName()
-	d.app.confirmDialog.ShowConfirm("Delete Connection",
+	d.app.confirmDialog().ShowConfirm("Delete Connection",
 		"Remove "+name+" from the saved connections? Any password saved with it is deleted too.",
 		func(confirmed bool) {
 			if !confirmed || !d.app.cfg.RemoveConnection(name) {
@@ -47,7 +47,7 @@ func (d *ConnectDialog) deleteSelectedHistory() {
 			}
 			d.app.saveConfig(func(err error) {
 				if err != nil {
-					d.app.alertDialog.ShowAlert("Delete Connection",
+					d.app.alertDialog().ShowAlert("Delete Connection",
 						"Removed, but the configuration could not be saved: "+err.Error())
 				}
 			})
@@ -75,13 +75,13 @@ func (d *ConnectDialog) profileSelectedHistory() {
 	}
 	conn := d.historyConns[i]
 	key := conn.GeneratedName()
-	d.app.profileDialog.ShowProfile(conn, func(name string, allow config.AllowClass) error {
+	d.app.profileDialog().ShowProfile(conn, func(name string, allow config.AllowClass) error {
 		if err := d.app.cfg.SetProfile(key, name, allow); err != nil {
 			return err
 		}
 		d.app.saveConfig(func(err error) {
 			if err != nil {
-				d.app.alertDialog.ShowAlert("Connection Profile",
+				d.app.alertDialog().ShowAlert("Connection Profile",
 					"Named, but the configuration could not be saved: "+err.Error())
 			}
 		})

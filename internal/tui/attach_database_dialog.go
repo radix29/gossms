@@ -179,7 +179,7 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 		if start == "" {
 			start = gosmo.JoinServerPath(pf.dataPath, "")
 		}
-		d.app.fileDialog.ShowOpenOn(fs, "Select Primary Data File", start, func(path string) {
+		d.app.fileDialog().ShowOpenOn(fs, "Select Primary Data File", start, func(path string) {
 			mdfRow.SetValue(path)
 			readFiles()
 		})
@@ -329,5 +329,5 @@ func (a *App) showAttachDatabaseDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.attachDatabaseDialog.show(sc)
+	a.attachDatabaseDialog().show(sc)
 }

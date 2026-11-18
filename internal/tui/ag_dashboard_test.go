@@ -558,7 +558,7 @@ func TestAGDashboardOffersPeerConnectOncePerShowing(t *testing.T) {
 	d.kick = make(chan struct{}, 1)
 	d.conn = &db.ServerConn{Opts: config.Connection{Server: "ubusql2"}}
 	refusal := fmt.Errorf("connect to primary replica UBUSQL1: %w", &db.PeerNotRegisteredError{Server: "UBUSQL1"})
-	cd := d.app.connectDialog
+	cd := d.app.connectDialog()
 
 	d.SetActive(false)
 	d.apply(agSnapshot{}, refusal)

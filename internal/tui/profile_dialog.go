@@ -51,9 +51,9 @@ type ProfileDialog struct {
 }
 
 // NewProfileDialog creates the dialog.
-func NewProfileDialog(s tcell.Screen) *ProfileDialog {
+func NewProfileDialog() *ProfileDialog {
 	d := &ProfileDialog{}
-	d.InitModal(s, "Connection Profile", profileDialogW, profileDialogH)
+	d.InitModal("Connection Profile", profileDialogW, profileDialogH)
 	label := func(s string) string { return core.PadRight(s, profileLabelWidth) }
 	d.fName = widgets.NewInputField(label("Profile Name"), profileValueWidth, false)
 	classes := config.AllAllowClasses()

@@ -107,7 +107,7 @@ func (d *BackupMasterKeyDialog) buildPages(pf *masterKeyPrefetch) {
 			if start == "" {
 				start = suggested
 			}
-			d.app.fileDialog.ShowSaveOn(fs, "Master Key File", start, func(path string) { fileField.SetValue(path) })
+			d.app.fileDialog().ShowSaveOn(fs, "Master Key File", start, func(path string) { fileField.SetValue(path) })
 		})),
 		propsheet.Section("Protect the file with"),
 		encPass, encConfirm,
@@ -214,12 +214,12 @@ func (d *RegenerateMasterKeyDialog) buildPages(pf *masterKeyPrefetch) {
 // key node's entry points.
 func (a *App) showBackupMasterKeyDialog(sc *db.ServerConn, node *explorerNode) {
 	if a.requireConn(sc) {
-		a.backupMasterKeyDialog.show(sc, node)
+		a.backupMasterKeyDialog().show(sc, node)
 	}
 }
 
 func (a *App) showRegenerateMasterKeyDialog(sc *db.ServerConn, node *explorerNode) {
 	if a.requireConn(sc) {
-		a.regenerateMasterKeyDialog.show(sc, node)
+		a.regenerateMasterKeyDialog().show(sc, node)
 	}
 }

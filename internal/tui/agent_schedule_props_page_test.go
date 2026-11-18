@@ -143,7 +143,7 @@ func TestScheduleActionsOnATwinNameHitTheNodesOwnID(t *testing.T) {
 		{"delete", "sp_delete_schedule @schedule_id = 8",
 			func(a *App, sc *db.ServerConn, n *explorerNode) {
 				a.deleteAgentSchedule(sc, n)
-				a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) // Yes
+				a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) // Yes
 			}},
 	} {
 		t.Run(c.name, func(t *testing.T) {

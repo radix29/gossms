@@ -260,10 +260,10 @@ func TestMaintBackupRefusals(t *testing.T) {
 		{"backup app --type log --allow admin", func(c *maintServer) { c.recovery["app"].LastLogBackupLSN = "" },
 			output.CodeUsageError, 1, "no log backup chain"},
 		{"backup app --compression --allow admin", func(c *maintServer) {
-			c.Info.EngineEdition, c.Info.Edition = int(gosmo.EngineExpress), "Express Edition (64-bit)"
+			c.Info.EngineEdition, c.Info.Edition = gosmo.EngineExpress, "Express Edition (64-bit)"
 		}, output.CodeUnsupported, 1, "Express Edition"},
 		{"backup app --allow admin", func(c *maintServer) {
-			c.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase)
+			c.Info.EngineEdition = gosmo.EngineAzureSQLDatabase
 		}, output.CodeUnsupported, 1, "Azure SQL Database"},
 	} {
 		cat := newBackupServer(t)
@@ -283,7 +283,7 @@ func TestMaintBackupRefusals(t *testing.T) {
 	}
 	// --no-compression on Express is fine: NO_COMPRESSION is accepted everywhere.
 	cat := newBackupServer(t)
-	cat.Info.EngineEdition = int(gosmo.EngineExpress)
+	cat.Info.EngineEdition = gosmo.EngineExpress
 	if _, _, err := runMaint(t, cat, "backup app --no-compression --allow admin"); err != nil {
 		t.Errorf("--no-compression on Express: %v", err)
 	}

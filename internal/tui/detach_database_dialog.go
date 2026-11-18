@@ -204,5 +204,5 @@ func (a *App) showDetachDatabaseDialog(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.detachDatabaseDialog.show(sc, dbName)
+	a.detachDatabaseDialog().show(sc, dbName)
 }

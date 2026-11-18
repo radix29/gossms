@@ -48,7 +48,7 @@ func TestXEventSessions(t *testing.T) {
 func TestXEventSessionsAzureSQLDatabase(t *testing.T) {
 	s := newXEServer(t)
 	xeSessionsFixture(s)
-	s.Info.EngineEdition = int(gosmo.EngineAzureSQLDatabase)
+	s.Info.EngineEdition = gosmo.EngineAzureSQLDatabase
 	s.noVSS = true // VIEW SERVER STATE does not exist there: not asked
 	res, err := runXEvent(t, s, "sessions")
 	if err != nil {

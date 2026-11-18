@@ -444,7 +444,7 @@ func TestStartAndStopDatabaseMail(t *testing.T) {
 	if slices.Contains(inst.Statements(), "EXEC msdb.dbo.sysmail_stop_sp") {
 		t.Error("Stop ran before it was confirmed")
 	}
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Error("Stop asked no confirmation")
 	}
 }

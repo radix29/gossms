@@ -135,7 +135,7 @@ func pageApplicationRoleGeneral(sc *db.ServerConn, dbName string, roleName *stri
 // showApplicationRolePropertiesFor opens Application Role Properties. It can
 // rename the role, so Apply reloads the folder listing it.
 func (a *App) showApplicationRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) {
-	a.propDialog.showReloading(sc, dbName, "Application Role Properties", "Role: "+roleName, "Database: "+dbName,
-		func() []propPage { return applicationRolePropPages(a.propDialog, sc, dbName, roleName) },
+	a.propDialog().showReloading(sc, dbName, "Application Role Properties", "Role: "+roleName, "Database: "+dbName,
+		func() []propPage { return applicationRolePropPages(a.propDialog(), sc, dbName, roleName) },
 		folderOf(dbName, NodeApplicationRoles))
 }

@@ -27,40 +27,47 @@ const maxStatusHistoryLines = 256
 // accumulates across the session, in memory only, with no persistence.
 //
 // Record is called from background goroutines (App.logStatus reaches it from
-// the Object Explorer's loader goroutine), so mu guards lines and dirty, and
-// the editor is only touched from the UI goroutine (Show and Draw).
+// the Object Explorer's loader goroutine), so mu guards lines, pending and
+// dirty, and the editor is only touched from the UI goroutine (Show and Draw).
 type StatusHistoryDialog struct {
 	dialogs.ModalDialog
-	mu     sync.Mutex // guards lines and dirty
+	mu     sync.Mutex // guards lines, pending and dirty
 	lines  []string
 	editor *editor.Editor
-	dirty  bool // lines changed since the editor's text was last rebuilt
+	dirty  bool // lines changed since the editor's text was last synced
+
+	// pending holds the lines recorded since the last sync, newest first, so a
+	// sync while the dialog is open can prepend just those (Editor.PrependLines)
+	// instead of rebuilding with SetText, which resets cursor, scroll and
+	// selection. A full rebuild dropped the selection on every message, the
+	// "Copied to clipboard" of the user's own Ctrl+C included, so a second Copy
+	// copied nothing, and snapped a scrolled-down view back to line 1 whenever
+	// a background load recorded a status.
+	pending []string
 }
 
 // NewStatusHistoryDialog creates the status history dialog.
 func NewStatusHistoryDialog(app *App) *StatusHistoryDialog {
 	d := &StatusHistoryDialog{}
-	d.InitModal(app.screen, "Status History", 90, 26)
+	d.InitModal("Status History", 90, 26)
 	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
 	d.editor.Focus(true)
 	return d
 }
 
-// Record prepends a timestamped line to the history. Newest-first because
-// editor.Editor.SetText always resets scroll/cursor to (0,0) and has no
-// "scroll to end" API, so the most recent message is visible on open without
-// extra plumbing.
+// Record prepends a timestamped line to the history. Newest-first so the most
+// recent message is the first line on open, and so a sync while open is a
+// prepend that keeps a viewer at the top seeing the newest line.
 //
 // Safe from any goroutine, and it deliberately does no more than record:
 // rebuilding the editor's text is the UI goroutine's job, done by Show and Draw
 // when dirty. Calling Editor.SetText here would write the widget the UI
 // goroutine is drawing.
 //
-// Deferring the rebuild also keeps it off the hot path: it is a full
-// strings.Join and SetText of up to maxStatusHistoryLines lines, and a busy
-// session pays it once per frame the dialog is open rather than once per
-// message nobody is looking at.
+// Deferring the sync also keeps it off the hot path: a busy session pays it
+// once per frame the dialog is open rather than once per message nobody is
+// looking at.
 func (d *StatusHistoryDialog) Record(msg string) {
 	line := time.Now().Format("15:04:05") + "  " + msg
 
@@ -69,6 +76,12 @@ func (d *StatusHistoryDialog) Record(msg string) {
 	d.lines = append([]string{line}, d.lines...)
 	if len(d.lines) > maxStatusHistoryLines {
 		d.lines = d.lines[:maxStatusHistoryLines]
+	}
+	// Bounded like lines: a closed dialog's pending is dropped by Show's full
+	// rebuild, and more than maxStatusHistoryLines would be trimmed anyway.
+	d.pending = append([]string{line}, d.pending...)
+	if len(d.pending) > maxStatusHistoryLines {
+		d.pending = d.pending[:maxStatusHistoryLines]
 	}
 	d.dirty = true
 }
@@ -80,31 +93,47 @@ func (d *StatusHistoryDialog) lineCount() int {
 	return len(d.lines)
 }
 
-// syncIfDirty rebuilds the editor's content from d.lines if Record has run
-// since the last rebuild. UI goroutine only.
+// syncIfDirty prepends the lines Record added since the last sync, keeping the
+// viewer's cursor, selection and scroll on the text they were on (see
+// pending), and trims the editor to maxStatusHistoryLines. UI goroutine only.
 func (d *StatusHistoryDialog) syncIfDirty() {
 	d.mu.Lock()
 	if !d.dirty {
 		d.mu.Unlock()
 		return
 	}
-	text := strings.Join(d.lines, "\n")
+	text := strings.Join(d.pending, "\n")
+	d.pending = nil
 	d.dirty = false
 	d.mu.Unlock()
 
-	// Outside the lock: SetText is the expensive half, and Record must not
-	// block behind it on a background goroutine.
+	// Outside the lock: the editor update is the expensive half, and Record
+	// must not block behind it on a background goroutine.
+	if d.editor != nil {
+		d.editor.PrependLines(text, maxStatusHistoryLines)
+	}
+}
+
+// rebuild replaces the editor's content with the whole history, resetting
+// cursor, scroll and selection. UI goroutine only.
+func (d *StatusHistoryDialog) rebuild() {
+	d.mu.Lock()
+	text := strings.Join(d.lines, "\n")
+	d.pending = nil
+	d.dirty = false
+	d.mu.Unlock()
+
 	if d.editor != nil {
 		d.editor.SetText(text)
 	}
 }
 
-// Show rebuilds the editor's content first if it fell behind while the
-// dialog was hidden (see Record), then displays it. Unlike
-// KeyDiagnosticsDialog, the history itself is never reset here — it
-// accumulates across the whole session.
+// Show rebuilds the editor's content from the whole history, then displays
+// it: a fresh open starts at the top on the newest message, as
+// KeyDiagnosticsDialog's does. Unlike KeyDiagnosticsDialog, the history itself
+// is never reset here — it accumulates across the whole session.
 func (d *StatusHistoryDialog) Show() {
-	d.syncIfDirty()
+	d.rebuild()
 	d.ModalDialog.Show()
 }
 

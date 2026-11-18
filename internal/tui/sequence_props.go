@@ -234,6 +234,6 @@ func sequenceMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 
 // showSequencePropertiesFor opens Sequence Properties.
 func (a *App) showSequencePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Sequence Properties", "Sequence: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Sequence Properties", "Sequence: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return sequencePropPages(sc, dbName, schema, name) })
 }

@@ -273,7 +273,7 @@ func queryWaitStatisticsReport(ctx context.Context, d *gosmo.Database, opts gosm
 	// The value column, chart axis and status line all name wait time rather than the
 	// metric, from one expression, so none can claim the metric selector reached this
 	// report.
-	waitLabel := string(qsStatistic(opts)) + " Wait Time"
+	waitLabel := string(opts.Effective().Statistic) + " Wait Time"
 	res := qsResult{columns: []string{"Wait Category", waitLabel, "Executions"},
 		chartLabel: waitLabel + " (ms)", valueLabel: waitLabel}
 	for _, w := range waits {
@@ -301,9 +301,9 @@ func waitingQueriesReport(ctx context.Context, d *gosmo.Database, drill qsDrill,
 	if err != nil {
 		return qsResult{}, err
 	}
-	label := string(qsStatistic(opts)) + " " + drill.label + " Wait Time"
+	label := string(opts.Effective().Statistic) + " " + drill.label + " Wait Time"
 	if drill.all() {
-		label = string(qsStatistic(opts)) + " Wait Time"
+		label = string(opts.Effective().Statistic) + " Wait Time"
 	}
 	res := qsResult{columns: queryStoreQueryColumns(label), chartLabel: label + " (ms)", valueLabel: label}
 	for _, s := range stats {
@@ -325,27 +325,11 @@ func formatWaitMs(v float64) string {
 
 // -- formatting ----------------------------------------------------------------
 
-// qsMetric and qsStatistic resolve what a report is ranked by, with the same
-// defaults gosmo's resolve uses, so a column header never disagrees with the query
-// that filled it.
-func qsMetric(opts gosmo.QueryStoreReportOptions) gosmo.QSMetric {
-	if opts.Metric == "" {
-		return gosmo.QSMetricDuration
-	}
-	return opts.Metric
-}
-
-func qsStatistic(opts gosmo.QueryStoreReportOptions) gosmo.QSStatistic {
-	if opts.Statistic == "" {
-		return gosmo.QSStatAvg
-	}
-	return opts.Statistic
-}
-
 // qsValueLabel names the value column: the statistic then the metric, as
 // SSMS labels the same axis ("Total Duration", "Avg CPU time").
 func qsValueLabel(opts gosmo.QueryStoreReportOptions) string {
-	return string(qsStatistic(opts)) + " " + string(qsMetric(opts))
+	e := opts.Effective()
+	return string(e.Statistic) + " " + string(e.Metric)
 }
 
 // formatQSValue renders a metric's value in the unit gosmo measures it in. Every

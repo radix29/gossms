@@ -122,7 +122,7 @@ func (d *NewBackupDeviceDialog) browseFile(fileField *propsheet.TextRow, pf *nba
 	if start == "" {
 		start = backupDevicePath(pf.defaultDir, d.objectName())
 	}
-	d.app.fileDialog.ShowSaveOn(fs, "Backup Device File", start, func(path string) {
+	d.app.fileDialog().ShowSaveOn(fs, "Backup Device File", start, func(path string) {
 		fileField.SetValue(path)
 	})
 }

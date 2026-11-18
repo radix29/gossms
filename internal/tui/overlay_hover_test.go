@@ -20,7 +20,7 @@ func TestOverlayBlocksHoverUnderneath(t *testing.T) {
 		want    bool
 	}{
 		{"no overlay", func(*App) {}, true},
-		{"dialog", func(a *App) { a.alertDialog.ShowAlert("Title", "Message") }, false},
+		{"dialog", func(a *App) { a.alertDialog().ShowAlert("Title", "Message") }, false},
 		{"context menu", func(a *App) {
 			a.contextMenu.Show(40, 10, []controls.MenuItem{{Label: "Item"}})
 		}, false},

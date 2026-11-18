@@ -128,7 +128,7 @@ type PropDialog struct {
 func NewPropDialog(app *App) *PropDialog {
 	d := &PropDialog{
 		app:           app,
-		PropertySheet: propsheet.NewPropertySheet(app.screen, "Properties"),
+		PropertySheet: propsheet.NewPropertySheet("Properties"),
 	}
 	d.OnLoadPage = d.onLoadPage
 	d.OnApply = func() { d.runApply(false) }

@@ -297,10 +297,10 @@ func (a *App) removeAGMember(sc *db.ServerConn, node *explorerNode, r agMemberRe
 		})
 	}
 	if r.typed {
-		a.confirmTypedDialog.ShowTypedConfirm(r.title, msg, name, run)
+		a.confirmTypedDialog().ShowTypedConfirm(r.title, msg, name, run)
 		return
 	}
-	a.confirmDialog.ShowConfirm(r.title, msg, run)
+	a.confirmDialog().ShowConfirm(r.title, msg, run)
 }
 
 func (a *App) removeAGDatabase(sc *db.ServerConn, node *explorerNode) {
@@ -336,7 +336,7 @@ func (a *App) joinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 // (every replica), one item below.
 func (a *App) unjoinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	dbName, agName := node.data.Name, node.data.AGName
-	a.confirmDialog.ShowConfirm("Remove Secondary Database from Group",
+	a.confirmDialog().ShowConfirm("Remove Secondary Database from Group",
 		fmt.Sprintf("Remove %s's copy of %q from availability group %q?\n\n"+
 			"Only this replica's copy leaves the group; the database stays in it on the primary and on every other secondary. The copy here is left in the RESTORING state, and rejoining it needs a restore of the primary's log to catch up.",
 			sc.Opts.Server, dbName, agName),
@@ -375,7 +375,7 @@ func (a *App) suspendAGDatabase(sc *db.ServerConn, node *explorerNode) {
 				a.setStatus(fmt.Sprintf("Failed to read availability group %q: %v", agName, err))
 				return
 			}
-			a.confirmDialog.ShowConfirm("Suspend Data Movement",
+			a.confirmDialog().ShowConfirm("Suspend Data Movement",
 				fmt.Sprintf("Suspend data movement for %q?\n\n%s\n\n"+
 					"The primary keeps accepting writes while movement is suspended, and its log cannot be truncated — a long suspension fills the log drive.",
 					dbName, agSuspendScope(sc.Opts.Server, ag.IsLocalPrimary())),
@@ -451,7 +451,7 @@ func (a *App) failoverToReplica(sc *db.ServerConn, node *explorerNode, force boo
 				return
 			}
 			if reason := agFailoverRefusal(string(ag.ClusterType), force); reason != "" {
-				a.alertDialog.ShowAlert("Failover", reason)
+				a.alertDialog().ShowAlert("Failover", reason)
 				return
 			}
 			a.confirmFailover(sc, node.listingParent(), agName, replica, force)
@@ -505,7 +505,7 @@ func (a *App) confirmFailover(sc *db.ServerConn, refresh *explorerNode, agName, 
 	}
 
 	if force {
-		a.confirmTypedDialog.ShowTypedConfirm(title,
+		a.confirmTypedDialog().ShowTypedConfirm(title,
 			fmt.Sprintf("Force availability group %q over to %s, allowing data loss?\n\n"+
 				"Every transaction %s had not hardened is lost, and the remaining secondaries have to be resumed — and may need reseeding — afterwards.",
 				agName, replica, replica),
@@ -517,7 +517,7 @@ func (a *App) confirmFailover(sc *db.ServerConn, refresh *explorerNode, agName, 
 			})
 		return
 	}
-	a.confirmDialog.ShowConfirm(title,
+	a.confirmDialog().ShowConfirm(title,
 		fmt.Sprintf("Fail availability group %q over to %s?\n\n"+
 			"%s becomes the primary. The target has to be a synchronous-commit replica in the SYNCHRONIZED state; SQL Server refuses rather than failing over with loss.",
 			agName, replica, replica),
@@ -564,7 +564,7 @@ func (a *App) removeAGListener(sc *db.ServerConn, node *explorerNode) {
 
 func (a *App) deleteAvailabilityGroup(sc *db.ServerConn, node *explorerNode) {
 	agName := node.data.AGName
-	a.confirmTypedDialog.ShowTypedConfirm("Delete Availability Group",
+	a.confirmTypedDialog().ShowTypedConfirm("Delete Availability Group",
 		fmt.Sprintf("Delete availability group %q?\n\n"+
 			"The databases survive: the primary's copies stay online and read-write, and each secondary is left holding a copy that is in no role. "+
 			"Under an externally managed cluster the cluster resource is not removed by this and has to be cleaned up separately.",

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/propsheet"
@@ -105,7 +106,7 @@ func newGConnWith(t *testing.T, info func(*gosmotest.Info), responses ...fakeRes
 func newGConnOnAzure(t *testing.T, edition int, responses ...fakeResponse) (*db.ServerConn, *gFake) {
 	t.Helper()
 	return newGConnWith(t, func(i *gosmotest.Info) {
-		i.Edition, i.ProductVersion, i.EngineEdition = "SQL Azure", "12.0.2000.8", edition
+		i.Edition, i.ProductVersion, i.EngineEdition = "SQL Azure", "12.0.2000.8", gosmo.EngineEdition(edition)
 		i.Version = "Microsoft SQL Azure (RTM) - 12.0.2000.8 ..."
 	}, responses...)
 }

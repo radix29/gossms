@@ -26,7 +26,7 @@ const helpMinHeight = 28
 // NewHelpDialog creates the help dialog.
 func NewHelpDialog(app *App) *HelpDialog {
 	d := &HelpDialog{app: app}
-	d.InitModal(app.screen, "goSSMS Help", 62, helpMinHeight)
+	d.InitModal("goSSMS Help", 62, helpMinHeight)
 	d.applySize()
 	return d
 }

@@ -33,7 +33,7 @@ func operatorPropPages(sc *db.ServerConn, operatorName string) []propPage {
 // showOperatorProperties opens Operator Properties from Object Explorer's
 // context menu.
 func (a *App) showOperatorProperties(sc *db.ServerConn, operatorName string) {
-	a.propDialog.showReloading(sc, "msdb", "Operator Properties", "Operator: "+operatorName, "Server: "+sc.Opts.Server,
+	a.propDialog().showReloading(sc, "msdb", "Operator Properties", "Operator: "+operatorName, "Server: "+sc.Opts.Server,
 		func() []propPage { return operatorPropPages(sc, operatorName) }, folderOf("", NodeAgentOperators))
 }
 
@@ -123,7 +123,7 @@ func pageOperatorNotifications(sc *db.ServerConn, operatorName *string) propPage
 			}
 			// NotifyingAlerts needs SQLAgentOperatorRole (gosmo); below it
 			// the alert half becomes a note and the job half still lists.
-			var alertRow propsheet.Row = propsheet.Note(operatorAlertsWithheldNote)
+			alertRow := propsheet.Note(operatorAlertsWithheldNote)
 			if agentAlertsReadable(ctx, sc) {
 				alerts, err := o.NotifyingAlerts(ctx)
 				switch {

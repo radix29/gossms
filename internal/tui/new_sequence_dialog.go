@@ -396,7 +396,7 @@ func (a *App) showNewSequenceDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newSequenceDialog.show(sc, node)
+	a.newSequenceDialog().show(sc, node)
 }
 
 // formatSequenceType renders a sequence's type as CREATE SEQUENCE spells it:

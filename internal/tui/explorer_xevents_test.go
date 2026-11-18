@@ -226,7 +226,7 @@ func TestStartRunsAtOnceAndStopAsksFirst(t *testing.T) {
 		node.data.IsEnabled = !start
 
 		a.setEventSessionState(sc, node, start)
-		if got := a.confirmDialog.Visible(); got == start {
+		if got := a.confirmDialog().Visible(); got == start {
 			t.Fatalf("start=%v: confirmation shown = %v, want only a stop to ask", start, got)
 		}
 		if !start {
@@ -287,8 +287,8 @@ func TestDeletingABuiltInSessionAsksForItsName(t *testing.T) {
 	a := newTestApp()
 	sc, inst := newGConn(t)
 	a.confirmDeleteObjects(sc, []nodeData{{Type: NodeEventSession, Name: "system_health"}}, func() {})
-	if !a.confirmTypedDialog.Visible() || a.confirmDialog.Visible() {
-		t.Fatalf("typed %v, plain %v — want the typed confirmation", a.confirmTypedDialog.Visible(), a.confirmDialog.Visible())
+	if !a.confirmTypedDialog().Visible() || a.confirmDialog().Visible() {
+		t.Fatalf("typed %v, plain %v — want the typed confirmation", a.confirmTypedDialog().Visible(), a.confirmDialog().Visible())
 	}
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("ran %q before the name was typed", stmts)
@@ -298,7 +298,7 @@ func TestDeletingABuiltInSessionAsksForItsName(t *testing.T) {
 	a.confirmDeleteObjects(sc, []nodeData{
 		{Type: NodeEventSession, Name: "zz_trace"}, {Type: NodeEventSession, Name: "system_health"},
 	}, func() {})
-	if a.confirmDialog.Visible() || a.confirmTypedDialog.Visible() {
+	if a.confirmDialog().Visible() || a.confirmTypedDialog().Visible() {
 		t.Error("a batch holding system_health was offered for confirmation")
 	}
 	if !strings.Contains(a.statusText, "system_health") {
@@ -378,7 +378,7 @@ func xeSavedTree(t *testing.T, sc *db.ServerConn) (a *App, session, idle *explor
 	a = newTestApp()
 	a.explorer.SetBounds(0, 0, 40, 30)
 	a.detailBrowser = NewDetailBrowser("Object Explorer Details")
-	a.propDialog = NewPropDialog(a)
+	installDialog(a, NewPropDialog(a))
 	a.connections = append(a.connections, sc)
 	a.explorer.AddRoot("testsrv", sc)
 	root := a.explorer.Selected()
@@ -402,7 +402,7 @@ func xeSavedTree(t *testing.T, sc *db.ServerConn) (a *App, session, idle *explor
 func dropRingBuffer(t *testing.T, a *App) *PropDialog {
 	t.Helper()
 	a.showEventSessionPropertiesFor(a.connections[0], xeScope{}, "zz_trace")
-	d := a.propDialog
+	d := a.propDialog()
 	d.SelectPage(2)
 	drainUntil(t, a, func() bool { return d.PageState(2) == propsheet.PageReady }, "Data Storage to load")
 	f := d.PageForm(2)
@@ -465,9 +465,9 @@ func TestAnotherDialogDoesNotInheritTheSessionsHook(t *testing.T) {
 	sc, _ := xePropsConn(t, "zz_trace")
 	a, _, _, _ := xeSavedTree(t, sc)
 	a.showEventSessionPropertiesFor(sc, xeScope{}, "zz_trace")
-	a.propDialog.Dismiss()
-	a.propDialog.show(sc, "", "Properties", "", "", func() []propPage { return nil })
-	if a.propDialog.onSaved != nil {
+	a.propDialog().Dismiss()
+	a.propDialog().show(sc, "", "Properties", "", "", func() []propPage { return nil })
+	if a.propDialog().onSaved != nil {
 		t.Error("the session dialog's onSaved survived into the next showing")
 	}
 }

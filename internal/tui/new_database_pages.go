@@ -78,7 +78,7 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 			r.SetReadOnly(true)
 		}
 		recoveryRow.SetReadOnly(true)
-		fileNote = engineEditionName(sc.Server.Info().EngineEdition) +
+		fileNote = sc.Server.Info().EngineEdition.String() +
 			" places and sizes a database's files itself, and its user databases are FULL recovery only, so those fields cannot be set here."
 	}
 
@@ -177,7 +177,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	// pages/forms/applyFns triple) and says why.
 	if serverIsAzure(sc) {
 		f := propsheet.NewForm(
-			propsheet.Note(engineEditionName(sc.Server.Info().EngineEdition) +
+			propsheet.Note(sc.Server.Info().EngineEdition.String() +
 				" does not accept filegroups in CREATE DATABASE (Msg 41918). A database created here gets the server's own PRIMARY filegroup."),
 		)
 		return f, func(context.Context) error { return nil }

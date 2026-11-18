@@ -359,5 +359,5 @@ func (a *App) showAGAddReplicaDialog(sc *db.ServerConn, agName string, node *exp
 	if !a.requireConn(sc) {
 		return
 	}
-	a.agAddReplicaDialog.show(sc, agName, node)
+	a.agAddReplicaDialog().show(sc, agName, node)
 }

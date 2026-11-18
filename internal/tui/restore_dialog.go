@@ -208,7 +208,7 @@ type RestoreDialog struct {
 // NewRestoreDialog creates the dialog. Widgets are built per show().
 func NewRestoreDialog(app *App) *RestoreDialog {
 	d := &RestoreDialog{app: app}
-	d.InitModal(app.screen, "Restore Database", restoreDialogW, restoreDialogH)
+	d.InitModal("Restore Database", restoreDialogW, restoreDialogH)
 	return d
 }
 
@@ -587,7 +587,7 @@ func (d *RestoreDialog) browseFile() {
 	if start == "" {
 		start = gosmo.JoinServerPath(d.sc.Server.Info().DefaultBackupPath, "")
 	}
-	d.app.fileDialog.ShowOpenOn(fs, "Select Backup File", start, func(path string) {
+	d.app.fileDialog().ShowOpenOn(fs, "Select Backup File", start, func(path string) {
 		d.fFile.SetValue(path)
 		d.applyDeviceRules()
 	})

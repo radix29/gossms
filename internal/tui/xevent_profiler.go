@@ -236,7 +236,7 @@ func (a *App) requestCloseXEventViewer(v *XEventViewer) {
 		a.closePanelByPointer(v)
 		return
 	}
-	a.confirmDialog.ShowConfirmDefaultNo("Stop Event Session",
+	a.confirmDialog().ShowConfirmDefaultNo("Stop Event Session",
 		fmt.Sprintf("Stop the event session %s too? The XEvent Profiler started it; left running, it goes on collecting until it is stopped.", v.session),
 		func(stop bool) {
 			a.closePanelByPointer(v)

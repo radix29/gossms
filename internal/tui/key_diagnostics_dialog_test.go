@@ -13,8 +13,8 @@ import (
 func keyDiagDialogForTest(t *testing.T) (*App, *KeyDiagnosticsDialog) {
 	t.Helper()
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewKeyDiagnosticsDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewKeyDiagnosticsDialog(a), a.screen)
 	d.Show()
 	return a, d
 }
@@ -64,11 +64,11 @@ func TestKeyDiagnosticsCopiesTheWholeLog(t *testing.T) {
 	}
 }
 
-// TestKeyDiagnosticsKeepsASelectionWhileMoreKeysArrive pins the one rule that
-// makes this dialog different from StatusHistoryDialog: it records the very
-// keys used to copy from it. Ctrl+A is itself logged, so a sync on the next
-// frame would call Editor.SetText and drop the selection the user just made,
-// and the Ctrl+C after it would copy nothing.
+// TestKeyDiagnosticsKeepsASelectionWhileMoreKeysArrive pins the rule that
+// matters most here: the dialog records the very keys used to copy from it.
+// Ctrl+A is itself logged, so a sync on the next frame that rebuilt with
+// Editor.SetText would drop the selection the user just made, and the Ctrl+C
+// after it would copy nothing.
 func TestKeyDiagnosticsKeepsASelectionWhileMoreKeysArrive(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModShift))
@@ -91,37 +91,37 @@ func TestKeyDiagnosticsKeepsASelectionWhileMoreKeysArrive(t *testing.T) {
 	if got := d.editor.SelectedText(); got != before {
 		t.Errorf("selected text changed from %q to %q", before, got)
 	}
-	if !d.dirty {
-		t.Error("dirty was cleared without rebuilding; the deferred lines are lost")
+	if !strings.HasPrefix(d.editor.Text(), "Ctrl+A") {
+		t.Errorf("the key pressed during the selection is not the first line: %q", d.editor.Text())
 	}
 }
 
-// TestKeyDiagnosticsSyncsOnceTheSelectionIsGone is the other half of the rule
-// above: skipping the rebuild defers it, it does not abandon it.
-func TestKeyDiagnosticsSyncsOnceTheSelectionIsGone(t *testing.T) {
+// TestKeyDiagnosticsSyncsWhileASelectionIsLive is the other half of the rule
+// above: the selection survives the sync, and the sync still happens. The
+// version before PrependLines skipped it while anything was selected.
+func TestKeyDiagnosticsSyncsWhileASelectionIsLive(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
 	d.syncIfDirty()
 	d.editor.SelectAll()
 
 	d.RecordKey(tcell.NewEventKey(tcell.KeyF5, "", tcell.ModNone))
-	d.syncIfDirty() // skipped: a selection is live
-
-	d.editor.ClearSelection()
 	d.syncIfDirty()
 
 	if d.dirty {
-		t.Error("still dirty after the selection was cleared")
+		t.Error("still dirty after a sync with a selection live")
 	}
 	if !strings.Contains(d.editor.Text(), "F5") {
 		t.Errorf("the line recorded during the selection never reached the editor: %q", d.editor.Text())
+	}
+	if !d.editor.HasSelection() {
+		t.Error("the sync dropped the selection")
 	}
 }
 
 // TestKeyDiagnosticsShowResetsTheLog pins the existing behaviour that each
 // open starts a fresh diagnostic session, including through a selection left
-// live from the previous showing — which syncIfDirty deliberately refuses to
-// rebuild past, so Show cannot go through it.
+// live from the previous showing, which a sync would keep.
 func TestKeyDiagnosticsShowResetsTheLog(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))

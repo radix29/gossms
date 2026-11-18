@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -19,7 +20,7 @@ import (
 // parenthesis or invalid UTF-8 is a *SyntaxError: the layout would have to
 // guess where the code resumes. Leading blank lines and trailing whitespace
 // are dropped and one final newline kept iff src ended with one.
-func (s sqlStyle) format(src string, o Options) (string, *sqlLexed, error) {
+func (s sqlStyle) format(ctx context.Context, src string, o Options) (string, *sqlLexed, error) {
 	if !utf8.ValidString(src) {
 		// The lexer works on runes, which would turn a stray byte into U+FFFD
 		// unnoticed by a guard comparing runes.
@@ -34,15 +35,21 @@ func (s sqlStyle) format(src string, o Options) (string, *sqlLexed, error) {
 		line, col := position(src, bad)
 		return "", nil, &SyntaxError{Lang: LangSQL, Line: line, Col: col, Msg: "invalid UTF-8"}
 	}
-	lx, err := lexSQL(src)
+	lx, err := lexSQL(ctx, src)
 	if err != nil {
 		return "", nil, err
 	}
 	if err := checkParens(src, lx.toks); err != nil {
 		return "", nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
 	l := newSQLLayout(lx, o, s)
-	out := l.run()
+	out, err := l.run(ctx)
+	if err != nil {
+		return "", nil, err
+	}
 	if strings.HasSuffix(src, "\n") && out != "" {
 		out += "\n"
 	}
@@ -84,7 +91,8 @@ var sqlCompound = wordSet(`<> != !< !> >= <= += -= *= /= %= &= |= ^= ::`)
 // lexSQL tokenizes src with sqltext.Next, GO separator lines (by the rule
 // SplitBatches runs them by) folded into one token each, compound operators
 // and exponent numbers (1e+5, which the lexer splits at the sign) joined.
-func lexSQL(src string) (*sqlLexed, error) {
+// ctx is checked at every line break; once it ends, its error is returned.
+func lexSQL(ctx context.Context, src string) (*sqlLexed, error) {
 	buf := []rune(src)
 	// A lone CR is a line break — to SQL Server, and to the lexer, which ends
 	// a -- comment there — so it is lexed as an LF, everywhere at once: line
@@ -142,6 +150,9 @@ func lexSQL(src string) (*sqlLexed, error) {
 		}
 		i = t.End
 		if t.Kind == sqltext.KindNewline {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			nl++
 			sp, lineStart, st = true, true, nst
 			continue
@@ -237,20 +248,25 @@ func checkParens(src string, toks []sqlTok) error {
 // that an input select-list item "expr AS name" may come out "name = expr"
 // (sql_alias.go). It reports how many input tokens agreed before the first
 // difference. a is in already lexed by lexSQL, or nil to lex it here.
-func sqlSameTokens(in string, a *sqlLexed, out string) (int, bool, error) {
+func sqlSameTokens(ctx context.Context, in string, a *sqlLexed, out string) (int, bool, error) {
 	if a == nil {
 		var err error
-		if a, err = lexSQL(in); err != nil {
+		if a, err = lexSQL(ctx, in); err != nil {
 			return 0, false, err
 		}
 	}
-	b, err := lexSQL(out)
+	b, err := lexSQL(ctx, out)
 	if err != nil {
 		return 0, false, err
 	}
 	ca, cb := sigCursor{lx: a, p: -1}, sigCursor{lx: b, p: -1}
 	n := 0
 	for ; ; n++ {
+		if n%checkEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return n, false, err
+			}
+		}
 		x, okA := ca.next()
 		y, okB := cb.next()
 		if !okA || !okB {
@@ -266,6 +282,9 @@ func sqlSameTokens(in string, a *sqlLexed, out string) (int, bool, error) {
 	// Only now find the alias swaps: a second statement-cutter pass over the
 	// input that took the guard from a third to over half of Format's time.
 	// Output that moved no alias never needs it.
+	if err := ctx.Err(); err != nil {
+		return n, false, err
+	}
 	g := sigCompare{a: a, b: b, sa: sigStream(a), sb: sigStream(b)}
 	if g.swaps = sqlAliasSwaps(newSigView(a, g.sa)); len(g.swaps) == 0 {
 		return n, false, nil

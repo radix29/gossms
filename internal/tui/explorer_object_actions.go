@@ -106,7 +106,7 @@ func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after fun
 			if op.typedWarning != "" {
 				msg += " " + op.typedWarning
 			}
-			a.confirmTypedDialog.ShowTypedConfirmScript(title, msg, n.Name, func(ans dialogs.ConfirmAnswer) {
+			a.confirmTypedDialog().ShowTypedConfirmScript(title, msg, n.Name, func(ans dialogs.ConfirmAnswer) {
 				answered(ans, false)
 			})
 			return
@@ -114,7 +114,7 @@ func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after fun
 		// The checkbox is unticked on every showing: the option widens what the drop
 		// touches, so it is asked each time, not remembered. An op without one passes
 		// "", showing the question with no checkbox.
-		a.confirmDialog.ShowConfirmScript(title, msg, op.dropOption, false, answered)
+		a.confirmDialog().ShowConfirmScript(title, msg, op.dropOption, false, answered)
 		return
 	}
 
@@ -139,7 +139,7 @@ func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after fun
 	}
 	// The checkbox is offered only when every selected object answers to it, since
 	// one tick drives every drop in the batch.
-	a.confirmDialog.ShowConfirmScript("Delete Objects", msg, sharedDropOption(ops), false, answered)
+	a.confirmDialog().ShowConfirmScript("Delete Objects", msg, sharedDropOption(ops), false, answered)
 }
 
 // scriptDeletes opens the DROP statements this delete would have run in a new
@@ -344,7 +344,7 @@ func (a *App) renameObject(node *explorerNode) {
 		return
 	}
 	oldName := node.data.Name
-	a.promptDialog.ShowPrompt("Rename "+op.noun,
+	a.promptDialog().ShowPrompt("Rename "+op.noun,
 		fmt.Sprintf("New name for %s %q:", strings.ToLower(op.noun), objectDisplayName(node)),
 		"Name:", oldName,
 		func(newName string) {
@@ -352,7 +352,7 @@ func (a *App) renameObject(node *explorerNode) {
 				return
 			}
 			if op.renameWarning != "" {
-				a.confirmDialog.ShowConfirm("Rename "+op.noun, op.renameWarning, func(confirmed bool) {
+				a.confirmDialog().ShowConfirm("Rename "+op.noun, op.renameWarning, func(confirmed bool) {
 					if confirmed {
 						a.runRename(sc, node, op, oldName, newName)
 					}
@@ -456,7 +456,7 @@ func (a *App) moveObjectToSchema(node *explorerNode) {
 // ALTER SCHEMA ... TRANSFER, and nothing afterwards says so.
 func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *objectOp, target string) {
 	name := objectDisplayName(node)
-	a.confirmDialog.ShowConfirm("Move to Schema",
+	a.confirmDialog().ShowConfirm("Move to Schema",
 		fmt.Sprintf("Move %s %q into schema %q? Permissions granted directly on it are dropped by the move.",
 			strings.ToLower(op.noun), name, target),
 		func(confirmed bool) {

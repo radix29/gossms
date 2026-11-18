@@ -226,10 +226,10 @@ func TestForcePlanWritesTheSelectedPlan(t *testing.T) {
 	}
 
 	p.runAct(qsActForce)
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("Force Plan ran without asking — it changes what a live database does on every execution")
 	}
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	drainUntil(t, a, func() bool { return len(inst.StatementsIn("appdb")) > 0 }, "the force to run")
 
 	stmts := inst.StatementsIn("appdb")

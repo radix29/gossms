@@ -39,16 +39,16 @@ func (s *eventQScreen) EventQ() chan tcell.Event { return s.q }
 func newDragTestApp(t *testing.T, childCount int) *App {
 	t.Helper()
 	a := newTestApp()
-	a.screen = &eventQScreen{
-		Screen: tuikittest.NewScreen(dragTestScreenW, dragTestScreenH),
-		q:      make(chan tcell.Event, 16),
-	}
 	a.menuBar = controls.NewMenuBar()
 	a.toolbar = controls.NewToolbar()
 	a.contextMenu = &controls.ContextMenu{}
-	a.alertDialog = dialogs.NewAlertDialog(a.screen)
+	installDialog(a, dialogs.NewAlertDialog())
 	a.modals = dialogs.Stack{}
-	a.modals.Register(a.alertDialog)
+	a.modals.Register(a.alertDialog())
+	a.setScreen(&eventQScreen{
+		Screen: tuikittest.NewScreen(dragTestScreenW, dragTestScreenH),
+		q:      make(chan tcell.Event, 16),
+	})
 	a.explorerSplit = newVerticalSplitter()
 	a.explorerSplit.SetBounds(0, 1, dragTestScreenW, dragTestScreenH-2)
 	a.explorerSplit.SetRatio(0.3)

@@ -46,7 +46,10 @@ var formatText = format.Format
 // A document over formatSyncBytes is formatted off the UI goroutine. Its result
 // lands only if the panel's formatRun is still current (a repeat supersedes
 // it, closing the panel abandons it) and the text and selection are as they
-// were when it started; otherwise the typing done meanwhile wins.
+// were when it started; otherwise the typing done meanwhile wins. A superseded
+// or abandoned run stops where it is (internal/format checks the context every
+// line), and so does one whose text changed (abandonStaleFormat): its result
+// could no longer land, and a 5 MB script is seconds of a core.
 func (a *App) formatActiveDocument() {
 	if qp := a.activeQueryPanel(); qp != nil {
 		a.formatActiveDocumentAs(a.formatStyleID(qp.lang))
@@ -76,9 +79,10 @@ func (a *App) formatActiveDocumentAs(styleID string) {
 		return
 	}
 	j := formatJob{qp: qp, st: st, lang: qp.lang, doc: e.Document(), ver: e.Document().Version(),
-		sel: e.HasSelection(), top: e.SelectionTopRow()}
+		sel: e.HasSelection()}
 	o := format.Options{IndentWidth: e.IndentWidth()}
 	if j.sel {
+		j.top, j.bottom, _ = e.SelectedLineRange() // !ok only for a block selection, refused above
 		// Refused here for SQL with a clearer message than verifyInDocument's,
 		// which still covers XML and anything this misses.
 		if j.lang == format.LangSQL && sqledit.LineState(e.Document(), j.top).Mode != sqltext.ModeNormal {
@@ -99,21 +103,26 @@ func (a *App) formatActiveDocumentAs(styleID string) {
 	// all of it.
 	if len(j.full) <= formatSyncBytes {
 		qp.formatRun.Abandon() // this one is newer than any still running
-		out, err := j.format(o)
+		qp.formatJob = nil
+		out, err := j.format(context.Background(), o)
 		a.applyFormatted(j, out, err)
 		return
 	}
-	// The formatter takes no context, so a superseded run still finishes; the
-	// latest only drops its result.
-	_, token := qp.formatRun.Begin(context.Background())
+	ctx, token := qp.formatRun.Begin(context.Background())
+	qp.formatJob = &j
 	a.setStatus(fmt.Sprintf("Formatting as %s...", j.lang))
-	repair := func() { qp.formatRun.Done(token) }
+	repair := func() {
+		if qp.formatRun.Done(token) {
+			qp.formatJob = nil
+		}
+	}
 	a.safegoRepair("Format Document", repair, func() {
-		out, err := j.format(o)
+		out, err := j.format(ctx, o)
 		a.postAndWake(func() {
 			if !qp.formatRun.Done(token) {
-				return
+				return // superseded or abandoned: a cancel's error included
 			}
+			qp.formatJob = nil
 			if !j.current() {
 				a.setStatus("Format Document: the text changed while formatting; not applied")
 				return
@@ -121,6 +130,28 @@ func (a *App) formatActiveDocumentAs(styleID string) {
 			a.applyFormatted(j, out, err)
 		})
 	})
+}
+
+// abandonStaleFormat stops the active panel's background Format Document once
+// an edit (or a moved selection) means its result could not land: without it
+// the run went on to the end only for the result to be dropped. Run after
+// every event (handleEvent), so typing during a large format stops it at
+// once; it costs nothing while no format is in flight.
+func (a *App) abandonStaleFormat() {
+	qp := a.activeQueryPanel()
+	if qp == nil || qp.formatJob == nil {
+		return
+	}
+	if qp.formatRun.Idle() {
+		qp.formatJob = nil // finished, or abandoned elsewhere
+		return
+	}
+	if qp.formatJob.current() {
+		return
+	}
+	qp.formatRun.Abandon()
+	qp.formatJob = nil
+	a.setStatus("Format Document: the text changed while formatting; stopped")
 }
 
 // formatStyleID is the style Format Document uses for l unless told another:
@@ -175,15 +206,17 @@ type formatJob struct {
 	doc  *editor.Document
 	ver  uint64
 	sel  bool
-	top  int // the selection's first line
+	// The selection's rows, inclusive (Editor.SelectedLineRange): the lines
+	// j.src holds. Zero without a selection.
+	top, bottom int
 }
 
 // format formats j.src and, for a selection, checks the result in the whole
 // document.
-func (j formatJob) format(o format.Options) (string, error) {
-	out, err := formatText(j.lang, j.st.ID, j.src, o)
+func (j formatJob) format(ctx context.Context, o format.Options) (string, error) {
+	out, err := formatText(ctx, j.lang, j.st.ID, j.src, o)
 	if err == nil && j.sel {
-		err = j.verifyInDocument(out)
+		err = j.verifyInDocument(ctx, out)
 	}
 	return out, err
 }
@@ -192,13 +225,16 @@ func (j formatJob) format(o format.Options) (string, error) {
 // selected lines replaced by out. It refuses what the selection's own guard
 // cannot see: a selection starting or ending inside a string, comment or CDATA
 // section, whose lines lex as code once cut out of it.
-func (j formatJob) verifyInDocument(out string) error {
+func (j formatJob) verifyInDocument(ctx context.Context, out string) error {
 	start := 0 // byte offset of line j.top in j.full
 	for range j.top {
 		start += strings.IndexByte(j.full[start:], '\n') + 1
 	}
 	after := j.full[:start] + out + j.full[start+len(j.src):]
-	if format.Verify(j.lang, j.full, after) != nil {
+	if err := format.Verify(ctx, j.lang, j.full, after); err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
 		return errors.New("the selection starts or ends inside a string, comment or CDATA section")
 	}
 	return nil
@@ -207,7 +243,11 @@ func (j formatJob) verifyInDocument(out string) error {
 // current reports whether j's editor still holds the text j formatted, at the
 // same place and selected the same way, so applying the result replaces
 // exactly what was formatted. The document version catches any edit; a moved
-// selection leaves it alone, so that is compared too.
+// selection leaves it alone, so its row range is compared too. With the
+// document and version unchanged the same rows hold the same text, so the
+// selected text is never rebuilt: abandonStaleFormat runs this after every
+// event, and SelectedLinesText on a multi-megabyte selection was megabytes of
+// garbage per mouse move on the UI goroutine.
 func (j formatJob) current() bool {
 	e := j.qp.editor
 	if e.ReadOnly() || j.qp.lang != j.lang || e.Document() != j.doc || e.Document().Version() != j.ver ||
@@ -217,8 +257,8 @@ func (j formatJob) current() bool {
 	if !j.sel {
 		return true
 	}
-	src, ok := e.SelectedLinesText()
-	return ok && e.SelectionTopRow() == j.top && src == j.src
+	top, bottom, ok := e.SelectedLineRange()
+	return ok && top == j.top && bottom == j.bottom
 }
 
 // applyFormatted puts a run's result into its editor, or reports its error.

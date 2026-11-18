@@ -124,7 +124,7 @@ func (d *ConnectDialog) doButton() {
 	switch d.btnFocus {
 	case connectBtnConnect:
 		if _, _, ok := d.serverParts(); !ok {
-			d.app.alertDialog.ShowAlert("Connect",
+			d.app.alertDialog().ShowAlert("Connect",
 				fmt.Sprintf("The port in %q must be a number from 1 to 65535",
 					strings.TrimSpace(d.fServer.Value())))
 			return

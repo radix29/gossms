@@ -17,14 +17,14 @@ import (
 func twoPaneConnectDialog(t *testing.T, saved ...config.Connection) *ConnectDialog {
 	t.Helper()
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(120, 40)
+	a.setScreen(tuikittest.NewScreen(120, 40))
 	// Through AddOrUpdate, as a real connect saves them: Config.Save replays
 	// only recorded operations onto the file, so a list assigned directly
 	// would vanish at the first save (a Delete, say).
 	for _, c := range saved {
 		a.cfg.AddOrUpdate(c)
 	}
-	d := NewConnectDialog(a)
+	d := withScreen(NewConnectDialog(a), a.screen)
 	d.Show()
 	d.layoutFields()
 	if !d.twoPane {
@@ -91,7 +91,7 @@ func TestHistoryRowShowsTheLogin(t *testing.T) {
 	}
 	t.Cleanup(scr.Fini)
 	d := twoPaneConnectDialog(t, saved...)
-	d.app.screen = scr
+	d.app.setScreen(scr)
 	idx := slices.IndexFunc(d.historyConns, func(c config.Connection) bool { return c.Server == "win10cli.fritz.box" })
 	if idx < 0 {
 		t.Fatal("the saved connection is not in History")
@@ -168,9 +168,9 @@ func TestConnectHistorySelectionPreFillsTheRightPane(t *testing.T) {
 // for what the right pane can also be typed into (decision 3).
 func TestConnectDialogNarrowTerminalDropsTheHistoryPane(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(80, 30)
+	a.setScreen(tuikittest.NewScreen(80, 30))
 	a.cfg.Connections = []config.Connection{{Server: "ubusql1", User: "sa"}}
-	d := NewConnectDialog(a)
+	d := withScreen(NewConnectDialog(a), a.screen)
 	d.Show()
 	d.layoutFields()
 

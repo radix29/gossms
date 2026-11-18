@@ -18,19 +18,19 @@ func newTestApp() *App {
 	a := &App{cfg: &config.Config{}}
 	a.explorer = NewObjectExplorer(a)
 	a.panels = layout.NewPanelManager()
-	a.confirmDialog = dialogs.NewConfirmDialog(nil)
-	a.confirmTypedDialog = dialogs.NewTypedConfirmDialog(nil)
+	installDialog(a, dialogs.NewConfirmDialog())
+	installDialog(a, dialogs.NewTypedConfirmDialog())
 	// handleKey and handleMouse query it, as App.buildUI guarantees it exists.
-	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
-	a.promptDialog = dialogs.NewPromptDialog(nil)
+	installDialog(a, NewKeyDiagnosticsDialog(a))
+	installDialog(a, dialogs.NewPromptDialog())
 	// Every confirmed write uses it (runWithProgress).
-	a.progressDialog = dialogs.NewProgressDialog(nil)
+	installDialog(a, dialogs.NewProgressDialog())
 	// As App.buildUI does; a nil one crashes instead of failing the assertion.
 	a.contextMenu = new(controls.ContextMenu{})
 	// An Execute with no connection opens it (QueryPanel.runRefused).
-	a.connectDialog = NewConnectDialog(a)
+	installDialog(a, NewConnectDialog(a))
 	// The Connect dialog's Profile... button opens it.
-	a.profileDialog = NewProfileDialog(nil)
+	installDialog(a, NewProfileDialog())
 	return a
 }
 
@@ -250,16 +250,16 @@ func TestWarnIfUnsupported(t *testing.T) {
 		{&gosmo.ServerInfo{ProductVersion: "12.0.6024.0", VersionMajor: 12, VersionBuild: 6024}, true},
 		{&gosmo.ServerInfo{ProductVersion: "13.0.1601.5", VersionMajor: 13, VersionBuild: 1601}, true},
 		{&gosmo.ServerInfo{ProductVersion: "13.0.6300.2", VersionMajor: 13, VersionBuild: 6300}, false},
-		{&gosmo.ServerInfo{ProductVersion: "12.0.2000.8", VersionMajor: 12, EngineEdition: int(gosmo.EngineAzureManagedInst)}, false},
+		{&gosmo.ServerInfo{ProductVersion: "12.0.2000.8", VersionMajor: 12, EngineEdition: gosmo.EngineAzureManagedInst}, false},
 	} {
 		a := newTestApp()
-		a.alertDialog = dialogs.NewAlertDialog(nil)
+		installDialog(a, dialogs.NewAlertDialog())
 		a.warnIfUnsupported(c.info)
-		if got := a.alertDialog.Visible(); got != c.want {
+		if got := a.alertDialog().Visible(); got != c.want {
 			t.Errorf("%s: warned = %v, want %v", c.info.ProductVersion, got, c.want)
 		}
-		if c.want && !strings.Contains(a.alertDialog.Message(), c.info.ProductVersion) {
-			t.Errorf("%s: warning %q does not name the version", c.info.ProductVersion, a.alertDialog.Message())
+		if c.want && !strings.Contains(a.alertDialog().Message(), c.info.ProductVersion) {
+			t.Errorf("%s: warning %q does not name the version", c.info.ProductVersion, a.alertDialog().Message())
 		}
 	}
 }

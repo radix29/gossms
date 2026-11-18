@@ -89,7 +89,7 @@ func (a *App) requestClosePanel(i int) {
 		}
 		// Three-way, not Yes/No: "No" here discards the panel's unsaved SQL, so
 		// Escape must not silently mean it — see ShowConfirmCancel.
-		a.confirmDialog.ShowConfirmCancel("Close Query",
+		a.confirmDialog().ShowConfirmCancel("Close Query",
 			qp.Title()+" has unsaved changes. Save before closing?",
 			func(answer dialogs.ConfirmAnswer) {
 				switch answer {
@@ -124,7 +124,7 @@ func (a *App) confirmOpenTransactions(qp *QueryPanel, action string, then func()
 		then()
 		return
 	}
-	a.confirmDialog.ShowConfirmCancel("Uncommitted Transactions",
+	a.confirmDialog().ShowConfirmCancel("Uncommitted Transactions",
 		fmt.Sprintf("There are uncommitted transactions in %s. Do you wish to commit them before %s?", qp.Title(), action),
 		func(answer dialogs.ConfirmAnswer) {
 			switch answer {
@@ -194,7 +194,7 @@ func (a *App) askBeforeQuit(panels []*QueryPanel, i int) {
 			next()
 			return
 		}
-		a.confirmDialog.ShowConfirmCancel("Exit goSSMS",
+		a.confirmDialog().ShowConfirmCancel("Exit goSSMS",
 			qp.Title()+" has unsaved changes. Save before exiting?",
 			func(answer dialogs.ConfirmAnswer) {
 				switch answer {

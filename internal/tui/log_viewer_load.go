@@ -223,7 +223,7 @@ func (lv *LogViewer) recycle() {
 	// the confirm dialog doesn't stop F5 reaching the panel; a Load begun while the
 	// question was up would clear busy from under the cycle.
 	lv.busy = true
-	lv.app.confirmDialog.ShowConfirm("Recycle Log", cycleLogMessage(logType, sc.Opts.Server), func(confirmed bool) {
+	lv.app.confirmDialog().ShowConfirm("Recycle Log", cycleLogMessage(logType, sc.Opts.Server), func(confirmed bool) {
 		if !confirmed {
 			lv.busy = false
 			return
@@ -304,14 +304,14 @@ func (lv *LogViewer) deleteMailLog() {
 	if r, ok := lv.selectedLogRow(); ok && !r.entry.Date.IsZero() {
 		initial = formatLogSearchTime(r.entry.Date)
 	}
-	lv.app.promptDialog.ShowPrompt("Delete Database Mail Log",
+	lv.app.promptDialog().ShowPrompt("Delete Database Mail Log",
 		"Delete the entries logged before this server time (yyyy-mm-dd [hh:mm[:ss]]), "+
 			"or type "+mailLogDeleteAll+" to delete every entry. Mail items are kept.",
 		"Before:", initial, func(v string) {
 			before, _ := parseMailLogCutoff(v)
 			lv.confirmDeleteMailLog(before)
 		})
-	lv.app.promptDialog.Validate = func(v string) error {
+	lv.app.promptDialog().Validate = func(v string) error {
 		_, err := parseMailLogCutoff(v)
 		return err
 	}
@@ -347,7 +347,7 @@ func (lv *LogViewer) confirmDeleteMailLog(before time.Time) {
 		warn = "You see only the entries of your own mail items; this deletes the others too. It cannot be undone."
 	}
 	lv.busy = true
-	lv.app.confirmDialog.ShowConfirm("Delete Database Mail Log",
+	lv.app.confirmDialog().ShowConfirm("Delete Database Mail Log",
 		fmt.Sprintf("Delete %s on %s?\n\n%s", what, sc.Opts.Server, warn), func(confirmed bool) {
 			if !confirmed {
 				lv.busy = false

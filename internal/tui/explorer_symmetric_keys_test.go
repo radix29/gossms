@@ -47,20 +47,20 @@ func masterKeyResponse(has bool) fakeResponse {
 	return fakeResponse{match: "is_master_key_encrypted_by_server", cols: 1, rows: [][]driver.Value{{n}}}
 }
 
-// dmkReadResponses answer gosmo's MasterKey read: its sys.symmetric_keys row
-// (none when !has) and the database's is_master_key_encrypted_by_server. Placed
-// before symKeyListResponse, whose match is a substring of the same query.
+// dmkReadResponses answer gosmo's MasterKey read: its sys.symmetric_keys rows
+// (none when !has), each carrying the database's
+// is_master_key_encrypted_by_server as a fourteenth column. Placed before
+// symKeyListResponse, whose match is a substring of the same query.
 func dmkReadResponses(has, byServer bool) []fakeResponse {
 	var rows [][]driver.Value
 	if has {
 		rows = [][]driver.Value{
-			symKeyRow("##MS_DatabaseMasterKey##", 101, "ENCRYPTION BY MASTER KEY", nil),
-			symKeyRow("##MS_DatabaseMasterKey##", 101, "ENCRYPTION BY PASSWORD V2", nil),
+			append(symKeyRow("##MS_DatabaseMasterKey##", 101, "ENCRYPTION BY MASTER KEY", nil), byServer),
+			append(symKeyRow("##MS_DatabaseMasterKey##", 101, "ENCRYPTION BY PASSWORD V2", nil), byServer),
 		}
 	}
 	return []fakeResponse{
-		{match: "k.name = N'##MS_DatabaseMasterKey##'", cols: 13, rows: rows},
-		{match: "SELECT is_master_key_encrypted_by_server", cols: 1, rows: [][]driver.Value{{byServer}}},
+		{match: "k.name = N'##MS_DatabaseMasterKey##'", cols: 14, rows: rows},
 	}
 }
 

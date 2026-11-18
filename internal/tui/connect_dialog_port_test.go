@@ -15,7 +15,7 @@ import (
 // instance. currentOptions must report 0 for a field with no port in it.
 func TestConnectDialogServerFieldStartsWithNoPort(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
-	d := a.connectDialog
+	d := a.connectDialog()
 
 	if got := d.fServer.Value(); got != "" {
 		t.Errorf("Server Name field = %q on a fresh dialog, want empty", got)
@@ -39,7 +39,7 @@ func TestConnectDialogServerFieldStartsWithNoPort(t *testing.T) {
 // round-trips through the field.
 func TestConnectDialogPreFillFoldsThePortIntoTheServerField(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
-	d := a.connectDialog
+	d := a.connectDialog()
 
 	d.PreFill(&config.Connection{Server: `win10cli\sql2017`, Port: 1433})
 	if got := d.fServer.Value(); got != `win10cli\sql2017` {
@@ -67,7 +67,7 @@ func TestConnectDialogPreFillFoldsThePortIntoTheServerField(t *testing.T) {
 // stored password for it stops decrypting and it dedups as a new connection.
 func TestConnectDialogFoldingThePortKeepsTheConnectionIdentity(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
-	d := a.connectDialog
+	d := a.connectDialog()
 
 	for _, saved := range []config.Connection{
 		{Server: "win10cli", Port: 55253, User: "sa"},
@@ -94,7 +94,7 @@ func TestConnectDialogFoldingThePortKeepsTheConnectionIdentity(t *testing.T) {
 // non-empty Server instead, and refuses rather than closing the dialog.
 func TestConnectDialogConnectIsGatedOnAServerName(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
-	d := a.connectDialog
+	d := a.connectDialog()
 
 	if d.canConnect() {
 		t.Fatalf("canConnect() is true with a blank Server field")
@@ -124,7 +124,7 @@ func TestConnectDialogConnectIsGatedOnAServerName(t *testing.T) {
 // the host and the driver's own error is what surfaces.
 func TestConnectDialogRejectsAnOutOfRangePort(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
-	d := a.connectDialog
+	d := a.connectDialog()
 
 	d.fServer.SetValue("ubusql1,99999")
 	if _, _, ok := d.serverParts(); ok {

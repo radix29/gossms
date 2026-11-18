@@ -130,5 +130,5 @@ func (a *App) showNewSchemaDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newSchemaDialog.show(sc, node)
+	a.newSchemaDialog().show(sc, node)
 }

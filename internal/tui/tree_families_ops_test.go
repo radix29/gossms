@@ -281,7 +281,7 @@ func TestTogglingAPlanGuideConfirmsOnlyTheDisable(t *testing.T) {
 		node.data.IsEnabled = true
 
 		a.togglePlanGuide(sc, node)
-		if !a.confirmDialog.Visible() {
+		if !a.confirmDialog().Visible() {
 			t.Fatal("disabling a plan guide ran without asking")
 		}
 		answerConfirm(t, a, false)
@@ -300,7 +300,7 @@ func TestTogglingAPlanGuideConfirmsOnlyTheDisable(t *testing.T) {
 		node.data.IsEnabled = false
 
 		a.togglePlanGuide(sc, node)
-		if a.confirmDialog.Visible() {
+		if a.confirmDialog().Visible() {
 			t.Fatal("enabling a plan guide asked for confirmation")
 		}
 		waitAndDrain(t, a)

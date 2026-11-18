@@ -74,7 +74,7 @@ func rgGroups() fakeResponse {
 // newGConnEdition is newGConn for an engine edition and version.
 func newGConnEdition(t *testing.T, edition int64, version string, responses ...fakeResponse) *db.ServerConn {
 	t.Helper()
-	sc, _ := newGConnWith(t, func(i *gosmotest.Info) { i.ProductVersion, i.EngineEdition = version, int(edition) }, responses...)
+	sc, _ := newGConnWith(t, func(i *gosmotest.Info) { i.ProductVersion, i.EngineEdition = version, gosmo.EngineEdition(edition) }, responses...)
 	return sc
 }
 

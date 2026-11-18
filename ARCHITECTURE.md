@@ -203,8 +203,7 @@ gossms/
 ├── cmd/
 │   ├── gossms/               # main entry point; selectMode: no argument → the TUI (only with stdin and stdout on a terminal), --version/-version/-v → the version block, any other argument → internal/cli (docs/cli.md § Modes)
 │   ├── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file, or -live replays a recorded Live Query Statistics run (not part of the release build)
-│   ├── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
-│   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
+│   └── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
 ├── packaging/linux/         # gossms.desktop launcher; the release job ships it with docs/ico/linux's hicolor icons in the Linux archives, the Homebrew formula and the .deb
 ├── internal/
 │   ├── config/              # saved connections (JSON, in $XDG_CONFIG_HOME/gossms/); profile.go: a profile is a saved connection named in the TUI (Profile, MaxAllow; SetProfile, ProfileByName) and LoadReadOnly, the command line's load that writes nothing; tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json; address.go is the one address fold (DialPort, ResolveServer, InstanceKey, ConnectionAddress, Connection.IdentityKey) that peers, saved credentials, tracked queries and the per-identity IntelliSense and OE-filter caches key by
@@ -291,6 +290,7 @@ gossms/
 │       │
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
+│       ├── app_dialogs.go        # every dialog App owns, built and registered in App.modals on first use: dialogOf (one slot per type), builtDialog, one accessor per dialog
 │       ├── app_events.go         # key/mouse dispatch, resize/redraw, top-level event loop plumbing
 │       ├── app_focus.go          # which half has the keyboard (appFocus): Explorer/panels focus, Ctrl+Tab cycle, next/prev/jump panel with focus-visual resync
 │       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping, activeServerConn/selectedServerConn helpers
@@ -602,7 +602,7 @@ gossms/
 │       ├── new_symmetric_key_dialog.go  # New Symmetric Key: AES_128/192/256, encrypted by a certificate, an asymmetric key and/or a password, optional KEY_SOURCE / IDENTITY_VALUE (scripted as placeholders)
 │       ├── master_key_props.go   # the database master key's node: Properties (General, and Encryption — the service master key's and password encryptions) and its Details view
 │       ├── master_key_dialogs.go # Back Up Master Key and Regenerate Master Key, opening the key by password when the service master key does not
-│       ├── master_key.go         # ensureMasterKey — the create-the-database-master-key-if-absent step the endpoint and key dialogs share — and keyProtectionFields, the private-key / master-key sections of New Certificate and New Asymmetric Key
+│       ├── master_key.go         # keyProtectionFields, the private-key / master-key sections of New Certificate and New Asymmetric Key
 │       ├── database_snapshot_props.go # read-only Properties for a database snapshot: General + Files
 │       ├── replication_monitor_panel.go      # Replication Monitor (W13): state, construction, layout of the four stacked grids (publications, subscriptions and agents, sessions, actions), the one-per-server entry point
 │       ├── replication_monitor_panel_load.go # its reads (snapshot of every distribution database, an agent's sessions, a session's actions with MSrepl_errors detail), selection kept by key across refreshes, the refresh timer
@@ -690,10 +690,13 @@ state.
 
 ### Adding a new dialog
 
-Give `App` a typed field, construct it in `App.buildUI` through
-`registerDialog`. `a.modals.Sync` (a `dialogs.Stack`) pushes it on top when
-its `Show()` flips it visible and routes it all input until it closes; draw
-order and key/mouse routing follow. For the widget, follow the `ModalDialog`
+Add an accessor to `app_dialogs.go` (`func (a *App) xDialog() *XDialog {
+return dialogOf(a, NewXDialog) }`) and list it in `everyDialog`
+(`app_dialogs_test.go`; `TestEveryDialogAccessorIsInEveryDialog` checks).
+`dialogOf` builds the dialog on first use and registers it;
+`a.modals.Sync` (a `dialogs.Stack`) pushes it on top when its `Show()` flips
+it visible and routes it all input until it closes; draw order and key/mouse
+routing follow. For the widget, follow the `ModalDialog`
 skeleton in tuikit's `README.md` § Adding a new dialog in an application.
 
 ### Adding a Properties page

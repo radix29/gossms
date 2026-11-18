@@ -172,5 +172,5 @@ func (a *App) showNewApplicationRoleDialog(sc *db.ServerConn, node *explorerNode
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newApplicationRoleDialog.show(sc, node)
+	a.newApplicationRoleDialog().show(sc, node)
 }

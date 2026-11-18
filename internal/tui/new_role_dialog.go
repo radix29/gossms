@@ -213,5 +213,5 @@ func (a *App) showNewRoleDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newRoleDialog.show(sc, node)
+	a.newRoleDialog().show(sc, node)
 }

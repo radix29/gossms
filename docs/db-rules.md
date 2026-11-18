@@ -112,6 +112,12 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   third mechanism. A page-level refusal is a read-only row plus a
   `propsheet.Note`, not a blocked dialog (Azure `CREATE DATABASE` works without
   file/filegroup clauses). The note names the engine edition, never "Azure".
+- **Ask the edition through gosmo's `ServerInfo` derivations, never
+  `EngineEdition == <constant>`.** `IsAzure` (version gates),
+  `IsDatabaseScoped` (no `USE`, msdb or server scope: Azure SQL Database *and*
+  SQL database in Fabric), `IsManagedInstance`. Eleven sites compared with
+  `EngineAzureSQLDatabase` and all missed Fabric's edition 12 (2026-11-18
+  review, E1/E2). All three are nil-safe.
 - **Gate an edition refusal only when it's compile-time.** `CREATE REMOTE
   SERVICE BINDING` on MI (Msg 41906) aborts the whole batch before anything
   runs, hence `azureRefusedScriptVerbs`. `CREATE`/`ALTER ROUTE` with
@@ -141,7 +147,9 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   function and returns `dbo` in every row; `UnquoteName` for a name the server
   hands back quoted (`[a]]b]`). `internal/showplan` stays driver-free, so it
   imports the stdlib-only `github.com/radix29/gosmo/tsql` (`tsql.QuoteName`,
-  `tsql.UnquoteName`), never the gosmo root package.
+  `tsql.UnquoteName`), never the gosmo root package. The rule: `tsql.*` only
+  in a leaf package that doesn't otherwise import gosmo, or for a helper gosmo
+  doesn't forward (`tsql.CommentSafe`); everywhere else the `gosmo.*` form.
 - **A typed secret never reaches Script Changes in clear — gosmo redacts it.**
   Pass the real password, secret or key source to gosmo on both Apply and
   Script; under `gosmo.WithScript` its exec chokepoint captures

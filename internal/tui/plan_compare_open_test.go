@@ -73,7 +73,7 @@ func TestCompareWithIsWithheldWithNothingToCompare(t *testing.T) {
 // writes it — as plan B, against the plan on screen as A.
 func TestCompareShowplanComparesAgainstTheChosenFile(t *testing.T) {
 	a := newTestApp()
-	a.fileDialog = dialogs.NewFileDialog(nil)
+	installDialog(a, dialogs.NewFileDialog())
 	from := addPlanPanel(t, a, "Execution Plan — Query 1", comparePlanXML("IX_date", 10, 1))
 	path := filepath.Join(t.TempDir(), "actual.sqlplan")
 	if err := os.WriteFile(path, readFixturePlan(t), 0o644); err != nil {
@@ -81,7 +81,7 @@ func TestCompareShowplanComparesAgainstTheChosenFile(t *testing.T) {
 	}
 
 	a.compareShowplan()
-	a.fileDialog.OnChoose(path)
+	a.fileDialog().OnChoose(path)
 
 	cp, ok := a.panels.ActivePanel().(*PlanComparePanel)
 	if !ok {
@@ -104,14 +104,14 @@ func TestCompareShowplanComparesAgainstTheChosenFile(t *testing.T) {
 // A file that isn't a plan opens no comparison and says so.
 func TestCompareShowplanRefusesAFileThatIsNotAPlan(t *testing.T) {
 	a := newTestApp()
-	a.fileDialog = dialogs.NewFileDialog(nil)
+	installDialog(a, dialogs.NewFileDialog())
 	addPlanPanel(t, a, "p", comparePlanXML("IX_date", 10, 1))
 	path := filepath.Join(t.TempDir(), "notes.sqlplan")
 	if err := os.WriteFile(path, []byte("not a plan"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	a.compareShowplan()
-	a.fileDialog.OnChoose(path)
+	a.fileDialog().OnChoose(path)
 	if _, ok := a.panels.ActivePanel().(*PlanComparePanel); ok {
 		t.Error("a comparison opened against a file that is not a plan")
 	}

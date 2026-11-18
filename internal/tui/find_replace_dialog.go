@@ -59,7 +59,7 @@ type FindReplaceDialog struct {
 // showings, so reopening offers the previous search back.
 func NewFindReplaceDialog(app *App) *FindReplaceDialog {
 	d := &FindReplaceDialog{app: app}
-	d.InitModal(app.screen, findDialogTitle(false), findDialogW, 13)
+	d.InitModal(findDialogTitle(false), findDialogW, 13)
 	d.fFind = widgets.NewInputField("Find what:   ", 34, false)
 	d.fReplace = widgets.NewInputField("Replace with:", 34, false)
 	d.cbCase = widgets.NewCheckBox("Match case")
@@ -505,7 +505,7 @@ func (a *App) findNextInEditor(dir int) {
 		return
 	}
 	if !qp.editor.HasSearch() {
-		a.findDialog.ShowFind()
+		a.findDialog().ShowFind()
 		return
 	}
 	if !qp.editor.FindNext(dir) {
@@ -536,11 +536,11 @@ func (a *App) findWordAtCursor() {
 	// before compiling.
 	opts := editor.SearchOptions{
 		Query:     word,
-		Replace:   a.findDialog.fReplace.Value(),
+		Replace:   a.findDialog().fReplace.Value(),
 		WholeWord: true,
 	}
 	_ = qp.editor.SetSearch(opts)
-	a.findDialog.adoptSearch(opts)
+	a.findDialog().adoptSearch(opts)
 	a.findNextInEditor(1)
 }
 

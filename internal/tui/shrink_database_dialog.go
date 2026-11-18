@@ -192,5 +192,5 @@ func (a *App) showShrinkDatabaseDialog(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.shrinkDatabaseDialog.show(sc, dbName)
+	a.shrinkDatabaseDialog().show(sc, dbName)
 }

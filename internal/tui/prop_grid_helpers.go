@@ -50,29 +50,6 @@ func sysInfoMB(info *gosmo.ServerInfo) string {
 	return formatMB(float64(info.PhysicalMemoryMB))
 }
 
-// engineEditionNames maps SERVERPROPERTY('EngineEdition') (gosmo's
-// ServerInfo.EngineEdition) to the name SSMS's General page shows.
-var engineEditionNames = map[int]string{
-	1:  "Personal/Desktop Engine",
-	2:  "Standard",
-	3:  "Enterprise",
-	4:  "Express",
-	5:  "SQL Database",
-	6:  "SQL Data Warehouse",
-	8:  "Managed Instance",
-	9:  "SQL Edge",
-	11: "Azure Synapse serverless SQL pool",
-}
-
-// engineEditionName renders an EngineEdition code as SSMS would, falling back to
-// the raw number for a code this build doesn't recognise.
-func engineEditionName(code int) string {
-	if name, ok := engineEditionNames[code]; ok {
-		return name
-	}
-	return strconv.Itoa(code)
-}
-
 // boolIdx maps a bool onto a two-item Select/Radio row's index (1 true, 0 false),
 // matching the [off, on] ordering every such row uses.
 func boolIdx(b bool) int {

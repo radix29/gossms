@@ -123,7 +123,7 @@ func TestLogViewerMailLogDeleteIsGatedOnMsdbRights(t *testing.T) {
 
 	lv.conn, lv.logType = outsider, gosmo.ErrorLogDatabaseMail
 	lv.runTool(logToolRecycle)
-	if a.promptDialog.Visible() {
+	if a.promptDialog().Visible() {
 		t.Error("a withheld Delete still asked for a date")
 	}
 	if st := lv.grid.Status(); !strings.Contains(st, "db_owner") || !strings.Contains(st, "CONTROL SERVER") {
@@ -139,14 +139,14 @@ func TestLogViewerDeletesMailLogEntriesBeforeTheSelectedRow(t *testing.T) {
 	lv.grid.SetSelectedRow(1)
 
 	lv.runTool(logToolRecycle)
-	if !a.promptDialog.Visible() {
+	if !a.promptDialog().Visible() {
 		t.Fatal("Delete did not ask what to delete")
 	}
-	if got := a.promptDialog.Value(); got != "2026-10-01 08:00:00" {
+	if got := a.promptDialog().Value(); got != "2026-10-01 08:00:00" {
 		t.Errorf("prompt pre-filled with %q, want the selected row's time", got)
 	}
-	a.promptDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if !a.confirmDialog.Visible() {
+	a.promptDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	if !a.confirmDialog().Visible() {
 		t.Fatal("Delete did not ask for confirmation")
 	}
 	answerConfirm(t, a, true)
@@ -176,10 +176,10 @@ func TestLogViewerMailLogDeleteRefusesAnUnreadableTime(t *testing.T) {
 	a, lv, inst := newMailLogTestViewer(t)
 	lv.runTool(logToolRecycle)
 	answerPrompt(t, a, "last week")
-	if !a.promptDialog.Visible() {
+	if !a.promptDialog().Visible() {
 		t.Error("the prompt closed on a value it cannot read")
 	}
-	if a.confirmDialog.Visible() || len(inst.Statements()) != 0 {
+	if a.confirmDialog().Visible() || len(inst.Statements()) != 0 {
 		t.Error("an unreadable time went on to the confirmation")
 	}
 	if lv.busy {

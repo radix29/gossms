@@ -23,8 +23,7 @@ either wrong or slow).
 - `go.mod`'s `replace … => ../gosmo` and `replace … => ../tuikit` are
   deliberately **active** during development, so `HEAD` may depend on
   untagged code in either. They are commented out only to tag a release,
-  against already-pushed tags of both (tuikit has none yet: its `require` is
-  the `v0.0.0-…` placeholder until its first tag).
+  against already-pushed tags of both (tuikit is released like gosmo).
 - The version resolves from the git tag (`internal/version/version.go`) — never
   hand-edited.
 

@@ -135,9 +135,11 @@ type QueryPanel struct {
 	sortRun    latest
 	sortRunKey sortRunKey
 
-	// formatRun is a Format Document too large to run on the UI goroutine;
+	// formatRun is a Format Document too large to run on the UI goroutine,
+	// and formatJob what it read, for abandonStaleFormat (nil when none);
 	// see formatActiveDocument.
 	formatRun latest
+	formatJob *formatJob
 
 	// statusRect is the results area's bottom row, where drawResultsStatus paints the
 	// execution status for every tab the DataGrid isn't drawing (the grid renders the

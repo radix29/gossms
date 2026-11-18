@@ -143,7 +143,7 @@ type BackupDialog struct {
 // NewBackupDialog creates the dialog. Widgets are built per show().
 func NewBackupDialog(app *App) *BackupDialog {
 	d := &BackupDialog{app: app}
-	d.InitModal(app.screen, "Back Up Database", backupDialogW, backupDialogH)
+	d.InitModal("Back Up Database", backupDialogW, backupDialogH)
 	return d
 }
 

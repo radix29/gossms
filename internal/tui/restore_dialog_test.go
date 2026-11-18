@@ -408,8 +408,8 @@ func TestRestoreTargetFieldStaysInsideTheBorder(t *testing.T) {
 	}
 	t.Cleanup(s.Fini)
 	a := newTestApp()
-	a.screen = s
-	d := NewRestoreDialog(a)
+	a.setScreen(s)
+	d := withScreen(NewRestoreDialog(a), a.screen)
 	d.show(nil, "AppDB")
 	d.Draw(s)
 

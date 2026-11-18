@@ -144,7 +144,7 @@ func TestGithubReleaseReleasesURL(t *testing.T) {
 // late failure overwrote the newer check's success.
 func TestUpdateCheckDropsAnEarlierShowingsResult(t *testing.T) {
 	a := newTestApp()
-	a.updateDialog = NewUpdateDialog(a)
+	installDialog(a, NewUpdateDialog(a))
 
 	release, returned := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
@@ -160,10 +160,10 @@ func TestUpdateCheckDropsAnEarlierShowingsResult(t *testing.T) {
 
 	a.checkForUpdates()
 	drainUntil(t, a, func() bool { return calls.Load() == 1 }, "the first check to start")
-	a.updateDialog.Hide()
+	a.updateDialog().Hide()
 	a.checkForUpdates()
 	has := func(sub string) bool {
-		return slices.ContainsFunc(a.updateDialog.lines, func(l string) bool { return strings.Contains(l, sub) })
+		return slices.ContainsFunc(a.updateDialog().lines, func(l string) bool { return strings.Contains(l, sub) })
 	}
 	drainUntil(t, a, func() bool { return has("v9.9.9") }, "the second check's result")
 	close(release)
@@ -174,6 +174,6 @@ func TestUpdateCheckDropsAnEarlierShowingsResult(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	if has("slow failure") || !has("v9.9.9") {
-		t.Errorf("a superseded check overwrote the newer result: %q", a.updateDialog.lines)
+		t.Errorf("a superseded check overwrote the newer result: %q", a.updateDialog().lines)
 	}
 }

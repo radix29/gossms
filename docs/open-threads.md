@@ -68,10 +68,62 @@ support); this section covers only the environment.
   straight after. Unexplained; the failure text was lost to the run's
   filter. Rerun them in the full suite with `-v` before trusting a failure.
 
+- **No SQL database in Fabric (EngineEdition 12) has ever been connected.**
+  gosmo counts it as Azure (version gates treat its 12.x as newest) and as
+  single-database (`IsDatabaseScoped`: no msdb, Agent, server scope, USE) from
+  the documentation alone. To check, with the Fabric contributor: connect,
+  run gosmo's `TestLiveVersionSweep` against it, and walk Object Explorer —
+  no server-scope folders, no "needs SQL Server 2016" refusals. Also online
+  rebuild and the per-index ALL expansion (review 2026-11-18 B2): `gossms
+  maint index-rebuild --online` (gosmo now allows it on 12) and without
+  `--index`, with and without `--reorganize` — gosmo sends one `ALTER INDEX
+  [name]` per index there, since the docs say Fabric refuses `ALTER INDEX
+  ALL` — and Object Explorer's Rebuild All Indexes script on a table and an
+  indexed view; confirm Fabric really refuses `ALL` (if not, the expansion
+  can go).
+- **Fabric Warehouse is detected from the hostname, in gossms** (review
+  2026-11-18, E4; deferred until a warehouse can be probed).
+  `db.newServerConn` (`internal/db/connection.go`) sets `ServerConn.IsFabricDW`
+  from the suffix `datawarehouse.fabric.microsoft.com` and copies it into
+  gosmo's exported `Server.IsFabricDW` field, which every gosmo user must set
+  before the first catalog read. A warehouse reached through a private
+  endpoint, a DNS alias or a future domain gets SQL Server catalog queries;
+  so does any other gosmo user who doesn't know about the field. Fix
+  (breaking): gosmo decides at `Connect`/`loadInfo` from EngineEdition 11 plus
+  whatever tells Fabric from Synapse serverless (probe live:
+  `DATABASEPROPERTYEX(DB_NAME(), 'Edition')`, `@@VERSION`), hostname only as a
+  fallback; expose a read-only `Server.IsFabricDW()` with an `Options`
+  override for tests; gossms reads it from the Server (`ServerConn.IsFabricDW`
+  becomes a method or goes, ~25 call sites, mechanical). Needs the Fabric
+  contributor to verify.
+
 ## Picture viewer: what is left
 
 - **File > Open of an image file** does not open it in a picture panel; only a
   result cell does. `openQueryFile` would sniff with `sniffPicture`.
+
+## Windows clipboard: what is left
+
+`os_clipboard_windows.go` opens with a NULL owner (`OpenClipboard(0)`), which
+the Win32 docs say makes `SetClipboardData` fail. On win10cli (2026-11-18, in
+the user's disconnected RDP session, `rdpclip` running) it never did: 300
+round trips per run, Get-Clipboard from another process read the text,
+clipboard history (Win+V) recorded the writes, and 16 runs with a simulated
+clipboard manager (a format listener holding the clipboard 20 ms per change)
+all passed; writes then took up to 440 ms, inside the 1 s open timeout.
+Still open:
+
+- **A connected RDP client was not tried** (no RDP client on the Linux
+  machine): does a gossms copy reach the client's clipboard through `rdpclip`?
+- **A real third-party clipboard manager was not tried** (Ditto etc.), only
+  the simulated listener.
+- **One manager run hung** (the first, before a test timeout was armed, so no
+  stack); 16 later runs with the timeout did not reproduce it. Likely the
+  probe's own listener, unproven. If a Windows user reports a frozen copy,
+  suspect this first.
+
+If any of these fails: open with a message-only window (`CreateWindowExW`,
+`HWND_MESSAGE`) as owner.
 
 ## Format Document: what is left
 

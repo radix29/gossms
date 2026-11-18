@@ -63,12 +63,12 @@ func (a *App) runFullTextIndexOp(sc *db.ServerConn, node *explorerNode, op fullT
 				a.setStatus(fmt.Sprintf("Failed to read the full-text index on %s: %v", display, err))
 				return
 			case i == nil:
-				a.alertDialog.ShowAlert(op.title, display+" has no full-text index.")
+				a.alertDialog().ShowAlert(op.title, display+" has no full-text index.")
 				return
 			}
 			if op.refuse != nil {
 				if why := op.refuse(i); why != "" {
-					a.alertDialog.ShowAlert(op.title, why)
+					a.alertDialog().ShowAlert(op.title, why)
 					return
 				}
 			}
@@ -81,7 +81,7 @@ func (a *App) runFullTextIndexOp(sc *db.ServerConn, node *explorerNode, op fullT
 				run()
 				return
 			}
-			a.confirmDialog.ShowConfirm(op.title, prompt, func(confirmed bool) {
+			a.confirmDialog().ShowConfirm(op.title, prompt, func(confirmed bool) {
 				if confirmed {
 					run()
 				}

@@ -146,7 +146,7 @@ func (lv *LogViewer) showSearch() {
 	if !lv.app.requireConn(lv.conn) {
 		return
 	}
-	lv.app.logSearchDialog.ShowLogSearch(lv.search, func(search gosmo.LogSearch) {
+	lv.app.logSearchDialog().ShowLogSearch(lv.search, func(search gosmo.LogSearch) {
 		lv.search = search
 		lv.detailScroll = 0
 		lv.Load()

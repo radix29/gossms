@@ -337,7 +337,7 @@ func TestFabricPlanControlsFollowActiveQueryConnection(t *testing.T) {
 func TestFabricPlanToggleActionsDoNotChangeGlobalSettings(t *testing.T) {
 	a := &App{cfg: newTestApp().cfg}
 	a.buildUI()
-	a.screen = tuikittest.NewScreen(120, 40)
+	a.setScreen(tuikittest.NewScreen(120, 40))
 	qp := NewQueryPanel(a, "Fabric")
 	qp.conn = &db.ServerConn{IsFabricDW: true}
 	a.panels.SetActiveIndex(a.panels.AddPanel(qp))

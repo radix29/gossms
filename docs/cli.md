@@ -469,8 +469,11 @@ the text format's summary, on success too; the exit code carries the status.
 ### `markdown`
 
 The text envelope with each set as a GitHub table, after a blank line: `|`
-and `\` escaped, line breaks as `<br>`. `--no-headers` does not apply (a
-GitHub table needs its header row).
+and `\` escaped, `&`, `<` and `>` as `&amp;`, `&lt;` and `&gt;` (GitHub
+renders HTML in a cell, so an `xml` value would otherwise vanish), line
+breaks as `<br>` — the only markup a cell holds, so a value containing the
+text `<br>` reads `&lt;br&gt;`. Read raw, the source shows the entities.
+`--no-headers` does not apply (a GitHub table needs its header row).
 
 ### Limits
 
@@ -1507,10 +1510,10 @@ leading keywords:
 
 | Class | Examples | Needs |
 |---|---|---|
-| `read` | `SELECT`, `USE`, `SET` session options, `DECLARE`, `PRINT`, `EXECUTE AS`, catalog procedures on the read allow-list (`sp_help`, `sp_helptext`, `sp_spaceused`, `sp_who2`, …; Agent's `msdb.dbo.sp_help_job*`), qualified as below, `DBCC SHOW_STATISTICS`/`SQLPERF`/`OPENTRAN`/`INPUTBUFFER`/`TRACESTATUS`/`USEROPTIONS` | nothing (the default) |
+| `read` | `SELECT`, `USE`, `SET` session options, `DECLARE`, `PRINT`, `RAISERROR` (not `WITH LOG`), `EXECUTE AS`, catalog procedures on the read allow-list (`sp_help`, `sp_helptext`, `sp_spaceused`, `sp_who2`, …; Agent's `msdb.dbo.sp_help_job*`), qualified as below, `DBCC SHOW_STATISTICS`/`SQLPERF`/`OPENTRAN`/`INPUTBUFFER`/`TRACESTATUS`/`USEROPTIONS` | nothing (the default) |
 | `write` | `INSERT`, `UPDATE`, `DELETE`, `MERGE`, transaction control (`BEGIN TRAN`, `COMMIT`, …), Service Broker (`SEND`, `RECEIVE`, `BEGIN DIALOG`, `MOVE`/`GET`/`END CONVERSATION`), `WRITETEXT`/`UPDATETEXT`, `NEXT VALUE FOR` (even in a `SELECT`: it advances the sequence), a procedure not on the read allow-list, dynamic SQL, `OPENQUERY`/`OPENROWSET` | `--allow write` |
-| `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `ADD [COUNTER] SIGNATURE`, `UPDATE STATISTICS`, `sp_updatestats`, `sp_createstats` | `--allow ddl` |
-| `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `CHECKPOINT`, `SETUSER`, `sp_configure`, `xp_` and msdb procedures not on the read list, `DBCC` not on the read list | `--allow admin` |
+| `ddl` | `CREATE`/`ALTER`/`DROP` of objects, `TRUNCATE`, `SELECT … INTO`, `DISABLE`/`ENABLE TRIGGER`, `ADD [COUNTER] SIGNATURE`, `UPDATE STATISTICS`, and the system procedures that do what those statements do: `sp_updatestats`, `sp_createstats`, `sp_autostats`, `sp_rename`, `sp_refreshview`, `sp_refreshsqlmodule`, `sp_recompile`, `sp_add`/`update`/`dropextendedproperty`, `sp_[un]bindrule`, `sp_[un]bindefault`, `sp_settriggerorder`, `sp_tableoption`, `sp_indexoption`, `sp_changeobjectowner`, `sp_addtype`/`sp_droptype`, the plan-guide procedures | `--allow ddl` |
+| `admin` | `ALTER DATABASE`, `ALTER SERVER`, logins, users, roles, keys and certificates, `GRANT`/`DENY`/`REVOKE`, `BACKUP`, `RESTORE`, `KILL`, `SHUTDOWN`, `RECONFIGURE`, `CHECKPOINT`, `SETUSER`, `RAISERROR … WITH LOG` (it writes the error log, as `xp_logevent` does), `sp_configure`, `sp_addmessage`/`altermessage`/`dropmessage`, `sp_rename` of a `DATABASE` and `sp_settriggerorder` of a `SERVER` trigger (or with a variable there), `xp_` procedures not on the read list, every procedure msdb ships however it is qualified (below), `DBCC` not on the read list | `--allow admin` |
 
 `query classify --file <path>` shows each statement's class and why. The
 classifier reads the script with gossms's one lexer (`internal/sqltext`), so a
@@ -1545,6 +1548,13 @@ the list: the first two are user code (sp_WhoIsActive writes to its
 `@destination_table`), and `sp_monitor` updates `master.dbo.spt_monitor`.
 `sp_spaceused` with `@updateusage` (named, or as its second argument) set to
 anything but the literal `'false'` runs `DBCC UPDATEUSAGE` and is `admin`.
+
+A procedure msdb ships (`sp_send_dbmail`, `sp_purge_jobhistory`,
+`sp_delete_backuphistory`, `sysmail_*`, the Agent ones, …; the list was taken
+from `msdb.sys.procedures` on SQL Server 17) is `admin` however it is
+qualified: after `USE msdb`, which is `read`, the bare name is msdb's own, and
+the classifier cannot know the session's database. So is any `sp_` procedure
+called as `msdb.<schema>.<name>`. The Agent reads above are the exception.
 
 A run's check refuses, in this order, the first of:
 

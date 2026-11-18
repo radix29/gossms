@@ -39,7 +39,7 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 				propsheet.Static("Product", "Microsoft SQL Server"),
 				propsheet.Static("Version", info.ProductVersion),
 				propsheet.Static("Edition", info.Edition),
-				propsheet.Static("Engine edition", engineEditionName(info.EngineEdition)),
+				propsheet.Static("Engine edition", info.EngineEdition.String()),
 				propsheet.Static("Collation", info.Collation),
 				propsheet.Static("Language", "English"),
 				propsheet.Static("Platform", platformText(info)),

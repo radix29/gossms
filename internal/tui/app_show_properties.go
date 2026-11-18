@@ -24,7 +24,7 @@ func (a *App) showServerProperties() {
 // showServerPropertiesFor opens Server Properties for a known connection, for
 // the Tools menu and the Object Explorer context menu.
 func (a *App) showServerPropertiesFor(sc *db.ServerConn) {
-	a.propDialog.show(sc, "", "Server Properties", "Instance: "+sc.Opts.Server, "Connected: yes",
+	a.propDialog().show(sc, "", "Server Properties", "Instance: "+sc.Opts.Server, "Connected: yes",
 		func() []propPage { return serverPropPages(sc) })
 }
 
@@ -34,7 +34,7 @@ func (a *App) showNewDatabaseDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newDatabaseDialog.show(sc)
+	a.newDatabaseDialog().show(sc)
 }
 
 // showDatabaseProperties runs Tools > Database Properties on the database the
@@ -52,7 +52,7 @@ func (a *App) showDatabaseProperties() {
 // showDatabasePropertiesFor opens Database Properties for a known connection
 // and database, for the Tools menu and the Object Explorer context menu.
 func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
-	a.propDialog.show(sc, dbName, "Database Properties", "Database: "+dbName, "Server: "+sc.Opts.Server,
+	a.propDialog().show(sc, dbName, "Database Properties", "Database: "+dbName, "Server: "+sc.Opts.Server,
 		func() []propPage { return databasePropPages(sc, dbName) })
 }
 
@@ -60,7 +60,7 @@ func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
 // from the Object Explorer context menu. sc need not be the group's primary:
 // every page follows the primary itself and reports an error when it can't.
 func (a *App) showAGPropertiesFor(sc *db.ServerConn, agName string) {
-	a.propDialog.show(sc, "", "Availability Group Properties",
+	a.propDialog().show(sc, "", "Availability Group Properties",
 		"Availability group: "+agName, "Server: "+sc.Opts.Server,
 		func() []propPage { return agPropPages(sc, agName) })
 }
@@ -92,7 +92,7 @@ func (a *App) showNewLoginDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newLoginDialog.show(sc)
+	a.newLoginDialog().show(sc)
 }
 
 // showBackupDialog opens Back Up Database for a known connection, from a
@@ -101,7 +101,7 @@ func (a *App) showBackupDialog(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.backupDialog.show(sc, dbName)
+	a.backupDialog().show(sc, dbName)
 }
 
 // showRestoreDialog opens Restore Database for a known connection, from a
@@ -110,7 +110,7 @@ func (a *App) showRestoreDialog(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.restoreDialog.show(sc, dbName)
+	a.restoreDialog().show(sc, dbName)
 }
 
 // showBackupHistoryFor opens a new query window scoped to msdb (where the
@@ -126,14 +126,14 @@ func (a *App) showBackupHistoryFor(sc *db.ServerConn, dbName string) {
 
 // showLoginProperties opens Login Properties for a login on sc.
 func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
-	a.propDialog.showReloading(sc, "", "Login Properties", "Login: "+loginName, "Server: "+sc.Opts.Server,
-		func() []propPage { return loginPropPages(a.propDialog, sc, loginName) }, folderOf("", NodeLogins))
+	a.propDialog().showReloading(sc, "", "Login Properties", "Login: "+loginName, "Server: "+sc.Opts.Server,
+		func() []propPage { return loginPropPages(a.propDialog(), sc, loginName) }, folderOf("", NodeLogins))
 }
 
 // showTablePropertiesFor opens Table Properties for a known connection,
 // database, and schema-qualified table, from the Object Explorer context menu.
 func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Table Properties", "Table: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Table Properties", "Table: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return tablePropPages(sc, dbName, schema, name) })
 }
 
@@ -141,16 +141,16 @@ func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name str
 // database, and schema-qualified table/index, from the context menu. onView
 // says table names a view (nodeData.OnView).
 func (a *App) showIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table, index string, onView bool) {
-	a.propDialog.show(sc, dbName, "Index Properties", "Index: "+index, ownerHeader(onView)+gosmo.QualifiedName(schema, table),
-		func() []propPage { return indexPropPages(a.propDialog, sc, dbName, schema, table, index, onView) })
+	a.propDialog().show(sc, dbName, "Index Properties", "Index: "+index, ownerHeader(onView)+gosmo.QualifiedName(schema, table),
+		func() []propPage { return indexPropPages(a.propDialog(), sc, dbName, schema, table, index, onView) })
 }
 
 // showStatisticPropertiesFor opens Statistics Properties for a known
 // connection, database, and schema-qualified table/statistic; onView as for
 // showIndexPropertiesFor.
 func (a *App) showStatisticPropertiesFor(sc *db.ServerConn, dbName, schema, table, stat string, onView bool) {
-	a.propDialog.show(sc, dbName, "Statistics Properties", "Statistic: "+stat, ownerHeader(onView)+gosmo.QualifiedName(schema, table),
-		func() []propPage { return statisticPropPages(a.propDialog, sc, dbName, schema, table, stat, onView) })
+	a.propDialog().show(sc, dbName, "Statistics Properties", "Statistic: "+stat, ownerHeader(onView)+gosmo.QualifiedName(schema, table),
+		func() []propPage { return statisticPropPages(a.propDialog(), sc, dbName, schema, table, stat, onView) })
 }
 
 // ownerHeader is the header prefix naming what an index or statistic is on.
@@ -167,7 +167,7 @@ func ownerNoun(onView bool) string {
 // showForeignKeyPropertiesFor opens the read-only Foreign Key Properties for a
 // known connection, database, and schema-qualified table/foreign key.
 func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, fk string) {
-	a.propDialog.show(sc, dbName, "Foreign Key Properties", "Key: "+fk, "Table: "+gosmo.QualifiedName(schema, table),
+	a.propDialog().show(sc, dbName, "Foreign Key Properties", "Key: "+fk, "Table: "+gosmo.QualifiedName(schema, table),
 		func() []propPage { return fkPropPages(sc, dbName, schema, table, fk) })
 }
 
@@ -177,8 +177,8 @@ func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, tab
 func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key string, isPrimaryKey bool) {
 	title := keyTypeName(isPrimaryKey) + " Properties"
 	// A key is listed twice: under Keys, and its backing index under Indexes.
-	a.propDialog.showReloading(sc, dbName, title, "Key: "+key, "Table: "+gosmo.QualifiedName(schema, table),
-		func() []propPage { return keyPropPages(a.propDialog, sc, dbName, schema, table, key) },
+	a.propDialog().showReloading(sc, dbName, title, "Key: "+key, "Table: "+gosmo.QualifiedName(schema, table),
+		func() []propPage { return keyPropPages(a.propDialog(), sc, dbName, schema, table, key) },
 		func(d nodeData) bool {
 			return (d.Type == NodeKeys || d.Type == NodeIndexes) &&
 				d.DBName == dbName && d.Schema == schema && d.Name == table
@@ -189,8 +189,8 @@ func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key
 // database, and role name. It can rename the role, so Apply reloads the folder
 // listing it.
 func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) {
-	a.propDialog.showReloading(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
-		func() []propPage { return rolePropPages(a.propDialog, sc, dbName, roleName) },
+	a.propDialog().showReloading(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
+		func() []propPage { return rolePropPages(a.propDialog(), sc, dbName, roleName) },
 		folderOf(dbName, NodeDatabaseRoles))
 }
 
@@ -198,7 +198,7 @@ func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) 
 // connection and role name (server-level, no dbName, like showLoginProperties).
 // It can rename the role, so Apply reloads the folder listing it.
 func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
-	a.propDialog.showReloading(sc, "", "Server Role Properties", "Role: "+roleName, "Server: "+sc.Opts.Server,
+	a.propDialog().showReloading(sc, "", "Server Role Properties", "Role: "+roleName, "Server: "+sc.Opts.Server,
 		func() []propPage { return serverRolePropPages(sc, roleName) },
 		folderOf("", NodeServerRoles))
 }
@@ -206,7 +206,7 @@ func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
 // showCredentialPropertiesFor opens Credential Properties for a known
 // connection and credential name.
 func (a *App) showCredentialPropertiesFor(sc *db.ServerConn, credName string) {
-	a.propDialog.show(sc, "", "Credential Properties", "Credential: "+credName, "Server: "+sc.Opts.Server,
+	a.propDialog().show(sc, "", "Credential Properties", "Credential: "+credName, "Server: "+sc.Opts.Server,
 		func() []propPage { return credentialPropPages(sc, credName) })
 }
 
@@ -215,41 +215,41 @@ func (a *App) showNewCredentialDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newCredentialDialog.show(sc)
+	a.newCredentialDialog().show(sc)
 }
 
 // showBackupDevicePropertiesFor opens Backup Device Properties for a known
 // connection and device name.
 func (a *App) showBackupDevicePropertiesFor(sc *db.ServerConn, devName string) {
-	a.propDialog.show(sc, "", "Backup Device Properties", "Device: "+devName, "Server: "+sc.Opts.Server,
+	a.propDialog().show(sc, "", "Backup Device Properties", "Device: "+devName, "Server: "+sc.Opts.Server,
 		func() []propPage { return backupDevicePropPages(sc, devName) })
 }
 
 // showServerTriggerPropertiesFor opens Server Trigger Properties for a known
 // connection and trigger name.
 func (a *App) showServerTriggerPropertiesFor(sc *db.ServerConn, trigName string) {
-	a.propDialog.show(sc, "", "Server Trigger Properties", "Trigger: "+trigName, "Server: "+sc.Opts.Server,
+	a.propDialog().show(sc, "", "Server Trigger Properties", "Trigger: "+trigName, "Server: "+sc.Opts.Server,
 		func() []propPage { return serverTriggerPropPages(sc, trigName) })
 }
 
 // showEndpointPropertiesFor opens Endpoint Properties for a known connection
 // and endpoint name.
 func (a *App) showEndpointPropertiesFor(sc *db.ServerConn, epName string) {
-	a.propDialog.show(sc, "", "Endpoint Properties", "Endpoint: "+epName, "Server: "+sc.Opts.Server,
+	a.propDialog().show(sc, "", "Endpoint Properties", "Endpoint: "+epName, "Server: "+sc.Opts.Server,
 		func() []propPage { return endpointPropPages(sc, epName) })
 }
 
 // showAuditPropertiesFor opens Audit Properties for a known connection and
 // audit name.
 func (a *App) showAuditPropertiesFor(sc *db.ServerConn, auditName string) {
-	a.propDialog.showReloading(sc, "", "Audit Properties", "Audit: "+auditName, "Server: "+sc.Opts.Server,
+	a.propDialog().showReloading(sc, "", "Audit Properties", "Audit: "+auditName, "Server: "+sc.Opts.Server,
 		func() []propPage { return auditPropPages(sc, auditName) }, folderOf("", NodeAudits))
 }
 
 // showServerAuditSpecificationPropertiesFor opens Server Audit Specification
 // Properties for a known connection and specification name.
 func (a *App) showServerAuditSpecificationPropertiesFor(sc *db.ServerConn, specName string) {
-	a.propDialog.show(sc, "", "Server Audit Specification Properties",
+	a.propDialog().show(sc, "", "Server Audit Specification Properties",
 		"Specification: "+specName, "Server: "+sc.Opts.Server,
 		func() []propPage { return serverAuditSpecificationPropPages(sc, specName) })
 }
@@ -259,7 +259,7 @@ func (a *App) showNewAuditDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newAuditDialog.show(sc)
+	a.newAuditDialog().show(sc)
 }
 
 // showNewServerAuditSpecificationDialog opens New Server Audit Specification
@@ -268,14 +268,14 @@ func (a *App) showNewServerAuditSpecificationDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newAuditSpecificationDialog.show(sc)
+	a.newAuditSpecificationDialog().show(sc)
 }
 
 // showDatabaseAuditSpecificationPropertiesFor opens Database Audit
 // Specification Properties for a known connection, database and specification
 // name.
 func (a *App) showDatabaseAuditSpecificationPropertiesFor(sc *db.ServerConn, dbName, specName string) {
-	a.propDialog.show(sc, dbName, "Database Audit Specification Properties",
+	a.propDialog().show(sc, dbName, "Database Audit Specification Properties",
 		"Specification: "+specName, "Database: "+dbName,
 		func() []propPage { return databaseAuditSpecificationPropPages(sc, dbName, specName) })
 }
@@ -283,7 +283,7 @@ func (a *App) showDatabaseAuditSpecificationPropertiesFor(sc *db.ServerConn, dbN
 // showDatabaseTriggerPropertiesFor opens Database Trigger Properties for a
 // known connection, database and trigger name.
 func (a *App) showDatabaseTriggerPropertiesFor(sc *db.ServerConn, dbName, trigName string) {
-	a.propDialog.show(sc, dbName, "Database Trigger Properties",
+	a.propDialog().show(sc, dbName, "Database Trigger Properties",
 		"Trigger: "+trigName, "Database: "+dbName,
 		func() []propPage { return databaseTriggerPropPages(sc, dbName, trigName) })
 }
@@ -291,7 +291,7 @@ func (a *App) showDatabaseTriggerPropertiesFor(sc *db.ServerConn, dbName, trigNa
 // showDatabaseScopedCredentialPropertiesFor opens Database Scoped Credential
 // Properties for a known connection, database and credential name.
 func (a *App) showDatabaseScopedCredentialPropertiesFor(sc *db.ServerConn, dbName, credName string) {
-	a.propDialog.show(sc, dbName, "Database Scoped Credential Properties",
+	a.propDialog().show(sc, dbName, "Database Scoped Credential Properties",
 		"Credential: "+credName, "Database: "+dbName,
 		func() []propPage { return databaseScopedCredentialPropPages(sc, dbName, credName) })
 }
@@ -302,7 +302,7 @@ func (a *App) showNewDatabaseScopedCredentialDialog(sc *db.ServerConn, node *exp
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newDBScopedCredDialog.show(sc, node)
+	a.newDBScopedCredDialog().show(sc, node)
 }
 
 // showNewDatabaseAuditSpecificationDialog opens New Database Audit
@@ -311,7 +311,7 @@ func (a *App) showNewDatabaseAuditSpecificationDialog(sc *db.ServerConn, node *e
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newDBAuditSpecDialog.show(sc, node)
+	a.newDBAuditSpecDialog().show(sc, node)
 }
 
 // showNewBackupDeviceDialog opens New Backup Device for a known connection.
@@ -319,55 +319,55 @@ func (a *App) showNewBackupDeviceDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newBackupDeviceDialog.show(sc)
+	a.newBackupDeviceDialog().show(sc)
 }
 
 // showUserPropertiesFor opens Database User Properties for a known connection,
 // database, and user name.
 func (a *App) showUserPropertiesFor(sc *db.ServerConn, dbName, userName string) {
-	a.propDialog.showReloading(sc, dbName, "Database User Properties", "User: "+userName, "Database: "+dbName,
-		func() []propPage { return userPropPages(a.propDialog, sc, dbName, userName) }, folderOf(dbName, NodeUsers))
+	a.propDialog().showReloading(sc, dbName, "Database User Properties", "User: "+userName, "Database: "+dbName,
+		func() []propPage { return userPropPages(a.propDialog(), sc, dbName, userName) }, folderOf(dbName, NodeUsers))
 }
 
 // showSchemaPropertiesFor opens Schema Properties for a known connection,
 // database, and schema name.
 func (a *App) showSchemaPropertiesFor(sc *db.ServerConn, dbName, schemaName string) {
-	a.propDialog.show(sc, dbName, "Schema Properties", "Schema: "+schemaName, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Schema Properties", "Schema: "+schemaName, "Database: "+dbName,
 		func() []propPage { return schemaPropPages(sc, dbName, schemaName) })
 }
 
 // showPartitionFunctionPropertiesFor opens the read-only Partition Function
 // Properties for a known connection and database.
 func (a *App) showPartitionFunctionPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Partition Function Properties", "Function: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Partition Function Properties", "Function: "+name, "Database: "+dbName,
 		func() []propPage { return partitionFunctionPropPages(sc, dbName, name) })
 }
 
 // showPartitionSchemePropertiesFor opens the read-only Partition Scheme
 // Properties.
 func (a *App) showPartitionSchemePropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Partition Scheme Properties", "Scheme: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Partition Scheme Properties", "Scheme: "+name, "Database: "+dbName,
 		func() []propPage { return partitionSchemePropPages(sc, dbName, name) })
 }
 
 // showSecurityPolicyPropertiesFor opens the read-only Security Policy
 // Properties.
 func (a *App) showSecurityPolicyPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Security Policy Properties", "Policy: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Security Policy Properties", "Policy: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return securityPolicyPropPages(sc, dbName, schema, name) })
 }
 
 // showColumnMasterKeyPropertiesFor opens the read-only Column Master Key
 // Properties.
 func (a *App) showColumnMasterKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Column Master Key Properties", "Key: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Column Master Key Properties", "Key: "+name, "Database: "+dbName,
 		func() []propPage { return columnMasterKeyPropPages(sc, dbName, name) })
 }
 
 // showColumnEncryptionKeyPropertiesFor opens the read-only Column Encryption
 // Key Properties.
 func (a *App) showColumnEncryptionKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Column Encryption Key Properties", "Key: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Column Encryption Key Properties", "Key: "+name, "Database: "+dbName,
 		func() []propPage { return columnEncryptionKeyPropPages(sc, dbName, name) })
 }
 
@@ -381,7 +381,7 @@ func (a *App) showColumnEncryptionKeyPropertiesFor(sc *db.ServerConn, dbName, na
 // showUserDefinedDataTypePropertiesFor opens the read-only Properties for an
 // alias type.
 func (a *App) showUserDefinedDataTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "User-Defined Data Type Properties",
+	a.propDialog().show(sc, dbName, "User-Defined Data Type Properties",
 		"Type: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return userDefinedDataTypePropPages(sc, dbName, schema, name) })
 }
@@ -389,14 +389,14 @@ func (a *App) showUserDefinedDataTypePropertiesFor(sc *db.ServerConn, dbName, sc
 // showUserDefinedTableTypePropertiesFor opens the read-only Properties for a
 // table type.
 func (a *App) showUserDefinedTableTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "User-Defined Table Type Properties",
+	a.propDialog().show(sc, dbName, "User-Defined Table Type Properties",
 		"Type: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return userDefinedTableTypePropPages(sc, dbName, schema, name) })
 }
 
 // showClrTypePropertiesFor opens the read-only Properties for a CLR type.
 func (a *App) showClrTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "User-Defined Type Properties",
+	a.propDialog().show(sc, dbName, "User-Defined Type Properties",
 		"Type: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return clrTypePropPages(sc, dbName, schema, name) })
 }
@@ -404,20 +404,20 @@ func (a *App) showClrTypePropertiesFor(sc *db.ServerConn, dbName, schema, name s
 // showXMLSchemaCollectionPropertiesFor opens the read-only Properties for an
 // XML schema collection.
 func (a *App) showXMLSchemaCollectionPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "XML Schema Collection Properties",
+	a.propDialog().show(sc, dbName, "XML Schema Collection Properties",
 		"Collection: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return xmlSchemaCollectionPropPages(sc, dbName, schema, name) })
 }
 
 // showAssemblyPropertiesFor opens the read-only Properties for a CLR assembly.
 func (a *App) showAssemblyPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Assembly Properties", "Assembly: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Assembly Properties", "Assembly: "+name, "Database: "+dbName,
 		func() []propPage { return assemblyPropPages(sc, dbName, name) })
 }
 
 // showRulePropertiesFor opens the read-only Properties for a standalone rule.
 func (a *App) showRulePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Rule Properties", "Rule: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Rule Properties", "Rule: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return rulePropPages(sc, dbName, schema, name) })
 }
 
@@ -425,7 +425,7 @@ func (a *App) showRulePropertiesFor(sc *db.ServerConn, dbName, schema, name stri
 // default, never a table's DF_... constraint (a different family under the same
 // sys.objects type code).
 func (a *App) showDefaultPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.show(sc, dbName, "Default Properties", "Default: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Default Properties", "Default: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return defaultPropPages(sc, dbName, schema, name) })
 }
 
@@ -434,14 +434,14 @@ func (a *App) showDefaultPropertiesFor(sc *db.ServerConn, dbName, schema, name s
 // construction (no recovery model, no files to add, no options); see
 // database_snapshot_props.go.
 func (a *App) showDatabaseSnapshotPropertiesFor(sc *db.ServerConn, name string) {
-	a.propDialog.show(sc, name, "Database Snapshot Properties", "Snapshot: "+name, "",
+	a.propDialog().show(sc, name, "Database Snapshot Properties", "Snapshot: "+name, "",
 		func() []propPage { return databaseSnapshotPropPages(sc, name) })
 }
 
 // showPlanGuidePropertiesFor opens Plan Guide Properties, whose General page
 // can enable and disable the guide.
 func (a *App) showPlanGuidePropertiesFor(sc *db.ServerConn, dbName, name, scopeSchema, scopeName string) {
-	a.propDialog.showReloading(sc, dbName, "Plan Guide Properties", "Plan guide: "+name, "Database: "+dbName,
+	a.propDialog().showReloading(sc, dbName, "Plan Guide Properties", "Plan guide: "+name, "Database: "+dbName,
 		func() []propPage { return planGuidePropPages(sc, dbName, name, scopeSchema, scopeName) },
 		folderOf(dbName, NodePlanGuides))
 }
@@ -453,40 +453,40 @@ func (a *App) showPlanGuidePropertiesFor(sc *db.ServerConn, dbName, name, scopeS
 // showMessageTypePropertiesFor opens the read-only Properties for a message
 // type.
 func (a *App) showMessageTypePropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Message Type Properties", "Message type: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Message Type Properties", "Message type: "+name, "Database: "+dbName,
 		func() []propPage { return messageTypePropPages(sc, dbName, name) })
 }
 
 // showAsymmetricKeyPropertiesFor opens the read-only Properties for an
 // asymmetric key.
 func (a *App) showAsymmetricKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Asymmetric Key Properties", "Asymmetric key: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Asymmetric Key Properties", "Asymmetric key: "+name, "Database: "+dbName,
 		func() []propPage { return asymmetricKeyPropPages(sc, dbName, name) })
 }
 
 // showCertificatePropertiesFor opens the read-only Properties for a
 // certificate.
 func (a *App) showCertificatePropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Certificate Properties", "Certificate: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Certificate Properties", "Certificate: "+name, "Database: "+dbName,
 		func() []propPage { return certificatePropPages(sc, dbName, name) })
 }
 
 // showSymmetricKeyPropertiesFor opens the Properties for a symmetric key.
 func (a *App) showSymmetricKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Symmetric Key Properties", "Symmetric key: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Symmetric Key Properties", "Symmetric key: "+name, "Database: "+dbName,
 		func() []propPage { return symmetricKeyPropPages(sc, dbName, name) })
 }
 
 // showMasterKeyPropertiesFor opens the Properties for a database master key.
 func (a *App) showMasterKeyPropertiesFor(sc *db.ServerConn, dbName string) {
-	a.propDialog.show(sc, dbName, "Database Master Key Properties", "Database master key", "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Database Master Key Properties", "Database master key", "Database: "+dbName,
 		func() []propPage { return masterKeyPropPages(sc, dbName) })
 }
 
 // showContractPropertiesFor opens the read-only Properties for a service
 // contract.
 func (a *App) showContractPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Contract Properties", "Contract: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Contract Properties", "Contract: "+name, "Database: "+dbName,
 		func() []propPage { return contractPropPages(sc, dbName, name) })
 }
 
@@ -494,28 +494,28 @@ func (a *App) showContractPropertiesFor(sc *db.ServerConn, dbName, name string) 
 // writes the queue's status, retention, poison-message handling and
 // activation.
 func (a *App) showBrokerQueuePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	a.propDialog.showReloading(sc, dbName, "Queue Properties", "Queue: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
+	a.propDialog().showReloading(sc, dbName, "Queue Properties", "Queue: "+gosmo.QualifiedName(schema, name), "Database: "+dbName,
 		func() []propPage { return brokerQueuePropPages(sc, dbName, schema, name) }, folderOf(dbName, NodeBrokerQueues))
 }
 
 // showBrokerServicePropertiesFor opens the read-only Properties for a Service
 // Broker service.
 func (a *App) showBrokerServicePropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Service Properties", "Service: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Service Properties", "Service: "+name, "Database: "+dbName,
 		func() []propPage { return brokerServicePropPages(sc, dbName, name) })
 }
 
 // showRoutePropertiesFor opens Route Properties, whose General page writes the
 // route's destination and lifetime.
 func (a *App) showRoutePropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Route Properties", "Route: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Route Properties", "Route: "+name, "Database: "+dbName,
 		func() []propPage { return routePropPages(sc, dbName, name) })
 }
 
 // showRemoteServiceBindingPropertiesFor opens the read-only Properties for a
 // remote service binding.
 func (a *App) showRemoteServiceBindingPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Remote Service Binding Properties",
+	a.propDialog().show(sc, dbName, "Remote Service Binding Properties",
 		"Binding: "+name, "Database: "+dbName,
 		func() []propPage { return remoteServiceBindingPropPages(sc, dbName, name) })
 }
@@ -523,14 +523,14 @@ func (a *App) showRemoteServiceBindingPropertiesFor(sc *db.ServerConn, dbName, n
 // showBrokerPriorityPropertiesFor opens the read-only Properties for a
 // conversation priority.
 func (a *App) showBrokerPriorityPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Broker Priority Properties", "Priority: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Broker Priority Properties", "Priority: "+name, "Database: "+dbName,
 		func() []propPage { return brokerPriorityPropPages(sc, dbName, name) })
 }
 
 // showExternalDataSourcePropertiesFor opens the read-only Properties for an
 // external data source.
 func (a *App) showExternalDataSourcePropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "External Data Source Properties",
+	a.propDialog().show(sc, dbName, "External Data Source Properties",
 		"Data source: "+name, "Database: "+dbName,
 		func() []propPage { return externalDataSourcePropPages(sc, dbName, name) })
 }
@@ -538,7 +538,7 @@ func (a *App) showExternalDataSourcePropertiesFor(sc *db.ServerConn, dbName, nam
 // showExternalFileFormatPropertiesFor opens the read-only Properties for an
 // external file format.
 func (a *App) showExternalFileFormatPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "External File Format Properties",
+	a.propDialog().show(sc, dbName, "External File Format Properties",
 		"File format: "+name, "Database: "+dbName,
 		func() []propPage { return externalFileFormatPropPages(sc, dbName, name) })
 }
@@ -546,7 +546,7 @@ func (a *App) showExternalFileFormatPropertiesFor(sc *db.ServerConn, dbName, nam
 // showExternalLibraryPropertiesFor opens the read-only Properties for an
 // external library.
 func (a *App) showExternalLibraryPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "External Library Properties",
+	a.propDialog().show(sc, dbName, "External Library Properties",
 		"Library: "+name, "Database: "+dbName,
 		func() []propPage { return externalLibraryPropPages(sc, dbName, name) })
 }
@@ -568,33 +568,33 @@ func (a *App) canSaveActivePanel() bool {
 // showPublicationPropertiesFor opens the read-only Publication Properties
 // (replication_props.go).
 func (a *App) showPublicationPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Publication Properties", "Publication: "+publicationLabel(dbName, name), "Server: "+sc.Opts.Server,
+	a.propDialog().show(sc, dbName, "Publication Properties", "Publication: "+publicationLabel(dbName, name), "Server: "+sc.Opts.Server,
 		func() []propPage { return publicationPropPages(sc, dbName, name) })
 }
 
 // showLocalSubscriptionPropertiesFor opens the read-only Subscription
 // Properties for the subscription dbName holds to publisher's pub.
 func (a *App) showLocalSubscriptionPropertiesFor(sc *db.ServerConn, dbName, publisher, publisherDB, pub string) {
-	a.propDialog.show(sc, dbName, "Subscription Properties", "Subscription: "+localSubscriptionLabel(dbName, publisher, publisherDB, pub), "Server: "+sc.Opts.Server,
+	a.propDialog().show(sc, dbName, "Subscription Properties", "Subscription: "+localSubscriptionLabel(dbName, publisher, publisherDB, pub), "Server: "+sc.Opts.Server,
 		func() []propPage { return localSubscriptionPropPages(sc, dbName, publisher, publisherDB, pub) })
 }
 
 // showFullTextCatalogPropertiesFor opens Full-Text Catalog Properties
 // (fulltext_props.go).
 func (a *App) showFullTextCatalogPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Full-Text Catalog Properties", "Catalog: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Full-Text Catalog Properties", "Catalog: "+name, "Database: "+dbName,
 		func() []propPage { return fullTextCatalogPropPages(sc, dbName, name) })
 }
 
 // showFullTextStoplistPropertiesFor opens Full-Text Stoplist Properties.
 func (a *App) showFullTextStoplistPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Full-Text Stoplist Properties", "Stoplist: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Full-Text Stoplist Properties", "Stoplist: "+name, "Database: "+dbName,
 		func() []propPage { return fullTextStoplistPropPages(sc, dbName, name) })
 }
 
 // showSearchPropertyListPropertiesFor opens Search Property List Properties.
 func (a *App) showSearchPropertyListPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	a.propDialog.show(sc, dbName, "Search Property List Properties", "Search property list: "+name, "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Search Property List Properties", "Search property list: "+name, "Database: "+dbName,
 		func() []propPage { return searchPropertyListPropPages(sc, dbName, name) })
 }
 
@@ -602,7 +602,7 @@ func (a *App) showSearchPropertyListPropertiesFor(sc *db.ServerConn, dbName, nam
 // (fulltext_index_props.go) — the table menu's Full-Text index cascade. A
 // table without one says so on each page (noFullTextIndexForm).
 func (a *App) showFullTextIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table string) {
-	a.propDialog.show(sc, dbName, "Full-Text Index Properties", "Table: "+gosmo.QualifiedName(schema, table), "Database: "+dbName,
+	a.propDialog().show(sc, dbName, "Full-Text Index Properties", "Table: "+gosmo.QualifiedName(schema, table), "Database: "+dbName,
 		func() []propPage { return fullTextIndexPropPages(sc, dbName, schema, table) })
 }
 
@@ -612,7 +612,7 @@ func (a *App) showNewFullTextCatalogDialog(sc *db.ServerConn, node *explorerNode
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newFullTextCatalogDialog.show(sc, node)
+	a.newFullTextCatalogDialog().show(sc, node)
 }
 
 // showNewFullTextStoplistDialog opens New Full-Text Stoplist for one
@@ -621,7 +621,7 @@ func (a *App) showNewFullTextStoplistDialog(sc *db.ServerConn, node *explorerNod
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newFullTextStoplistDialog.show(sc, node)
+	a.newFullTextStoplistDialog().show(sc, node)
 }
 
 // showNewSearchPropertyListDialog opens New Search Property List for one
@@ -630,7 +630,7 @@ func (a *App) showNewSearchPropertyListDialog(sc *db.ServerConn, node *explorerN
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newSearchPropListDialog.show(sc, node)
+	a.newSearchPropListDialog().show(sc, node)
 }
 
 // showNewFullTextIndexDialog opens New Full-Text Index for a table node — the
@@ -639,5 +639,5 @@ func (a *App) showNewFullTextIndexDialog(sc *db.ServerConn, node *explorerNode) 
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newFullTextIndexDialog.show(sc, node)
+	a.newFullTextIndexDialog().show(sc, node)
 }

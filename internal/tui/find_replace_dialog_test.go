@@ -14,7 +14,7 @@ import (
 func newFindTestApp(t *testing.T, text string) (*App, *QueryPanel) {
 	t.Helper()
 	a := newTestApp()
-	a.findDialog = NewFindReplaceDialog(a)
+	installDialog(a, withScreen(NewFindReplaceDialog(a), a.screen))
 	qp := NewQueryPanel(a, "Query 1")
 	qp.SetBounds(0, 0, 80, 24)
 	a.panels.AddPanel(qp)
@@ -24,10 +24,10 @@ func newFindTestApp(t *testing.T, text string) (*App, *QueryPanel) {
 
 func TestFindDialogNeedsAQueryPanel(t *testing.T) {
 	a := newTestApp()
-	a.findDialog = NewFindReplaceDialog(a)
+	installDialog(a, withScreen(NewFindReplaceDialog(a), a.screen))
 
-	a.findDialog.ShowFind()
-	if a.findDialog.Visible() {
+	a.findDialog().ShowFind()
+	if a.findDialog().Visible() {
 		t.Fatal("Find dialog opened with no query panel to search")
 	}
 	if !strings.Contains(a.statusText, "No active query panel") {
@@ -43,11 +43,11 @@ func TestFindDialogNeedsAQueryPanel(t *testing.T) {
 func TestFindDialogSeedsFromSingleLineSelection(t *testing.T) {
 	a, qp := newFindTestApp(t, "select Total from dbo.Orders\nwhere Total > 0")
 	qp.editor.SelectAll() // multi-line
-	a.findDialog.ShowFind()
-	if got := a.findDialog.fFind.Value(); got != "" {
+	a.findDialog().ShowFind()
+	if got := a.findDialog().fFind.Value(); got != "" {
 		t.Fatalf("Find what = %q after a multi-line selection, want it left alone", got)
 	}
-	a.findDialog.Hide()
+	a.findDialog().Hide()
 
 	// A single-line selection does seed the field.
 	qp.editor.SetText("select Total from dbo.Orders")
@@ -55,36 +55,36 @@ func TestFindDialogSeedsFromSingleLineSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	qp.editor.FindNext(1) // selects "Total"
-	a.findDialog.ShowFind()
-	if got := a.findDialog.fFind.Value(); got != "Total" {
+	a.findDialog().ShowFind()
+	if got := a.findDialog().fFind.Value(); got != "Total" {
 		t.Fatalf("Find what = %q, want the selected word", got)
 	}
 }
 
 func TestFindDialogEnterFindsFromAField(t *testing.T) {
 	a, qp := newFindTestApp(t, "a bb a bb a")
-	a.findDialog.ShowFind()
-	a.findDialog.fFind.SetValue("bb")
+	a.findDialog().ShowFind()
+	a.findDialog().fFind.SetValue("bb")
 
 	// Focus is on the Find what field; Enter presses Find Next.
-	a.findDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.findDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	if got := qp.editor.SelectedText(); got != "bb" {
 		t.Fatalf("selection = %q after Enter, want the first match", got)
 	}
-	if !strings.Contains(a.findDialog.status, "Match 1 of 2") {
-		t.Fatalf("status = %q, want a match-position readout", a.findDialog.status)
+	if !strings.Contains(a.findDialog().status, "Match 1 of 2") {
+		t.Fatalf("status = %q, want a match-position readout", a.findDialog().status)
 	}
 
-	a.findDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if !strings.Contains(a.findDialog.status, "Match 2 of 2") {
-		t.Fatalf("status = %q after a second Enter, want match 2", a.findDialog.status)
+	a.findDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	if !strings.Contains(a.findDialog().status, "Match 2 of 2") {
+		t.Fatalf("status = %q after a second Enter, want match 2", a.findDialog().status)
 	}
 }
 
 func TestFindDialogTabReachesButtons(t *testing.T) {
 	a, _ := newFindTestApp(t, "x")
-	a.findDialog.ShowFind()
-	d := a.findDialog
+	a.findDialog().ShowFind()
+	d := a.findDialog()
 
 	// Four fields then three buttons in Find mode.
 	if got, want := d.focusCount(), 7; got != want {
@@ -115,12 +115,12 @@ func TestFindDialogTabReachesButtons(t *testing.T) {
 
 func TestFindDialogEscapeKeepsTheSearchForF3(t *testing.T) {
 	a, qp := newFindTestApp(t, "a bb a bb a")
-	a.findDialog.ShowFind()
-	a.findDialog.fFind.SetValue("bb")
-	a.findDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.findDialog().ShowFind()
+	a.findDialog().fFind.SetValue("bb")
+	a.findDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 
-	a.findDialog.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
-	if a.findDialog.Visible() {
+	a.findDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	if a.findDialog().Visible() {
 		t.Fatal("Escape did not close the dialog")
 	}
 	if !qp.editor.HasSearch() {
@@ -139,7 +139,7 @@ func TestFindDialogEscapeKeepsTheSearchForF3(t *testing.T) {
 func TestFindNextOpensTheDialogWhenNothingIsSearchedYet(t *testing.T) {
 	a, _ := newFindTestApp(t, "abc")
 	a.findNextInEditor(1)
-	if !a.findDialog.Visible() {
+	if !a.findDialog().Visible() {
 		t.Fatal("F3 with no search set neither found anything nor opened the dialog")
 	}
 }
@@ -159,10 +159,10 @@ func TestFindWordAtCursorSearchesWholeWord(t *testing.T) {
 	}
 	// The dialog's own fields track it, so opening it afterwards shows what
 	// is actually being searched.
-	if got := a.findDialog.fFind.Value(); got != "id" {
+	if got := a.findDialog().fFind.Value(); got != "id" {
 		t.Fatalf("dialog Find what = %q, want \"id\"", got)
 	}
-	if !a.findDialog.cbWord.Checked() {
+	if !a.findDialog().cbWord.Checked() {
 		t.Fatal("dialog's whole-word option is out of sync with the search it ran")
 	}
 }
@@ -199,16 +199,16 @@ func TestFindWordAtCursorOnWhitespace(t *testing.T) {
 
 func TestFindDialogReplaceAllReportsCount(t *testing.T) {
 	a, qp := newFindTestApp(t, "a a\na")
-	a.findDialog.ShowReplace()
-	a.findDialog.fFind.SetValue("a")
-	a.findDialog.fReplace.SetValue("z")
-	a.findDialog.doReplaceAll()
+	a.findDialog().ShowReplace()
+	a.findDialog().fFind.SetValue("a")
+	a.findDialog().fReplace.SetValue("z")
+	a.findDialog().doReplaceAll()
 
 	if got, want := qp.editor.Text(), "z z\nz"; got != want {
 		t.Fatalf("text = %q, want %q", got, want)
 	}
-	if !strings.Contains(a.findDialog.status, "Replaced 3") {
-		t.Fatalf("status = %q, want a replacement count", a.findDialog.status)
+	if !strings.Contains(a.findDialog().status, "Replaced 3") {
+		t.Fatalf("status = %q, want a replacement count", a.findDialog().status)
 	}
 }
 
@@ -217,10 +217,10 @@ func TestFindDialogReplaceAllReportsCount(t *testing.T) {
 // showing — the option is compiled from replaceMode && cbSel.
 func TestFindModeIgnoresTheSelectionOnlyOption(t *testing.T) {
 	a, qp := newFindTestApp(t, "a a")
-	a.findDialog.cbSel.SetChecked(true)
-	a.findDialog.ShowFind()
-	a.findDialog.fFind.SetValue("a")
-	a.findDialog.doFind(1)
+	a.findDialog().cbSel.SetChecked(true)
+	a.findDialog().ShowFind()
+	a.findDialog().fFind.SetValue("a")
+	a.findDialog().doFind(1)
 
 	if qp.editor.SearchOpts().InSelection {
 		t.Fatal("Find mode compiled an in-selection search from the hidden checkbox")
@@ -229,13 +229,13 @@ func TestFindModeIgnoresTheSelectionOnlyOption(t *testing.T) {
 
 func TestFindDialogReportsAnInvalidRegex(t *testing.T) {
 	a, qp := newFindTestApp(t, "abc")
-	a.findDialog.ShowFind()
-	a.findDialog.fFind.SetValue("(unclosed")
-	a.findDialog.cbRegex.SetChecked(true)
-	a.findDialog.doFind(1)
+	a.findDialog().ShowFind()
+	a.findDialog().fFind.SetValue("(unclosed")
+	a.findDialog().cbRegex.SetChecked(true)
+	a.findDialog().doFind(1)
 
-	if !strings.HasPrefix(a.findDialog.status, "Invalid regex") || !a.findDialog.statusErr {
-		t.Fatalf("status = %q (err=%v), want an invalid-regex error", a.findDialog.status, a.findDialog.statusErr)
+	if !strings.HasPrefix(a.findDialog().status, "Invalid regex") || !a.findDialog().statusErr {
+		t.Fatalf("status = %q (err=%v), want an invalid-regex error", a.findDialog().status, a.findDialog().statusErr)
 	}
 	if qp.editor.HasSearch() {
 		t.Fatal("an invalid pattern left a search active")
@@ -244,15 +244,15 @@ func TestFindDialogReportsAnInvalidRegex(t *testing.T) {
 
 func TestFindDialogEmptyTermIsRefused(t *testing.T) {
 	a, qp := newFindTestApp(t, "abc")
-	a.findDialog.ShowFind()
-	a.findDialog.fFind.SetValue("")
-	a.findDialog.doFind(1)
+	a.findDialog().ShowFind()
+	a.findDialog().fFind.SetValue("")
+	a.findDialog().doFind(1)
 
 	if qp.editor.HasSearch() {
 		t.Fatal("an empty term started a search")
 	}
-	if !a.findDialog.statusErr {
-		t.Fatalf("status = %q, want a notice that nothing was entered", a.findDialog.status)
+	if !a.findDialog().statusErr {
+		t.Fatalf("status = %q, want a notice that nothing was entered", a.findDialog().status)
 	}
 }
 
@@ -269,7 +269,7 @@ func TestFindWordAtCursorSyncsEveryDialogField(t *testing.T) {
 	// SetText leaves the caret at the start, so the first word is the one
 	// under it — no cursor movement needed to make this deterministic.
 	a, qp := newFindTestApp(t, "Total from dbo.Orders")
-	d := a.findDialog
+	d := a.findDialog()
 
 	// Leave every option set the way a previous search would have.
 	d.replaceMode = true
@@ -319,18 +319,18 @@ func TestFindWordAtCursorSyncsEveryDialogField(t *testing.T) {
 // A latch must not survive into the next showing (tuikit invariant 4): a
 // dialog dismissed mid-drag would reopen routing every click to that field.
 func TestFindDialogShowClearsTheDragLatch(t *testing.T) {
-	// The screen goes in before the dialog is constructed: InitModal captures
-	// it, and a dialog built without one keeps a zero rect, so every press is
-	// "outside" and arms nothing.
+	// The dialog needs the screen (withScreen, as registering would give it):
+	// one without keeps a zero rect, so every press is "outside" and arms
+	// nothing.
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	a.findDialog = NewFindReplaceDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	installDialog(a, withScreen(NewFindReplaceDialog(a), a.screen))
 	qp := NewQueryPanel(a, "Query 1")
 	qp.SetBounds(0, 0, 80, 24)
 	a.panels.AddPanel(qp)
 	qp.editor.SetText("select 1")
 
-	d := a.findDialog
+	d := a.findDialog()
 	d.ShowFind()
 	d.layout()
 	// Arm the latch the way a user does — a press inside the field — rather

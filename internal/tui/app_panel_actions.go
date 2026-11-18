@@ -72,7 +72,7 @@ func (a *App) openQueryWithTextThen(sc *db.ServerConn, database, text string, on
 // a new query panel, never the active one, as SSMS does. The panel's title then
 // tracks the file's name.
 func (a *App) openQueryFile() {
-	a.fileDialog.ShowOpen("Open Query File", "", func(path string) {
+	a.fileDialog().ShowOpen("Open Query File", "", func(path string) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			a.setStatus(fmt.Sprintf("Open failed: %v", err))
@@ -154,7 +154,7 @@ func (a *App) savePlanPanel(pp *PlanPanel, saveAs bool) {
 	if initial == "" {
 		initial = "plan" + sqlPlanExt
 	}
-	a.fileDialog.ShowSave("Save Execution Plan", initial, write)
+	a.fileDialog().ShowSave("Save Execution Plan", initial, write)
 }
 
 // saveExecutionPlanAs runs File > Save Execution Plan As..., which works from a
@@ -170,7 +170,7 @@ func (a *App) saveExecutionPlanAs() {
 			a.setStatus("No execution plan to save")
 			return
 		}
-		a.fileDialog.ShowSave("Save Execution Plan", core.SafeFileName(p.Title())+sqlPlanExt, func(path string) {
+		a.fileDialog().ShowSave("Save Execution Plan", core.SafeFileName(p.Title())+sqlPlanExt, func(path string) {
 			a.writePlanFile(path, plan.XML)
 		})
 	default:

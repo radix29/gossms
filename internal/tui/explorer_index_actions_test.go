@@ -6,6 +6,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 )
 
 // The Indexes folder carries what an index's menu decides on: whether it is
@@ -133,8 +136,8 @@ func TestIndexMaintenanceIssuesItsStatement(t *testing.T) {
 
 				a.maintainIndex(sc, node, c.verb)
 				if !confirm {
-					a.confirmDialog.HandleKey(esc())
-					if a.confirmDialog.Visible() {
+					a.confirmDialog().HandleKey(esc())
+					if a.confirmDialog().Visible() {
 						t.Fatal("Escape left the confirmation open")
 					}
 					if stmts := inst.StatementsIn(idxDatabase); len(stmts) != 0 {
@@ -189,5 +192,52 @@ func TestIndexVerbPromptSaysWhatAClusteredIndexTakes(t *testing.T) {
 	disabled.IsEnabled = false
 	if _, prompt := indexVerbPrompt(disabled, indexRebuild); !strings.Contains(prompt, "That enables it") {
 		t.Errorf("a disabled index's rebuild prompt %q does not say it enables the index", prompt)
+	}
+}
+
+// Rebuild All Indexes opens gosmo's RebuildAllIndexesScript: the one ALTER
+// INDEX ALL off Fabric, reading nothing; on SQL database in Fabric, which
+// refuses ALL, one ALTER INDEX per index (the hypothetical one left out), and
+// nothing for a heap. A view's folder (OnView) scripts the view.
+func TestRebuildAllIndexesScript(t *testing.T) {
+	ctx := context.Background()
+	table := nodeData{Type: NodeIndexes, Schema: "Sales", Name: "Orders", DBName: "appdb"}
+	view := table
+	view.Name, view.OnView = "vTotals", true
+
+	sc, f := newGConn(t)
+	for _, n := range []nodeData{table, view} {
+		got, err := rebuildAllIndexesScript(ctx, sc, n)
+		if want := "ALTER INDEX ALL ON [Sales].[" + n.Name + "] REBUILD"; err != nil || got != want {
+			t.Errorf("on-prem %s: %q, %v; want %q", n.Name, got, err, want)
+		}
+	}
+	for _, q := range f.Queries() {
+		if strings.Contains(q.Text, "sys.indexes") {
+			t.Errorf("on-prem read the indexes: %s", q.Text)
+		}
+	}
+
+	fabric := func(rows ...[]driver.Value) string {
+		t.Helper()
+		sc, _ := newGConnWith(t, func(i *gosmotest.Info) { i.EngineEdition = gosmo.EngineFabricSQLDatabase },
+			fakeResponse{match: "LEFT   JOIN sys.indexes i", cols: 4, rows: rows})
+		got, err := rebuildAllIndexesScript(ctx, sc, table)
+		if err != nil {
+			t.Fatalf("Fabric: %v", err)
+		}
+		return got
+	}
+	got := fabric(
+		[]driver.Value{int64(42), "PK_Orders", false, false},
+		[]driver.Value{int64(42), "IX_Orders_CustomerID", true, false},
+		[]driver.Value{int64(42), "_dta_hyp", false, true},
+	)
+	want := "ALTER INDEX [PK_Orders] ON [Sales].[Orders] REBUILD;\nALTER INDEX [IX_Orders_CustomerID] ON [Sales].[Orders] REBUILD;"
+	if got != want {
+		t.Errorf("Fabric:\n%s\nwant\n%s", got, want)
+	}
+	if got := fabric([]driver.Value{int64(42), nil, false, false}); got != "" {
+		t.Errorf("Fabric heap: %q, want empty", got)
 	}
 }

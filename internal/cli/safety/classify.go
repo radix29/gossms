@@ -11,6 +11,7 @@
 package safety
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -638,14 +639,22 @@ func execTarget(toks []token, i int) (c spec.Class, obj, reason string, flags Fl
 		// administration: ahead of the xp_ admin rule below.
 		return spec.ClassWrite, obj, "procedure " + obj + " is not on the read allow-list: " + proc +
 			" is read only unqualified, as sys." + proc + " or as master.dbo." + proc, FlagExec
-	case ddlProcs[proc]:
-		return spec.ClassDDL, obj, "procedure " + obj + " changes statistics", FlagExec
+	case proc == "sp_rename" && argNotLiteral(toks, end, toks[i].depth, "@OBJTYPE", 3, "NULL", "'COLUMN'",
+		"'INDEX'", "'OBJECT'", "'STATISTICS'", "'USERDATATYPE'"):
+		return spec.ClassAdmin, obj, "sp_rename @objtype DATABASE renames a database", FlagExec
+	case proc == "sp_settriggerorder" && argNotLiteral(toks, end, toks[i].depth, "@NAMESPACE", 4, "NULL", "'DATABASE'"):
+		return spec.ClassAdmin, obj, "sp_settriggerorder @namespace SERVER orders a server trigger", FlagExec
+	case ddlProcs[proc] != "":
+		return spec.ClassDDL, obj, "procedure " + obj + " " + ddlProcs[proc], FlagExec
+	case readMsdbProcs[proc] && dbName != "msdb":
+		return spec.ClassWrite, obj, "procedure " + obj + " is read only as msdb.dbo." + proc +
+			": elsewhere the name is the current database's own procedure", FlagExec
+	case msdbProcs[proc]:
+		// However qualified: after USE msdb the bare name is msdb's own.
+		return spec.ClassAdmin, obj, "procedure " + obj + " is an msdb procedure, administration", FlagExec
 	case adminProcs[proc] || strings.HasPrefix(proc, "xp_") || strings.HasPrefix(proc, "sp_trace_") ||
 		strings.HasPrefix(proc, "sp_oa") || dbName == "msdb" && strings.HasPrefix(proc, "sp_"):
 		return spec.ClassAdmin, obj, "procedure " + obj + " is administration", FlagExec
-	case readMsdbProcs[proc]:
-		return spec.ClassWrite, obj, "procedure " + obj + " is read only as msdb.dbo." + proc +
-			": elsewhere the name is the current database's own procedure", FlagExec
 	}
 	return spec.ClassWrite, obj, "procedure " + obj + " is not on the read allow-list", FlagExec
 }
@@ -687,7 +696,18 @@ func readProcedure(parts []string) bool {
 // but the literal 'false' (N'false', any case). A variable there counts: the
 // classifier cannot see its value.
 func spaceusedUpdates(toks []token, i, depth int) bool {
-	pos := 0
+	return argNotLiteral(toks, i, depth, "@UPDATEUSAGE", 2, "'FALSE'")
+}
+
+// argNotLiteral reports whether a procedure call's arguments, starting at
+// toks[i] at parenthesis depth depth, pass the parameter name (upper-cased,
+// with its @) — named, or as positional argument pos — with a value other than
+// one of the literals in safe: upper-cased as written, a string's quotes kept
+// and its N prefix dropped ("'FALSE'", "NULL"). A variable or an expression
+// there counts as other: the classifier cannot see its value. An omitted
+// argument is not passed.
+func argNotLiteral(toks []token, i, depth int, name string, pos int, safe ...string) bool {
+	n := 0
 	for i < len(toks) && toks[i].depth >= depth {
 		// One argument: up to the next comma at this depth.
 		j := i
@@ -698,14 +718,14 @@ func spaceusedUpdates(toks []token, i, depth int) bool {
 		named := len(arg) >= 2 && arg[0].kind == sqltext.KindWord && strings.HasPrefix(arg[0].raw, "@") && arg[1].punct("=")
 		var value []token
 		switch {
-		case named && arg[0].word == "@UPDATEUSAGE":
+		case named && arg[0].word == name:
 			value = arg[2:]
 		case !named:
-			if pos++; pos == 2 {
+			if n++; n == pos {
 				value = arg
 			}
 		}
-		if value != nil && !isFalseLiteral(value) {
+		if value != nil && !slices.Contains(safe, literalText(value)) {
 			return true
 		}
 		i = j + 1
@@ -713,15 +733,18 @@ func spaceusedUpdates(toks []token, i, depth int) bool {
 	return false
 }
 
-// isFalseLiteral reports whether value is the string literal 'false' or
-// N'false', in any case.
-func isFalseLiteral(value []token) bool {
+// literalText is value as one upper-cased literal, a string's N prefix
+// dropped: 'FALSE' for N'false', NULL for null.
+func literalText(value []token) string {
 	var b strings.Builder
 	for _, t := range value {
 		b.WriteString(t.raw)
 	}
 	v := strings.ToUpper(b.String())
-	return v == "'FALSE'" || v == "N'FALSE'"
+	if strings.HasPrefix(v, "N'") {
+		v = v[1:]
+	}
+	return v
 }
 
 // setStatement classifies SET: session options are read, with the ones the
@@ -758,6 +781,34 @@ func setStatement(st *Statement, toks []token) {
 		}
 		opts = opts[:0]
 	}
+}
+
+// raiserrorLogs reports whether the RAISERROR at toks[i] has the LOG option:
+// past its parenthesised arguments, WITH and a comma-separated option list
+// naming LOG. It writes the SQL Server error log and the Windows application
+// log, as xp_logevent (admin) does, and needs ALTER TRACE or sysadmin.
+func raiserrorLogs(toks []token, i int) bool {
+	d := toks[i].depth
+	j := i + 1
+	if j >= len(toks) || !toks[j].punct("(") {
+		return false
+	}
+	// Past the arguments: a token's depth is the one before it, so the
+	// closing parenthesis is still deeper than d.
+	for j++; j < len(toks) && toks[j].depth > d; j++ {
+	}
+	if j >= len(toks) || !toks[j].is("WITH") {
+		return false
+	}
+	for j++; j < len(toks) && toks[j].depth == d; j += 2 {
+		if toks[j].is("LOG") {
+			return true
+		}
+		if j+1 >= len(toks) || !toks[j+1].punct(",") {
+			return false
+		}
+	}
+	return false
 }
 
 // floor raises st to the class of any verb in it (verbs; docs/cli.md § Safety),
@@ -802,6 +853,9 @@ func floor(st *Statement, toks []token) {
 		case w == "SP_EXECUTESQL":
 			st.Flags |= FlagDynamic
 			st.raise(spec.ClassWrite, "dynamic SQL is not classified"+at)
+			continue
+		case w == "RAISERROR" && raiserrorLogs(toks, i):
+			st.raise(spec.ClassAdmin, "RAISERROR … WITH LOG writes the server error log"+at)
 			continue
 		case w == "NEXT" && next.is("VALUE") && i+2 < len(toks) && toks[i+2].is("FOR"):
 			st.Flags |= FlagSequence

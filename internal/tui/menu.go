@@ -22,7 +22,7 @@ import (
 func (a *App) buildMenus() []controls.Menu {
 	return []controls.Menu{
 		{Label: "File", Items: []controls.MenuItem{
-			{Label: "Connect...", Shortcut: "F9", Action: func() { a.connectDialog.Show() }},
+			{Label: "Connect...", Shortcut: "F9", Action: func() { a.connectDialog().Show() }},
 			{Label: "Disconnect", Action: func() { a.disconnectActive() },
 				Enabled: func() bool { return a.selectedServerConn() != nil }},
 			{Label: "Clear Microsoft Entra Sign-ins", Action: func() { a.clearEntraSignIns() },
@@ -63,9 +63,9 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Select All", Shortcut: "Ctrl+A", Action: func() { a.selectAllInTarget() },
 				Enabled: func() bool { return a.activeClipboardTarget() != nil }},
 			{Divider: true},
-			{Label: "Find...", Shortcut: "Ctrl+F", Action: func() { a.findDialog.ShowFind() },
+			{Label: "Find...", Shortcut: "Ctrl+F", Action: func() { a.findDialog().ShowFind() },
 				Enabled: func() bool { return a.activeQueryPanel() != nil || a.activeXEventViewer() != nil }},
-			{Label: "Replace...", Action: func() { a.findDialog.ShowReplace() },
+			{Label: "Replace...", Action: func() { a.findDialog().ShowReplace() },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: "Find Next", Shortcut: "F3", Action: func() { a.findNextInEditor(1) },
 				Enabled: a.hasEditorSearch},
@@ -162,13 +162,13 @@ func (a *App) buildMenus() []controls.Menu {
 					return sc != nil && sc.Server != nil && !replicationHidden(sc.Server.Info())
 				}},
 			{Label: "Query List", Action: func() { a.showQueryList() }},
-			{Label: "Background Tasks", Action: func() { a.tasksDialog.Show() }},
+			{Label: "Background Tasks", Action: func() { a.tasksDialog().Show() }},
 			{Divider: true},
-			{Label: "Options", Action: func() { a.optionsDialog.Show() }},
+			{Label: "Options", Action: func() { a.optionsDialog().Show() }},
 		}},
 		{Label: "Help", Items: []controls.MenuItem{
-			{Label: "Help", Shortcut: "F1", Action: func() { a.helpDialog.Show() }},
-			{Label: "Key Diagnostics", Action: func() { a.keyDiagDialog.Show() }},
+			{Label: "Help", Shortcut: "F1", Action: func() { a.helpDialog().Show() }},
+			{Label: "Key Diagnostics", Action: func() { a.keyDiagDialog().Show() }},
 			{Divider: true},
 			{Label: "Check for Updates", Action: func() { a.checkForUpdates() }},
 			{Label: "About goSSMS", Action: func() { a.showAbout() }},
@@ -300,5 +300,5 @@ func (a *App) showAbout() {
 	)
 	// Sized to the whole list so the box doesn't open scrolled on a normal
 	// terminal; recentre clamps it on a small one.
-	a.propsDialog.ShowGenericPropertiesSized("About goSSMS", rows, 82, len(rows)+7)
+	a.propsDialog().ShowGenericPropertiesSized("About goSSMS", rows, 82, len(rows)+7)
 }

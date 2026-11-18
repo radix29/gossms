@@ -21,11 +21,11 @@ import (
 // Yes, No, Script.
 func answerScript(t *testing.T, a *App, tickOption bool) {
 	t.Helper()
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("no confirmation is open")
 	}
 	key := func(k tcell.Key, r string) {
-		a.confirmDialog.HandleKey(tcell.NewEventKey(k, r, tcell.ModNone))
+		a.confirmDialog().HandleKey(tcell.NewEventKey(k, r, tcell.ModNone))
 	}
 	if tickOption {
 		key(tcell.KeyBacktab, "")
@@ -137,16 +137,16 @@ func TestScriptingATypedDeleteNeedsNoTypedName(t *testing.T) {
 	before := a.panels.Count()
 
 	a.deleteObject(node)
-	if !a.confirmTypedDialog.Visible() {
+	if !a.confirmTypedDialog().Visible() {
 		t.Fatal("deleting a database should ask for the name to be retyped")
 	}
 	// Input, Confirm, Cancel, Script: three Tabs from the input reach it, with
 	// the field left empty.
 	for range 3 {
-		a.confirmTypedDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+		a.confirmTypedDialog().HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 	}
-	a.confirmTypedDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if a.confirmTypedDialog.Visible() {
+	a.confirmTypedDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	if a.confirmTypedDialog().Visible() {
 		t.Fatal("Script left the confirmation open — it was treated as an unmatched Confirm")
 	}
 	waitAndDrain(t, a)
@@ -173,10 +173,10 @@ func TestDeleteDatabaseSaysWhichFilesAnOfflineDropLeaves(t *testing.T) {
 	} {
 		a := newTestApp()
 		a.confirmDeleteObjects(sc, []nodeData{{Type: NodeDatabase, Name: "Sales", DBName: "Sales", DBState: state, IsOffline: state != "ONLINE"}}, func() {})
-		if !a.confirmTypedDialog.Visible() {
+		if !a.confirmTypedDialog().Visible() {
 			t.Fatalf("%s: no typed confirmation", state)
 		}
-		msg := a.confirmTypedDialog.Message()
+		msg := a.confirmTypedDialog().Message()
 		if !strings.HasPrefix(msg, `Delete database "Sales"? This cannot be undone. Existing connections to it will be closed.`) {
 			t.Errorf("%s: message %q lost the question or the shared warning", state, msg)
 		}

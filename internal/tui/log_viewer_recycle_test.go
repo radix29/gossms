@@ -97,7 +97,7 @@ func TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle(t *testing.T) {
 		t.Error("the Recycle cell draws live for a CONTROL SERVER login outside sysadmin")
 	}
 	lv.runTool(logToolRecycle)
-	if a.confirmDialog.Visible() {
+	if a.confirmDialog().Visible() {
 		t.Error("a withheld Recycle still asked for confirmation")
 	}
 	if lv.busy {
@@ -145,7 +145,7 @@ func TestLogViewerRecycleStaysLiveForALoginThatMay(t *testing.T) {
 	}
 	lv.setStatus("")
 	lv.runTool(logToolRecycle)
-	if a.confirmDialog.Visible() {
+	if a.confirmDialog().Visible() {
 		t.Error("Recycle ran while a read was in flight")
 	}
 	if strings.Contains(lv.grid.Status(), "sysadmin") {
@@ -165,13 +165,13 @@ func TestLogViewerRecycleCyclesTheFamilyOnScreen(t *testing.T) {
 	lv.logType = gosmo.ErrorLogAgent
 
 	lv.runTool(logToolRecycle)
-	if !a.confirmDialog.Visible() {
+	if !a.confirmDialog().Visible() {
 		t.Fatal("Recycle did not ask for confirmation")
 	}
 	if !lv.busy {
 		t.Error("the toolbar was left live while the question was up; F5 could start a read under the cycle")
 	}
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) // Yes
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) // Yes
 
 	drainUntil(t, a, func() bool { return !lv.busy }, "the recycle to finish")
 
@@ -202,7 +202,7 @@ func TestLogViewerRecycleDropsTheStaleFileList(t *testing.T) {
 	}
 
 	lv.runTool(logToolRecycle)
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	drainUntil(t, a, func() bool {
 		return !lv.busy && len(lv.files[gosmo.ErrorLogSQLServer]) > 0
 	}, "the recycle and the reload behind it to finish")
@@ -224,7 +224,7 @@ func TestLogViewerRecycleCancelledWritesNothing(t *testing.T) {
 	a, lv, inst := newRecycleTestViewer(t)
 
 	lv.runTool(logToolRecycle)
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone)) // No
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone)) // No
 
 	for _, stmt := range inst.Statements() {
 		if strings.Contains(stmt, "sp_cycle") {
@@ -246,7 +246,7 @@ func TestLogViewerRecycleIsInertWhileBusy(t *testing.T) {
 	lv.busy = true
 
 	lv.runTool(logToolRecycle)
-	if a.confirmDialog.Visible() {
+	if a.confirmDialog().Visible() {
 		t.Error("Recycle asked for confirmation while busy")
 	}
 	if got := inst.Statements(); len(got) != 0 {
@@ -268,7 +268,7 @@ func TestLogViewerRecyclePanicClearsTheLatch(t *testing.T) {
 	lv.conn = &db.ServerConn{}
 
 	lv.runTool(logToolRecycle)
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 
 	drainUntil(t, a, func() bool { return !lv.busy }, "the latch to clear after the panic")
 
@@ -351,7 +351,7 @@ func TestExplorerRecycleRefreshesTheOtherFamilyToo(t *testing.T) {
 
 	node := &explorerNode{data: nodeData{Type: NodeAgentErrorLogs, conn: lv.conn}}
 	a.recycleLogFrom(lv.conn, gosmo.ErrorLogAgent, node)
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 
 	drainUntil(t, a, func() bool {
 		return !lv.busy && len(lv.files[gosmo.ErrorLogSQLServer]) > 0

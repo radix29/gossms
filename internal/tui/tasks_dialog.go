@@ -29,7 +29,7 @@ var tasksDialogButtons = []string{"Cancel Task", "Close"}
 // NewTasksDialog creates the dialog.
 func NewTasksDialog(app *App) *TasksDialog {
 	d := &TasksDialog{app: app}
-	d.InitModal(app.screen, "Background Tasks", 64, 16)
+	d.InitModal("Background Tasks", 64, 16)
 	return d
 }
 

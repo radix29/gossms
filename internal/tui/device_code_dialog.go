@@ -44,7 +44,7 @@ var deviceCodeButtons = []string{"Copy Code", "Cancel Sign-in"}
 // NewDeviceCodeDialog creates the dialog.
 func NewDeviceCodeDialog(app *App) *DeviceCodeDialog {
 	d := &DeviceCodeDialog{app: app}
-	d.InitModal(app.screen, "Microsoft Entra Sign-in", deviceCodeDialogMinW, deviceCodeDialogH)
+	d.InitModal("Microsoft Entra Sign-in", deviceCodeDialogMinW, deviceCodeDialogH)
 	return d
 }
 
@@ -53,11 +53,11 @@ func NewDeviceCodeDialog(app *App) *DeviceCodeDialog {
 // polling for the user once it returns — so it posts the dialog and returns.
 func (a *App) promptDeviceCode(ctx context.Context, m gosmo.DeviceCodeMessage) error {
 	cancel, done := db.SignInCanceller(ctx), ctx.Done()
-	a.postAndWake(func() { a.deviceCodeDialog.showCode(m, cancel, done) })
+	a.postAndWake(func() { a.deviceCodeDialog().showCode(m, cancel, done) })
 	if done != nil {
 		a.safego("waiting for a device-code sign-in to end", func() {
 			<-done
-			a.postAndWake(func() { a.deviceCodeDialog.signInEnded(done) })
+			a.postAndWake(func() { a.deviceCodeDialog().signInEnded(done) })
 		})
 	}
 	return nil

@@ -152,7 +152,7 @@ func TestPermissionsMatrixApplyOrderIsStable(t *testing.T) {
 func TestPermissionsMatrixPartlyAppliedReloads(t *testing.T) {
 	sc, _ := newGConn(t, fakeResponse{match: "TO [c]", err: errRefused})
 	loads := 0
-	sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Server Properties")
+	sheet := withScreen(propsheet.NewPropertySheet("Server Properties"), tuikittest.NewScreen(120, 40))
 	d := &PropDialog{PropertySheet: sheet, app: &App{}, ctx: context.Background(), applyFn: map[int]propApply{}}
 	d.SetPages([]string{"Permissions"})
 	d.OnLoadPage = func(page, seq int) {

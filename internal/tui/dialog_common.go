@@ -217,7 +217,7 @@ func stepButton(i, dir, n int, disabled []bool) int {
 // edits, running proceed only if the user agrees. Shared by PropDialog and
 // newObjectDialog, which pass it to propsheet as the same callback.
 func (a *App) confirmDiscardChanges(proceed func()) {
-	a.confirmDialog.ShowConfirm("Discard Changes",
+	a.confirmDialog().ShowConfirm("Discard Changes",
 		"This page has unsaved changes. Discard them and refresh from the server?",
 		func(confirmed bool) {
 			if confirmed {

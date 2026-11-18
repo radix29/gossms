@@ -81,7 +81,7 @@ func (a *App) runWithProgress(job progressJob, work func(ctx context.Context, re
 	a.progressBusy = true
 	a.progressSeq++
 	seq := a.progressSeq
-	dlg := a.progressDialog
+	dlg := a.progressDialog()
 	if job.uninterruptible != "" {
 		dlg.ShowUninterruptible(job.title, job.message, job.uninterruptible)
 	} else {

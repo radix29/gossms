@@ -268,5 +268,5 @@ func (a *App) showNewSymmetricKeyDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newSymmetricKeyDialog.show(sc, node)
+	a.newSymmetricKeyDialog().show(sc, node)
 }

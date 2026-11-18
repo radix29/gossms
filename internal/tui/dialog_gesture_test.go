@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/tuikit/controls/editor"
 	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/propsheet"
@@ -69,8 +68,7 @@ var dialogsWithoutAGesture = map[string]string{}
 // rather than the source, so it covers the tuikit dialogs App registers as
 // well as this package's own — the bug reached both.
 func TestEveryDialogWithATextFieldOwnsAFieldGesture(t *testing.T) {
-	a := &App{cfg: &config.Config{}}
-	a.buildUI()
+	a := newAppWithEveryDialog()
 
 	field, gesture := gestureFieldType(), reflect.TypeFor[dialogs.FieldGesture]()
 	checked, withField := 0, 0

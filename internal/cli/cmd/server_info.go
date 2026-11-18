@@ -101,7 +101,7 @@ func (d Deps) serverInfo(ctx context.Context, inv *spec.Invocation) (*output.Res
 
 	res.Fields = slices.Concat(serverFields(info), []output.Field{
 		{Key: "productLevel", Value: info.ProductLevel},
-		{Key: "engineEdition", Value: strconv.Itoa(info.EngineEdition)},
+		{Key: "engineEdition", Value: strconv.Itoa(int(info.EngineEdition))},
 		{Key: "platform", Value: info.Platform, Null: info.Platform == ""},
 		{Key: "collation", Value: info.Collation},
 		{Key: "isClustered", Value: boolText(info.IsClustered)},

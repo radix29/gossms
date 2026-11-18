@@ -81,7 +81,11 @@ reads, the pre-2019 `BackupDirectory` registry read, `RESTORE HEADERONLY`.
 **After a lexer or parser change, fuzz it:** `go test ./internal/sqltext
 -run XXX -fuzz FuzzLexer -fuzztime 60s -fuzzminimizetime 0`, likewise `FuzzScope`
 in `./internal/tui/sqlparse` (their seeds run in plain `go test`; without
-`-fuzzminimizetime 0` the minimizer stalls them). A crasher is a bug to fix,
+`-fuzzminimizetime 0` the minimizer stalls them). A change to either T-SQL
+lexer — `sqltext.Next` or gosmo's `tsql.Spans` — also gets `-fuzz
+FuzzLexersAgree` in `./internal/sqltext`: `internal/cli/safety` classifies with
+one and unquotes with the other, so they must find the same comments, literals
+and quoted identifiers. A crasher is a bug to fix,
 and its `testdata/fuzz/` file stays as the regression seed. A Format Document
 formatter change gets the same with `FuzzFormatSQL`/`FuzzFormatXML`/
 `FuzzFormatJSON` in `./internal/format` — five minutes for SQL: its first
@@ -113,6 +117,16 @@ Linux only, and on Windows the `internal/config` tests saved synthetic
 connections into the user's `%APPDATA%` config (issue #23). Find the config
 directory through them, not by joining `"gossms"` onto the temp dir (macOS
 nests it under `Library/Application Support`).
+
+**Code that needs the Windows desktop (the clipboard) can't be driven over
+ssh to win10cli**: ssh processes run in a non-interactive window station, not
+the user's session. Build a test binary there (`go test -c`) and run it in the
+user's session through a scheduled task — `schtasks /create /tn X /tr
+"C:\src\run.cmd" /sc once /st 23:59 /sd 01/01/2030 /ru radu_ /it /f`, then
+`schtasks /run /tn X` — with output redirected to a file. It works while the
+session is disconnected and locked. `/create … /f` again to change the command
+(`/change` asks for a password), and give `-test.timeout` and a minute or two
+of start latency. Delete the task and files after.
 
 **A timing test over pure channels and timers runs in `synctest.Test`.** The
 bubble's clock is fake, so a window holds exactly the ticks the schedule

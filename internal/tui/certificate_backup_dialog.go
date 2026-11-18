@@ -156,7 +156,7 @@ func (d *BackupCertificateDialog) browse(title string, field *propsheet.TextRow,
 	if start == "" {
 		start = fallback
 	}
-	d.app.fileDialog.ShowSaveOn(fs, title, start, func(path string) { field.SetValue(path) })
+	d.app.fileDialog().ShowSaveOn(fs, title, start, func(path string) { field.SetValue(path) })
 }
 
 // backupFilePath joins the server's default backup directory and a name into
@@ -178,5 +178,5 @@ func (a *App) showBackupCertificateDialog(sc *db.ServerConn, node *explorerNode)
 	if !a.requireConn(sc) {
 		return
 	}
-	a.backupCertificateDialog.show(sc, node)
+	a.backupCertificateDialog().show(sc, node)
 }

@@ -30,7 +30,7 @@ func exportSub(t *testing.T, item controls.MenuItem, label string) controls.Menu
 func TestExportResultsWritesTheActiveSetAsShown(t *testing.T) {
 	qp, _ := sortTestQueryPanel(t)
 	a := qp.app
-	a.fileDialog = dialogs.NewFileDialog(nil)
+	installDialog(a, dialogs.NewFileDialog())
 	qp.setResultSort(1, false) // n ascending, NULL last
 
 	items := qp.gridExportMenuItems()
@@ -39,7 +39,7 @@ func TestExportResultsWritesTheActiveSetAsShown(t *testing.T) {
 	}
 	exportSub(t, items[0], "To JSON File...").Action()
 	path := filepath.Join(t.TempDir(), "out.json")
-	a.fileDialog.OnChoose(path)
+	a.fileDialog().OnChoose(path)
 	// Wait for the finished file, not merely its existence: the writer creates it
 	// before it fills and closes it, and Windows refuses a read of a file still
 	// open for writing.

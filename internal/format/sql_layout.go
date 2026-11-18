@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"strings"
 
 	"github.com/radix29/gossms/internal/sqltext"
@@ -121,9 +122,15 @@ func newSQLLayout(lx *sqlLexed, o Options, sty sqlStyle) *sqlLayout {
 	return l
 }
 
-func (l *sqlLayout) run() string {
+// run lays the tokens out, or returns ctx's error once ctx ends.
+func (l *sqlLayout) run(ctx context.Context) (string, error) {
 	l.frames = []*sqlFrame{{kind: frRoot, st: freshStmt()}}
 	for i := range l.t {
+		if i%checkEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+		}
 		t := &l.t[i]
 		switch {
 		case t.comment():
@@ -135,7 +142,7 @@ func (l *sqlLayout) run() string {
 		}
 	}
 	l.flush(l.owner().base, 1)
-	return l.b.String()
+	return l.b.String(), nil
 }
 
 // ---------------------------------------------------------------------------

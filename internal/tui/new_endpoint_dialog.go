@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -183,10 +184,10 @@ func (d *NewEndpointDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn
 		return pf, nil
 	}
 	ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, gosmo.ErrNotFound) {
 		return nil, err
 	}
-	pf.existing = ep
+	pf.existing = ep // nil when there is none
 	return pf, nil
 }
 
@@ -418,10 +419,10 @@ func (d *NewEndpointDialog) addInstance(name string, done func(*newEndpointInsta
 			inst.name = reported
 		}
 		ep, err := peer.Server.DatabaseMirroringEndpoint(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, gosmo.ErrNotFound) {
 			return fmt.Errorf("read %s's endpoint: %w", name, err)
 		}
-		if ep != nil {
+		if err == nil {
 			inst.hasEndpoint = true
 			inst.endpointURL = ep.URL()
 		}
@@ -441,5 +442,5 @@ func (a *App) showNewEndpointDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newEndpointDialog.show(sc, node)
+	a.newEndpointDialog().show(sc, node)
 }

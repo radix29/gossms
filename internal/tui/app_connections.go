@@ -82,7 +82,7 @@ func (a *App) warnIfUnsupported(info *gosmo.ServerInfo) {
 	if info.Supported() {
 		return
 	}
-	a.alertDialog.ShowAlert("Unsupported Version",
+	a.alertDialog().ShowAlert("Unsupported Version",
 		fmt.Sprintf("SQL Server %s is older than 2016 SP1, the oldest version goSSMS supports; some folders and dialogs will fail.", info.ProductVersion))
 }
 
@@ -100,7 +100,7 @@ func (a *App) reportConnectError(opts config.Connection, err error, wanted bool)
 		a.logStatus("connect to %s: %s", server, cause)
 	}
 	if wanted {
-		a.alertDialog.ShowAlert("Connection Error",
+		a.alertDialog().ShowAlert("Connection Error",
 			fmt.Sprintf("Could not connect to %s: %s", server, tidyErrorText(cause)))
 	}
 }
@@ -310,7 +310,7 @@ func (a *App) dialQueryPanel(ctx context.Context, qp *QueryPanel, opts config.Co
 			if err != nil {
 				a.setStatus("Connection failed: " + firstErrorLine(err.Error()))
 				if done != nil && wanted {
-					a.alertDialog.ShowAlert("Connection Error",
+					a.alertDialog().ShowAlert("Connection Error",
 						fmt.Sprintf("Could not connect to %s: %s", opts.Server, tidyErrorText(err.Error())))
 				}
 				return

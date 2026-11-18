@@ -167,7 +167,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			if serverIsAzure(sc) {
 				recoveryRow.SetReadOnly(true)
 				recoveryNote = []propsheet.Row{propsheet.Note("Recovery model is fixed on " +
-					engineEditionName(sc.Server.Info().EngineEdition) + ".")}
+					sc.Server.Info().EngineEdition.String() + ".")}
 			}
 
 			rows := []propsheet.Row{

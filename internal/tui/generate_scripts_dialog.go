@@ -44,7 +44,7 @@ type GenerateScriptsDialog struct {
 // NewGenerateScriptsDialog creates the dialog and wires its callbacks.
 func NewGenerateScriptsDialog(app *App) *GenerateScriptsDialog {
 	d := &GenerateScriptsDialog{app: app}
-	d.PropertySheet = propsheet.NewPropertySheet(app.screen, "Generate Scripts")
+	d.PropertySheet = propsheet.NewPropertySheet("Generate Scripts")
 	d.SetScriptOnly(true)
 	d.OnLoadPage = d.onLoadPage
 	d.OnScript = d.script
@@ -56,7 +56,7 @@ func (a *App) showGenerateScriptsFor(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.generateScriptsDialog.show(sc, dbName)
+	a.generateScriptsDialog().show(sc, dbName)
 }
 
 func (d *GenerateScriptsDialog) show(sc *db.ServerConn, dbName string) {

@@ -27,7 +27,7 @@ var queryListDialogButtons = []string{"Switch To", "Close"}
 // NewQueryListDialog creates the dialog.
 func NewQueryListDialog(app *App) *QueryListDialog {
 	d := &QueryListDialog{app: app}
-	d.InitModal(app.screen, "Query List", 56, 16)
+	d.InitModal("Query List", 56, 16)
 	return d
 }
 

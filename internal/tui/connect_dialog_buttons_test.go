@@ -119,11 +119,11 @@ func TestConnectDeleteAsksFirst(t *testing.T) {
 	)
 	d.btnFocus = connectBtnDelete
 	d.doButton()
-	if !d.app.confirmDialog.Visible() {
+	if !d.app.confirmDialog().Visible() {
 		t.Fatal("Delete removed the connection without asking")
 	}
 	// Escape answers No.
-	d.app.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	d.app.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 	if len(d.app.cfg.Connections) != 2 {
 		t.Fatalf("answering No deleted anyway: %d connections left, want 2", len(d.app.cfg.Connections))
 	}
@@ -181,7 +181,7 @@ func TestConnectGatedButtonsDoNothing(t *testing.T) {
 	}
 	d.btnFocus = connectBtnDelete
 	d.doButton()
-	if d.app.confirmDialog.Visible() {
+	if d.app.confirmDialog().Visible() {
 		t.Error("Delete asked about a connection that isn't there")
 	}
 }

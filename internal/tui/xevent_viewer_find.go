@@ -21,7 +21,7 @@ const xeFindHelp = "Selects the next event with any value — its name, a field 
 
 // showFind opens the Find prompt on the text last looked for.
 func (v *XEventViewer) showFind() {
-	v.app.promptDialog.ShowPrompt("Find Event", xeFindHelp, "Find:", v.find, func(s string) {
+	v.app.promptDialog().ShowPrompt("Find Event", xeFindHelp, "Find:", v.find, func(s string) {
 		v.find = s
 		v.findNext(1)
 	})

@@ -81,7 +81,7 @@ func setFTState(inst *gFake, s ftState) {
 
 func ftTestApp() *App {
 	a := newTestApp()
-	a.alertDialog = dialogs.NewAlertDialog(nil)
+	installDialog(a, dialogs.NewAlertDialog())
 	return a
 }
 
@@ -131,13 +131,13 @@ func TestFullTextIndexOpsRefuseWhatTheServerWouldIgnore(t *testing.T) {
 			a.runFullTextIndexOp(node.data.conn, node, c.op)
 			waitAndDrain(t, a)
 			if c.want == "" {
-				if a.alertDialog.Visible() {
-					t.Fatalf("refused: %q", a.alertDialog.Message())
+				if a.alertDialog().Visible() {
+					t.Fatalf("refused: %q", a.alertDialog().Message())
 				}
 				return
 			}
-			if !a.alertDialog.Visible() || !strings.Contains(a.alertDialog.Message(), c.want) {
-				t.Errorf("alert = %v %q, want one containing %q", a.alertDialog.Visible(), a.alertDialog.Message(), c.want)
+			if !a.alertDialog().Visible() || !strings.Contains(a.alertDialog().Message(), c.want) {
+				t.Errorf("alert = %v %q, want one containing %q", a.alertDialog().Visible(), a.alertDialog().Message(), c.want)
 			}
 			if s := inst.StatementsIn("appdb"); len(s) != 0 {
 				t.Errorf("a refused action wrote: %q", s)
@@ -158,8 +158,8 @@ func TestFullTextIndexOpOnATableWithoutOne(t *testing.T) {
 	node := opTestNode(sc, NodeTable, "dbo", "Plain", "")
 	a.runFullTextIndexOp(sc, node, fullTextStartOp(gosmo.FullTextPopulationFull))
 	waitAndDrain(t, a)
-	if !strings.Contains(a.alertDialog.Message(), "[dbo].[Plain] has no full-text index") {
-		t.Errorf("alert = %q", a.alertDialog.Message())
+	if !strings.Contains(a.alertDialog().Message(), "[dbo].[Plain] has no full-text index") {
+		t.Errorf("alert = %q", a.alertDialog().Message())
 	}
 	if s := inst.StatementsIn("appdb"); len(s) != 0 {
 		t.Errorf("wrote %q", s)
@@ -182,11 +182,11 @@ func TestFullTextIndexDisableAndDeleteAskFirst(t *testing.T) {
 				inst, node := ftOpConn(t, ftIdle())
 				a.runFullTextIndexOp(node.data.conn, node, c.op)
 				waitAndDrain(t, a)
-				if !a.confirmDialog.Visible() {
+				if !a.confirmDialog().Visible() {
 					t.Fatal("ran without asking")
 				}
 				if !yes {
-					a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+					a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 					if s := inst.StatementsIn("appdb"); len(s) != 0 {
 						t.Errorf("No still wrote %q", s)
 					}
@@ -209,11 +209,11 @@ func TestFullTextTrackingOffAsksOnlyWithChangesPending(t *testing.T) {
 		inst, node := ftOpConn(t, s)
 		a.runFullTextIndexOp(node.data.conn, node, fullTextTrackChangesOp(gosmo.FullTextChangeTrackingOff))
 		waitAndDrain(t, a)
-		if got := a.confirmDialog.Visible(); got != (pending > 0) {
+		if got := a.confirmDialog().Visible(); got != (pending > 0) {
 			t.Fatalf("pending %d: asked = %v", pending, got)
 		}
 		if pending > 0 {
-			if msg := a.confirmDialog.Message(); !strings.Contains(msg, "4 changes tracked") {
+			if msg := a.confirmDialog().Message(); !strings.Contains(msg, "4 changes tracked") {
 				t.Errorf("prompt = %q, want the count", msg)
 			}
 			answerConfirm(t, a, false)

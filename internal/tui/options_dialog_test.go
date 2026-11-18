@@ -52,7 +52,7 @@ func TestOptionsApplyPushesIndentWidthToOpenPanels(t *testing.T) {
 	qp := NewQueryPanel(a, "Query 1")
 	a.panels.AddPanel(qp)
 
-	d := NewOptionsDialog(a)
+	d := withScreen(NewOptionsDialog(a), a.screen)
 	d.Show()
 	if got := d.fIndentWidth.Value(); got != "4" {
 		t.Fatalf("Show() pre-filled the field with %q, want \"4\"", got)
@@ -79,7 +79,7 @@ func TestOptionsApplyClampsIndentWidth(t *testing.T) {
 
 	for _, in := range []string{"", "0", "-1", "99", "two"} {
 		a := newTestApp()
-		d := NewOptionsDialog(a)
+		d := withScreen(NewOptionsDialog(a), a.screen)
 		d.Show()
 		d.fIndentWidth.SetValue(in)
 		d.apply()
@@ -100,8 +100,9 @@ func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 	a.cfg.IndentWidth = config.DefaultIndentWidth
 
 	panel := newJobStepPanel(unchangedDatabaseItem, []string{"master"}, a.cfg.IndentWidth)
-	sheet := propsheet.NewPropertySheet(tuikittest.NewScreen(120, 40), "Job Properties")
-	pd := registerDialog(a, &PropDialog{PropertySheet: sheet, app: a, pages: []propPage{{title: "Steps"}}})
+	sheet := withScreen(propsheet.NewPropertySheet("Job Properties"), tuikittest.NewScreen(120, 40))
+	pd := installDialog(a, &PropDialog{PropertySheet: sheet, app: a, pages: []propPage{{title: "Steps"}}})
+	a.modals.Register(pd)
 	pd.SetPages([]string{"Steps"})
 	pd.OnLoadPage = func(page, seq int) {
 		pd.SetPageForm(page, seq, propsheet.NewForm(panel.rows()...))
@@ -112,7 +113,7 @@ func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 		t.Fatalf("setup: command editor IndentWidth() = %d, want %d", got, config.DefaultIndentWidth)
 	}
 
-	d := NewOptionsDialog(a)
+	d := withScreen(NewOptionsDialog(a), a.screen)
 	d.Show()
 	d.fIndentWidth.SetValue("2")
 	d.apply()
@@ -140,7 +141,7 @@ func TestOptionsApplyMaxTextColumnLength(t *testing.T) {
 	} {
 		a := newTestApp()
 		a.cfg.MaxTextColumnLength = 300
-		d := NewOptionsDialog(a)
+		d := withScreen(NewOptionsDialog(a), a.screen)
 		d.Show()
 		if got := d.fMaxTextLen.Value(); got != "300" {
 			t.Fatalf("Show() pre-filled %q, want \"300\"", got)
@@ -170,7 +171,7 @@ func TestOptionsApplyMaxFetchRows(t *testing.T) {
 	} {
 		a := newTestApp()
 		a.cfg.MaxFetchRows = 50
-		d := NewOptionsDialog(a)
+		d := withScreen(NewOptionsDialog(a), a.screen)
 		d.Show()
 		if got := d.fMaxFetchRows.Value(); got != "50" {
 			t.Fatalf("Show() pre-filled %q, want \"50\"", got)
@@ -220,8 +221,8 @@ func optionsFocusName(d *OptionsDialog) string {
 // moves focus, and Up from either button returns to the checkbox.
 func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewOptionsDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewOptionsDialog(a), a.screen)
 	d.Show()
 	keys := []struct {
 		n string
@@ -267,8 +268,8 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 // input field, and the checkbox, which takes the press itself.
 func TestOptionsDialogPressFocusesTheControlUnderIt(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewOptionsDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewOptionsDialog(a), a.screen)
 	d.Show()
 	// Draw's positions, which only Draw applies.
 	inner := d.InnerRect()
@@ -306,7 +307,7 @@ func TestOptionsApplySwitchesColorTheme(t *testing.T) {
 
 	a := newTestApp()
 	a.cfg.Theme = config.ThemeLight
-	d := NewOptionsDialog(a)
+	d := withScreen(NewOptionsDialog(a), a.screen)
 	d.Show()
 	if got := d.ddTheme.Selected(); got != 1 {
 		t.Fatalf("Show() selected theme %d, want 1 (Light)", got)
@@ -345,14 +346,14 @@ func TestOptionsApplySQLFormatStyle(t *testing.T) {
 	} {
 		a := newTestApp()
 		a.cfg.SQLFormatStyle = tc.cfg
-		d := NewOptionsDialog(a)
+		d := withScreen(NewOptionsDialog(a), a.screen)
 		d.Show()
 		if got := styles[d.ddSQLStyle.Selected()].ID; got != tc.want {
 			t.Errorf("config %q: Show() selected %q, want %q", tc.cfg, got, tc.want)
 		}
 	}
 	a := newTestApp()
-	d := NewOptionsDialog(a)
+	d := withScreen(NewOptionsDialog(a), a.screen)
 	d.Show()
 	d.ddSQLStyle.SetSelected(1)
 	d.apply()
@@ -373,8 +374,8 @@ func TestOptionsDialogOpenSQLStyleListTakesTheClick(t *testing.T) {
 	}
 	t.Cleanup(s.Fini)
 	a := newTestApp()
-	a.screen = s
-	d := NewOptionsDialog(a)
+	a.setScreen(s)
+	d := withScreen(NewOptionsDialog(a), a.screen)
 	d.Show()
 	d.Draw(s) // positions the controls
 	x, y := d.ddSQLStyle.Bounds().X+1, d.InnerRect().Y+5

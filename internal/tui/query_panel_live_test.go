@@ -281,7 +281,7 @@ func TestLiveUpdateAfterTheRunEndsIsDropped(t *testing.T) {
 func TestLiveQueryStatisticsToggleKeepsActualPlanInStep(t *testing.T) {
 	a := &App{cfg: newTestApp().cfg}
 	a.buildUI()
-	a.screen = tuikittest.NewScreen(120, 40) // the toggles relayout
+	a.setScreen(tuikittest.NewScreen(120, 40)) // the toggles relayout
 
 	a.toggleLiveQueryStatistics()
 	if !a.liveStatsEnabled || !a.actualPlanEnabled {

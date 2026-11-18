@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -13,18 +14,40 @@ import (
 //
 // A language whose formatter has no case here fails closed — registering a
 // formatter without its guard can't ship output.
-func verify(l Language, in, out string) error { return verifyLexed(l, in, nil, out) }
+func verify(ctx context.Context, l Language, in, out string) error {
+	return verifyLexed(ctx, l, in, nil, out)
+}
 
 // Verify is the guard Format runs, for a caller that formatted part of a
 // document and must check the result in the whole one: a selection that starts
 // inside a string, comment or CDATA section above it passes the guard on its
 // own (it lexes as code) yet rewrites that value in place. It returns nil or
-// an error wrapping ErrGuard.
-func Verify(l Language, before, after string) error { return verify(l, before, after) }
+// an error wrapping ErrGuard, or ctx's error when ctx ends first.
+func Verify(ctx context.Context, l Language, before, after string) error {
+	return verify(ctx, l, before, after)
+}
 
 // verifyLexed is verify with in's SQL lexing already done (inLex, from
 // lexSQL(in)); nil lexes in here.
-func verifyLexed(l Language, in string, inLex *sqlLexed, out string) error {
+//
+// A lexing that stopped because ctx ended reads as text that "no longer
+// tokenizes", so ctx's error is checked before any ErrGuard is reported: a
+// cancelled format is not a formatter bug.
+func verifyLexed(ctx context.Context, l Language, in string, inLex *sqlLexed, out string) error {
+	err := verifyTokens(ctx, l, in, inLex, out)
+	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+	}
+	return err
+}
+
+// verifyTokens is verifyLexed's comparison, per language.
+func verifyTokens(ctx context.Context, l Language, in string, inLex *sqlLexed, out string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	switch l {
 	case LangJSON:
 		a, b := jsonSignificant(in), jsonSignificant(out)
@@ -40,8 +63,8 @@ func verifyLexed(l Language, in string, inLex *sqlLexed, out string) error {
 		if strings.HasPrefix(in, bom) != strings.HasPrefix(out, bom) {
 			return fmt.Errorf("%w (XML byte-order mark changed)", ErrGuard)
 		}
-		a, errA := xmlSignificant(in)
-		b, errB := xmlSignificant(out)
+		a, errA := xmlSignificant(ctx, in)
+		b, errB := xmlSignificant(ctx, out)
 		if errA != nil || errB != nil {
 			return fmt.Errorf("%w (XML no longer tokenizes)", ErrGuard)
 		}
@@ -54,7 +77,7 @@ func verifyLexed(l Language, in string, inLex *sqlLexed, out string) error {
 		}
 		return fmt.Errorf("%w (XML differs at token %d)", ErrGuard, i+1)
 	case LangSQL:
-		n, same, err := sqlSameTokens(in, inLex, out)
+		n, same, err := sqlSameTokens(ctx, in, inLex, out)
 		if err != nil {
 			return fmt.Errorf("%w (SQL no longer tokenizes)", ErrGuard)
 		}
@@ -100,8 +123,8 @@ func jsonSignificant(s string) string {
 // part of a value: inside an element (or at top level) that also holds other
 // text or CDATA, and as an element's sole content (<a> </a>). It re-derives
 // that from the token stream itself rather than reusing the formatter's tree.
-func xmlSignificant(s string) ([]xmlTok, error) {
-	toks, err := xmlTokens(s)
+func xmlSignificant(ctx context.Context, s string) ([]xmlTok, error) {
+	toks, err := xmlTokens(ctx, s)
 	if err != nil {
 		return nil, err
 	}

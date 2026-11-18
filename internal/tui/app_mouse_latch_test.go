@@ -13,13 +13,13 @@ import (
 // dialog to open from a button.
 func newLatchTestApp() *App {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 30)
+	a.setScreen(tuikittest.NewScreen(100, 30))
 	a.menuBar = controls.NewMenuBar()
 	a.toolbar = controls.NewToolbar()
 	a.contextMenu = &controls.ContextMenu{}
-	a.alertDialog = dialogs.NewAlertDialog(a.screen)
+	installDialog(a, dialogs.NewAlertDialog())
 	a.modals = dialogs.Stack{}
-	a.modals.Register(a.alertDialog)
+	a.modals.Register(a.alertDialog())
 	a.explorerSplit = newVerticalSplitter()
 	a.explorerSplit.SetBounds(0, 1, 100, 28)
 	return a
@@ -44,7 +44,7 @@ func TestToolbarClickWorksAfterDialogOpeningClick(t *testing.T) {
 	a.toolbar.SetButtons([]controls.ToolbarButton{
 		{Icon: "X", Tooltip: "Opens a dialog", Action: func() {
 			fired++
-			a.alertDialog.ShowAlert("Test", "hi")
+			a.alertDialog().ShowAlert("Test", "hi")
 		}},
 	})
 	a.menuBar.SetBounds(0, 0, 100)
@@ -58,7 +58,7 @@ func TestToolbarClickWorksAfterDialogOpeningClick(t *testing.T) {
 	if fired != 1 {
 		t.Fatalf("first click fired the action %d times, want 1", fired)
 	}
-	a.alertDialog.Hide()
+	a.alertDialog().Hide()
 	a.modals.Sync()
 
 	a.testClickAt(buttonX, 0)
@@ -75,7 +75,7 @@ func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 	a.menuBar.SetMenus([]controls.Menu{{
 		Label: "File",
 		Items: []controls.MenuItem{{Label: "Thing", Action: func() {
-			a.alertDialog.ShowAlert("Test", "hi")
+			a.alertDialog().ShowAlert("Test", "hi")
 		}}},
 	}})
 	a.menuBar.SetBounds(0, 0, 100)
@@ -86,10 +86,10 @@ func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 		t.Fatal("File menu did not open on the first click")
 	}
 	a.testClickAt(2, 2) // activate "Thing", which opens the alert
-	if !a.alertDialog.Visible() {
+	if !a.alertDialog().Visible() {
 		t.Fatal("the menu item's action did not open the dialog")
 	}
-	a.alertDialog.Hide()
+	a.alertDialog().Hide()
 	a.modals.Sync()
 
 	a.testClickAt(2, 0)
@@ -123,7 +123,8 @@ func TestReleaseReachesEveryOpenDialog(t *testing.T) {
 	a := newLatchTestApp()
 	bottom, top := &releaseCountingDialog{}, &releaseCountingDialog{}
 	for _, d := range []*releaseCountingDialog{bottom, top} {
-		d.InitModal(a.screen, "t", 20, 10)
+		d.InitModal("t", 20, 10)
+		d.SetScreen(a.screen)
 		d.Show()
 	}
 	a.modals = dialogs.Stack{}

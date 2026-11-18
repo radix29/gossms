@@ -212,7 +212,7 @@ func (lv *LogViewer) export() {
 	case lv.multiFile():
 		name = fmt.Sprintf("%s-log-%dfiles.txt", family, len(lv.sel))
 	}
-	lv.app.fileDialog.ShowSave("Export Log", name, func(path string) {
+	lv.app.fileDialog().ShowSave("Export Log", name, func(path string) {
 		// Rendered on the UI goroutine, with only the write off it: applyFilter reuses
 		// shown's backing array, so a slice snapshot would be rewritten under the
 		// goroutine by the next filter keystroke.
@@ -257,7 +257,7 @@ func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node
 	if !a.requireConn(sc) {
 		return
 	}
-	a.confirmDialog.ShowConfirm("Recycle Log", cycleLogMessage(logType, sc.Opts.Server), func(confirmed bool) {
+	a.confirmDialog().ShowConfirm("Recycle Log", cycleLogMessage(logType, sc.Opts.Server), func(confirmed bool) {
 		if !confirmed {
 			return
 		}

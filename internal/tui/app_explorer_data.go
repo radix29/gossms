@@ -303,7 +303,7 @@ func (a *App) showDependencies(node *explorerNode) {
 	if sc == nil {
 		return
 	}
-	a.propsDialog.ShowDependencies(a, sc, node.data.DBName, node.data.Schema, node.data.Name)
+	a.propsDialog().ShowDependencies(a, sc, node.data.DBName, node.data.Schema, node.data.Name)
 }
 
 // toggleSecurityPolicy enables or disables node's row-level security policy.
@@ -462,7 +462,7 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, di
 	}
 
 	if !enable {
-		a.confirmDialog.ShowConfirm(title, prompt, func(confirmed bool) {
+		a.confirmDialog().ShowConfirm(title, prompt, func(confirmed bool) {
 			if confirmed {
 				run()
 			}
@@ -533,7 +533,7 @@ func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosm
 	}
 
 	if state != gosmo.EndpointStarted {
-		a.confirmDialog.ShowConfirm("Change Endpoint State",
+		a.confirmDialog().ShowConfirm("Change Endpoint State",
 			fmt.Sprintf("Set %s to %s? Availability replicas, mirroring partners and Service Broker routes connecting through it stop being able to.",
 				name, state),
 			func(confirmed bool) {
@@ -588,7 +588,7 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 	}
 
 	if goOffline {
-		a.confirmDialog.ShowConfirm("Take Database Offline",
+		a.confirmDialog().ShowConfirm("Take Database Offline",
 			fmt.Sprintf("Take %q offline? Existing connections to it will be rolled back immediately.", dbName),
 			func(confirmed bool) {
 				if confirmed {
@@ -611,7 +611,7 @@ func (a *App) recoverDatabase(sc *db.ServerConn, node *explorerNode) {
 		return
 	}
 	dbName := node.data.DBName
-	a.confirmDialog.ShowConfirm("Restore With Recovery",
+	a.confirmDialog().ShowConfirm("Restore With Recovery",
 		fmt.Sprintf("Recover %q and bring it online? No further backups can be restored onto it afterwards.", dbName),
 		func(confirmed bool) {
 			if !confirmed {
@@ -673,7 +673,7 @@ func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 	msg := fmt.Sprintf(
 		"Revert %q to snapshot %q? Every change made to %q since the snapshot was taken is lost, and connections to either database are closed. Type the database name to confirm.",
 		source, snapshot, source)
-	a.confirmTypedDialog.ShowTypedConfirm("Restore Database from Snapshot", msg, source, func(confirmed bool) {
+	a.confirmTypedDialog().ShowTypedConfirm("Restore Database from Snapshot", msg, source, func(confirmed bool) {
 		if !confirmed {
 			return
 		}

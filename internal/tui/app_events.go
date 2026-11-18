@@ -35,8 +35,8 @@ func normalizeCtrlRune(ev *tcell.EventKey) *tcell.EventKey {
 func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 	// Log every key while the diagnostics dialog is open, before anything
 	// consumes it, including clipboard keys and whatever closes the dialog.
-	if a.keyDiagDialog.Visible() {
-		a.keyDiagDialog.RecordKey(ev)
+	if kd, ok := builtDialog[*KeyDiagnosticsDialog](a); ok && kd.Visible() {
+		kd.RecordKey(ev)
 	}
 
 	ev = normalizeCtrlRune(ev)
@@ -95,7 +95,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
 	switch ev.Key() {
 	case tcell.KeyF1:
-		a.helpDialog.Show()
+		a.helpDialog().Show()
 		return true, false
 	case tcell.KeyF10:
 		// Plain F10 opens the menu bar (the OverlayActive check above handles
@@ -115,14 +115,14 @@ func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
 		a.closeActivePanel()
 		return true, false
 	case tcell.KeyF9:
-		a.connectDialog.Show()
+		a.connectDialog().Show()
 		return true, false
 	case tcell.KeyCtrlO:
 		// Ctrl+Shift+O arrives as KeyCtrlO+ModShift only via normalizeCtrlRune
 		// on modern-protocol terminals; elsewhere it's plain Ctrl+O (open
 		// file). F9 works everywhere.
 		if ev.Modifiers()&tcell.ModShift != 0 {
-			a.connectDialog.Show()
+			a.connectDialog().Show()
 		} else {
 			a.openQueryFile()
 		}
@@ -131,7 +131,7 @@ func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
 		a.saveQuery(false)
 		return true, false
 	case tcell.KeyCtrlF:
-		a.findDialog.ShowFind()
+		a.findDialog().ShowFind()
 		return true, false
 	case tcell.KeyF3:
 		// Ctrl+F3 finds the word under the caret, Shift+F3 steps back; both
@@ -249,8 +249,8 @@ func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
 func (a *App) handleMouse(ev *tcell.EventMouse) {
 	// As handleKey: log first, since what the terminal delivered is what this
 	// dialog shows.
-	if a.keyDiagDialog.Visible() {
-		a.keyDiagDialog.RecordMouse(ev)
+	if kd, ok := builtDialog[*KeyDiagnosticsDialog](a); ok && kd.Visible() {
+		kd.RecordMouse(ev)
 	}
 	mx, my := ev.Position()
 	_, h := a.screen.Size()

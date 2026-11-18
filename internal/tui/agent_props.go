@@ -26,7 +26,7 @@ func agentRootMenuItems(a *App, sc *db.ServerConn, _ *explorerNode, newQuery, re
 // showAgentProperties opens SQL Server Agent Properties. Nothing it writes is
 // in the tree, so plain show.
 func (a *App) showAgentProperties(sc *db.ServerConn) {
-	a.propDialog.show(sc, "", "SQL Server Agent Properties", agentRootLabel, "Server: "+sc.Opts.Server,
+	a.propDialog().show(sc, "", "SQL Server Agent Properties", agentRootLabel, "Server: "+sc.Opts.Server,
 		func() []propPage { return agentPropPages(sc) })
 }
 

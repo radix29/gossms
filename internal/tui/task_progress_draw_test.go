@@ -43,10 +43,10 @@ func progressBar(w, pct int) string {
 // rows they always did — Backup's one "Progress:" label row lower.
 func TestBackupProgressView(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewBackupDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewBackupDialog(a), a.screen)
 	quietLog(t) // see TestBackupDialogDragOutOfDestKeepsExtending
-	a.screen = nil
+	a.setScreen(nil)
 	d.show(&db.ServerConn{}, "testdb")
 	d.mode = backupModeProgress
 	d.taskDB, d.taskType, d.taskDest = "Sales", "Full", `C:\bak\Sales.bak`
@@ -86,9 +86,9 @@ func TestBackupProgressView(t *testing.T) {
 
 func TestRestoreProgressView(t *testing.T) {
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewRestoreDialog(a)
-	a.screen = nil
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewRestoreDialog(a), a.screen)
+	a.setScreen(nil)
 	d.show(&db.ServerConn{}, "testdb")
 	d.mode = restoreModeProgress
 	d.taskTarget, d.taskSource = "Sales_copy", `C:\bak\Sales.bak`

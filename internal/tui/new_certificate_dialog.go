@@ -21,7 +21,7 @@ import (
 // The private key is protected by the database master key or a password. The
 // first needs a master key, which SQL Server will not create implicitly (Msg
 // 15581), so when the database has none the dialog asks for its password and
-// creates it first (ensureMasterKey, shared with the endpoint dialog). The
+// creates it first (gosmo's EnsureMasterKey, as the endpoint dialog does). The
 // private-key and master-key fields are keyProtectionFields, shared with New
 // Asymmetric Key.
 
@@ -184,5 +184,5 @@ func (a *App) showNewCertificateDialog(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.newCertificateDialog.show(sc, node)
+	a.newCertificateDialog().show(sc, node)
 }

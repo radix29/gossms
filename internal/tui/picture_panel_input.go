@@ -235,5 +235,5 @@ func (a *App) savePicturePanel(pp *PicturePanel, saveAs bool) {
 			initial += ext
 		}
 	}
-	a.fileDialog.ShowSave("Save Picture", initial, write)
+	a.fileDialog().ShowSave("Save Picture", initial, write)
 }

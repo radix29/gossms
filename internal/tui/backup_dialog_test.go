@@ -100,10 +100,10 @@ func backupFake(t *testing.T, info func(*gosmotest.Info), rules ...gRule) *db.Se
 func backupDialogOn(t *testing.T, sc *db.ServerConn) (*App, *BackupDialog) {
 	t.Helper()
 	a := newTestApp()
-	a.screen = tuikittest.NewScreen(100, 40)
-	d := NewBackupDialog(a)
+	a.setScreen(tuikittest.NewScreen(100, 40))
+	d := withScreen(NewBackupDialog(a), a.screen)
 	quietLog(t)
-	a.screen = nil
+	a.setScreen(nil)
 	d.show(sc, "AppDB")
 	drainUntil(t, a, func() bool {
 		return d.dbListRun.Idle() && d.defPaths.Idle() && d.compressDef.Idle()
@@ -122,24 +122,24 @@ func TestBackupAsksBeforeOverwritingAnExistingFile(t *testing.T) {
 	ran := 0
 	check := func() {
 		d.checkDestThen(gosmo.DiskTarget(typedDest), func() { ran++ })
-		drainUntil(t, a, func() bool { return d.destCheck.Idle() && a.confirmDialog.Visible() }, "the overwrite question")
+		drainUntil(t, a, func() bool { return d.destCheck.Idle() && a.confirmDialog().Visible() }, "the overwrite question")
 	}
 
 	check()
 	if ran != 0 {
 		t.Fatal("the backup ran over an existing file without asking")
 	}
-	if !strings.Contains(a.confirmDialog.Message(), typedDest) {
-		t.Errorf("the question does not name the file: %q", a.confirmDialog.Message())
+	if !strings.Contains(a.confirmDialog().Message(), typedDest) {
+		t.Errorf("the question does not name the file: %q", a.confirmDialog().Message())
 	}
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	if ran != 0 {
 		t.Error("Enter on the opening focus overwrote the file; No must be the default")
 	}
 
 	check()
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
-	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
+	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	if ran != 1 {
 		t.Errorf("Yes ran the backup %d times, want 1", ran)
 	}
@@ -165,7 +165,7 @@ func TestBackupDestCheckOutcomes(t *testing.T) {
 			if ran != c.wantRun {
 				t.Errorf("ran = %v, want %v (status %q)", ran, c.wantRun, d.status)
 			}
-			if a.confirmDialog.Visible() {
+			if a.confirmDialog().Visible() {
 				t.Error("asked to overwrite a file that is not there")
 			}
 			if !c.wantRun && !d.statusErr {

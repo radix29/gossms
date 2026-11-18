@@ -255,7 +255,7 @@ func (v *XEventViewer) showFilterMenu() {
 // editFilter opens the filter prompt on the expression in force. A value that
 // doesn't parse keeps the prompt open with the reason.
 func (v *XEventViewer) editFilter() {
-	v.app.promptDialog.ShowPrompt("Filter Events", xeFilterHelp, "Filter:", v.filter.String(), func(s string) {
+	v.app.promptDialog().ShowPrompt("Filter Events", xeFilterHelp, "Filter:", v.filter.String(), func(s string) {
 		f, err := xevent.ParseFilter(s)
 		if err != nil {
 			// Validate already refused it; nothing reaches here unparsed.
@@ -263,7 +263,7 @@ func (v *XEventViewer) editFilter() {
 		}
 		v.setFilter(f)
 	})
-	v.app.promptDialog.Validate = func(s string) error {
+	v.app.promptDialog().Validate = func(s string) error {
 		_, err := xevent.ParseFilter(s)
 		return err
 	}

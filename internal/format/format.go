@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -94,11 +95,12 @@ type Style struct {
 	ID   string // stable key, persisted in config once there is a choice ("standard")
 	Name string // menu and status label ("Standard")
 
-	// fn lays src out. A style that lexed src with the guard's own lexer
-	// also returns that lexing, so verify lexes only the output (SQL's
-	// lexSQL — the same function on the same input, so the guard stays
-	// independent of the layout); nil otherwise.
-	fn func(src string, o Options) (out string, in *sqlLexed, err error)
+	// fn lays src out, returning ctx's error once ctx is done. A style that
+	// lexed src with the guard's own lexer also returns that lexing, so
+	// verify lexes only the output (SQL's lexSQL — the same function on the
+	// same input, so the guard stays independent of the layout); nil
+	// otherwise.
+	fn func(ctx context.Context, src string, o Options) (out string, in *sqlLexed, err error)
 
 	// ownIndent: fn applies Options.LineIndent itself, skipping the lines
 	// inside a multi-line token; otherwise run prefixes every non-empty line.
@@ -117,9 +119,9 @@ var styles = map[Language][]Style{
 }
 
 // plain adapts a formatter that hands the guard no lexing.
-func plain(fn func(string, Options) (string, error)) func(string, Options) (string, *sqlLexed, error) {
-	return func(src string, o Options) (string, *sqlLexed, error) {
-		out, err := fn(src, o)
+func plain(fn func(context.Context, string, Options) (string, error)) func(context.Context, string, Options) (string, *sqlLexed, error) {
+	return func(ctx context.Context, src string, o Options) (string, *sqlLexed, error) {
+		out, err := fn(ctx, src, o)
 		return out, nil, err
 	}
 }
@@ -165,28 +167,41 @@ func (e *SyntaxError) Error() string {
 
 // Format lays src out in l's style styleID (see StyleByID for the fallback).
 // It returns the formatted text or an error and never partial output: a
-// *SyntaxError when src doesn't parse, ErrNoFormatter, or ErrGuard when the
+// *SyntaxError when src doesn't parse, ErrNoFormatter, ErrGuard when the
 // result would differ from src in more than whitespace (and keyword case,
-// for SQL).
-func Format(l Language, styleID, src string, o Options) (string, error) {
+// for SQL), or ctx's error when ctx ends first.
+//
+// ctx is checked between phases and, inside the long ones (lexing, layout,
+// the guard), every line or every checkEvery tokens, so a superseded format
+// of a multi-MB script stops within milliseconds instead of running to the
+// end. The one phase not checked inside is JSON's: encoding/json takes no
+// context, and it runs at hundreds of MB/s.
+func Format(ctx context.Context, l Language, styleID, src string, o Options) (string, error) {
 	st, ok := StyleByID(l, styleID)
 	if !ok {
 		return "", fmt.Errorf("%s: %w", l, ErrNoFormatter)
 	}
-	return run(l, st, src, o)
+	return run(ctx, l, st, src, o)
 }
+
+// checkEvery is how many tokens a loop runs between two ctx checks. A check
+// is one atomic load, but the loops it sits in do little more per token.
+const checkEvery = 512
 
 // run is Format after style lookup, split out so tests can hand it a broken
 // style and watch the guard refuse its output.
-func run(l Language, st Style, src string, o Options) (string, error) {
-	out, lexed, err := st.fn(src, o)
+func run(ctx context.Context, l Language, st Style, src string, o Options) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	out, lexed, err := st.fn(ctx, src, o)
 	if err != nil {
 		return "", err
 	}
 	if o.LineIndent != "" && !st.ownIndent {
 		out = indentLines(out, o.LineIndent)
 	}
-	if err := verifyLexed(l, src, lexed, out); err != nil {
+	if err := verifyLexed(ctx, l, src, lexed, out); err != nil {
 		return "", err
 	}
 	return out, nil
