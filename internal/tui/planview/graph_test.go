@@ -4,6 +4,10 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/showplan"
+	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 func newGraphTabView(t *testing.T) *PlanView {
@@ -12,6 +16,63 @@ func newGraphTabView(t *testing.T) *PlanView {
 	v.SetBounds(0, 0, 160, 40)
 	v.SetPlan(loadTestPlan(t))
 	return v // TabPlan is the default active tab
+}
+
+func TestGraph_CostBadgesAndBorders(t *testing.T) {
+	old := *theme.Active()
+	t.Cleanup(func() { theme.SetPalette(old) })
+	for _, tt := range []struct {
+		palette theme.Palette
+		cost    float64
+		badge   string
+		border  tcell.Color
+		warn    bool
+	}{
+		{theme.Default, 19.99, "", theme.Default.Border, false},
+		{theme.Default, 20, "🟡", theme.Default.Border, false},
+		{theme.Default, 39.99, "🟡", theme.Default.Border, false},
+		{theme.Default, 40, "🟠", theme.Default.Border, false},
+		{theme.Default, 79.99, "🟠", theme.Default.Border, false},
+		{theme.Default, 80, "🔴", theme.Default.Error, true},
+		{theme.Default, 20, "⚠", theme.Default.Warning, true},
+		{theme.Default, 40, "⚠", theme.Default.Warning, true},
+		{theme.Light, 40, "🟠", theme.Light.Border, false},
+	} {
+		theme.SetPalette(tt.palette)
+		v := newGraphTabView(t)
+		v.currentStatement().SubTreeCost = 100
+		v.graphCanvasRect = core.Rect{W: 80, H: 24}
+		n := &showplan.Node{ID: 9001, PhysicalOp: "Scan", EstSubtreeCost: tt.cost}
+		if tt.warn {
+			n.Warnings = []string{"Missing Index"}
+		}
+		tl := tile{node: n, rect: core.Rect{W: graphTileW, H: graphTileH}}
+		s := tuikittest.NewScreen(80, 24)
+		v.drawTile(s, tl, theme.Active())
+		if _, style, _ := s.Get(0, 0); style.GetForeground() != tt.border {
+			t.Errorf("cost %.2f: border = %v, want %v", tt.cost, style.GetForeground(), tt.border)
+		}
+		for _, badge := range []string{"❌", "🔴", "🟠", "🟡", "⚠"} {
+			x, y, found := s.Find(badge)
+			if found != (badge == tt.badge) {
+				t.Errorf("cost %.2f: badge %q present = %v", tt.cost, badge, found)
+			}
+			if found && (x != graphTileW-1-core.DisplayWidth(badge) || y != 1) {
+				t.Errorf("badge %q at (%d,%d), want inside the top-right corner", badge, x, y)
+			}
+			if found {
+				_, style, _ := s.Get(x, y)
+				want := tt.palette.Warning
+				if badge == "🔴" {
+					want = tt.palette.Error
+				}
+				if style.GetForeground() != want || style.GetBackground() != tt.palette.PanelBg {
+					t.Errorf("cost %.2f: badge %q colors = (%v, %v), want (%v, %v)",
+						tt.cost, badge, style.GetForeground(), style.GetBackground(), want, tt.palette.PanelBg)
+				}
+			}
+		}
+	}
 }
 
 // TestGraphScrollbarDragScrolls confirms dragging either of the canvas's
