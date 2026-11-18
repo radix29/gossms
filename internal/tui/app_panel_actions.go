@@ -70,7 +70,8 @@ func (a *App) openQueryWithTextThen(sc *db.ServerConn, database, text string, on
 
 // openQueryFile runs File > Open: prompts for a path and loads its content into
 // a new query panel, never the active one, as SSMS does. The panel's title then
-// tracks the file's name.
+// tracks the file's name. A .sqlplan opens in a plan panel instead, and a file
+// whose bytes sniff as a picture in a picture panel.
 func (a *App) openQueryFile() {
 	a.fileDialog().ShowOpen("Open Query File", "", func(path string) {
 		data, err := os.ReadFile(path)
@@ -80,6 +81,12 @@ func (a *App) openQueryFile() {
 		}
 		if strings.EqualFold(filepath.Ext(path), sqlPlanExt) {
 			a.openPlanFile(path, data)
+			return
+		}
+		// By content, never by extension: a picture saved as .bin, or a
+		// renamed .sql that is really a PNG, is still a picture.
+		if _, ok := sniffPicture(data[:min(len(data), pictureSniffLen)]); ok {
+			a.openPictureFile(path, data)
 			return
 		}
 		a.queryPanelCnt++
@@ -107,6 +114,17 @@ func (a *App) openQueryFile() {
 			a.connectForQueryPanel(qp, sc, database, nil)
 		}
 	})
+}
+
+// openPictureFile shows an already-read picture file in its own PicturePanel,
+// titled with the file's name. Like a picture cell it has no connection, and
+// Save writes back to the file it came from.
+func (a *App) openPictureFile(path string, data []byte) {
+	pp := NewPicturePanelBytes(a, filepath.Base(path), data)
+	pp.filePath = path
+	a.panels.SetActiveIndex(a.panels.AddPanel(pp))
+	a.focusPanels()
+	a.setStatus("Opened " + path)
 }
 
 // sqlPlanExt is the extension SSMS gives a saved execution plan, and what

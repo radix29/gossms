@@ -15,6 +15,8 @@ import (
 
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
+
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // testPicture is a 120x80 gradient: wider than tall, so fit and zoom
@@ -276,5 +278,49 @@ func TestOpenCellValuePanelOpensAPicture(t *testing.T) {
 	}
 	if a.openCellValuePanel("varbinary(max)", "Data", "0x0102") {
 		t.Error("a non-picture binary cell was claimed; it belongs to the popup")
+	}
+}
+
+// File > Open decides by content, never by extension: a PNG and a JPEG open
+// in a picture panel titled with the file's name and decode from the bytes as
+// read, a PNG named .sql still does, and a script stays a query panel.
+func TestOpenQueryFileSniffsPictures(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		data    []byte
+		picture string // the format a picture panel must decode, "" for a query panel
+	}{
+		{"pic.png", encodePicture(t, "png"), "png"},
+		{"pic.jpg", encodePicture(t, "jpeg"), "jpeg"},
+		{"renamed.sql", encodePicture(t, "png"), "png"},
+		{"q.sql", []byte("SELECT 1"), ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newTestApp()
+			installDialog(a, dialogs.NewFileDialog())
+			path := filepath.Join(t.TempDir(), tt.name)
+			if err := os.WriteFile(path, tt.data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			a.openQueryFile()
+			a.fileDialog().OnChoose(path)
+			pp, isPicture := a.panels.ActivePanel().(*PicturePanel)
+			if tt.picture == "" {
+				if isPicture || a.activeQueryPanel() == nil {
+					t.Fatalf("active panel = %T, want a query panel", a.panels.ActivePanel())
+				}
+				return
+			}
+			if !isPicture {
+				t.Fatalf("active panel = %T, want *PicturePanel", a.panels.ActivePanel())
+			}
+			if pp.Title() != tt.name || pp.filePath != path {
+				t.Errorf("title = %q, filePath = %q; want %q, %q", pp.Title(), pp.filePath, tt.name, path)
+			}
+			drainUntil(t, a, func() bool { return !pp.loading }, "picture decode")
+			if pp.errText != "" || pp.format != tt.picture || !bytes.Equal(pp.data, tt.data) {
+				t.Errorf("decoded format = %q, err = %q, data intact = %v", pp.format, pp.errText, bytes.Equal(pp.data, tt.data))
+			}
+		})
 	}
 }

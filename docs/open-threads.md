@@ -97,11 +97,6 @@ support); this section covers only the environment.
   becomes a method or goes, ~25 call sites, mechanical). Needs the Fabric
   contributor to verify.
 
-## Picture viewer: what is left
-
-- **File > Open of an image file** does not open it in a picture panel; only a
-  result cell does. `openQueryFile` would sniff with `sniffPicture`.
-
 ## Windows clipboard: what is left
 
 `os_clipboard_windows.go` opens with a NULL owner (`OpenClipboard(0)`), which
@@ -111,12 +106,17 @@ round trips per run, Get-Clipboard from another process read the text,
 clipboard history (Win+V) recorded the writes, and 16 runs with a simulated
 clipboard manager (a format listener holding the clipboard 20 ms per change)
 all passed; writes then took up to 440 ms, inside the 1 s open timeout.
-Still open:
+A connected RDP client works too (2026-11-18, Remmina on the Linux machine,
+the write run inside the RDP session through a `schtasks /it` task): a
+gossms write reached the client's clipboard through `rdpclip` 21 of 21
+times, and a read returned text copied on the client. A real clipboard
+manager passes as well (2026-11-18, Ditto 3.25.113 running in the connected
+RDP session): 300 write-then-read round trips 30 ms apart and 150 at 400 ms
+had 0 failures; writes peaked at 31 ms. At 400 ms Ditto saved 76 of the 150
+copies, so it was reading the clipboard throughout. At 30 ms it merged them
+into one. Every run had a 180 s test timeout, and none hung. Ditto stays
+installed on win10cli and starts at login. Still open:
 
-- **A connected RDP client was not tried** (no RDP client on the Linux
-  machine): does a gossms copy reach the client's clipboard through `rdpclip`?
-- **A real third-party clipboard manager was not tried** (Ditto etc.), only
-  the simulated listener.
 - **One manager run hung** (the first, before a test timeout was armed, so no
   stack); 16 later runs with the timeout did not reproduce it. Likely the
   probe's own listener, unproven. If a Windows user reports a frozen copy,
