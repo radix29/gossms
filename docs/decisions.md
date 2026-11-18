@@ -612,10 +612,11 @@ Peer credentials, easy to undo:
 - **A dialog with no text entry has an inert clipboard** (Help, About/Object
   Dependencies, Confirm, Query List, Background Tasks aren't
   `core.ClipboardHost`) rather than copying the panel behind it.
-- **Key Diagnostics' `syncIfDirty` must not rebuild the editor while it has a
-  selection** — it logs the very `Ctrl+A` used to copy, and the next `SetText`
-  would drop the selection before `Ctrl+C`. Status History doesn't need this;
-  "simplifying" would undo it.
+- **Key Diagnostics' and Status History's `syncIfDirty` prepend
+  (`Editor.PrependLines`), never `SetText`** — Key Diagnostics logs the very
+  `Ctrl+A` used to copy, Status History the "Copied to clipboard" of its own
+  `Ctrl+C`, and a `SetText` on the next frame drops the selection (and the
+  scroll) before the next Copy. Only `Show` rebuilds with `SetText`.
 
 ## Server-level families: what is deliberately out of them
 

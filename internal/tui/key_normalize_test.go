@@ -48,7 +48,7 @@ func TestNormalizeCtrlRune(t *testing.T) {
 }
 
 // newKeyTestApp is newTestApp plus the dialogs handleKey touches.
-func newKeyTestApp(t *testing.T) *App {
+func newKeyTestApp(t testing.TB) *App {
 	t.Helper()
 	a := newTestApp()
 	installDialog(a, NewKeyDiagnosticsDialog(a))

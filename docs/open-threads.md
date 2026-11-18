@@ -73,7 +73,14 @@ support); this section covers only the environment.
   single-database (`IsDatabaseScoped`: no msdb, Agent, server scope, USE) from
   the documentation alone. To check, with the Fabric contributor: connect,
   run gosmo's `TestLiveVersionSweep` against it, and walk Object Explorer —
-  no server-scope folders, no "needs SQL Server 2016" refusals.
+  no server-scope folders, no "needs SQL Server 2016" refusals. Also online
+  rebuild and the per-index ALL expansion (review 2026-11-18 B2): `gossms
+  maint index-rebuild --online` (gosmo now allows it on 12) and without
+  `--index`, with and without `--reorganize` — gosmo sends one `ALTER INDEX
+  [name]` per index there, since the docs say Fabric refuses `ALTER INDEX
+  ALL` — and Object Explorer's Rebuild All Indexes script on a table and an
+  indexed view; confirm Fabric really refuses `ALL` (if not, the expansion
+  can go).
 - **Fabric Warehouse is detected from the hostname, in gossms** (review
   2026-11-18, E4; deferred until a warehouse can be probed).
   `db.newServerConn` (`internal/db/connection.go`) sets `ServerConn.IsFabricDW`

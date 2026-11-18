@@ -79,9 +79,10 @@ func (a *App) formatActiveDocumentAs(styleID string) {
 		return
 	}
 	j := formatJob{qp: qp, st: st, lang: qp.lang, doc: e.Document(), ver: e.Document().Version(),
-		sel: e.HasSelection(), top: e.SelectionTopRow()}
+		sel: e.HasSelection()}
 	o := format.Options{IndentWidth: e.IndentWidth()}
 	if j.sel {
+		j.top, j.bottom, _ = e.SelectedLineRange() // !ok only for a block selection, refused above
 		// Refused here for SQL with a clearer message than verifyInDocument's,
 		// which still covers XML and anything this misses.
 		if j.lang == format.LangSQL && sqledit.LineState(e.Document(), j.top).Mode != sqltext.ModeNormal {
@@ -205,7 +206,9 @@ type formatJob struct {
 	doc  *editor.Document
 	ver  uint64
 	sel  bool
-	top  int // the selection's first line
+	// The selection's rows, inclusive (Editor.SelectedLineRange): the lines
+	// j.src holds. Zero without a selection.
+	top, bottom int
 }
 
 // format formats j.src and, for a selection, checks the result in the whole
@@ -240,7 +243,11 @@ func (j formatJob) verifyInDocument(ctx context.Context, out string) error {
 // current reports whether j's editor still holds the text j formatted, at the
 // same place and selected the same way, so applying the result replaces
 // exactly what was formatted. The document version catches any edit; a moved
-// selection leaves it alone, so that is compared too.
+// selection leaves it alone, so its row range is compared too. With the
+// document and version unchanged the same rows hold the same text, so the
+// selected text is never rebuilt: abandonStaleFormat runs this after every
+// event, and SelectedLinesText on a multi-megabyte selection was megabytes of
+// garbage per mouse move on the UI goroutine.
 func (j formatJob) current() bool {
 	e := j.qp.editor
 	if e.ReadOnly() || j.qp.lang != j.lang || e.Document() != j.doc || e.Document().Version() != j.ver ||
@@ -250,8 +257,8 @@ func (j formatJob) current() bool {
 	if !j.sel {
 		return true
 	}
-	src, ok := e.SelectedLinesText()
-	return ok && e.SelectionTopRow() == j.top && src == j.src
+	top, bottom, ok := e.SelectedLineRange()
+	return ok && top == j.top && bottom == j.bottom
 }
 
 // applyFormatted puts a run's result into its editor, or reports its error.

@@ -164,3 +164,117 @@ func TestStatusHistoryRecordIsSafeFromBackgroundGoroutines(t *testing.T) {
 		t.Fatalf("editor holds %d lines, want %d — the final Draw must show every retained message", lines, maxStatusHistoryLines)
 	}
 }
+
+// shownStatusHistoryForTest builds a shown StatusHistoryDialog holding n
+// messages, drawn once so the editor has bounds.
+func shownStatusHistoryForTest(t *testing.T, n int) (*StatusHistoryDialog, *tuikittest.Screen) {
+	t.Helper()
+	screen := tuikittest.NewScreen(100, 40)
+	d := withScreen(NewStatusHistoryDialog(nil), screen)
+	for i := range n {
+		d.Record("message " + strconv.Itoa(i))
+	}
+	d.Show()
+	d.Draw(screen)
+	return d, screen
+}
+
+// TestStatusHistoryKeepsTheSelectionWhenAMessageArrives pins B1 of the
+// 2026-11-18 review: a sync rebuilt the editor with SetText, so every message
+// recorded while the dialog was open, its own "Copied to clipboard" included,
+// dropped the selection and a second Ctrl+C copied nothing.
+func TestStatusHistoryKeepsTheSelectionWhenAMessageArrives(t *testing.T) {
+	d, screen := shownStatusHistoryForTest(t, 5)
+	d.editor.SelectRange(1, 0, 3, 0)
+	before := d.editor.SelectedText()
+	if before == "" {
+		t.Fatal("nothing selected to begin with")
+	}
+	row, _ := d.editor.CursorPos()
+
+	d.Record("Copied to clipboard")
+	d.Draw(screen)
+
+	if !d.editor.HasSelection() {
+		t.Fatal("a recorded message dropped the selection")
+	}
+	if got := d.editor.SelectedText(); got != before {
+		t.Errorf("selected text changed from %q to %q", before, got)
+	}
+	if got, _ := d.editor.CursorPos(); got != row+1 {
+		t.Errorf("cursor row = %d, want %d (moved down with its text)", got, row+1)
+	}
+	if !strings.Contains(strings.SplitN(d.editor.Text(), "\n", 2)[0], "Copied to clipboard") {
+		t.Errorf("the new message is not the first line: %q", d.editor.Text())
+	}
+}
+
+// TestStatusHistoryKeepsAScrolledViewWhenAMessageArrives is B1's other half: a
+// background load recording a status snapped a user reading older messages
+// back to line 1.
+func TestStatusHistoryKeepsAScrolledViewWhenAMessageArrives(t *testing.T) {
+	d, screen := shownStatusHistoryForTest(t, 100)
+	d.editor.GoToLine(60)
+	d.Draw(screen)
+	top, _ := d.editor.ScrollPos()
+	if top == 0 {
+		t.Fatal("the view did not scroll to begin with")
+	}
+
+	d.Record("Loaded 12 tables")
+	d.Draw(screen)
+
+	if got, _ := d.editor.ScrollPos(); got != top+1 {
+		t.Errorf("scroll row = %d, want %d (the same text at the top of the view)", got, top+1)
+	}
+}
+
+// TestStatusHistoryTrimsTheEditorAtMax pins the trim PrependLines takes over
+// from the full rebuild: an open dialog never holds more than the history does.
+func TestStatusHistoryTrimsTheEditorAtMax(t *testing.T) {
+	d, screen := shownStatusHistoryForTest(t, maxStatusHistoryLines)
+	d.Record("one more")
+	d.Draw(screen)
+	if got := strings.Count(d.editor.Text(), "\n") + 1; got != maxStatusHistoryLines {
+		t.Errorf("editor holds %d lines, want %d", got, maxStatusHistoryLines)
+	}
+}
+
+// TestStatusHistoryCopiesTwiceInARow drives the real path: Ctrl+C through
+// App.copySelection with the dialog on top records "Copied to clipboard", a
+// frame is drawn, and the second Ctrl+C must copy the same text again.
+// Before PrependLines the first copy worked and the second copied nothing.
+func TestStatusHistoryCopiesTwiceInARow(t *testing.T) {
+	a := newAppWithEveryDialog()
+	screen := tuikittest.NewScreen(100, 40)
+	a.setScreen(screen)
+	copied := make(chan string, 2)
+	old := clipboardWriter
+	clipboardWriter = func(text string) bool { copied <- text; return true }
+	defer func() { clipboardWriter = old }()
+
+	d := a.statusHistoryDialog
+	for i := range 5 {
+		d.Record("message " + strconv.Itoa(i))
+	}
+	d.Show()
+	// As Run's loop does between an event and its frame.
+	frame := func() { a.modals.Sync(); a.modals.Draw(screen) }
+	frame()
+	d.editor.SelectRange(1, 0, 3, 0)
+
+	var got []string
+	for range 2 {
+		a.copySelection()
+		select {
+		case text := <-copied:
+			got = append(got, text)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("copy %d never reached the clipboard (selection live: %v)", len(got)+1, d.editor.HasSelection())
+		}
+		frame()
+	}
+	if got[0] == "" || got[1] != got[0] {
+		t.Errorf("copies = %q, want the same non-empty text twice", got)
+	}
+}

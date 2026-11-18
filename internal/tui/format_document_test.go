@@ -532,3 +532,48 @@ func TestFormatDocumentAsyncEditCancelsRun(t *testing.T) {
 		t.Fatalf("text = %q, want the typing %q kept", got, typed)
 	}
 }
+
+// A selection grown or shrunk at its bottom while a background format runs
+// makes the result stale, though its first line stayed put: the result would
+// replace lines that were not the ones formatted.
+func TestFormatJobCurrentComparesSelectedRows(t *testing.T) {
+	_, qp := newFormatTestPanel(t, format.LangSQL, "select 1\nselect 2\nselect 3")
+	selectLines(qp, 0, 1)
+	top, bottom, _ := qp.editor.SelectedLineRange()
+	e := qp.editor
+	j := formatJob{qp: qp, lang: format.LangSQL, doc: e.Document(), ver: e.Document().Version(),
+		sel: true, top: top, bottom: bottom}
+	if !j.current() {
+		t.Fatal("unchanged selection reported stale")
+	}
+	selectLines(qp, 0, 2)
+	if j.current() {
+		t.Fatal("selection extended by a line reported current")
+	}
+	selectLines(qp, 0, 0)
+	if j.current() {
+		t.Fatal("selection shrunk by a line reported current")
+	}
+}
+
+// formatJob.current runs after every event while a background format is in
+// flight; on a large selection it must not rebuild the selected text.
+func BenchmarkFormatJobCurrentLargeSelection(b *testing.B) {
+	a := newKeyTestApp(b)
+	a.newQueryPanel()
+	qp := a.activeQueryPanel()
+	qp.setLanguage(format.LangSQL)
+	line := strings.Repeat("x", 63) + "\n"
+	qp.editor.SetText(strings.Repeat(line, (4<<20)/len(line)))
+	qp.editor.SelectAll()
+	e := qp.editor
+	top, bottom, _ := e.SelectedLineRange()
+	j := formatJob{qp: qp, lang: format.LangSQL, doc: e.Document(), ver: e.Document().Version(),
+		sel: true, top: top, bottom: bottom}
+	b.ReportAllocs()
+	for b.Loop() {
+		if !j.current() {
+			b.Fatal("not current")
+		}
+	}
+}

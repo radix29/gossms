@@ -13,6 +13,40 @@ import (
 // explorer_index_actions.go is an index node's maintenance items — Rebuild,
 // Reorganize and Disable — which run at once, confirmed, rather than opening a
 // script as the Indexes folder's Rebuild All Indexes does.
+//
+// It also holds Rebuild All Indexes, the table's and the Indexes folder's
+// item, which opens a script instead.
+
+// rebuildAllIndexesItem is the "Rebuild All Indexes" item of a table and of
+// an Indexes folder (n names the table, or the view when OnView): the
+// statement opened in a new query window, never run. The text is gosmo's
+// RebuildAllIndexesScript, so it cannot drift from what RebuildAllIndexesWith
+// (gossms maint index-rebuild) sends: one ALTER INDEX ALL, or, on SQL
+// database in Fabric, which refuses ALL, one ALTER INDEX per index — read
+// first, hence the background run. A heap there scripts nothing, and says so
+// rather than opening an empty window.
+func rebuildAllIndexesItem(a *App, sc *db.ServerConn, n nodeData) controls.MenuItem {
+	return controls.MenuItem{Label: "Rebuild All Indexes", Action: func() {
+		a.generateScript(sc, n, scriptVerb{gen: rebuildAllIndexesScript}, func(text string) {
+			if text == "" {
+				a.setStatus(gosmo.QualifiedName(n.Schema, n.Name) + " has no index to rebuild (a heap)")
+				return
+			}
+			a.openQueryWithText(sc, n.DBName, text)
+		})
+	}}
+}
+
+// rebuildAllIndexesScript is n's RebuildAllIndexesScript with no options. Refs,
+// not lookups: off Fabric the script reads nothing, and on Fabric gosmo reads
+// the indexes by name itself.
+func rebuildAllIndexesScript(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
+	d := sc.Server.DatabaseRef(n.DBName)
+	if n.OnView {
+		return d.ViewRef(n.Schema, n.Name).RebuildAllIndexesScript(ctx, gosmo.IndexRebuildOptions{})
+	}
+	return d.TableRef(n.Schema, n.Name).RebuildAllIndexesScript(ctx, gosmo.IndexRebuildOptions{})
+}
 
 // indexVerb is one of the three maintenance statements an index node runs.
 type indexVerb int

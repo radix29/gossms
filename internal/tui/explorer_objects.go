@@ -551,9 +551,7 @@ func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 	}
 	// Fabric DW tables have no user-managed indexes and no full-text indexing.
 	if sc == nil || !sc.IsFabricDW {
-		items = append(items, controls.MenuItem{Label: "Rebuild All Indexes", Action: func() {
-			a.openQueryWithText(sc, node.data.DBName, "ALTER INDEX ALL ON "+tableFQN+" REBUILD")
-		}})
+		items = append(items, rebuildAllIndexesItem(a, sc, node.data))
 	}
 	items = append(items,
 		controls.MenuItem{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
@@ -604,10 +602,7 @@ func indexesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, r
 		gate.ItemOn(controls.MenuItem{Label: "New Index", Sub: a.newIndexMenuItems(sc, node)},
 			sc, node.data.DBName, node.data.Schema, node.data.Name, gate.ObjectWriteRights()...),
 		{Divider: true},
-		{Label: "Rebuild All Indexes", Action: func() {
-			a.openQueryWithText(sc, node.data.DBName,
-				"ALTER INDEX ALL ON "+gosmo.QualifiedName(node.data.Schema, node.data.Name)+" REBUILD")
-		}},
+		rebuildAllIndexesItem(a, sc, node.data),
 		{Divider: true},
 		refresh,
 	}
