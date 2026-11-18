@@ -1,13 +1,16 @@
 package planview
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 func loadTestPlan(t *testing.T) *showplan.Plan {
@@ -62,6 +65,52 @@ func TestSetPlan_InstallsAndDefaultsToPlanTab(t *testing.T) {
 	// The fixture is a single-statement plan, so no statement bar.
 	if v.stmtRect.H != 0 {
 		t.Errorf("stmtRect.H = %d, want 0 for a single-statement plan", v.stmtRect.H)
+	}
+}
+
+func TestColumnstoreScanDisplayName(t *testing.T) {
+	for _, tt := range []struct {
+		name, physical, storage, want string
+	}{
+		{"clustered columnstore", "Clustered Index Scan", `Storage="ColumnStore"`, "Columnstore Scan"},
+		{"nonclustered columnstore", "Index Scan", `Storage="ColumnStore"`, "Columnstore Scan"},
+		{"rowstore", "Clustered Index Scan", `Storage="RowStore"`, "Clustered Index Scan"},
+		{"nonclustered rowstore", "Index Scan", `Storage="RowStore"`, "Index Scan"},
+		{"unspecified storage", "Clustered Index Scan", "", "Clustered Index Scan"},
+		{"seek", "Index Seek", `Storage="ColumnStore"`, "Index Seek"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			xmlDoc := fmt.Sprintf(`<ShowPlanXML><BatchSequence><Batch><Statements>
+<StmtSimple StatementSubTreeCost="1"><QueryPlan>
+<RelOp NodeId="0" PhysicalOp="%s" LogicalOp="%s"><IndexScan %s/></RelOp>
+</QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>`,
+				tt.physical, tt.physical, tt.storage)
+			v := New()
+			v.SetBounds(0, 0, 160, 40)
+			if err := v.SetPlanXML(xmlDoc); err != nil {
+				t.Fatal(err)
+			}
+			n := v.currentStatement().Root
+			for _, tab := range []Tab{TabPlan, TabTree} {
+				v.setActiveTab(tab)
+				s := tuikittest.NewScreen(160, 40)
+				v.Draw(s)
+				if _, _, found := s.Find("Columnstore Scan"); found != (tt.want == "Columnstore Scan") {
+					t.Errorf("tab %v: Columnstore Scan present = %v", tab, found)
+				}
+			}
+			if got := v.treeRowText(treeRow{node: n}); got != tt.want+" (0%)" {
+				t.Errorf("treeRowText = %q, want %q", got, tt.want+" (0%)")
+			}
+			for _, query := range []string{tt.want, tt.physical} {
+				if !nodeMatchesQuery(n, strings.ToLower(query)) {
+					t.Errorf("operator search does not match %q", query)
+				}
+			}
+			if n.PhysicalOp != tt.physical || n.LogicalOp != tt.physical || v.Plan().XML != xmlDoc {
+				t.Error("display changed the original operator or XML")
+			}
+		})
 	}
 }
 

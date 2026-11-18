@@ -140,6 +140,18 @@ func (v *PlanView) nodeCostPct(n *showplan.Node) float64 {
 	return n.Cost(st.SubTreeCost)
 }
 
+func nodeOperatorName(n *showplan.Node) string {
+	switch n.PhysicalOp {
+	case "Clustered Index Scan", "Index Scan":
+		for _, kv := range n.Props {
+			if kv.Key == "Storage" && kv.Value == "ColumnStore" {
+				return "Columnstore Scan"
+			}
+		}
+	}
+	return n.PhysicalOp
+}
+
 // tileRowsText renders a tile's row-count line: the actual count when
 // available unless showEstimated ('p'); an estimated-only node shows its estimate.
 func (v *PlanView) tileRowsText(n *showplan.Node) string {
@@ -269,7 +281,7 @@ func (v *PlanView) treeRowText(tr treeRow) string {
 			sb.WriteString("▼ ")
 		}
 	}
-	sb.WriteString(tr.node.PhysicalOp)
+	sb.WriteString(nodeOperatorName(tr.node))
 	if tr.node.LogicalOp != "" && tr.node.LogicalOp != tr.node.PhysicalOp {
 		sb.WriteString(" (")
 		sb.WriteString(tr.node.LogicalOp)

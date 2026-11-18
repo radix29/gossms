@@ -170,7 +170,7 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	}
 
 	inner := screenRect.Inner(1)
-	core.DrawTextClipped(s, inner.X, inner.Y, inner.W, textStyle, t.node.PhysicalOp)
+	core.DrawTextClipped(s, inner.X, inner.Y, inner.W, textStyle, nodeOperatorName(t.node))
 
 	line2 := t.node.LogicalOp
 	if line2 == "" || line2 == t.node.PhysicalOp {

@@ -71,7 +71,7 @@ func (v *PlanView) handleSearchKey(ev *tcell.EventKey) bool {
 }
 
 // confirmSearch finds every operator matching the query (case-insensitive
-// substring of PhysicalOp/LogicalOp/Object.Table) and jumps to the first.
+// substring of operator names/Object.Table) and jumps to the first.
 func (v *PlanView) confirmSearch() {
 	v.searchSt.active = false
 	st := v.currentStatement()
@@ -94,7 +94,7 @@ func (v *PlanView) confirmSearch() {
 // nodeMatchesQuery reports whether n's operator name or object contains the
 // (lowercased) query.
 func nodeMatchesQuery(n *showplan.Node, q string) bool {
-	if strings.Contains(strings.ToLower(n.PhysicalOp), q) {
+	if strings.Contains(strings.ToLower(n.PhysicalOp), q) || strings.Contains(strings.ToLower(nodeOperatorName(n)), q) {
 		return true
 	}
 	if strings.Contains(strings.ToLower(n.LogicalOp), q) {
