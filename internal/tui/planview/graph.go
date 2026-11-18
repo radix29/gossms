@@ -153,7 +153,7 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 		// In live mode the border shows the operator's run state; the badge
 		// below still marks the rest.
 		borderStyle = borderStyle.Foreground(liveStateColor(pal, live, liveOK))
-	case costPct >= expensiveCostThreshold:
+	case costAtLeast(costPct, expensiveCostThreshold):
 		borderStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
 	case len(t.node.Warnings) > 0:
 		borderStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
@@ -175,16 +175,16 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	var badge string
 	var badgeStyle tcell.Style
 	switch {
-	case costPct >= expensiveCostThreshold:
+	case costAtLeast(costPct, expensiveCostThreshold):
 		badge = "🔴"
 		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
 	case len(t.node.Warnings) > 0:
 		badge = "⚠"
 		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
-	case costPct >= expensiveCostThreshold/2:
+	case costAtLeast(costPct, expensiveCostThreshold/2):
 		badge = "🟠"
 		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
-	case costPct >= expensiveCostThreshold/4:
+	case costAtLeast(costPct, expensiveCostThreshold/4):
 		badge = "🟡"
 		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
 	}

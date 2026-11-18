@@ -96,7 +96,7 @@ func TestTreeRowText_WarningBadgeWhenNotExpensive(t *testing.T) {
 	n := &showplan.Node{ID: 9002, PhysicalOp: "Cheap Scan", Warnings: []string{"Missing Index"}}
 	v.treeSt.rows = []treeRow{{node: n}}
 	v.selectedID = -1
-	for _, cost := range []float64{0, 20, 40, 79.99} {
+	for _, cost := range []float64{0, 20, 40, 79.4} {
 		n.EstSubtreeCost = cost
 		text := v.treeRowText(treeRow{node: n})
 		if !strings.Contains(text, "⚠") {
@@ -121,7 +121,7 @@ func TestTreeRowText_CostThresholds(t *testing.T) {
 	for _, tt := range []struct {
 		cost float64
 		want string
-	}{{19.99, ""}, {20, "🟡"}, {39.99, "🟡"}, {40, "🟠"}, {79.99, "🟠"}, {80, "🔴"}} {
+	}{{19.4, ""}, {19.6, "🟡"}, {39.4, "🟡"}, {39.6, "🟠"}, {79.4, "🟠"}, {79.6, "🔴"}, {80, "🔴"}} {
 		n := &showplan.Node{ID: 9001, PhysicalOp: "Scan", EstSubtreeCost: tt.cost}
 		text := v.treeRowText(treeRow{node: n})
 		for _, badge := range []string{"🔴", "🟠", "🟡"} {
@@ -132,7 +132,7 @@ func TestTreeRowText_CostThresholds(t *testing.T) {
 		v.treeSt.rows = []treeRow{{node: n}}
 		v.drawTreePane(s)
 		want := theme.Active().Text
-		if tt.cost >= 80 {
+		if tt.want == "🔴" {
 			want = theme.Active().Error
 		}
 		if _, style, _ := s.Get(v.treePaneRect.X, v.treePaneRect.Y); style.GetForeground() != want {

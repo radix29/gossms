@@ -2,6 +2,7 @@ package planview
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -131,6 +132,14 @@ func (v *PlanView) layoutTree() {
 // text color), and lose to a ⚠ warning badge where 🔴 wins over it.
 const expensiveCostThreshold = 0.80
 
+// costAtLeast reports whether cost fraction pct reaches threshold as the
+// views display it: the whole percent "%.0f" prints, not the raw fraction.
+// Compared raw, a 19.6% operator showed "(20%)" without its 🟡 and a 79.6% one
+// "80%" without 🔴. RoundToEven is fmt's own rounding of an exact half.
+func costAtLeast(pct, threshold float64) bool {
+	return math.RoundToEven(pct*100) >= math.RoundToEven(threshold*100)
+}
+
 // nodeCostPct returns n's cost as a fraction of the statement's total, 0 if no
 // statement.
 func (v *PlanView) nodeCostPct(n *showplan.Node) float64 {
@@ -222,7 +231,7 @@ func (v *PlanView) drawTreePane(s tcell.Screen) {
 		switch {
 		case tr.node.ID == v.selectedID:
 			style = theme.StyleSelected()
-		case v.nodeCostPct(tr.node) >= expensiveCostThreshold:
+		case costAtLeast(v.nodeCostPct(tr.node), expensiveCostThreshold):
 			style = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
 		case len(tr.node.Warnings) > 0:
 			style = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
@@ -278,13 +287,13 @@ func (v *PlanView) treeRowText(tr treeRow) string {
 	}
 	fmt.Fprintf(&sb, " (%.0f%%)", v.nodeCostPct(tr.node)*100)
 	switch {
-	case v.nodeCostPct(tr.node) >= expensiveCostThreshold:
+	case costAtLeast(v.nodeCostPct(tr.node), expensiveCostThreshold):
 		sb.WriteString(" 🔴")
 	case len(tr.node.Warnings) > 0:
 		sb.WriteString(" ⚠")
-	case v.nodeCostPct(tr.node) >= expensiveCostThreshold/2:
+	case costAtLeast(v.nodeCostPct(tr.node), expensiveCostThreshold/2):
 		sb.WriteString(" 🟠")
-	case v.nodeCostPct(tr.node) >= expensiveCostThreshold/4:
+	case costAtLeast(v.nodeCostPct(tr.node), expensiveCostThreshold/4):
 		sb.WriteString(" 🟡")
 	}
 	if tr.node.Parallel {

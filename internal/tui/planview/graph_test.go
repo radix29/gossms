@@ -28,11 +28,12 @@ func TestGraph_CostBadgesAndBorders(t *testing.T) {
 		border  tcell.Color
 		warn    bool
 	}{
-		{theme.Default, 19.99, "", theme.Default.Border, false},
-		{theme.Default, 20, "🟡", theme.Default.Border, false},
-		{theme.Default, 39.99, "🟡", theme.Default.Border, false},
-		{theme.Default, 40, "🟠", theme.Default.Border, false},
-		{theme.Default, 79.99, "🟠", theme.Default.Border, false},
+		{theme.Default, 19.4, "", theme.Default.Border, false},
+		{theme.Default, 19.6, "🟡", theme.Default.Border, false}, // shows "20%"
+		{theme.Default, 39.4, "🟡", theme.Default.Border, false},
+		{theme.Default, 39.6, "🟠", theme.Default.Border, false},
+		{theme.Default, 79.4, "🟠", theme.Default.Border, false},
+		{theme.Default, 79.6, "🔴", theme.Default.Error, false}, // shows "80%"
 		{theme.Default, 80, "🔴", theme.Default.Error, true},
 		{theme.Default, 20, "⚠", theme.Default.Warning, true},
 		{theme.Default, 40, "⚠", theme.Default.Warning, true},
