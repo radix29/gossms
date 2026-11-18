@@ -62,11 +62,6 @@ support); this section covers only the environment.
   `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
   Document's keyword case (below) waits on the same instance.
-- **Two gosmo live tests fail only inside the full `-short` run on
-  win10cli** (20 min run): `TestLiveStartTime` and
-  `TestLiveReplicationMonitor` both failed there and both passed run alone
-  straight after. Unexplained; the failure text was lost to the run's
-  filter. Rerun them in the full suite with `-v` before trusting a failure.
 
 - **No SQL database in Fabric (EngineEdition 12) has ever been connected.**
   gosmo counts it as Azure (version gates treat its 12.x as newest) and as
@@ -114,13 +109,20 @@ Settled design: `docs/decisions.md` § Format Document.
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
 
-- **Windows never driven** (phases 0 and 1): cmd, PowerShell, Git Bash on
-  win10cli — there is no interactive shell there from this machine. Only
-  `GOOS=windows go vet`/`go build` have run.
-- **`--application-intent readonly` routing unverified.** Through the AAG
-  listener (`ubuaag`) both intents landed on the primary: `AAG1` has no
-  read-only routing list, so the run proves the parameter is accepted, not
-  that a read-only connection reaches a secondary.
+- **Windows: mintty and PowerShell 7 not driven.** Phases 0 and 1 ran on
+  win10cli on 2026-11-18 and passed with no fix: cmd, Windows PowerShell 5.1
+  and Git Bash over ssh — modes (bare gossms refused on pipes, exit 1),
+  help, did-you-mean, response files (BOM + CRLF), every format, `--out-file`
+  (Windows and MSYS paths, `--force`, a directory), `-i -`, `--sql-base64`,
+  `--password-env`/`--password-stdin`, a profile's saved password and its
+  drop on override, Windows Authentication, `host\instance`, the `GOSSMS_*`
+  variables, exit codes 0/2/3/4/5/6/7/8; stdout has no CR. In a real console
+  over RDP: UTF-8 renders, Ctrl+C is `CANCELLED`/130, bare gossms starts the
+  UI and Ctrl+Q restores the console. The command line has no colour,
+  width-dependent output or password prompt, so nothing else depends on the
+  terminal. Not run: Git Bash *inside mintty* (bare gossms should be refused
+  without ConPTY, § Modes in `docs/cli.md`) and PowerShell 7 (`pwsh` is not
+  installed there).
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
 - **A bulk load cannot carry a character the database's code page lacks to

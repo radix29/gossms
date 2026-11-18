@@ -57,7 +57,26 @@ gate. Follow the existing entry style. **`CLAUDE.md` says not to edit
 
 **Done when:** the user has reviewed the entry. No code changes.
 
-### R2 — gosmo: `TestLiveStartTime` and `TestLiveReplicationMonitor` fail only in the full suite
+### R2 — gosmo: `TestLiveStartTime` and `TestLiveReplicationMonitor` fail only in the full suite — DONE
+
+**Done 2026-11-19:** both causes were already fixed in gosmo `7e52749`, and
+neither was ordering between tests:
+- `TestLiveStartTime`: a `StartTime` bug, not drift. `sqlserver_start_time`
+  is a `datetime` (1/300 s ticks), and the driver rounded it while
+  `DATEDIFF` counted from the unrounded value, so start + uptime ran up to
+  ~1.3 ms past `SYSDATETIME()` and failed the `d < 0` check. Both now use
+  the value cast to `datetime2(3)`. The test's window is unchanged.
+- `TestLiveReplicationMonitor`: "Agent history clean up" (every 10 min)
+  could remove a session between `Sessions` and `SessionActions`. The test
+  re-reads the session list (`sessionStillListed`) and logs a session that
+  is gone instead of failing on it. The fixture needed no reset.
+
+Full `-short -v` live runs, logs kept, all exit 0 with no failures: win10cli
+17 twice (3792 passed; both tests passed, 22.7 s and 14.1 s) and `SQL2016`
+once (3775 passed; `TestLiveStartTime` passed; replication tests skip, as
+there is no fixture on 13). The second run on 17 ran alongside the `SQL2016`
+run on the same host, under more load than the original failure. The
+open-threads bullet is deleted. No code change in this step.
 
 **Source:** `docs/open-threads.md` § Environment (two gosmo live tests).
 
@@ -129,7 +148,15 @@ set", or delete it.
 These are open-threads entries that this estate can now close. Nothing is
 known to be broken, but each one stays open until it is run.
 
-### R4 — gossms CLI: Windows never driven (phases 0 and 1)
+### R4 — gossms CLI: Windows never driven (phases 0 and 1) — DONE
+
+**Done 2026-11-18:** a `GOOS=windows` build ran on win10cli in cmd, Windows
+PowerShell 5.1 and Git Bash over ssh, and in a real console over RDP. Every
+check passed; no code change. The run is recorded in the narrowed
+`docs/open-threads.md` bullet (now "mintty and PowerShell 7 not driven").
+Two shell facts went into `docs/cli.md`: PowerShell needs `'@file'` quoted
+(splatting), and PowerShell 5.1 must set `[Console]::OutputEncoding` to UTF-8
+to capture non-ASCII output. Uncommitted.
 
 **Source:** `docs/open-threads.md` § Command line: what is left.
 
@@ -142,7 +169,19 @@ is installed. In the RDP session, check the output that depends on the
 terminal: colour, the width of a non-tty pipe, and the password prompt.
 Fix anything that fails, and narrow the entry to whatever is still not run.
 
-### R5 — gossms CLI: `--application-intent readonly` routing unverified
+### R5 — gossms CLI: `--application-intent readonly` routing unverified — DONE
+
+**Done 2026-11-18:** with a temporary routing configuration on `AAG1`
+(`READ_ONLY_ROUTING_URL = TCP://<node>.fritz.box:1433` on both replicas,
+`READ_ONLY_ROUTING_LIST` of the other node then itself on both),
+`gossms query run --server ubuaag --database testdb_1` landed on `ubusql1`
+(`READ_WRITE`) with `--application-intent readwrite` and was routed to
+`ubusql2` (`READ_ONLY`) with `readonly`. Without `--database` a read-only
+connection stays on the primary (`master` is not in the AG) — SQL Server's
+rule, not a gossms one. The before values (both replicas `ALLOW_CONNECTIONS`
+`ALL`/`ALL`, no routing URL, no routing list) were recorded and put back;
+both intents land on `ubusql1` again. No code change; the open-threads bullet
+is deleted. Uncommitted.
 
 **Source:** `docs/open-threads.md` § Command line: what is left.
 

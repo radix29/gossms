@@ -102,6 +102,9 @@ version
 -o json
 ```
 
+In PowerShell, quote it (`gossms '@args.txt'`): a bare `@name` is PowerShell's
+splatting operator, a parse error before gossms runs.
+
 ### Errors
 
 Everything the parser refuses is `USAGE_ERROR`, exit `2`: unknown command or
@@ -327,7 +330,10 @@ network timeout) `TIMEOUT`; anything else `CONNECTION_FAILED`.
 Results go to **stdout** in the `--output` format; errors too, so the caller
 parses one stream. On an error, stderr also gets one line,
 `gossms: <CODE>: <message>`. Output is UTF-8 without a BOM, `\n` line ends on
-every OS, independent of the locale. Library logging is discarded unless
+every OS, independent of the locale. Windows PowerShell 5.1 decodes a native command's
+output with `[Console]::OutputEncoding` (the OEM code page by default), so a
+script that captures non-ASCII output sets it to UTF-8 first; a console window
+shows it correctly either way. Library logging is discarded unless
 `--verbose`, so nothing else appears on stderr.
 
 ### The envelope
