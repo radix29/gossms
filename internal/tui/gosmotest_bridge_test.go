@@ -101,6 +101,25 @@ func newGConnWith(t *testing.T, info func(*gosmotest.Info), responses ...fakeRes
 	return &db.ServerConn{Server: f.Server()}, g
 }
 
+// newGConnFabric is newGConn for a Fabric Warehouse when fabric is set: the
+// server reports EngineEdition 11, from which gosmo decides
+// Server.IsFabricDW (a NewServer connection has no hostname to tiebreak on).
+func newGConnFabric(t *testing.T, fabric bool, responses ...fakeResponse) (*db.ServerConn, *gFake) {
+	t.Helper()
+	if !fabric {
+		return newGConn(t, responses...)
+	}
+	return newGConnWith(t, func(i *gosmotest.Info) { i.EngineEdition = gosmo.EngineAzureSynapseSrvls }, responses...)
+}
+
+// fabricConn is a Fabric Warehouse connection for a test that reads only its
+// gating, never its catalog.
+func fabricConn(t *testing.T) *db.ServerConn {
+	t.Helper()
+	sc, _ := newGConnFabric(t, true)
+	return sc
+}
+
 // newGConnOnAzure is newGConn for an Azure engine edition (5 SQL Database,
 // 8 Managed Instance), as fakedb's newFakeConnOnAzure* were.
 func newGConnOnAzure(t *testing.T, edition int, responses ...fakeResponse) (*db.ServerConn, *gFake) {

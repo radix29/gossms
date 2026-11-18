@@ -131,13 +131,25 @@ func (a *App) openPicturePanel(column, value string) bool {
 // NewPicturePanel creates a panel for the picture whose bytes hexValue spells
 // as the grid shows a binary cell ("0x…"), and starts decoding it.
 func NewPicturePanel(app *App, title, hexValue string) *PicturePanel {
+	return newPicturePanel(app, title, func() (decodedPicture, error) { return decodePicture(hexValue) })
+}
+
+// NewPicturePanelBytes creates a panel for a picture already in bytes — a
+// file File > Open read — and starts decoding it, so the bytes aren't
+// hex-encoded only for NewPicturePanel to decode them again.
+func NewPicturePanelBytes(app *App, title string, data []byte) *PicturePanel {
+	return newPicturePanel(app, title, func() (decodedPicture, error) { return decodePictureBytes(data) })
+}
+
+// newPicturePanel creates the panel and runs decode off the UI goroutine.
+func newPicturePanel(app *App, title string, decode func() (decodedPicture, error)) *PicturePanel {
 	pp := new(PicturePanel{app: app, title: title, loading: true})
 	if app.cfg != nil {
 		pp.ascii = app.cfg.PictureASCII
 	}
 	pp.buildTools()
 	app.safego("decode picture", func() {
-		pic, err := decodePicture(hexValue)
+		pic, err := decode()
 		app.postAndWake(func() { pp.setDecoded(pic, err) })
 	})
 	return pp
@@ -159,6 +171,11 @@ func decodePicture(hexValue string) (decodedPicture, error) {
 	if err != nil {
 		return decodedPicture{}, fmt.Errorf("not binary data: %w", err)
 	}
+	return decodePictureBytes(data)
+}
+
+// decodePictureBytes is decodePicture once the bytes are in hand.
+func decodePictureBytes(data []byte) (decodedPicture, error) {
 	img, format, err := gotuipic.DecodeBytes(data)
 	if err != nil {
 		return decodedPicture{}, err

@@ -62,11 +62,6 @@ support); this section covers only the environment.
   `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
   Document's keyword case (below) waits on the same instance.
-- **Two gosmo live tests fail only inside the full `-short` run on
-  win10cli** (20 min run): `TestLiveStartTime` and
-  `TestLiveReplicationMonitor` both failed there and both passed run alone
-  straight after. Unexplained; the failure text was lost to the run's
-  filter. Rerun them in the full suite with `-v` before trusting a failure.
 
 - **No SQL database in Fabric (EngineEdition 12) has ever been connected.**
   gosmo counts it as Azure (version gates treat its 12.x as newest) and as
@@ -81,49 +76,25 @@ support); this section covers only the environment.
   ALL` — and Object Explorer's Rebuild All Indexes script on a table and an
   indexed view; confirm Fabric really refuses `ALL` (if not, the expansion
   can go).
-- **Fabric Warehouse is detected from the hostname, in gossms** (review
-  2026-11-18, E4; deferred until a warehouse can be probed).
-  `db.newServerConn` (`internal/db/connection.go`) sets `ServerConn.IsFabricDW`
-  from the suffix `datawarehouse.fabric.microsoft.com` and copies it into
-  gosmo's exported `Server.IsFabricDW` field, which every gosmo user must set
-  before the first catalog read. A warehouse reached through a private
-  endpoint, a DNS alias or a future domain gets SQL Server catalog queries;
-  so does any other gosmo user who doesn't know about the field. Fix
-  (breaking): gosmo decides at `Connect`/`loadInfo` from EngineEdition 11 plus
-  whatever tells Fabric from Synapse serverless (probe live:
-  `DATABASEPROPERTYEX(DB_NAME(), 'Edition')`, `@@VERSION`), hostname only as a
-  fallback; expose a read-only `Server.IsFabricDW()` with an `Options`
-  override for tests; gossms reads it from the Server (`ServerConn.IsFabricDW`
-  becomes a method or goes, ~25 call sites, mechanical). Needs the Fabric
-  contributor to verify.
-
-## Picture viewer: what is left
-
-- **File > Open of an image file** does not open it in a picture panel; only a
-  result cell does. `openQueryFile` would sniff with `sniffPicture`.
+- **Fabric Warehouse vs. Synapse serverless is told apart by hostname**
+  (review 2026-11-18, E4). gosmo decides `Server.IsFabricDW()` at connect
+  (`detectFabricDW`): EngineEdition 11 is Fabric unless the host ends in a
+  Synapse serverless domain (`.sql.azuresynapse.net` and its sovereign
+  forms); an unknown edition falls back to the
+  `datawarehouse.fabric.microsoft.com` suffix. A Synapse pool behind a DNS
+  alias is therefore taken for Fabric. To check, with the Fabric contributor:
+  connect to a warehouse (and, if one is reachable, a Synapse serverless pool),
+  confirm it reports EngineEdition 11 (from the documentation only), and read `DATABASEPROPERTYEX(DB_NAME(), 'Edition')` and `@@VERSION`; if
+  either differs, make it the test in `detectFabricDW` and keep the hostname
+  only as the fallback.
 
 ## Windows clipboard: what is left
 
-`os_clipboard_windows.go` opens with a NULL owner (`OpenClipboard(0)`), which
-the Win32 docs say makes `SetClipboardData` fail. On win10cli (2026-11-18, in
-the user's disconnected RDP session, `rdpclip` running) it never did: 300
-round trips per run, Get-Clipboard from another process read the text,
-clipboard history (Win+V) recorded the writes, and 16 runs with a simulated
-clipboard manager (a format listener holding the clipboard 20 ms per change)
-all passed; writes then took up to 440 ms, inside the 1 s open timeout.
-Still open:
-
-- **A connected RDP client was not tried** (no RDP client on the Linux
-  machine): does a gossms copy reach the client's clipboard through `rdpclip`?
-- **A real third-party clipboard manager was not tried** (Ditto etc.), only
-  the simulated listener.
-- **One manager run hung** (the first, before a test timeout was armed, so no
-  stack); 16 later runs with the timeout did not reproduce it. Likely the
-  probe's own listener, unproven. If a Windows user reports a frozen copy,
+- **One clipboard-manager run hung** (2026-11-18, before the message-only
+  owner, and before a test timeout was armed, so no stack); 16 later runs and
+  every run since the owner change did not reproduce it. Likely the probe's
+  own format listener, unproven. If a Windows user reports a frozen copy,
   suspect this first.
-
-If any of these fails: open with a message-only window (`CreateWindowExW`,
-`HWND_MESSAGE`) as owner.
 
 ## Format Document: what is left
 
@@ -138,13 +109,20 @@ Settled design: `docs/decisions.md` § Format Document.
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
 
-- **Windows never driven** (phases 0 and 1): cmd, PowerShell, Git Bash on
-  win10cli — there is no interactive shell there from this machine. Only
-  `GOOS=windows go vet`/`go build` have run.
-- **`--application-intent readonly` routing unverified.** Through the AAG
-  listener (`ubuaag`) both intents landed on the primary: `AAG1` has no
-  read-only routing list, so the run proves the parameter is accepted, not
-  that a read-only connection reaches a secondary.
+- **Windows: mintty and PowerShell 7 not driven.** Phases 0 and 1 ran on
+  win10cli on 2026-11-18 and passed with no fix: cmd, Windows PowerShell 5.1
+  and Git Bash over ssh — modes (bare gossms refused on pipes, exit 1),
+  help, did-you-mean, response files (BOM + CRLF), every format, `--out-file`
+  (Windows and MSYS paths, `--force`, a directory), `-i -`, `--sql-base64`,
+  `--password-env`/`--password-stdin`, a profile's saved password and its
+  drop on override, Windows Authentication, `host\instance`, the `GOSSMS_*`
+  variables, exit codes 0/2/3/4/5/6/7/8; stdout has no CR. In a real console
+  over RDP: UTF-8 renders, Ctrl+C is `CANCELLED`/130, bare gossms starts the
+  UI and Ctrl+Q restores the console. The command line has no colour,
+  width-dependent output or password prompt, so nothing else depends on the
+  terminal. Not run: Git Bash *inside mintty* (bare gossms should be refused
+  without ConPTY, § Modes in `docs/cli.md`) and PowerShell 7 (`pwsh` is not
+  installed there).
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
 - **A bulk load cannot carry a character the database's code page lacks to

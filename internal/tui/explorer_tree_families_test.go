@@ -215,8 +215,7 @@ func TestFabricDWExternalDataSourcesAreDirectDatabaseChildren(t *testing.T) {
 			{"LakeSource", int64(1), "https://storage.example.com", "BLOB_STORAGE", "", "",
 				"", "", "", false},
 		}})
-	sc, _ := newGConn(t, responses...)
-	sc.IsFabricDW = true
+	sc, _ := newGConnFabric(t, true, responses...)
 	children := loadFamily(t, sc, NodeDatabase)
 	want := []string{"Tables", "Views", "External Data Sources", "Programmability", "Security"}
 	if got := labelsOfNodes(children); !slices.Equal(got, want) {
@@ -246,7 +245,7 @@ func TestFabricDWExternalDataSourcesAreDirectDatabaseChildren(t *testing.T) {
 }
 
 func TestFabricDWExternalFunctionsUseTheFunctionListing(t *testing.T) {
-	sc, inst := newGConn(t, treeFamilyDatabaseRow(),
+	sc, inst := newGConnFabric(t, true, treeFamilyDatabaseRow(),
 		fakeResponse{match: "WHERE  o.type IN ('FN','TF','IF','FS','FT')", cols: 6, rows: [][]driver.Value{
 			{int64(1), "dbo", "Regular", treeFamilyCreated, treeFamilyCreated, "FN"},
 		}},
@@ -254,7 +253,6 @@ func TestFabricDWExternalFunctionsUseTheFunctionListing(t *testing.T) {
 			{int64(2), "analytics", "Predict", treeFamilyCreated, treeFamilyCreated, "XF"},
 			{int64(3), "dbo", "Normalize", treeFamilyCreated, treeFamilyCreated, "XF"},
 		}})
-	sc.IsFabricDW = true
 	folders := loadFamily(t, sc, NodeProgrammability)
 	at := slices.Index(labelsOfNodes(folders), "External Functions")
 	if at < 0 {
@@ -320,9 +318,8 @@ func TestExternalFunctionsShowEmptyListsAndReturnLoadErrors(t *testing.T) {
 		{name: "failed", err: loadErr},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, _ := newGConn(t, treeFamilyDatabaseRow(),
+			sc, _ := newGConnFabric(t, true, treeFamilyDatabaseRow(),
 				fakeResponse{match: "WHERE  o.type = 'XF'", cols: 6, err: tc.err})
-			sc.IsFabricDW = true
 			node := &explorerNode{data: nodeData{Type: NodeExternalFunctions, DBName: "appdb", conn: sc}}
 			children, err := childLoaders[NodeExternalFunctions](loaderCtx{ctx: context.Background(), sc: sc}, node)
 			if !errors.Is(err, tc.err) || len(children) != 0 {
@@ -338,7 +335,7 @@ func TestExternalFunctionsShowEmptyListsAndReturnLoadErrors(t *testing.T) {
 }
 
 func TestFabricDWExternalResourcesHideFormatsAndLibraries(t *testing.T) {
-	sc := &db.ServerConn{IsFabricDW: true}
+	sc := fabricConn(t)
 	children := loadFamily(t, sc, NodeExternalResources)
 	if got := labelsOfNodes(children); !slices.Equal(got, []string{"External Data Sources"}) {
 		t.Fatalf("Fabric DW external families = %v, want only External Data Sources", got)

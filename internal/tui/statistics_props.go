@@ -68,11 +68,11 @@ func pageStatisticGeneral(sc *db.ServerConn, dbName, schema, table, name string)
 				createdBy = "User"
 			}
 			samplingRate := "n/a"
-			if !sc.IsFabricDW && st.TotalRows > 0 {
+			if !sc.IsFabricDW() && st.TotalRows > 0 {
 				samplingRate = fmt.Sprintf("%.1f %%", float64(st.RowsSampled)/float64(st.TotalRows)*100)
 			}
 			metadataCount := func(n int64) string {
-				if sc.IsFabricDW {
+				if sc.IsFabricDW() {
 					return "n/a"
 				}
 				return strconv.FormatInt(n, 10)

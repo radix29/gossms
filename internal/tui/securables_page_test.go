@@ -203,8 +203,7 @@ func TestFabricDWExternalFunctionPermissionsCanBeRevoked(t *testing.T) {
 				responses[1].rows = append(responses[1].rows,
 					[]driver.Value{"OBJECT_OR_COLUMN", "EXECUTE", state.sql, "analytics", "external_sf", "XF"},
 				)
-				sc, inst := newGConn(t, responses...)
-				sc.IsFabricDW = true
+				sc, inst := newGConnFabric(t, true, responses...)
 				d, _ := newFakeDialog(t)
 				form, apply := loadPageG(t, pageDatabasePrincipalSecurables(d, sc, secDatabase, &principal), inst)
 

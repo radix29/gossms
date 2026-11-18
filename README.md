@@ -164,8 +164,9 @@ method does not use are greyed out.
 Sessions appear on the server as `goSSMS`, `goSSMS - Query` and
 `goSSMS - Activity Monitor`.
 
-Connections whose hostname ends in `datawarehouse.fabric.microsoft.com` use
-a Fabric Data Warehouse tree layout: only **Databases** and **Security** at the
+Connections to a Fabric Data Warehouse (the engine reports EngineEdition 11
+and the host is not an Azure Synapse serverless endpoint) use a Fabric tree
+layout: only **Databases** and **Security** at the
 server root. Server **Security** contains only **Logins** and **Server Roles**.
 **Tables** lists user tables without System Tables, FileTables, External Tables,
 or Graph Tables folders; individual tables omit Constraints, Triggers, and Indexes.
@@ -235,7 +236,8 @@ select the row; right-click the blank cell above the row numbers (or any cell,
 or use File > Export Results) to export the result set on screen, in the order
 shown, to a CSV, tab-separated, JSON or XML file. Show Value on a `varbinary`/`image` cell that holds a picture
 (PNG, JPEG, GIF, BMP, TIFF or WebP) opens it in its own tab as terminal art,
-with fit, zoom, pan and Save; pictures render in Unicode block sextants, with
+as does File > Open of a picture file (recognized by its content, not its
+extension), with fit, zoom, pan and Save; pictures render in Unicode block sextants, with
 an ASCII mode for fonts that lack them. Right-click any text field — a dialog's
 input box, the query editor, the Log Viewer's filter — for Cut, Copy, Paste and
 Select All; on read-only text (Messages, Results to Text, a plan's XML, a

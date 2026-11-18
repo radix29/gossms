@@ -160,8 +160,7 @@ func TestDatabaseGeneralFabricShowsUnavailableValuesAsNA(t *testing.T) {
 					}
 				}
 			}
-			sc, inst := newGConn(t, responses...)
-			sc.IsFabricDW, sc.Server.IsFabricDW = tc.fabric, tc.fabric
+			sc, inst := newGConnFabric(t, tc.fabric, responses...)
 			form, apply := loadPageG(t, pageDatabaseGeneral(sc, genDatabase), inst)
 			wantSize, wantAvailable, wantBackup := "12.00", "3.00", "Never"
 			if tc.zeroSpace {
@@ -217,8 +216,7 @@ func TestDatabaseGeneralDoesNotHideOtherReadErrors(t *testing.T) {
 					responses[i].err = want
 				}
 			}
-			sc, _ := newGConn(t, responses...)
-			sc.IsFabricDW, sc.Server.IsFabricDW = tc.fabric, tc.fabric
+			sc, _ := newGConnFabric(t, tc.fabric, responses...)
 			_, _, err := pageDatabaseGeneral(sc, genDatabase).load(context.Background())
 			if !errors.Is(err, want) {
 				t.Fatalf("load error = %v, want %v", err, want)
@@ -240,8 +238,7 @@ func TestDatabaseGeneralPropagatesMetadataFailures(t *testing.T) {
 						responses[i].err = fmt.Errorf("nested metadata read: %w", cause)
 					}
 				}
-				sc, _ := newGConn(t, responses...)
-				sc.IsFabricDW, sc.Server.IsFabricDW = true, true
+				sc, _ := newGConnFabric(t, true, responses...)
 				form, apply, err := pageDatabaseGeneral(sc, genDatabase).load(context.Background())
 				if !errors.Is(err, cause) || form != nil || apply != nil {
 					t.Fatalf("load returned form=%v apply=%v error=%v, want only %v", form != nil, apply != nil, err, cause)
@@ -254,8 +251,7 @@ func TestDatabaseGeneralPropagatesMetadataFailures(t *testing.T) {
 func TestFabricPropertyFallbackRejectsInactiveContexts(t *testing.T) {
 	for _, state := range []string{"live", "canceled", "deadline", "closed server"} {
 		t.Run(state, func(t *testing.T) {
-			sc, _ := newGConn(t)
-			sc.IsFabricDW, sc.Server.IsFabricDW = true, true
+			sc, _ := newGConnFabric(t, true)
 			ctx := t.Context()
 			switch state {
 			case "canceled":

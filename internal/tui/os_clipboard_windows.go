@@ -29,6 +29,8 @@ func init() {
 var (
 	user32                     = syscall.NewLazyDLL("user32.dll")
 	kernel32                   = syscall.NewLazyDLL("kernel32.dll")
+	procCreateWindowExW        = user32.NewProc("CreateWindowExW")
+	procDestroyWindow          = user32.NewProc("DestroyWindow")
 	procOpenClipboard          = user32.NewProc("OpenClipboard")
 	procCloseClipboard         = user32.NewProc("CloseClipboard")
 	procEmptyClipboard         = user32.NewProc("EmptyClipboard")
@@ -46,7 +48,21 @@ var (
 const (
 	cfUnicodeText = 13
 	gmemMoveable  = 0x0002
+	// hwndMessage is HWND_MESSAGE, ((HWND)-3): the parent that makes a
+	// message-only window — never shown, never enumerated, no broadcasts.
+	hwndMessage = ^uintptr(2)
 )
+
+// staticClass is the predefined "STATIC" window class. A message-only owner
+// needs no window procedure of its own, so borrowing a system class spares a
+// RegisterClassExW (process-wide, and a second registration fails).
+var staticClass = func() *uint16 {
+	p, err := syscall.UTF16PtrFromString("STATIC")
+	if err != nil {
+		panic(err)
+	}
+	return p
+}()
 
 // openClipboardTimeout bounds the wait for another process to close the
 // clipboard: it is one global lock, and clipboard managers and remote-desktop
@@ -57,12 +73,26 @@ const openClipboardTimeout = time.Second
 // Windows ties the open clipboard to the thread that opened it, and the Go
 // scheduler could otherwise move this goroutine between OpenClipboard and
 // CloseClipboard. false means the clipboard stayed busy.
+//
+// The clipboard is opened with a message-only window as owner. With a NULL
+// owner EmptyClipboard sets the owner to NULL, which the Win32 docs say makes
+// SetClipboardData fail; it never did on win10cli (RDP client, Ditto), but the
+// documented contract is the one to rely on. A window belongs to the thread
+// that creates it, and this goroutine's OS thread is only ours until the
+// unlock, so the window lives for one call: created after the lock, destroyed
+// after CloseClipboard (the defers run in reverse). If it can't be created the
+// open falls back to the NULL owner that has always worked in practice.
 func withClipboard(fn func() bool) bool {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	owner, _, _ := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(staticClass)), 0, 0,
+		0, 0, 0, 0, hwndMessage, 0, 0, 0)
+	if owner != 0 {
+		defer procDestroyWindow.Call(owner)
+	}
 	deadline := time.Now().Add(openClipboardTimeout)
 	for {
-		if r, _, _ := procOpenClipboard.Call(0); r != 0 {
+		if r, _, _ := procOpenClipboard.Call(owner); r != 0 {
 			break
 		}
 		if time.Now().After(deadline) {

@@ -14,7 +14,7 @@ import (
 // loadDatabaseSecurityChildren returns a database's security folders, in
 // SSMS's order.
 func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	if l.sc != nil && l.sc.IsFabricDW {
+	if l.sc != nil && l.sc.IsFabricDW() {
 		return []*explorerNode{
 			l.node("Users", NodeUsers, "", "", node.data.DBName),
 			l.node("Roles", NodeRoles, "", "", node.data.DBName),
@@ -276,7 +276,7 @@ func dbCreateFolderMenu(sc *db.ServerConn, node *explorerNode, newQuery, refresh
 // needs ALTER ANY USER, which ALTER and CONTROL on the database both imply.
 func usersMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	// Fabric DW users come from Entra workspace membership, not CREATE USER.
-	if sc != nil && sc.IsFabricDW {
+	if sc != nil && sc.IsFabricDW() {
 		return []controls.MenuItem{newQuery, {Divider: true}, refresh}
 	}
 	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New User...",

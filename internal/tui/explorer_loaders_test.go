@@ -137,7 +137,7 @@ func TestSQLServerAgentIsSiblingOfDatabases(t *testing.T) {
 }
 
 func TestFabricDWServerFoldersAreConnectionScoped(t *testing.T) {
-	fabric := &db.ServerConn{IsFabricDW: true}
+	fabric := fabricConn(t)
 	sql := &db.ServerConn{}
 	for _, sc := range []*db.ServerConn{fabric, sql, fabric, sql} {
 		children, err := loadServerChildren(loaderCtx{ctx: context.Background(), sc: sc},
@@ -146,11 +146,11 @@ func TestFabricDWServerFoldersAreConnectionScoped(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := []string{"Databases", "Security"}
-		if !sc.IsFabricDW {
+		if !sc.IsFabricDW() {
 			want = append(want, "Server Objects", "Replication", "Management", alwaysOnRootLabel, agentRootLabel)
 		}
 		if got := labelsOfNodes(children); !slices.Equal(got, want) {
-			t.Errorf("IsFabricDW = %v: root folders = %v, want %v", sc.IsFabricDW, got, want)
+			t.Errorf("IsFabricDW = %v: root folders = %v, want %v", sc.IsFabricDW(), got, want)
 		}
 		for _, child := range children {
 			if child.data.conn != sc {
@@ -162,7 +162,7 @@ func TestFabricDWServerFoldersAreConnectionScoped(t *testing.T) {
 
 func TestFabricDWTableMenuHidesUnsupportedActions(t *testing.T) {
 	a := newTestApp()
-	fabric := &db.ServerConn{IsFabricDW: true}
+	fabric := fabricConn(t)
 	sql := &db.ServerConn{}
 	standard := []string{"New Query", "|", "Select Top 1000 Rows", "|",
 		"Rebuild All Indexes", "View Dependencies", "|", "Full-Text index", "|", "Refresh", "Properties..."}
@@ -172,7 +172,7 @@ func TestFabricDWTableMenuHidesUnsupportedActions(t *testing.T) {
 		node := &explorerNode{data: nodeData{Type: NodeTable, DBName: "AppDB", Schema: "dbo", Name: "Orders", conn: sc}}
 		got := menuLabelsWithDividers(a.nodeMenuItems(node))
 		want := standard
-		isFabricDW := sc != nil && sc.IsFabricDW
+		isFabricDW := sc != nil && sc.IsFabricDW()
 		if isFabricDW {
 			want = fabricMenu
 		}
@@ -185,27 +185,26 @@ func TestFabricDWTableMenuHidesUnsupportedActions(t *testing.T) {
 func TestFabricDWDatabaseMenuHidesUnsupportedActions(t *testing.T) {
 	a := newTestApp()
 	sql, _ := newGConn(t)
-	fabric, _ := newGConn(t)
-	fabric.IsFabricDW = true
+	fabric, _ := newGConnFabric(t, true)
 	for _, sc := range []*db.ServerConn{sql, fabric, sql} {
 		node := &explorerNode{data: nodeData{Type: NodeDatabase, DBName: "AppDB", DBState: "ONLINE", conn: sc}}
 		items := a.contextMenuItemsForNode(node)
 		for _, label := range []string{"Back Up Database...", "Restore Database...", "View Backup History",
 			"Rename...", "Delete...", "Shrink"} {
-			if present := findMenuItem(items, label) != nil; present == sc.IsFabricDW {
-				t.Errorf("IsFabricDW=%v: %q present=%v", sc.IsFabricDW, label, present)
+			if present := findMenuItem(items, label) != nil; present == sc.IsFabricDW() {
+				t.Errorf("IsFabricDW=%v: %q present=%v", sc.IsFabricDW(), label, present)
 			}
 		}
 		for _, label := range []string{"New Query", "Generate Scripts...", "Script Database Security", "Refresh", "Properties..."} {
 			if findMenuItem(items, label) == nil {
-				t.Errorf("IsFabricDW=%v: supported item %q is missing", sc.IsFabricDW, label)
+				t.Errorf("IsFabricDW=%v: supported item %q is missing", sc.IsFabricDW(), label)
 			}
 		}
 		table := &explorerNode{data: nodeData{Type: NodeTable, DBName: "AppDB", Schema: "dbo", Name: "Orders", conn: sc}}
 		tableItems := a.contextMenuItemsForNode(table)
 		for _, label := range []string{"Rename...", "Delete..."} {
 			if findMenuItem(tableItems, label) == nil {
-				t.Errorf("IsFabricDW=%v: table lost %q", sc.IsFabricDW, label)
+				t.Errorf("IsFabricDW=%v: table lost %q", sc.IsFabricDW(), label)
 			}
 		}
 	}
@@ -213,14 +212,14 @@ func TestFabricDWDatabaseMenuHidesUnsupportedActions(t *testing.T) {
 
 func TestFabricDWDatabasesMenuHidesBackupRestore(t *testing.T) {
 	a := newTestApp()
-	fabric := &db.ServerConn{IsFabricDW: true}
+	fabric := fabricConn(t)
 	sql := &db.ServerConn{}
 	for _, sc := range []*db.ServerConn{sql, fabric, sql, nil} {
 		node := &explorerNode{data: nodeData{Type: NodeDatabases, conn: sc}}
 		got := menuLabelsWithDividers(a.nodeMenuItems(node))
 		want := []string{"New Query", "|", "New Database...", "Attach Database...", "|",
 			"Back Up Database...", "Restore Database...", "|", "Refresh"}
-		isFabricDW := sc != nil && sc.IsFabricDW
+		isFabricDW := sc != nil && sc.IsFabricDW()
 		if isFabricDW {
 			want = []string{"New Query", "|", "New Database...", "Attach Database...", "|", "Refresh"}
 		}
@@ -232,13 +231,13 @@ func TestFabricDWDatabasesMenuHidesBackupRestore(t *testing.T) {
 
 func TestFabricDWUsersMenuHidesNewUser(t *testing.T) {
 	a := newTestApp()
-	fabric := &db.ServerConn{IsFabricDW: true}
+	fabric := fabricConn(t)
 	sql := &db.ServerConn{}
 	for _, sc := range []*db.ServerConn{sql, fabric, sql, nil} {
 		node := &explorerNode{data: nodeData{Type: NodeUsers, DBName: "AppDB", conn: sc}}
 		got := menuLabelsWithDividers(a.nodeMenuItems(node))
 		want := []string{"New Query", "|", "New User...", "|", "Refresh"}
-		isFabricDW := sc != nil && sc.IsFabricDW
+		isFabricDW := sc != nil && sc.IsFabricDW()
 		if isFabricDW {
 			want = []string{"New Query", "|", "Refresh"}
 		}
@@ -301,8 +300,7 @@ func TestFabricDWObjectFoldersAreConnectionScoped(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			fabric, _ := newGConn(t, capabilityResponses(true, nil, nil, nil, nil)...)
-			fabric.IsFabricDW = true
+			fabric, _ := newGConnFabric(t, true, capabilityResponses(true, nil, nil, nil, nil)...)
 			standard, _ := newGConn(t, capabilityResponses(true, nil, nil, nil, nil)...)
 			for _, sc := range []*db.ServerConn{fabric, standard, fabric, standard} {
 				node := &explorerNode{data: nodeData{Type: tc.typ, DBName: tc.dbName, conn: sc}}
@@ -314,17 +312,17 @@ func TestFabricDWObjectFoldersAreConnectionScoped(t *testing.T) {
 					t.Fatal(err)
 				}
 				want := tc.standard
-				if sc.IsFabricDW {
+				if sc.IsFabricDW() {
 					want = tc.fabric
 				}
 				if got := labelsOfNodes(children); !slices.Equal(got, want) {
-					t.Errorf("IsFabricDW = %v: folders = %v, want %v", sc.IsFabricDW, got, want)
+					t.Errorf("IsFabricDW = %v: folders = %v, want %v", sc.IsFabricDW(), got, want)
 				}
 				for _, child := range children {
 					if child.data.conn != sc || child.data.DBName != tc.dbName ||
 						child.data.Schema != node.data.Schema || child.data.Name != node.data.Name {
 						t.Errorf("IsFabricDW = %v: %q lost its owning connection/database/object: %+v",
-							sc.IsFabricDW, child.label, child.data)
+							sc.IsFabricDW(), child.label, child.data)
 					}
 				}
 				if tc.typ == NodeDatabase {
@@ -341,7 +339,7 @@ func TestFabricDWObjectFoldersAreConnectionScoped(t *testing.T) {
 				}
 				if !slices.Equal(labels, want) || len(objs) != len(children) {
 					t.Fatalf("IsFabricDW = %v: detail folders = %v (%d objects), want %v",
-						sc.IsFabricDW, labels, len(objs), want)
+						sc.IsFabricDW(), labels, len(objs), want)
 				}
 				for i, obj := range objs {
 					if obj != children[i].data {

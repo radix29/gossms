@@ -82,9 +82,8 @@ func TestTablesFolderListsItsSubFoldersFirst(t *testing.T) {
 
 func TestFabricDWTablesHideUnsupportedFamiliesWithoutProbingThem(t *testing.T) {
 	for _, fabric := range []bool{true, false} {
-		sc, inst := newGConn(t, treeFamilyDatabaseRow(),
+		sc, inst := newGConnFabric(t, fabric, treeFamilyDatabaseRow(),
 			tablesPresenceResp(true, true, true, true), tablesListResp(tableRow(1, "dbo", "Orders")))
-		sc.IsFabricDW = fabric
 		children := loadFamily(t, sc, NodeTables)
 		want := []string{"dbo.Orders"}
 		wantProbes := 0

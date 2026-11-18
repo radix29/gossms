@@ -549,10 +549,7 @@ func TestOnlyExplorerConnectionsProbeServerCapabilities(t *testing.T) {
 		if err != nil {
 			t.Fatalf("gosmo.NewServer: %v", err)
 		}
-		sc := newServerConn(context.Background(), config.Connection{Server: "warehouse.datawarehouse.fabric.microsoft.com"}, srv, role)
-		if !sc.IsFabricDW || !srv.IsFabricDW {
-			t.Errorf("%s: Fabric DW was not propagated to both connection layers", role.ApplicationName())
-		}
+		newServerConn(context.Background(), config.Connection{Server: "s"}, srv, role)
 		want := 0
 		if role == RoleExplorer {
 			want = 1

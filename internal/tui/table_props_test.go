@@ -83,8 +83,7 @@ func TestTablePropertiesFabricRowCountIsOptional(t *testing.T) {
 							}
 						}
 					}
-					sc, inst := newGConn(t, responses...)
-					sc.IsFabricDW, sc.Server.IsFabricDW = fabric, fabric
+					sc, inst := newGConnFabric(t, fabric, responses...)
 					p := pageTableGeneral(sc, idxDatabase, idxSchema, idxTable)
 					if page == "Storage" {
 						p = pageTableStorage(sc, idxDatabase, idxSchema, idxTable)
@@ -141,8 +140,7 @@ func TestTableStorageFabricSpaceAndPartitionsAreOptional(t *testing.T) {
 						responses[i].err = wantErr
 					}
 				}
-				sc, _ := newGConn(t, responses...)
-				sc.IsFabricDW, sc.Server.IsFabricDW = fabric, fabric
+				sc, _ := newGConnFabric(t, fabric, responses...)
 				p := pageTableStorage(sc, idxDatabase, idxSchema, idxTable)
 				if match == "t.lock_escalation_desc" {
 					p = pageTableGeneral(sc, idxDatabase, idxSchema, idxTable)
@@ -199,8 +197,7 @@ func TestTablePropertiesPropagateMetadataFailures(t *testing.T) {
 							responses[i].err = fmt.Errorf("nested metadata read: %w", cause)
 						}
 					}
-					sc, _ := newGConn(t, responses...)
-					sc.IsFabricDW, sc.Server.IsFabricDW = true, true
+					sc, _ := newGConnFabric(t, true, responses...)
 					p := pageTableGeneral(sc, idxDatabase, idxSchema, idxTable)
 					if page == "Storage" {
 						p = pageTableStorage(sc, idxDatabase, idxSchema, idxTable)
@@ -273,8 +270,7 @@ func TestFabricTableZeroMetadataRemainsVisible(t *testing.T) {
 					responses[i].rows = [][]driver.Value{{int64(1), int64(0), "NONE"}}
 				}
 			}
-			sc, inst := newGConn(t, responses...)
-			sc.IsFabricDW, sc.Server.IsFabricDW = true, true
+			sc, inst := newGConnFabric(t, true, responses...)
 			p := pageTableGeneral(sc, idxDatabase, idxSchema, idxTable)
 			if page == "Storage" {
 				p = pageTableStorage(sc, idxDatabase, idxSchema, idxTable)

@@ -37,7 +37,19 @@ func newTestApp() *App {
 // addTestConn registers a fake connection (nil gosmo.Server; Close is nil-safe)
 // as connectServer does: append + AddRoot.
 func addTestConn(a *App, server string) *db.ServerConn {
-	sc := &db.ServerConn{Opts: config.Connection{Server: server}}
+	return addTestConnOf(a, &db.ServerConn{Opts: config.Connection{Server: server}})
+}
+
+// addTestFabricConn is addTestConn for a Fabric Warehouse (fabricConn).
+func addTestFabricConn(t *testing.T, a *App, server string) *db.ServerConn {
+	t.Helper()
+	sc := fabricConn(t)
+	sc.Opts = config.Connection{Server: server}
+	return addTestConnOf(a, sc)
+}
+
+func addTestConnOf(a *App, sc *db.ServerConn) *db.ServerConn {
+	server := sc.Opts.Server
 	a.connections = append(a.connections, sc)
 	a.explorer.AddRoot(server, sc)
 	return sc

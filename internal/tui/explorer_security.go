@@ -11,7 +11,7 @@ import (
 // Logins, Server Roles, Credentials, Cryptographic Providers, Audits and
 // Server Audit Specifications, in SSMS's order.
 func loadSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	if l.sc != nil && l.sc.IsFabricDW {
+	if l.sc != nil && l.sc.IsFabricDW() {
 		return []*explorerNode{
 			l.node("Logins", NodeLogins, "", "", ""),
 			l.node("Server Roles", NodeServerRoles, "", "", ""),

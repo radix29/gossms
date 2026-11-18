@@ -204,7 +204,7 @@ func TestFabricDWExternalFunctionScriptMenuUsesStoredDefinition(t *testing.T) {
 		{"commented create or alter", "CREATE OR/* proxy */ALTER" + body, "CREATE OR/* proxy */ALTER" + body, "CREATE OR/* proxy */ALTER" + body},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sc, inst := newGConn(t, treeFamilyDatabaseRow(),
+			sc, inst := newGConnFabric(t, true, treeFamilyDatabaseRow(),
 				fakeResponse{match: "WHERE  o.type = 'XF'", cols: 6, rows: [][]driver.Value{
 					{int64(42), "analytics", "Predict", treeFamilyCreated, treeFamilyCreated, "XF"},
 				}},
@@ -217,7 +217,6 @@ func TestFabricDWExternalFunctionScriptMenuUsesStoredDefinition(t *testing.T) {
 						"sys", false, "", "", false, int64(0), "", false},
 				}},
 			)
-			sc.IsFabricDW = true
 			functions := loadFamily(t, sc, NodeExternalFunctions)
 			if len(functions) != 1 {
 				t.Fatalf("external functions = %v, want one function", labelsOfNodes(functions))

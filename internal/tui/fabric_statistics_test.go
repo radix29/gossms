@@ -39,10 +39,9 @@ func fabricStatisticResponse(fabric, byName bool) fakeResponse {
 func TestFabricDWStatisticsFolderAndGeneral(t *testing.T) {
 	for _, fabric := range []bool{true, false} {
 		t.Run(fmt.Sprintf("fabric=%v", fabric), func(t *testing.T) {
-			sc, inst := newGConn(t,
+			sc, inst := newGConnFabric(t, fabric,
 				dbByNameResp(idxDatabase, 5), idxTableResp(),
 				fabricStatisticResponse(fabric, true), fabricStatisticResponse(fabric, false))
-			sc.IsFabricDW, sc.Server.IsFabricDW = fabric, fabric
 			folder := &explorerNode{data: nodeData{Type: NodeStatistics, DBName: idxDatabase,
 				Schema: idxSchema, Name: idxTable, conn: sc}}
 			children, err := loadStatisticsChildren(loaderCtx{ctx: t.Context(), sc: sc}, folder)
@@ -84,9 +83,8 @@ func TestFabricDWStatisticsFolderAndGeneral(t *testing.T) {
 
 func TestFabricDWStatisticErrorsAreNotHidden(t *testing.T) {
 	want := errors.New("statistics access refused")
-	sc, _ := newGConn(t, dbByNameResp(idxDatabase, 5), idxTableResp(),
+	sc, _ := newGConnFabric(t, true, dbByNameResp(idxDatabase, 5), idxTableResp(),
 		fakeResponse{match: "FROM   sys.stats s", db: idxDatabase, err: want})
-	sc.IsFabricDW, sc.Server.IsFabricDW = true, true
 	_, _, err := pageStatisticGeneral(sc, idxDatabase, idxSchema, idxTable, "ST_Selected").load(t.Context())
 	if !errors.Is(err, want) {
 		t.Fatalf("General error = %v, want the actual catalog failure", err)
@@ -123,9 +121,8 @@ func TestFabricDWStatisticSelectionShowsHeaderInDetails(t *testing.T) {
 			original.editor.SetText("SELECT 42;")
 			a.panels.SetActiveIndex(a.panels.AddPanel(original))
 			a.focusExplorer()
-			sc, inst := newGConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
+			sc, inst := newGConnFabric(t, true, append(capabilityResponses(true, nil, nil, nil, nil),
 				fabricStatisticHeaderResponse(tc.want))...)
-			sc.IsFabricDW, sc.Server.IsFabricDW = true, true
 			sc.DatabaseCapabilities(t.Context(), idxDatabase)
 			n := &explorerNode{label: tc.statistic, data: nodeData{Type: NodeStatistic, DBName: idxDatabase,
 				Schema: tc.schema, TableName: tc.table, Name: tc.statistic, OnView: tc.onView, conn: sc}}
@@ -193,9 +190,8 @@ func TestStatisticReselectionAndSQLServerSelectionKeepActivePanel(t *testing.T) 
 			a.panels.AddPanel(a.detailBrowser)
 			original := NewQueryPanel(a, "Existing query")
 			a.panels.SetActiveIndex(a.panels.AddPanel(original))
-			sc, inst := newGConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
+			sc, inst := newGConnFabric(t, fabric, append(capabilityResponses(true, nil, nil, nil, nil),
 				fabricStatisticHeaderResponse("DBCC SHOW_STATISTICS"))...)
-			sc.IsFabricDW, sc.Server.IsFabricDW = fabric, fabric
 			sc.DatabaseCapabilities(t.Context(), idxDatabase)
 			n := &explorerNode{label: "ST_Selected", data: nodeData{Type: NodeStatistic, DBName: idxDatabase,
 				Schema: idxSchema, TableName: idxTable, Name: "ST_Selected", conn: sc}}
@@ -231,8 +227,7 @@ func TestFabricDWStatisticDetailsShowDBCCErrors(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestApp()
-			sc, _ := newGConn(t, append(capabilityResponses(true, nil, nil, nil, nil), tc.resp)...)
-			sc.IsFabricDW, sc.Server.IsFabricDW = true, true
+			sc, _ := newGConnFabric(t, true, append(capabilityResponses(true, nil, nil, nil, nil), tc.resp)...)
 			sc.DatabaseCapabilities(t.Context(), idxDatabase)
 			n := &explorerNode{label: "ST_Selected", data: nodeData{Type: NodeStatistic, DBName: idxDatabase,
 				Schema: idxSchema, TableName: idxTable, Name: "ST_Selected", conn: sc}}
@@ -272,9 +267,8 @@ func TestFabricDWACECardinalityHeaderFallback(t *testing.T) {
 			a.detailBrowser = a.newDetailBrowser()
 			a.panels.AddPanel(a.detailBrowser)
 			refused := mssql.Error{Number: tc.number, Class: 16, Message: "Statistics header unavailable"}
-			sc, inst := newGConn(t, append(capabilityResponses(true, nil, nil, nil, nil),
+			sc, inst := newGConnFabric(t, tc.fabric, append(capabilityResponses(true, nil, nil, nil, nil),
 				fakeResponse{match: "DBCC SHOW_STATISTICS", db: idxDatabase, err: refused})...)
-			sc.IsFabricDW, sc.Server.IsFabricDW = tc.fabric, tc.fabric
 			sc.DatabaseCapabilities(t.Context(), idxDatabase)
 			node := &explorerNode{label: tc.statistic, data: nodeData{
 				Type: NodeStatistic, DBName: idxDatabase, Schema: idxSchema,
@@ -333,8 +327,7 @@ func TestMovingOnCancelsFabricDWStatisticHeader(t *testing.T) {
 		}
 	}()
 	a := newTestApp()
-	sc, inst := newGConn(t, append(capabilityResponses(true, nil, nil, nil, nil), resp)...)
-	sc.IsFabricDW, sc.Server.IsFabricDW = true, true
+	sc, inst := newGConnFabric(t, true, append(capabilityResponses(true, nil, nil, nil, nil), resp)...)
 	sc.DatabaseCapabilities(t.Context(), idxDatabase)
 	n := &explorerNode{label: "ST_Selected", data: nodeData{Type: NodeStatistic, DBName: idxDatabase,
 		Schema: idxSchema, TableName: idxTable, Name: "ST_Selected", conn: sc}}

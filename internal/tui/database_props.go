@@ -45,7 +45,7 @@ func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 	// Fabric DW has no files, filegroups, Query Store, extended properties,
 	// scoped configurations or resource governance to show: its list is the
 	// supported subset, in the same order, built rather than filtered by title.
-	if sc != nil && sc.IsFabricDW {
+	if sc != nil && sc.IsFabricDW() {
 		return []propPage{
 			withRequires(pageDatabaseGeneral(sc, dbName), dbName, w...),
 			withRequires(pageDatabaseOptions(sc, dbName), dbName, w...),
@@ -84,7 +84,7 @@ const unavailableValue = "n/a"
 // and for cancellation, timeouts and transient failures, the load still fails
 // rather than reporting missing data.
 func fabricPropertyUnavailable(ctx context.Context, sc *db.ServerConn, err error) bool {
-	return err != nil && sc.IsFabricDW && ctx.Err() == nil && sc.Server.Context().Err() == nil &&
+	return err != nil && sc.IsFabricDW() && ctx.Err() == nil && sc.Server.Context().Err() == nil &&
 		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) &&
 		!gosmo.IsTransient(err)
 }

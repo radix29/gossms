@@ -171,7 +171,7 @@ func refreshStateLabel[S stateApplier](a *App, sc *db.ServerConn, t NodeType, wh
 func (a *App) onNodeSelected(node *explorerNode) {
 	a.setStatus(a.nodePath(node))
 	if node.data.Type == NodeStatistic {
-		if sc := resolveConn(node); sc != nil && sc.IsFabricDW {
+		if sc := resolveConn(node); sc != nil && sc.IsFabricDW() {
 			a.activateObjectExplorerDetails()
 		}
 	}

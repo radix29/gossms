@@ -33,7 +33,7 @@ func (a *App) actualPlanAvailable() bool {
 		return qp.actualPlanSupported()
 	}
 	sc := a.activeServerConn()
-	return sc == nil || !sc.IsFabricDW
+	return sc == nil || !sc.IsFabricDW()
 }
 
 // toggleActualExecutionPlan flips whether Execute captures the actual
