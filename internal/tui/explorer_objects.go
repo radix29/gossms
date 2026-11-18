@@ -44,7 +44,7 @@ func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 // folder's own loader lists it once expanded.
 func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]*explorerNode, error) {
 	dbName := node.data.DBName
-	if l.sc != nil && l.sc.IsFabricDW {
+	if l.sc != nil && l.sc.IsFabricDW() {
 		return nil, nil
 	}
 	folders := []*explorerNode{
@@ -125,7 +125,7 @@ func tablesOfKindLoader(kind gosmo.TableKind, system bool) childLoader {
 // knows which table to query.
 func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
-	if l.sc != nil && l.sc.IsFabricDW {
+	if l.sc != nil && l.sc.IsFabricDW() {
 		return []*explorerNode{
 			l.node("Columns", NodeColumns, schema, name, dbName),
 			l.node("Keys", NodeKeys, schema, name, dbName),
@@ -149,7 +149,7 @@ func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 // index and statistic action is the same DDL on a view.
 func loadViewChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
-	if l.sc != nil && l.sc.IsFabricDW {
+	if l.sc != nil && l.sc.IsFabricDW() {
 		return []*explorerNode{
 			l.node("Columns", NodeViewColumns, schema, name, dbName),
 		}, nil
@@ -550,14 +550,14 @@ func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 		{Divider: true},
 	}
 	// Fabric DW tables have no user-managed indexes and no full-text indexing.
-	if sc == nil || !sc.IsFabricDW {
+	if sc == nil || !sc.IsFabricDW() {
 		items = append(items, rebuildAllIndexesItem(a, sc, node.data))
 	}
 	items = append(items,
 		controls.MenuItem{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
 		controls.MenuItem{Divider: true},
 	)
-	if sc == nil || !sc.IsFabricDW {
+	if sc == nil || !sc.IsFabricDW() {
 		items = append(items, tableFullTextMenu(a, sc, node), controls.MenuItem{Divider: true})
 	}
 	return append(items,

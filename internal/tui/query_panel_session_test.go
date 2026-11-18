@@ -19,8 +19,15 @@ import (
 // appended to the script, for a COMMIT that should fail.
 func hostedSessionPanel(t *testing.T, a *App, tranCount int64, extra ...fakeResponse) (*QueryPanel, *gFake) {
 	t.Helper()
+	return hostedSessionPanelOn(t, a, false, tranCount, extra...)
+}
+
+// hostedSessionPanelOn is hostedSessionPanel on a Fabric Warehouse when fabric
+// is set (newGConnFabric).
+func hostedSessionPanelOn(t *testing.T, a *App, fabric bool, tranCount int64, extra ...fakeResponse) (*QueryPanel, *gFake) {
+	t.Helper()
 	state := fakeResponse{match: "@@TRANCOUNT", cols: 3, rows: [][]driver.Value{{int64(61), "master", tranCount}}}
-	sc, inst := newGConn(t, append(slices.Clone(extra), state)...) // extras first: a COMMIT statement may mention @@TRANCOUNT
+	sc, inst := newGConnFabric(t, fabric, append(slices.Clone(extra), state)...) // extras first: a COMMIT statement may mention @@TRANCOUNT
 	sc.Opts = config.Connection{Server: "fake", User: "sa"}
 	sess, st, err := query.Open(context.Background(), sc.Server.DB(), "")
 	if err != nil {

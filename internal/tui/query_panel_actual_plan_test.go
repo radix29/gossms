@@ -221,13 +221,12 @@ func TestFabricExecuteSkipsUnsupportedActualPlan(t *testing.T) {
 				}
 				block := make(chan struct{})
 				releaseQuery := sync.OnceFunc(func() { close(block) })
-				qp, inst := hostedSessionPanel(t, a, 0, stats,
+				qp, inst := hostedSessionPanelOn(t, a, fabric, 0, stats,
 					fakeResponse{match: "SELECT 42", cols: 1, colNames: []string{"answer"},
 						rows: [][]driver.Value{{int64(42)}}, block: block},
 					fakeResponse{match: "sys.dm_exec_query_profiles"})
 				t.Cleanup(qp.closeConnection)
 				t.Cleanup(releaseQuery)
-				qp.conn.IsFabricDW, qp.conn.Server.IsFabricDW = fabric, fabric
 
 				qp.startRun("SELECT 42", 0, "")
 				openedLive := qp.planView != nil && qp.planView.Live()
@@ -287,9 +286,10 @@ func TestFabricExecuteSkipsUnsupportedActualPlan(t *testing.T) {
 
 func TestFabricPlanControlsFollowActiveQueryConnection(t *testing.T) {
 	a := newTestApp()
-	explorerConn := addTestConn(a, "Object Explorer")
+	sqlExplorer := addTestConn(a, "Object Explorer")
+	fabricExplorer := addTestFabricConn(t, a, "Fabric Explorer")
 	fabric := NewQueryPanel(a, "Fabric")
-	fabric.conn = &db.ServerConn{IsFabricDW: true}
+	fabric.conn = fabricConn(t)
 	fabricIdx := a.panels.AddPanel(fabric)
 	sqlServer := NewQueryPanel(a, "SQL Server")
 	sqlServer.conn = &db.ServerConn{}
@@ -298,7 +298,13 @@ func TestFabricPlanControlsFollowActiveQueryConnection(t *testing.T) {
 	items := queryMenuItems(t, a.buildMenus())
 	for _, idx := range []int{fabricIdx, sqlIdx, fabricIdx} {
 		a.panels.SetActiveIndex(idx)
-		explorerConn.IsFabricDW = idx == sqlIdx
+		// Object Explorer's selection is always the other kind, so the
+		// controls can only be following the query panel.
+		explorer := sqlExplorer
+		if idx == sqlIdx {
+			explorer = fabricExplorer
+		}
+		a.explorer.AddRoot(explorer.Opts.Server, explorer)
 		want := idx == sqlIdx
 		planButtons, estimatedButtons := 0, 0
 		for _, button := range buttons {
@@ -339,7 +345,7 @@ func TestFabricPlanToggleActionsDoNotChangeGlobalSettings(t *testing.T) {
 	a.buildUI()
 	a.setScreen(tuikittest.NewScreen(120, 40))
 	qp := NewQueryPanel(a, "Fabric")
-	qp.conn = &db.ServerConn{IsFabricDW: true}
+	qp.conn = fabricConn(t)
 	a.panels.SetActiveIndex(a.panels.AddPanel(qp))
 	for _, on := range []bool{false, true} {
 		a.actualPlanEnabled, a.liveStatsEnabled = on, on
@@ -359,8 +365,7 @@ func TestFabricPlanControlsFollowExplorerWithoutQueryConnection(t *testing.T) {
 		t.Run(fmt.Sprintf("disconnectedQuery=%v", disconnectedQuery), func(t *testing.T) {
 			a := newTestApp()
 			sqlServer := addTestConn(a, "SQL Server")
-			fabric := addTestConn(a, "Fabric")
-			fabric.IsFabricDW = true
+			fabric := addTestFabricConn(t, a, "Fabric")
 			if disconnectedQuery {
 				a.panels.SetActiveIndex(a.panels.AddPanel(NewQueryPanel(a, "Not connected")))
 			}
@@ -368,13 +373,13 @@ func TestFabricPlanControlsFollowExplorerWithoutQueryConnection(t *testing.T) {
 			items := queryMenuItems(t, a.buildMenus())
 			for _, sc := range []*db.ServerConn{fabric, sqlServer, fabric} {
 				a.explorer.AddRoot(sc.Opts.Server, sc)
-				want := !sc.IsFabricDW
+				want := !sc.IsFabricDW()
 				planButtons := 0
 				for _, button := range buttons {
 					if button.Tooltip == "Include Actual Execution Plan" || button.Tooltip == "Include Live Query Statistics" {
 						planButtons++
 						if got := button.Enabled == nil || button.Enabled(); got != want {
-							t.Errorf("Fabric=%v button=%s enabled=%v, want %v", sc.IsFabricDW, button.Icon, got, want)
+							t.Errorf("Fabric=%v button=%s enabled=%v, want %v", sc.IsFabricDW(), button.Icon, got, want)
 						}
 					}
 				}
@@ -387,7 +392,7 @@ func TestFabricPlanControlsFollowExplorerWithoutQueryConnection(t *testing.T) {
 						t.Fatalf("missing %s", label)
 					}
 					if got := item.Enabled == nil || item.Enabled(); got != want {
-						t.Errorf("Fabric=%v menu=%s enabled=%v, want %v", sc.IsFabricDW, label, got, want)
+						t.Errorf("Fabric=%v menu=%s enabled=%v, want %v", sc.IsFabricDW(), label, got, want)
 					}
 				}
 			}
@@ -397,8 +402,7 @@ func TestFabricPlanControlsFollowExplorerWithoutQueryConnection(t *testing.T) {
 
 func TestFabricExplorerPlanActionsPreserveGlobalSettings(t *testing.T) {
 	a := newTestApp()
-	fabric := addTestConn(a, "Fabric")
-	fabric.IsFabricDW = true
+	addTestFabricConn(t, a, "Fabric")
 	if a.actualPlanAvailable() {
 		t.Fatal("Fabric explorer permits plan toggles without a query")
 	}
@@ -420,12 +424,11 @@ func TestFabricResultsToFileSkipsPlanCaptureAndNotice(t *testing.T) {
 		t.Run(fmt.Sprintf("Fabric=%v", fabric), func(t *testing.T) {
 			a := newTestApp()
 			a.actualPlanEnabled, a.liveStatsEnabled = true, true
-			qp, inst := hostedSessionPanel(t, a, 0,
+			qp, inst := hostedSessionPanelOn(t, a, fabric, 0,
 				fakeResponse{match: "SET STATISTICS", err: mssql.Error{Number: 15869, Class: 16,
 					Message: "STATISTICS is not supported for SET."}},
 				fakeResponse{match: "SELECT 42", cols: 1, colNames: []string{"answer"}, rows: [][]driver.Value{{int64(42)}}})
 			t.Cleanup(qp.closeConnection)
-			qp.conn.IsFabricDW, qp.conn.Server.IsFabricDW = fabric, fabric
 			path := filepath.Join(t.TempDir(), "results.csv")
 			qp.startRun("SELECT 42", 0, path)
 			if qp.planView != nil {

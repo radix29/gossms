@@ -164,8 +164,9 @@ method does not use are greyed out.
 Sessions appear on the server as `goSSMS`, `goSSMS - Query` and
 `goSSMS - Activity Monitor`.
 
-Connections whose hostname ends in `datawarehouse.fabric.microsoft.com` use
-a Fabric Data Warehouse tree layout: only **Databases** and **Security** at the
+Connections to a Fabric Data Warehouse (the engine reports EngineEdition 11
+and the host is not an Azure Synapse serverless endpoint) use a Fabric tree
+layout: only **Databases** and **Security** at the
 server root. Server **Security** contains only **Logins** and **Server Roles**.
 **Tables** lists user tables without System Tables, FileTables, External Tables,
 or Graph Tables folders; individual tables omit Constraints, Triggers, and Indexes.

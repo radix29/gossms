@@ -23,7 +23,7 @@ import (
 // Azure SQL Database (replicationHidden) — read from the connection's cached
 // ServerInfo, so the loader still issues no query.
 func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	if l.sc != nil && l.sc.IsFabricDW {
+	if l.sc != nil && l.sc.IsFabricDW() {
 		return []*explorerNode{
 			l.node("Databases", NodeDatabases, "", "", ""),
 			l.node("Security", NodeSecurity, "", "", ""),
@@ -199,7 +199,7 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		return []*explorerNode{l.node(accessDeniedLabel+"CONNECT permission on this database is required.",
 			NodeError, "", "", dbName)}, nil
 	}
-	if l.sc != nil && l.sc.IsFabricDW {
+	if l.sc != nil && l.sc.IsFabricDW() {
 		folders := []*explorerNode{
 			l.node("Tables", NodeTables, "", "", dbName),
 			l.node("Views", NodeViews, "", "", dbName),
@@ -241,7 +241,7 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 // own Triggers folder, as in SSMS.
 func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbName := node.data.DBName
-	if l.sc != nil && l.sc.IsFabricDW {
+	if l.sc != nil && l.sc.IsFabricDW() {
 		return []*explorerNode{
 			l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
 			l.node("Functions", NodeFunctions, "", "", dbName),
@@ -321,7 +321,7 @@ func databasesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase), sc),
 	}
 	// Fabric DW has no BACKUP/RESTORE: the platform owns recovery.
-	if sc == nil || !sc.IsFabricDW {
+	if sc == nil || !sc.IsFabricDW() {
 		items = append(items,
 			controls.MenuItem{Divider: true},
 			controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
@@ -337,7 +337,7 @@ func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 		{Divider: true},
 	}
 	// Fabric DW has no BACKUP/RESTORE and no msdb backup history.
-	if sc == nil || !sc.IsFabricDW {
+	if sc == nil || !sc.IsFabricDW() {
 		items = append(items,
 			gate.Item(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
 				sc, node.data.DBName, gate.BackupDatabase, gate.AlterAnyDatabase),

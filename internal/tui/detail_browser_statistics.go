@@ -10,7 +10,7 @@ import (
 )
 
 func statisticDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	if !sc.IsFabricDW {
+	if !sc.IsFabricDW() {
 		return []string{"Property", "Value"}, basicDetailRows(node), nil
 	}
 

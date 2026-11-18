@@ -81,49 +81,25 @@ support); this section covers only the environment.
   ALL` — and Object Explorer's Rebuild All Indexes script on a table and an
   indexed view; confirm Fabric really refuses `ALL` (if not, the expansion
   can go).
-- **Fabric Warehouse is detected from the hostname, in gossms** (review
-  2026-11-18, E4; deferred until a warehouse can be probed).
-  `db.newServerConn` (`internal/db/connection.go`) sets `ServerConn.IsFabricDW`
-  from the suffix `datawarehouse.fabric.microsoft.com` and copies it into
-  gosmo's exported `Server.IsFabricDW` field, which every gosmo user must set
-  before the first catalog read. A warehouse reached through a private
-  endpoint, a DNS alias or a future domain gets SQL Server catalog queries;
-  so does any other gosmo user who doesn't know about the field. Fix
-  (breaking): gosmo decides at `Connect`/`loadInfo` from EngineEdition 11 plus
-  whatever tells Fabric from Synapse serverless (probe live:
-  `DATABASEPROPERTYEX(DB_NAME(), 'Edition')`, `@@VERSION`), hostname only as a
-  fallback; expose a read-only `Server.IsFabricDW()` with an `Options`
-  override for tests; gossms reads it from the Server (`ServerConn.IsFabricDW`
-  becomes a method or goes, ~25 call sites, mechanical). Needs the Fabric
-  contributor to verify.
+- **Fabric Warehouse vs. Synapse serverless is told apart by hostname**
+  (review 2026-11-18, E4). gosmo decides `Server.IsFabricDW()` at connect
+  (`detectFabricDW`): EngineEdition 11 is Fabric unless the host ends in a
+  Synapse serverless domain (`.sql.azuresynapse.net` and its sovereign
+  forms); an unknown edition falls back to the
+  `datawarehouse.fabric.microsoft.com` suffix. A Synapse pool behind a DNS
+  alias is therefore taken for Fabric. To check, with the Fabric contributor:
+  connect to a warehouse (and, if one is reachable, a Synapse serverless pool),
+  confirm it reports EngineEdition 11 (from the documentation only), and read `DATABASEPROPERTYEX(DB_NAME(), 'Edition')` and `@@VERSION`; if
+  either differs, make it the test in `detectFabricDW` and keep the hostname
+  only as the fallback.
 
 ## Windows clipboard: what is left
 
-`os_clipboard_windows.go` opens with a NULL owner (`OpenClipboard(0)`), which
-the Win32 docs say makes `SetClipboardData` fail. On win10cli (2026-11-18, in
-the user's disconnected RDP session, `rdpclip` running) it never did: 300
-round trips per run, Get-Clipboard from another process read the text,
-clipboard history (Win+V) recorded the writes, and 16 runs with a simulated
-clipboard manager (a format listener holding the clipboard 20 ms per change)
-all passed; writes then took up to 440 ms, inside the 1 s open timeout.
-A connected RDP client works too (2026-11-18, Remmina on the Linux machine,
-the write run inside the RDP session through a `schtasks /it` task): a
-gossms write reached the client's clipboard through `rdpclip` 21 of 21
-times, and a read returned text copied on the client. A real clipboard
-manager passes as well (2026-11-18, Ditto 3.25.113 running in the connected
-RDP session): 300 write-then-read round trips 30 ms apart and 150 at 400 ms
-had 0 failures; writes peaked at 31 ms. At 400 ms Ditto saved 76 of the 150
-copies, so it was reading the clipboard throughout. At 30 ms it merged them
-into one. Every run had a 180 s test timeout, and none hung. Ditto stays
-installed on win10cli and starts at login. Still open:
-
-- **One manager run hung** (the first, before a test timeout was armed, so no
-  stack); 16 later runs with the timeout did not reproduce it. Likely the
-  probe's own listener, unproven. If a Windows user reports a frozen copy,
+- **One clipboard-manager run hung** (2026-11-18, before the message-only
+  owner, and before a test timeout was armed, so no stack); 16 later runs and
+  every run since the owner change did not reproduce it. Likely the probe's
+  own format listener, unproven. If a Windows user reports a frozen copy,
   suspect this first.
-
-If any of these fails: open with a message-only window (`CreateWindowExW`,
-`HWND_MESSAGE`) as owner.
 
 ## Format Document: what is left
 

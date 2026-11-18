@@ -12,6 +12,7 @@ import (
 	"github.com/microsoft/go-mssqldb/azuread"
 	"github.com/microsoft/go-mssqldb/msdsn"
 	"github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/config"
 )
 
@@ -319,42 +320,27 @@ func TestRoleSetsTheApplicationName(t *testing.T) {
 	}
 }
 
-func TestNewServerConnDetectsFabricDWFromHostname(t *testing.T) {
+// TestServerConnIsFabricDWIsGosmos: the connection answers what gosmo decided
+// from the engine (EngineEdition 11), whatever the configured hostname says.
+// The detection rule itself is gosmo's (detectFabricDW) and tested there.
+func TestServerConnIsFabricDWIsGosmos(t *testing.T) {
 	for _, tc := range []struct {
-		server string
-		want   bool
+		edition gosmo.EngineEdition
+		server  string
+		want    bool
 	}{
-		{"warehouse.datawarehouse.fabric.microsoft.com", true},
-		{"WAREHOUSE.DATAWAREHOUSE.FABRIC.MICROSOFT.COM", true},
-		{" warehouse.datawarehouse.fabric.microsoft.com ", true},
-		{"warehouse.datawarehouse.fabric.microsoft.com,1433", true},
-		{"warehouse.datawarehouse.fabric.microsoft.com:1433", true},
-		{"tcp:warehouse.datawarehouse.fabric.microsoft.com,1433", true},
-		{"warehouse.datawarehouse.fabric.microsoft.com.", true},
-		{"datawarehouse.fabric.microsoft.com", true},
-		{"warehouse.msit-datawarehouse.fabric.microsoft.com", true},
-		{"WAREHOUSE.MSIT-DATAWAREHOUSE.FABRIC.MICROSOFT.COM", true},
-		{"tcp:warehouse.msit-datawarehouse.fabric.microsoft.com,1433", true},
-		{"warehouse.msit-datawarehouse.fabric.microsoft.com.", true},
-		{"msit-datawarehouse.fabric.microsoft.com", true},
-		{"warehouse.other-datawarehouse.fabric.microsoft.com", true},
-		{"sql.database.windows.net", false},
-		{"localhost", false},
-		{"", false},
-		{"warehouse.datawarehouse.fabric.microsoft.com.example.org", false},
-		{"warehouse.datawarehouse.fabric.microsoft.com:invalid", false},
-		{"warehouse.msit-datawarehouse.fabric.microsoft.com.example.org", false},
+		{gosmo.EngineAzureSynapseSrvls, "warehouse.contoso.com", true},
+		{gosmo.EngineEnterprise, "warehouse.datawarehouse.fabric.microsoft.com", false},
 	} {
-		t.Run(tc.server, func(t *testing.T) {
-			srv := &gosmo.Server{}
-			sc := newServerConn(context.Background(), config.Connection{Server: tc.server}, srv, RoleQuery)
-			if sc.IsFabricDW != tc.want {
-				t.Errorf("IsFabricDW = %v for %q, want %v", sc.IsFabricDW, tc.server, tc.want)
-			}
-			if srv.IsFabricDW != tc.want {
-				t.Errorf("gosmo IsFabricDW = %v for %q, want %v", srv.IsFabricDW, tc.server, tc.want)
-			}
-		})
+		f := gosmotest.New(t)
+		f.Info.EngineEdition = tc.edition
+		sc := newServerConn(context.Background(), config.Connection{Server: tc.server}, f.Server(), RoleQuery)
+		if got := sc.IsFabricDW(); got != tc.want {
+			t.Errorf("EngineEdition %d, Server %q: IsFabricDW = %v, want %v", tc.edition, tc.server, got, tc.want)
+		}
+	}
+	if (&ServerConn{}).IsFabricDW() || (*ServerConn)(nil).IsFabricDW() {
+		t.Error("a connection with no Server reports Fabric")
 	}
 }
 

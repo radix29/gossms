@@ -51,23 +51,22 @@ func propPageTitles(pages []propPage) []string {
 }
 
 func TestDatabasePropPagesHideUnsupportedFabricPages(t *testing.T) {
-	for _, edition := range []int{0, 5, 8} {
-		for _, fabric := range []bool{false, true} {
-			sc, _ := newGConn(t)
-			if edition != 0 {
-				sc, _ = newGConnOnAzure(t, edition)
-			}
-			sc.IsFabricDW = fabric
-			want := []string{"General", "Files", "Filegroups", "Options", "Change Tracking",
-				"Query Store", "Permissions", "Extended Properties", "Scoped Configurations"}
-			if fabric {
-				want = []string{"General", "Options", "Change Tracking", "Permissions"}
-			} else if edition != 0 {
-				want = append(want, "Resource Governance")
-			}
-			if got := propPageTitles(databasePropPages(sc, genDatabase)); !slices.Equal(got, want) {
-				t.Errorf("FabricDW=%v AzureEdition=%d: pages = %v, want %v", fabric, edition, got, want)
-			}
+	// edition 11 is Fabric Warehouse: gosmo decides IsFabricDW from it.
+	for _, edition := range []int{0, 5, 8, 11} {
+		fabric := edition == 11
+		sc, _ := newGConnFabric(t, fabric)
+		if edition == 5 || edition == 8 {
+			sc, _ = newGConnOnAzure(t, edition)
+		}
+		want := []string{"General", "Files", "Filegroups", "Options", "Change Tracking",
+			"Query Store", "Permissions", "Extended Properties", "Scoped Configurations"}
+		if fabric {
+			want = []string{"General", "Options", "Change Tracking", "Permissions"}
+		} else if edition != 0 {
+			want = append(want, "Resource Governance")
+		}
+		if got := propPageTitles(databasePropPages(sc, genDatabase)); !slices.Equal(got, want) {
+			t.Errorf("FabricDW=%v AzureEdition=%d: pages = %v, want %v", fabric, edition, got, want)
 		}
 	}
 }

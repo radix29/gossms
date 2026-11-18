@@ -100,9 +100,6 @@ type ServerConn struct {
 	Opts   config.Connection
 	Server *gosmo.Server
 
-	// IsFabricDW is fixed at connect time from the endpoint hostname.
-	IsFabricDW bool
-
 	// closed is atomic: Close runs on the UI goroutine while Peer's cache
 	// lookups call IsOpen from loader goroutines. Not derived from
 	// Server.Context(), so a bare &ServerConn{} (tests) reads open.
@@ -167,21 +164,16 @@ func Connect(ctx context.Context, opts config.Connection, role Role) (*ServerCon
 // other roles would pay a round trip for an answer nothing reads. AG peers
 // inherit RoleExplorer, so they still probe.
 func newServerConn(ctx context.Context, opts config.Connection, srv *gosmo.Server, role Role) *ServerConn {
-	const fabricDWDomain = "datawarehouse.fabric.microsoft.com"
-	host, _, _ := gosmo.ParseServerAddress(strings.TrimSpace(opts.Server))
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	sc := &ServerConn{
-		Opts: opts, Server: srv, role: role,
-		IsFabricDW: strings.HasSuffix(host, fabricDWDomain),
-	}
-	if srv != nil {
-		srv.IsFabricDW = sc.IsFabricDW
-	}
+	sc := &ServerConn{Opts: opts, Server: srv, role: role}
 	if role == RoleExplorer {
 		sc.ProbeCapabilities(ctx)
 	}
 	return sc
 }
+
+// IsFabricDW reports whether the connection is to a Fabric Warehouse, as
+// gosmo decided at connect (gosmo.Server.IsFabricDW()); false with no Server.
+func (sc *ServerConn) IsFabricDW() bool { return sc != nil && sc.Server.IsFabricDW() }
 
 // toGosmoOptions is the single conversion from config.Connection to dialled
 // gosmo.ConnectionOptions, used by Connect and BuildConnectionString so the
