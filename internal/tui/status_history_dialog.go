@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strings"
 	"sync"
 	"time"
 
@@ -27,28 +26,26 @@ const maxStatusHistoryLines = 256
 // accumulates across the session, in memory only, with no persistence.
 //
 // Record is called from background goroutines (App.logStatus reaches it from
-// the Object Explorer's loader goroutine), so mu guards lines, pending and
-// dirty, and the editor is only touched from the UI goroutine (Show and Draw).
+// the Object Explorer's loader goroutine), so mu guards feed, and the editor is
+// only touched from the UI goroutine (Show and Draw).
 type StatusHistoryDialog struct {
 	dialogs.ModalDialog
-	mu     sync.Mutex // guards lines, pending and dirty
-	lines  []string
+	mu     sync.Mutex // guards feed
 	editor *editor.Editor
-	dirty  bool // lines changed since the editor's text was last synced
 
-	// pending holds the lines recorded since the last sync, newest first, so a
-	// sync while the dialog is open can prepend just those (Editor.PrependLines)
+	// feed holds the history and the lines recorded since the last sync, so a
+	// sync while the dialog is open prepends just those (editor.LogFeed)
 	// instead of rebuilding with SetText, which resets cursor, scroll and
 	// selection. A full rebuild dropped the selection on every message, the
 	// "Copied to clipboard" of the user's own Ctrl+C included, so a second Copy
 	// copied nothing, and snapped a scrolled-down view back to line 1 whenever
 	// a background load recorded a status.
-	pending []string
+	feed *editor.LogFeed
 }
 
 // NewStatusHistoryDialog creates the status history dialog.
 func NewStatusHistoryDialog(app *App) *StatusHistoryDialog {
-	d := &StatusHistoryDialog{}
+	d := &StatusHistoryDialog{feed: editor.NewLogFeed(maxStatusHistoryLines)}
 	d.InitModal("Status History", 90, 26)
 	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
@@ -73,44 +70,30 @@ func (d *StatusHistoryDialog) Record(msg string) {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.lines = append([]string{line}, d.lines...)
-	if len(d.lines) > maxStatusHistoryLines {
-		d.lines = d.lines[:maxStatusHistoryLines]
-	}
-	// Bounded like lines: a closed dialog's pending is dropped by Show's full
-	// rebuild, and more than maxStatusHistoryLines would be trimmed anyway.
-	d.pending = append([]string{line}, d.pending...)
-	if len(d.pending) > maxStatusHistoryLines {
-		d.pending = d.pending[:maxStatusHistoryLines]
-	}
-	d.dirty = true
+	d.feed.Record(line)
 }
 
 // lineCount reports how many messages are held.
 func (d *StatusHistoryDialog) lineCount() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return len(d.lines)
+	return d.feed.Len()
 }
 
 // syncIfDirty prepends the lines Record added since the last sync, keeping the
-// viewer's cursor, selection and scroll on the text they were on (see
-// pending), and trims the editor to maxStatusHistoryLines. UI goroutine only.
+// viewer's cursor, selection and scroll on the text they were on (see feed),
+// and trims the editor to maxStatusHistoryLines. UI goroutine only.
+//
+// LogFeed.Sync is not used: it would hold mu across the editor update, the
+// expensive half, and Record must not block behind it on a background
+// goroutine. The pending lines are taken under the lock and applied outside.
 func (d *StatusHistoryDialog) syncIfDirty() {
 	d.mu.Lock()
-	if !d.dirty {
-		d.mu.Unlock()
-		return
-	}
-	text := strings.Join(d.pending, "\n")
-	d.pending = nil
-	d.dirty = false
+	text, ok := d.feed.TakePending()
 	d.mu.Unlock()
 
-	// Outside the lock: the editor update is the expensive half, and Record
-	// must not block behind it on a background goroutine.
-	if d.editor != nil {
-		d.editor.PrependLines(text, maxStatusHistoryLines)
+	if ok && d.editor != nil {
+		d.editor.PrependLines(text, d.feed.Max())
 	}
 }
 
@@ -118,9 +101,7 @@ func (d *StatusHistoryDialog) syncIfDirty() {
 // cursor, scroll and selection. UI goroutine only.
 func (d *StatusHistoryDialog) rebuild() {
 	d.mu.Lock()
-	text := strings.Join(d.lines, "\n")
-	d.pending = nil
-	d.dirty = false
+	text := d.feed.TakeAll()
 	d.mu.Unlock()
 
 	if d.editor != nil {

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls/editor"
@@ -33,13 +32,11 @@ const maxKeyDiagLines = 200
 type KeyDiagnosticsDialog struct {
 	dialogs.ModalDialog
 	app    *App
-	lines  []string
 	editor *editor.Editor
-	dirty  bool // lines changed since the editor's text was last synced
 
-	// pending holds the lines recorded since the last sync, newest first, for
-	// syncIfDirty to prepend (see StatusHistoryDialog.pending).
-	pending []string
+	// feed holds the log and the lines recorded since the last sync, for
+	// syncIfDirty to prepend (see StatusHistoryDialog.feed).
+	feed *editor.LogFeed
 
 	// lastMouse is the buttons/modifiers of the last mouse event recorded, so
 	// RecordMouse can drop the resends tcell sends throughout a drag. -1 means
@@ -49,7 +46,7 @@ type KeyDiagnosticsDialog struct {
 
 // NewKeyDiagnosticsDialog creates the key diagnostics dialog.
 func NewKeyDiagnosticsDialog(app *App) *KeyDiagnosticsDialog {
-	d := &KeyDiagnosticsDialog{app: app}
+	d := &KeyDiagnosticsDialog{app: app, feed: editor.NewLogFeed(maxKeyDiagLines), lastMouse: -1}
 	d.InitModal("Key Diagnostics", 70, 24)
 	d.editor = editor.NewEditor(nil)
 	d.editor.SetReadOnly(true)
@@ -69,7 +66,7 @@ func NewKeyDiagnosticsDialog(app *App) *KeyDiagnosticsDialog {
 func (d *KeyDiagnosticsDialog) RecordKey(ev *tcell.EventKey) {
 	line := fmt.Sprintf("%-20s  Key=%-4d Mod=%-3d Str=%-8q Repeat=%d",
 		ev.Name(), ev.Key(), ev.Modifiers(), ev.Str(), ev.Repeat())
-	d.record(line)
+	d.feed.Record(line)
 }
 
 // RecordMouse appends a description of a mouse event: the buttons, the modifiers,
@@ -92,63 +89,8 @@ func (d *KeyDiagnosticsDialog) RecordMouse(ev *tcell.EventMouse) {
 	d.lastMouse = state
 	x, y := ev.Position()
 	line := fmt.Sprintf("%-20s  Btn=%-4d Mod=%-3d At=%d,%d",
-		mouseEventName(ev), ev.Buttons(), ev.Modifiers(), x, y)
-	d.record(line)
-}
-
-// record prepends line to the log and to the lines awaiting the next sync, both
-// capped at maxKeyDiagLines.
-func (d *KeyDiagnosticsDialog) record(line string) {
-	d.lines = append([]string{line}, d.lines...)
-	if len(d.lines) > maxKeyDiagLines {
-		d.lines = d.lines[:maxKeyDiagLines]
-	}
-	d.pending = append([]string{line}, d.pending...)
-	if len(d.pending) > maxKeyDiagLines {
-		d.pending = d.pending[:maxKeyDiagLines]
-	}
-	d.dirty = true
-}
-
-// mouseEventName is EventKey.Name()'s counterpart for a mouse event: the
-// modifiers the terminal delivered, then the button. EventMouse has no Name of
-// its own, and the modifier names are the point of the line — "Shift+Button1"
-// against a bare "Button1" is the whole diagnosis.
-func mouseEventName(ev *tcell.EventMouse) string {
-	var parts []string
-	for _, m := range []struct {
-		mask tcell.ModMask
-		name string
-	}{
-		{tcell.ModCtrl, "Ctrl"},
-		{tcell.ModAlt, "Alt"},
-		{tcell.ModShift, "Shift"},
-		{tcell.ModMeta, "Meta"},
-	} {
-		if ev.Modifiers()&m.mask != 0 {
-			parts = append(parts, m.name)
-		}
-	}
-	button := "Release"
-	switch b := ev.Buttons(); {
-	case b&tcell.WheelUp != 0:
-		button = "WheelUp"
-	case b&tcell.WheelDown != 0:
-		button = "WheelDown"
-	case b&tcell.WheelLeft != 0:
-		button = "WheelLeft"
-	case b&tcell.WheelRight != 0:
-		button = "WheelRight"
-	case b&tcell.Button1 != 0:
-		button = "Button1"
-	case b&tcell.Button2 != 0:
-		button = "Button2"
-	case b&tcell.Button3 != 0:
-		button = "Button3"
-	case b != tcell.ButtonNone:
-		button = "Button"
-	}
-	return strings.Join(append(parts, button), "+")
+		core.MouseEventName(ev), ev.Buttons(), ev.Modifiers(), x, y)
+	d.feed.Record(line)
 }
 
 // syncIfDirty prepends the lines RecordKey or RecordMouse added since the last
@@ -157,15 +99,13 @@ func mouseEventName(ev *tcell.EventMouse) string {
 // It must not rebuild with Editor.SetText, which resets cursor, scroll and
 // selection. The dialog records the very keys used to copy from it: Ctrl+A is
 // itself recorded, so a rebuild on the next frame would drop the selection and
-// the following Ctrl+C would copy nothing. Editor.PrependLines moves the
-// selection down with the text it covers, so new keys appear while it stays.
+// the following Ctrl+C would copy nothing. LogFeed.Sync prepends with
+// Editor.PrependLines, which moves the selection down with the text it covers,
+// so new keys appear while it stays.
 func (d *KeyDiagnosticsDialog) syncIfDirty() {
-	if !d.dirty || d.editor == nil {
-		return
+	if d.editor != nil {
+		d.feed.Sync(d.editor)
 	}
-	d.editor.PrependLines(strings.Join(d.pending, "\n"), maxKeyDiagLines)
-	d.pending = nil
-	d.dirty = false
 }
 
 // Show resets the log, then displays the dialog; each open starts a fresh
@@ -175,9 +115,7 @@ func (d *KeyDiagnosticsDialog) syncIfDirty() {
 // previous session's text below the new one and a selection left from the last
 // showing.
 func (d *KeyDiagnosticsDialog) Show() {
-	d.lines = nil
-	d.pending = nil
-	d.dirty = false
+	d.feed.Reset()
 	d.lastMouse = -1
 	if d.editor != nil {
 		d.editor.SetText("")
@@ -199,7 +137,7 @@ func (d *KeyDiagnosticsDialog) Draw(s tcell.Screen) {
 	inner := d.InnerRect()
 	dataH := inner.H - 2 // leave room for the button row
 
-	if len(d.lines) == 0 || d.editor == nil {
+	if d.feed.Len() == 0 || d.editor == nil {
 		p := theme.Active()
 		dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
 		core.DrawText(s, inner.X+1, inner.Y+1, dimStyle, "Press any key to see how it was decoded...")
@@ -222,7 +160,7 @@ func (d *KeyDiagnosticsDialog) Draw(s tcell.Screen) {
 // copySelection reads SelectedText() synchronously, so clearing right after is
 // safe.
 func (d *KeyDiagnosticsDialog) copyAll() {
-	if d.editor == nil || len(d.lines) == 0 {
+	if d.editor == nil || d.feed.Len() == 0 {
 		return
 	}
 	d.editor.SelectAll()

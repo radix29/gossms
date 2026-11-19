@@ -58,7 +58,7 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 				return rows
 			}
 
-			grid := newCellToggleGrid(cols, 0, func() int { return len(edits) },
+			grid := propsheet.NewCellToggleGrid(cols, 0, func() int { return len(edits) },
 				func(row int) { edits[row].linked = !edits[row].linked }, rowsFor)
 
 			nameStatic := propsheet.Static("Name", "")
@@ -68,11 +68,11 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 			errorStatic := propsheet.Static("Error number", "")
 			severityStatic := propsheet.Static("Severity", "")
 			responseStatic := propsheet.Static("Response", "")
-			detail := newStaticBlock(nameStatic, enabledStatic, sourceStatic, dbStatic,
+			detail := propsheet.NewStaticBlock(nameStatic, enabledStatic, sourceStatic, dbStatic,
 				errorStatic, severityStatic, responseStatic)
 			syncFromSelection := func(row int) {
 				if row < 0 || row >= len(edits) {
-					detail.set()
+					detail.Set()
 					return
 				}
 				e := edits[row]
@@ -95,7 +95,7 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 				} else if al.JobName != "" {
 					response = al.JobName
 				}
-				detail.set(al.Name, boolStr(al.Enabled), al.EventSource, dbScope,
+				detail.Set(al.Name, boolStr(al.Enabled), al.EventSource, dbScope,
 					errorNum, severity, response)
 			}
 			grid.OnSelectRow = syncFromSelection

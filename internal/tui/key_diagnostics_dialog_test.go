@@ -23,18 +23,18 @@ func keyDiagDialogForTest(t *testing.T) (*App, *KeyDiagnosticsDialog) {
 // ordering, so pressing one key and glancing at the dialog shows the right
 // line without scrolling.
 func TestKeyDiagnosticsRecordKeyPrependsNewest(t *testing.T) {
-	d := &KeyDiagnosticsDialog{}
+	d := NewKeyDiagnosticsDialog(nil)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModShift))
 
-	if len(d.lines) != 2 {
-		t.Fatalf("len(lines) = %d, want 2", len(d.lines))
+	if len(d.feed.Lines()) != 2 {
+		t.Fatalf("len(lines) = %d, want 2", len(d.feed.Lines()))
 	}
-	if !strings.Contains(d.lines[0], "Shift") {
-		t.Fatalf("lines[0] = %q, want the most recent (Shift+Left) event first", d.lines[0])
+	if !strings.Contains(d.feed.Lines()[0], "Shift") {
+		t.Fatalf("lines[0] = %q, want the most recent (Shift+Left) event first", d.feed.Lines()[0])
 	}
-	if strings.Contains(d.lines[1], "Shift") {
-		t.Fatalf("lines[1] = %q, want the older (plain Left) event second", d.lines[1])
+	if strings.Contains(d.feed.Lines()[1], "Shift") {
+		t.Fatalf("lines[1] = %q, want the older (plain Left) event second", d.feed.Lines()[1])
 	}
 }
 
@@ -108,7 +108,7 @@ func TestKeyDiagnosticsSyncsWhileASelectionIsLive(t *testing.T) {
 	d.RecordKey(tcell.NewEventKey(tcell.KeyF5, "", tcell.ModNone))
 	d.syncIfDirty()
 
-	if d.dirty {
+	if d.feed.Dirty() {
 		t.Error("still dirty after a sync with a selection live")
 	}
 	if !strings.Contains(d.editor.Text(), "F5") {
@@ -130,8 +130,8 @@ func TestKeyDiagnosticsShowResetsTheLog(t *testing.T) {
 	d.Hide()
 
 	d.Show()
-	if len(d.lines) != 0 {
-		t.Errorf("len(lines) = %d after Show, want 0", len(d.lines))
+	if len(d.feed.Lines()) != 0 {
+		t.Errorf("len(lines) = %d after Show, want 0", len(d.feed.Lines()))
 	}
 	if got := d.editor.Text(); got != "" {
 		t.Errorf("editor still shows the previous session: %q", got)
@@ -146,10 +146,10 @@ func TestKeyDiagnosticsRecordKeyCapsAtMax(t *testing.T) {
 	for range maxKeyDiagLines {
 		d.RecordKey(tcell.NewEventKey(tcell.KeyF2, "", tcell.ModNone))
 	}
-	if len(d.lines) != maxKeyDiagLines {
-		t.Fatalf("len(lines) = %d, want %d (capped)", len(d.lines), maxKeyDiagLines)
+	if len(d.feed.Lines()) != maxKeyDiagLines {
+		t.Fatalf("len(lines) = %d, want %d (capped)", len(d.feed.Lines()), maxKeyDiagLines)
 	}
-	for _, line := range d.lines {
+	for _, line := range d.feed.Lines() {
 		if strings.Contains(line, "F1") {
 			t.Fatal("the oldest entry survived the cap; newest-first ordering or the trim is wrong")
 		}
@@ -214,43 +214,43 @@ func mouseAt(b tcell.ButtonMask, m tcell.ModMask) *tcell.EventMouse {
 // Shift+click that arrives and a plain one that does not are otherwise
 // indistinguishable from inside the app.
 func TestKeyDiagnosticsRecordsTheModifiersOnAClick(t *testing.T) {
-	d := &KeyDiagnosticsDialog{lastMouse: -1}
+	d := NewKeyDiagnosticsDialog(nil)
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModShift))
 	d.RecordMouse(mouseAt(tcell.ButtonNone, tcell.ModNone))
 
-	if len(d.lines) != 2 {
-		t.Fatalf("len(lines) = %d, want the press and the release", len(d.lines))
+	if len(d.feed.Lines()) != 2 {
+		t.Fatalf("len(lines) = %d, want the press and the release", len(d.feed.Lines()))
 	}
-	if !strings.Contains(d.lines[1], "Shift+Button1") {
-		t.Errorf("the press was logged as %q, want it to name the Shift it carried", d.lines[1])
+	if !strings.Contains(d.feed.Lines()[1], "Shift+Button1") {
+		t.Errorf("the press was logged as %q, want it to name the Shift it carried", d.feed.Lines()[1])
 	}
-	if !strings.Contains(d.lines[0], "Release") {
-		t.Errorf("the release was logged as %q, want it named as one", d.lines[0])
+	if !strings.Contains(d.feed.Lines()[0], "Release") {
+		t.Errorf("the release was logged as %q, want it named as one", d.feed.Lines()[0])
 	}
-	if !strings.Contains(d.lines[0], "At=10,5") {
-		t.Errorf("line %q does not say where the event landed", d.lines[0])
+	if !strings.Contains(d.feed.Lines()[0], "At=10,5") {
+		t.Errorf("line %q does not say where the event landed", d.feed.Lines()[0])
 	}
 }
 
 // A drag is one press and hundreds of resends. Logging each would bury the
 // press that started it — and the press is the line being looked for.
 func TestKeyDiagnosticsCollapsesADrag(t *testing.T) {
-	d := &KeyDiagnosticsDialog{lastMouse: -1}
+	d := NewKeyDiagnosticsDialog(nil)
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
 	for range 20 {
 		d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
 	}
 	d.RecordMouse(mouseAt(tcell.ButtonNone, tcell.ModNone))
 
-	if len(d.lines) != 2 {
-		t.Fatalf("a drag logged %d lines, want the press and the release: %q", len(d.lines), d.lines)
+	if len(d.feed.Lines()) != 2 {
+		t.Fatalf("a drag logged %d lines, want the press and the release: %q", len(d.feed.Lines()), d.feed.Lines())
 	}
 	// A modifier appearing part-way through is a change, not a resend: that is
 	// how a Shift held after the press shows up at all.
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModShift))
-	if len(d.lines) != 4 {
-		t.Fatalf("lines = %q, want the modifier change recorded", d.lines)
+	if len(d.feed.Lines()) != 4 {
+		t.Fatalf("lines = %q, want the modifier change recorded", d.feed.Lines())
 	}
 }
 
@@ -261,7 +261,7 @@ func TestKeyDiagnosticsShowResetsTheMouseCollapse(t *testing.T) {
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
 	d.Show()
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
-	if len(d.lines) != 1 {
-		t.Fatalf("lines after reopening = %q, want the first click of the new session", d.lines)
+	if len(d.feed.Lines()) != 1 {
+		t.Fatalf("lines after reopening = %q, want the first click of the new session", d.feed.Lines())
 	}
 }

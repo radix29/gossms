@@ -91,10 +91,13 @@ which owns them; the entries here say how goSSMS applies them.
   call that directly (`propsheet.ToggleGridRow`) — never hand-roll the pair.
   After Add/Remove/Revert use `resetGrid`, not `SetData` + `SetSelectedRow`
   (which silently drops widths). Packaged idioms: `wireGridEditor`
-  (`prop_grid_helpers.go`) for grid + detail editor; `wireCellToggle`/
-  `newCellToggleGrid` for "activate a cell to change the row"; `staticBlock`
-  for a read-only detail block — its `set()` clears every row not given, so a
-  missed row can't keep describing the previous selection. A grid with Add
+  (`prop_grid_helpers.go`) for grid + detail editor; tuikit's
+  `propsheet.BindCellToggle`/`NewCellToggleGrid` for "activate a cell to
+  change the row"; `propsheet.StaticBlock` for a read-only detail block (build
+  its rows with literal `propsheet.Static` labels, so
+  `TestNoPropertySheetLabelIsTruncated` still reads them) — its `Set()` clears
+  every row not given, so a missed row can't keep describing the previous
+  selection. A grid with Add
   and Remove keeps its rows in `pendingEdits` (`pending_edits.go`): the row
   type embeds `pendingState`, and the list owns dirty, visible, revert,
   add/remove and the collation-aware name checks the pages each used to

@@ -485,7 +485,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				}
 				return rows
 			}
-			grid := newCellToggleGrid(userMappingColumns, 0, func() int { return len(edits) },
+			grid := propsheet.NewCellToggleGrid(userMappingColumns, 0, func() int { return len(edits) },
 				func(row int) { edits[row].mapped = !edits[row].mapped }, rowsFor)
 
 			dbStatic := propsheet.Static("Database", "")

@@ -613,7 +613,7 @@ Peer credentials, easy to undo:
   Dependencies, Confirm, Query List, Background Tasks aren't
   `core.ClipboardHost`) rather than copying the panel behind it.
 - **Key Diagnostics' and Status History's `syncIfDirty` prepend
-  (`Editor.PrependLines`), never `SetText`** — Key Diagnostics logs the very
+  (tuikit's `editor.LogFeed` → `Editor.PrependLines`), never `SetText`** — Key Diagnostics logs the very
   `Ctrl+A` used to copy, Status History the "Copied to clipboard" of its own
   `Ctrl+C`, and a `SetText` on the next frame drops the selection (and the
   scroll) before the next Copy. Only `Show` rebuilds with `SetText`.

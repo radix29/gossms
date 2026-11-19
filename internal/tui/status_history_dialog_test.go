@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/tuikit/controls/editor"
 	"github.com/radix29/tuikit/tuikittest"
 )
 
@@ -15,18 +14,18 @@ import (
 // clicking the status bar right after a message shows it without
 // scrolling.
 func TestStatusHistoryRecordPrependsNewest(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	d.Record("first message")
 	d.Record("second message")
 
-	if len(d.lines) != 2 {
-		t.Fatalf("len(lines) = %d, want 2", len(d.lines))
+	if len(d.feed.Lines()) != 2 {
+		t.Fatalf("len(lines) = %d, want 2", len(d.feed.Lines()))
 	}
-	if !strings.Contains(d.lines[0], "second message") {
-		t.Fatalf("lines[0] = %q, want the most recent (second message) first", d.lines[0])
+	if !strings.Contains(d.feed.Lines()[0], "second message") {
+		t.Fatalf("lines[0] = %q, want the most recent (second message) first", d.feed.Lines()[0])
 	}
-	if !strings.Contains(d.lines[1], "first message") {
-		t.Fatalf("lines[1] = %q, want the older (first message) second", d.lines[1])
+	if !strings.Contains(d.feed.Lines()[1], "first message") {
+		t.Fatalf("lines[1] = %q, want the older (first message) second", d.feed.Lines()[1])
 	}
 }
 
@@ -34,28 +33,28 @@ func TestStatusHistoryRecordPrependsNewest(t *testing.T) {
 // without bound during a long session — only the last
 // maxStatusHistoryLines messages are kept.
 func TestStatusHistoryRecordCapsAtMax(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	for i := range maxStatusHistoryLines + 10 {
 		d.Record("message " + strconv.Itoa(i))
 	}
-	if len(d.lines) != maxStatusHistoryLines {
-		t.Fatalf("len(lines) = %d, want %d (capped)", len(d.lines), maxStatusHistoryLines)
+	if len(d.feed.Lines()) != maxStatusHistoryLines {
+		t.Fatalf("len(lines) = %d, want %d (capped)", len(d.feed.Lines()), maxStatusHistoryLines)
 	}
-	if !strings.Contains(d.lines[0], "message "+strconv.Itoa(maxStatusHistoryLines+9)) {
-		t.Fatalf("lines[0] = %q, want the very last recorded message", d.lines[0])
+	if !strings.Contains(d.feed.Lines()[0], "message "+strconv.Itoa(maxStatusHistoryLines+9)) {
+		t.Fatalf("lines[0] = %q, want the very last recorded message", d.feed.Lines()[0])
 	}
 }
 
 // TestStatusHistoryRecordIncludesTimestamp confirms each line begins with
 // an HH:MM:SS timestamp of when the message was recorded, per the todo.
 func TestStatusHistoryRecordIncludesTimestamp(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	d.Record("hello")
 
-	if len(d.lines) != 1 {
-		t.Fatalf("len(lines) = %d, want 1", len(d.lines))
+	if len(d.feed.Lines()) != 1 {
+		t.Fatalf("len(lines) = %d, want 1", len(d.feed.Lines()))
 	}
-	line := d.lines[0]
+	line := d.feed.Lines()[0]
 	if !strings.HasSuffix(line, "  hello") {
 		t.Fatalf("line = %q, want it to end with %q", line, "  hello")
 	}
@@ -70,13 +69,13 @@ func TestStatusHistoryRecordIncludesTimestamp(t *testing.T) {
 // on every open, the status history accumulates across the whole session
 // and only resets on process restart.
 func TestStatusHistoryShowDoesNotResetLog(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	d.Record("hello")
 
 	d.Show()
 
-	if len(d.lines) != 1 {
-		t.Fatalf("len(lines) after Show() = %d, want 1 (history must not reset on open)", len(d.lines))
+	if len(d.feed.Lines()) != 1 {
+		t.Fatalf("len(lines) after Show() = %d, want 1 (history must not reset on open)", len(d.feed.Lines()))
 	}
 }
 
@@ -85,18 +84,18 @@ func TestStatusHistoryShowDoesNotResetLog(t *testing.T) {
 // dialog is hidden, only mark it dirty; Show() then catches it up before
 // display.
 func TestStatusHistoryRecordDefersSyncWhileHidden(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	if d.Visible() {
 		t.Fatal("zero-value dialog must start hidden")
 	}
 
 	d.Record("hidden message")
-	if !d.dirty {
+	if !d.feed.Dirty() {
 		t.Fatal("dirty must be true after Record() while hidden")
 	}
 
 	d.Show()
-	if d.dirty {
+	if d.feed.Dirty() {
 		t.Fatal("dirty must be false after Show() rebuilds the editor text")
 	}
 }
@@ -107,20 +106,17 @@ func TestStatusHistoryRecordDefersSyncWhileHidden(t *testing.T) {
 // into Draw, so a user watching the dialog must not have to close and
 // reopen it to see new messages.
 func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
-	d := &StatusHistoryDialog{}
-	d.InitModal("Status History", 90, 26)
-	d.editor = editor.NewEditor(nil)
-	d.editor.SetReadOnly(true)
+	d := NewStatusHistoryDialog(nil)
 	d.ModalDialog.Show()
 
 	d.Record("visible message")
-	if !d.dirty {
+	if !d.feed.Dirty() {
 		t.Fatal("dirty must still be set after Record(): the editor is the UI goroutine's to write")
 	}
 
 	d.Draw(tuikittest.NewScreen(100, 40))
 
-	if d.dirty {
+	if d.feed.Dirty() {
 		t.Fatal("dirty must be false after Draw() rebuilt the editor text")
 	}
 	if !strings.Contains(d.editor.Text(), "visible message") {
@@ -131,13 +127,10 @@ func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
 // TestStatusHistoryRecordIsSafeFromBackgroundGoroutines pins the ring down as
 // concurrency-safe: App.logStatus reaches Record from the Object Explorer's
 // loader goroutine while the UI goroutine draws the dialog, which was an
-// unsynchronized append to (and read of) d.lines. Fails under -race on the
-// version before the mutex.
+// unsynchronized append to (and read of) the history. Fails under -race on
+// the version before the mutex.
 func TestStatusHistoryRecordIsSafeFromBackgroundGoroutines(t *testing.T) {
-	d := &StatusHistoryDialog{}
-	d.InitModal("Status History", 90, 26)
-	d.editor = editor.NewEditor(nil)
-	d.editor.SetReadOnly(true)
+	d := NewStatusHistoryDialog(nil)
 	d.ModalDialog.Show()
 
 	screen := tuikittest.NewScreen(100, 40)

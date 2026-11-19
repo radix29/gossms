@@ -216,7 +216,7 @@ func buildPermissionsMatrix(
 	principalGrid.OnSelectRow = loadPrincipal
 	loadPrincipal(0)
 
-	wireCellToggle(permGrid, permissionStateColumns, 1, func() int { return len(visiblePerms) },
+	propsheet.BindCellToggle(permGrid, permissionStateColumns, 1, func() int { return len(visiblePerms) },
 		func(row int) {
 			e := visiblePerms[row]
 			e.current = nextPermState(e.current)
@@ -369,7 +369,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 				}
 				return rows
 			}
-			grid := newCellToggleGrid(permissionStateColumns, 1, func() int { return len(visible) },
+			grid := propsheet.NewCellToggleGrid(permissionStateColumns, 1, func() int { return len(visible) },
 				func(row int) { visible[row].current = nextPermState(visible[row].current) }, rowsFor)
 
 			filterRow := propsheet.Text("Filter permissions", "", 28)
