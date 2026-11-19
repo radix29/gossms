@@ -392,7 +392,7 @@ gossms/
 │       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
 │       ├── activity_monitor_toolbar.go # toolbar cells per tab (rate, Pause/Continue, Refresh), overflow menu, and the collection-state summary and dashboard header
 │       ├── chart_tooltip.go      # the pinned chart readout box itself, shared by Activity Monitor and the Detail Browser's disk-usage strip
-│       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid, Kill Process
+│       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, the procedure's option switches (activity.ProcOption: Sessions' Sleeping Sessions / Additional Info), result grid, Kill Process
 │       │
 │       │  ── Log File Viewer ──
 │       ├── log_viewer.go              # LogViewer state, construction and layout: the selectors, the filter field and the grid; implements layout.Panel

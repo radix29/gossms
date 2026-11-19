@@ -96,8 +96,14 @@ func (am *ActivityMonitor) pageHeight() int {
 }
 
 // handleRune runs letter shortcuts gated by tab: Pause/Continue and rate on
-// dashboards, Refresh on procedure tabs.
+// dashboards, Refresh and the option switches on procedure tabs.
 func (am *ActivityMonitor) handleRune(r rune) bool {
+	if pt := am.procTab(); pt != nil {
+		if i := pt.optionByKey(r); i >= 0 {
+			pt.toggleOption(i)
+			return true
+		}
+	}
 	switch r {
 	case 'p', 'P':
 		if !am.tab.canvasTab() {

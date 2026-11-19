@@ -30,6 +30,18 @@ const (
 var WhoIsActiveProc = &Proc{
 	MasterName: "sp_WhoIsActive",
 	TempDBName: "usp_WhoIsActive",
+	// 2 is the fixed-width-font format: numbers right-justified to one width.
+	// The default (1), meant for proportional fonts, pads by digit count alone
+	// (commas uncounted), so a terminal grid shows them ragged.
+	Fixed: []ProcOption{{Param: "@format_output", Value: "2"}},
+	Options: []ProcOption{
+		// 2 lists every sleeping session; the default (1) only those holding
+		// an open transaction.
+		{Label: "Sleeping Sessions", Key: 's', Param: "@show_sleeping_spids", Value: "2"},
+		// Adds the additional_info XML column: SET options, isolation level,
+		// SQL Agent job details and the like.
+		{Label: "Additional Info", Key: 'a', Param: "@get_additional_info", Value: "1"},
+	},
 	script: func(name string) string {
 		return strings.Replace(whoIsActiveScript, whoIsActiveProcHeader,
 			"create or alter procedure dbo."+name, 1)

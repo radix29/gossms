@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/activity"
@@ -214,7 +215,7 @@ func TestActivityMonitorSessionsUsesWhoIsActive(t *testing.T) {
 	if am.sess.proc != activity.WhoIsActiveProc {
 		t.Fatal("the Sessions tab is not backed by sp_WhoIsActive")
 	}
-	if got := am.sess.proc.Exec(activity.ProcTempDB); got != "exec tempdb.dbo.usp_WhoIsActive" {
+	if got := am.sess.proc.Exec(activity.ProcTempDB); !strings.HasPrefix(got, "exec tempdb.dbo.usp_WhoIsActive") {
 		t.Errorf("Sessions Exec = %q", got)
 	}
 }
@@ -497,5 +498,72 @@ func TestActivityMonitorProcTabInstallRefusalNamesTheRightOnlyWhenDenied(t *test
 	install()
 	if got := am.app.statusText; got != "" {
 		t.Errorf("busy: status = %q, want nothing — a read in flight is not a missing right", got)
+	}
+}
+
+// Sessions offers its switches, off at first; Block has none. Turning one on
+// re-runs with its parameter and shows it checked.
+func TestActivityMonitorSessionsOptionSwitches(t *testing.T) {
+	am := hostedProcMonitor(t, amTabSessions)
+	toolbar := func() string { return amRender(am, 120, 30)[1] }
+	for _, o := range activity.WhoIsActiveProc.Options {
+		if !strings.Contains(toolbar(), "☐ "+o.Label) {
+			t.Errorf("toolbar = %q, want %q off", toolbar(), o.Label)
+		}
+	}
+	pt := am.procTab()
+	if got := pt.proc.Exec(activity.ProcTempDB, pt.optionsOn()...); got != pt.proc.Exec(activity.ProcTempDB) {
+		t.Errorf("with every switch off the run is %q, want no option parameters", got)
+	}
+
+	// Its letter, either case, flips it (the re-run finds no connection here).
+	if !amRune(am, unicode.ToUpper(pt.proc.Options[1].Key)) {
+		t.Fatalf("%q did not reach the switch", unicode.ToUpper(pt.proc.Options[1].Key))
+	}
+	if !strings.Contains(toolbar(), "☑ "+pt.proc.Options[1].Label) {
+		t.Errorf("toolbar = %q, want %q checked", toolbar(), pt.proc.Options[1].Label)
+	}
+	if got := pt.proc.Exec(activity.ProcTempDB, pt.optionsOn()...); !strings.Contains(got, pt.proc.Options[1].Param) ||
+		strings.Contains(got, pt.proc.Options[0].Param) {
+		t.Errorf("the run is %q, want only %s", got, pt.proc.Options[1].Param)
+	}
+
+	pt.busy = true
+	am.buildTools()
+	for _, c := range am.tools.Cells[1 : 1+len(pt.proc.Options)] {
+		if !c.Disabled {
+			t.Errorf("%q stays live while a run is in flight", c.Label)
+		}
+	}
+
+	pt.busy = false
+	am.setTab(amTabBlock)
+	if strings.Contains(toolbar(), "☐") || strings.Contains(toolbar(), "☑") {
+		t.Errorf("Block's toolbar = %q, want no switches", toolbar())
+	}
+	if amRune(am, pt.proc.Options[0].Key) {
+		t.Errorf("%q acted on Block, which has no switches", pt.proc.Options[0].Key)
+	}
+}
+
+// A run whose columns differ (Additional Info adds one mid-row) drops the
+// dragged widths, which are kept by index and would land on other columns.
+func TestActivityMonitorProcTabColumnChangeResetsWidths(t *testing.T) {
+	am := hostedProcMonitor(t, amTabSessions)
+	pt := am.procTab()
+	pt.loc = activity.ProcTempDB
+	pt.applyResult(procResult())
+	pt.grid.SetColumnWidth(2, 40)
+
+	wider := procResult()
+	set := &wider.Sets[0]
+	set.Columns = slices.Insert(set.Columns, 2, "additional_info")
+	set.ColumnTypes = slices.Insert(set.ColumnTypes, 2, "xml")
+	for i := range set.Rows {
+		set.Rows[i] = slices.Insert(set.Rows[i], 2, "<additional_info/>")
+	}
+	pt.applyResult(wider)
+	if got := pt.grid.ColumnWidth(2); got == 40 {
+		t.Error("sql text's dragged width moved onto additional_info")
 	}
 }
