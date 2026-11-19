@@ -289,23 +289,8 @@ func (p *QueryStorePanel) showOverflowMenu(row *controls.ToolRow,
 	p.popMenuAt(row.More.Rect, row.OverflowItems(disabled, reason, run))
 }
 
-// qsMenuItems builds a selector's list, marking the entry in force. The bullet
-// tells a user which of eight windows they are looking at without reading the
-// button the menu covers.
-func qsMenuItems[T comparable](values []T, current T, label func(T) string, choose func(T)) []controls.MenuItem {
-	items := make([]controls.MenuItem, 0, len(values))
-	for _, v := range values {
-		text := label(v)
-		if v == current {
-			text = "• " + text
-		}
-		items = append(items, controls.MenuItem{Label: text, Action: func() { choose(v) }})
-	}
-	return items
-}
-
 func (p *QueryStorePanel) showReportMenu() {
-	p.popMenu(qsToolReport, qsMenuItems(queryStoreReportTitles, p.report().Title,
+	p.popMenu(qsToolReport, controls.ChoiceItems(queryStoreReportTitles, p.report().Title,
 		func(s string) string { return s }, p.ShowReport))
 }
 
@@ -313,13 +298,13 @@ func (p *QueryStorePanel) showMetricMenu() {
 	// The metric list comes from the connected instance, not the whole enum:
 	// log_bytes_used and tempdb_space_used arrived in 2017, and offering them on 2016
 	// would produce "Invalid column name" rather than rows.
-	p.popMenu(qsToolMetric, qsMenuItems(p.availableMetrics(), p.metric,
+	p.popMenu(qsToolMetric, controls.ChoiceItems(p.availableMetrics(), p.metric,
 		func(m gosmo.QSMetric) string { return string(m) },
 		func(m gosmo.QSMetric) { p.metric = m; p.Load() }))
 }
 
 func (p *QueryStorePanel) showStatisticMenu() {
-	items := qsMenuItems(gosmo.QSStatistics(), p.stat,
+	items := controls.ChoiceItems(gosmo.QSStatistics(), p.stat,
 		func(s gosmo.QSStatistic) string { return string(s) },
 		func(s gosmo.QSStatistic) { p.stat, p.statChosen = s, true; p.Load() })
 	// Across every wait category only Avg and Total are defined; the other three
@@ -336,24 +321,24 @@ func (p *QueryStorePanel) showStatisticMenu() {
 }
 
 func (p *QueryStorePanel) showWindowMenu() {
-	p.popMenu(qsToolWindow, qsMenuItems(qsIndexes(len(qsWindows)), p.windowIdx,
+	p.popMenu(qsToolWindow, controls.ChoiceItems(qsIndexes(len(qsWindows)), p.windowIdx,
 		func(i int) string { return qsWindows[i].label },
 		func(i int) { p.windowIdx = i; p.Load() }))
 }
 
 func (p *QueryStorePanel) showTopMenu() {
-	p.popMenu(qsToolTop, qsMenuItems(qsIndexes(len(qsTopCounts)), p.topIdx,
+	p.popMenu(qsToolTop, controls.ChoiceItems(qsIndexes(len(qsTopCounts)), p.topIdx,
 		func(i int) string { return strconv.Itoa(qsTopCounts[i]) },
 		func(i int) { p.topIdx = i; p.Load() }))
 }
 
 func (p *QueryStorePanel) showMinExecMenu() {
-	p.popMenuAt(p.acts.Cells[qsActMinExec].Rect, qsMenuItems(qsIndexes(len(qsMinExecCounts)), p.minExecIdx,
+	p.popMenuAt(p.acts.Cells[qsActMinExec].Rect, controls.ChoiceItems(qsIndexes(len(qsMinExecCounts)), p.minExecIdx,
 		qsMinExecLabel, func(i int) { p.minExecIdx = i; p.Load() }))
 }
 
 func (p *QueryStorePanel) showRegressionMenu() {
-	p.popMenuAt(p.acts.Cells[qsActRegression].Rect, qsMenuItems(qsIndexes(len(qsRegressionPcts)), p.regressIdx,
+	p.popMenuAt(p.acts.Cells[qsActRegression].Rect, controls.ChoiceItems(qsIndexes(len(qsRegressionPcts)), p.regressIdx,
 		qsRegressionLabel, func(i int) { p.regressIdx = i; p.Load() }))
 }
 

@@ -270,8 +270,8 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 		// not typing. Buffer it, or each pasted newline arrives as
 		// KeyEnter and IntelliSense's commit binding eats it, silently
 		// rewriting the pasted text.
-		if a.paste.bracketed {
-			a.bufferPastedKey(e)
+		if a.paste.bracket.Active() {
+			a.paste.bracket.Key(e)
 			// A buffered key changes nothing on screen, and a frame per
 			// key made a 10,001-line, 170 KB paste take ~6 minutes. The end
 			// marker draws the result. Only keys skip it: should the end

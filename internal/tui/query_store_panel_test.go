@@ -1675,16 +1675,24 @@ func TestThePanelOpensOnGosmosOwnRowCap(t *testing.T) {
 }
 
 // chooseMenuItem runs the open context menu's entry whose label contains want.
-// The entry in force is bulleted, so matching is on a substring.
+// The entry in force is bulleted, so matching is on a substring. An enabled
+// entry is chosen as a keyboard user would (highlight, Enter), so a KeepOpen
+// checklist row leaves the menu up and refreshed as it does on screen; a
+// disabled one, which no key or click can reach, is run directly.
 func chooseMenuItem(t *testing.T, a *App, want string) {
 	t.Helper()
 	if !a.contextMenu.OverlayActive() {
 		t.Fatalf("no menu is open to choose %q from", want)
 	}
-	for _, it := range a.contextMenu.Items() {
+	for i, it := range a.contextMenu.Items() {
 		if strings.Contains(it.Label, want) {
-			a.contextMenu.Hide()
-			it.Action()
+			if it.Enabled != nil && !it.Enabled() {
+				a.contextMenu.Hide()
+				it.Action()
+				return
+			}
+			a.contextMenu.SetHover(i)
+			a.contextMenu.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 			return
 		}
 	}

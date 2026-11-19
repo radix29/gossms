@@ -183,13 +183,13 @@ func TestDetailChartClickPinsTheSegmentValues(t *testing.T) {
 	// and the share it can, so the box and the bar can be read against
 	// each other.
 	last := tip.rows[3]
-	if last.label != "Unallocated" {
-		t.Errorf("last row = %q, want Unallocated", last.label)
+	if last.Label != "Unallocated" {
+		t.Errorf("last row = %q, want Unallocated", last.Label)
 	}
-	if want := "53 MB  74.0%"; last.value != want {
-		t.Errorf("Unallocated value = %q, want %q", last.value, want)
+	if want := "53 MB  74.0%"; last.Value != want {
+		t.Errorf("Unallocated value = %q, want %q", last.Value, want)
 	}
-	if last.color != db.charts[0].Series[3].Color {
+	if last.Color != db.charts[0].Series[3].Color {
 		t.Error("row colour differs from the segment's, so box and bar can't be matched by eye")
 	}
 }
@@ -279,8 +279,8 @@ func TestDetailChartTooltipSkipsEmptySegments(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("rows = %d, want only the segment with a value", len(rows))
 	}
-	if rows[0].label != "Unused" || rows[0].value != "8 MB  100.0%" {
-		t.Errorf("row = %q %q, want Unused at the whole bar", rows[0].label, rows[0].value)
+	if rows[0].Label != "Unused" || rows[0].Value != "8 MB  100.0%" {
+		t.Errorf("row = %q %q, want Unused at the whole bar", rows[0].Label, rows[0].Value)
 	}
 }
 

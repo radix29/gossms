@@ -100,15 +100,11 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 			return v.routeToContent(ev)
 		}
 		v.mouseDragging = true
-		if v.expandBtnRect.W > 0 && v.expandBtnRect.Contains(mx, my) {
-			if v.OnExpand != nil {
-				v.OnExpand()
-			}
+		if v.expandRect().Contains(mx, my) {
+			v.OnExpand()
 			return true
 		}
-		if i := v.tabAt(mx); i >= 0 {
-			v.setActiveTab(Tab(i))
-		}
+		v.tabBar().HandleMouse(ev)
 		return true
 	}
 	if v.bannerRect.H == 1 && my == v.bannerRect.Y {

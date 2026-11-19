@@ -289,27 +289,28 @@ func (v *XEventViewer) toggleAggregate(a xevent.Aggregate) {
 // with its nesting level when grouped by, then Expand All, Collapse All and
 // Remove Grouping.
 func (v *XEventViewer) showGroupingMenu() {
+	v.popMenu(xeToolGrouping, v.groupingItems())
+	v.app.contextMenu.SetRefresh(v.groupingItems)
+}
+
+// groupingItems builds showGroupingMenu's rows, rebuilt by each tick's refresh.
+func (v *XEventViewer) groupingItems() []controls.MenuItem {
 	all := v.allColumns()
-	items := make([]controls.MenuItem, 0, len(all)+5)
-	for _, c := range all {
-		mark := "☐ "
-		if i := slices.Index(v.groupBy, c); i >= 0 {
-			mark = "☑ " + strconv.Itoa(i+1) + " "
-		}
-		row := len(items)
-		items = append(items, controls.MenuItem{Label: mark + xevent.Header(c, all), Action: func() {
-			v.toggleGroupBy(c)
-			v.showGroupingMenu()
-			v.app.contextMenu.SetHover(row)
-		}})
-	}
+	items := controls.CheckItems(all,
+		func(c xevent.Column) bool { return slices.Contains(v.groupBy, c) },
+		func(c xevent.Column) string {
+			if i := slices.Index(v.groupBy, c); i >= 0 {
+				return strconv.Itoa(i+1) + " " + xevent.Header(c, all)
+			}
+			return xevent.Header(c, all)
+		},
+		v.toggleGroupBy)
 	grouped := func() bool { return v.grouped() }
-	items = append(items,
+	return append(items,
 		controls.MenuItem{Divider: true},
 		controls.MenuItem{Label: "Expand All", Enabled: grouped, Note: "not grouped", Action: func() { v.expandAll(true) }},
 		controls.MenuItem{Label: "Collapse All", Enabled: grouped, Note: "not grouped", Action: func() { v.expandAll(false) }},
 		controls.MenuItem{Label: "Remove Grouping", Enabled: grouped, Note: "not grouped", Action: func() { v.setGrouping(nil) }})
-	v.popMenu(xeToolGrouping, items)
 }
 
 // showAggregationMenu pops the Aggregation menu: each function over the
@@ -352,11 +353,7 @@ func (v *XEventViewer) showAggregationMenu() {
 }
 
 func (v *XEventViewer) aggregateItem(a xevent.Aggregate, all []xevent.Column) controls.MenuItem {
-	mark := "☐ "
-	if slices.Contains(v.aggs, a) {
-		mark = "☑ "
-	}
-	return controls.MenuItem{Label: mark + a.Label(all), Action: func() { v.toggleAggregate(a) }}
+	return controls.MenuItem{Label: controls.CheckMark(slices.Contains(v.aggs, a)) + a.Label(all), Action: func() { v.toggleAggregate(a) }}
 }
 
 // groupMenuItems is the cell menu on a group row.

@@ -511,7 +511,7 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
 // row's value field focuses it; an operator dropdown is not a text field, and
-// a disabled value field is skipped, as clipboardFieldAt skips one.
+// a disabled value field is skipped, as dialogs.ClipboardFieldAt skips one.
 func (d *FilterDialog) FocusClipboardTargetAt(x, y int) bool {
 	if d.openDropDown() != nil {
 		return false // its list covers the value fields of the rows below

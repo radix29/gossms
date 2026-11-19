@@ -17,33 +17,29 @@ func TestQueryListDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
 	a.setScreen(tuikittest.NewScreen(80, 30))
 
-	d := &QueryListDialog{app: a}
-	d.InitModal("Query List", 56, 16)
-	d.SetScreen(a.screen)
-	d.titles = make([]string, 20)
-	d.indices = make([]int, 20)
-	for i := range d.titles {
-		d.titles[i] = "Query " + strconv.Itoa(i)
-		d.indices[i] = i
+	d := withScreen(NewQueryListDialog(a), a.screen)
+	for i := range 20 {
+		d.titles = append(d.titles, "Query "+strconv.Itoa(i))
+		d.indices = append(d.indices, i)
 	}
-	d.ModalDialog.Show()
+	d.ListDialog.Show() // the rows above, not a snapshot of a.panels
 
 	inner := d.InnerRect()
-	dataH := d.dataH()
+	dataH := d.ButtonRowY() - inner.Y - 1
 	if len(d.titles) <= dataH {
 		t.Fatalf("test needs more titles than dataH (%d) to exercise scrolling, got %d", dataH, len(d.titles))
 	}
-	selBefore := d.sel
+	selBefore := d.Selected()
 
 	sbX := d.Rect().Right() - 1
 	if !d.HandleMouse(tcell.NewEventMouse(sbX, inner.Y+dataH, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("HandleMouse on the scrollbar column should be handled")
 	}
-	if d.scroll == 0 {
+	if d.Scroll() == 0 {
 		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
 	}
-	if d.sel != selBefore {
-		t.Errorf("sel changed to %d, clicking the scrollbar must not activate/select a row", d.sel)
+	if d.Selected() != selBefore {
+		t.Errorf("sel changed to %d, clicking the scrollbar must not activate/select a row", d.Selected())
 	}
 	if !d.Visible() {
 		t.Error("clicking the scrollbar must not close the dialog")
@@ -64,21 +60,21 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 	d.Show()
 
 	inner := d.InnerRect()
-	dataH := d.dataH()
+	dataH := d.ButtonRowY() - inner.Y - 1
 	if len(a.tasks) <= dataH {
 		t.Fatalf("test needs more tasks than dataH (%d) to exercise scrolling, got %d", dataH, len(a.tasks))
 	}
-	selBefore := d.sel
+	selBefore := d.Selected()
 
 	sbX := d.Rect().Right() - 1
 	if !d.HandleMouse(tcell.NewEventMouse(sbX, inner.Y+dataH, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("HandleMouse on the scrollbar column should be handled")
 	}
-	if d.scroll == 0 {
+	if d.Scroll() == 0 {
 		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
 	}
-	if d.sel != selBefore {
-		t.Errorf("sel changed to %d, clicking the scrollbar must not select a task", d.sel)
+	if d.Selected() != selBefore {
+		t.Errorf("sel changed to %d, clicking the scrollbar must not select a task", d.Selected())
 	}
 }
 
@@ -90,7 +86,7 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 // read-only editor.Editor, which draws and drags its own scrollbar — the
 // same reason StatusHistoryDialog, built that way from the start, has never
 // had a case here. That half is pinned in tuikit's
-// controls/scrollbar_drag_test.go.
+// controls/editor/scrollbar_drag_test.go.
 func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
 	a.setScreen(tuikittest.NewScreen(80, 30))
@@ -98,7 +94,7 @@ func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	d.Show()
 
 	inner := d.InnerRect()
-	dataH := d.dataH()
+	dataH := d.DataH()
 	if len(helpLines) <= dataH {
 		t.Fatalf("helpLines (%d) must exceed dataH (%d) for this test to mean anything", len(helpLines), dataH)
 	}
@@ -107,7 +103,7 @@ func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	if !d.HandleMouse(tcell.NewEventMouse(sbX, inner.Y+1+dataH-1, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("HandleMouse on the scrollbar column should be handled")
 	}
-	if d.scroll == 0 {
+	if d.Scroll() == 0 {
 		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
 	}
 }

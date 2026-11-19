@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/radix29/tuikit/dialogs"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -44,7 +45,7 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 
 	if d.onButtons {
-		return buttonRowKey(ev, &d.btnFocus, connectButtonCount, d.buttonsDisabled(), d.doButton, d.Hide, d.leaveButtons)
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, connectButtonCount, d.buttonsDisabled(), d.doButton, d.Hide, d.leaveButtons)
 	}
 
 	// The History list owns the arrows and Enter while it has focus, ahead of
@@ -186,7 +187,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// drag started in it ends cleanly even if the release lands elsewhere in the
 	// dialog. After the d.drag release above because the gesture tracks only
 	// InputFields, while Editor keeps its own latch.
-	if forwardReleaseToFocusedField(ev, d.focusedWidget()) {
+	if dialogs.ForwardReleaseToFocusedField(ev, d.focusedWidget()) {
 		return true
 	}
 
@@ -207,7 +208,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// Copy menu (Editor.OnRightClick, showConnStrMenu).
 	if ev.Buttons() == tcell.Button2 {
 		if !d.connecting && d.tab == connectTabString && d.fConnStrPreview.HandleMouse(ev) {
-			d.setFocus(indexOfFocusable(d.focusable, d.fConnStrPreview))
+			d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fConnStrPreview))
 		}
 		return true
 	}
@@ -265,14 +266,14 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 
 	mx, my := ev.Position()
 	if d.twoPane && d.history.HandleMouse(ev) {
-		d.setFocus(indexOfFocusable(d.focusable, d.history))
+		d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.history))
 		return true
 	}
 
 	if d.tab == connectTabProperties {
 		for _, cb := range []*widgets.CheckBox{d.cbTrust, d.cbRemember} {
 			if cb.HandleMouse(ev) {
-				d.setFocus(indexOfFocusable(d.focusable, cb))
+				d.setFocus(dialogs.IndexOfFocusable(d.focusable, cb))
 				d.refreshConnStrPreview()
 				return true
 			}
@@ -283,7 +284,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// HitTest), so it doubles as the hit test.
 	for _, ed := range d.visibleEditors() {
 		if ed.HandleMouse(ev) {
-			d.setFocus(indexOfFocusable(d.focusable, ed))
+			d.setFocus(dialogs.IndexOfFocusable(d.focusable, ed))
 			return true
 		}
 	}
@@ -300,7 +301,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 					// it nor starts a selection in it.
 					return true
 				}
-				d.setFocus(indexOfFocusable(d.focusable, f))
+				d.setFocus(dialogs.IndexOfFocusable(d.focusable, f))
 				// Position the cursor or start a drag-selection at the click
 				// point, not just switch focus to the field.
 				d.drag.Claim(f, ev)
@@ -323,15 +324,5 @@ func (d *ConnectDialog) visibleEditors() []*editor.Editor {
 // tabClicked switches tabs on a click in the tab bar, and reports whether it
 // consumed the event.
 func (d *ConnectDialog) tabClicked(ev *tcell.EventMouse) bool {
-	mx, my := ev.Position()
-	if my != d.tabRect.Y {
-		return false
-	}
-	for i, seg := range d.tabSegments() {
-		if mx >= seg[0].X && mx < seg[0].X+seg[0].W {
-			d.setTab(connectTab(i))
-			return true
-		}
-	}
-	return false
+	return d.tabBar().HandleMouse(ev)
 }

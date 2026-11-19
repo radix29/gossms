@@ -10,7 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/format"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/layout"
 )
 
 // DetailBrowser shows details of the selected Object Explorer node — a Panel
@@ -136,12 +136,7 @@ func (db *DetailBrowser) SetBounds(x, y, w, h int) {
 	db.rect = core.Rect{X: x, Y: y, W: w, H: h}
 	db.layout()
 
-	bw := core.DisplayWidth(refreshButtonLabel)
-	if w >= bw+4 {
-		db.refreshRect = core.Rect{X: x + w - bw - 1, Y: y, W: bw, H: 1}
-	} else {
-		db.refreshRect = core.Rect{}
-	}
+	db.refreshRect = layout.TitleBarRightRect(db.rect, refreshButtonLabel)
 }
 
 // SetActive marks this panel focused: the title bar's colour, and the grid's
@@ -414,18 +409,7 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 
 // Draw renders the title bar and the data grid.
 func (db *DetailBrowser) Draw(s tcell.Screen) {
-	p := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.MenuText)
-	if db.active {
-		titleStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
-	}
-	core.FillRect(s, core.Rect{X: db.rect.X, Y: db.rect.Y, W: db.rect.W, H: 1}, ' ', titleStyle)
-	titleW := db.rect.W - 2
-	if db.refreshRect.W > 0 {
-		titleW = db.refreshRect.X - db.rect.X - 2
-		core.DrawText(s, db.refreshRect.X, db.refreshRect.Y, titleStyle, refreshButtonLabel)
-	}
-	core.DrawTextClipped(s, db.rect.X+1, db.rect.Y, titleW, titleStyle, db.title)
+	layout.DrawTitleBar(s, db.rect, db.title, db.active, refreshButtonLabel)
 
 	db.grid.Draw(s)
 	db.drawCharts(s)

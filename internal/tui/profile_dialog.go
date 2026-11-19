@@ -83,7 +83,7 @@ func (d *ProfileDialog) ShowProfile(conn config.Connection, onAccept func(string
 
 func (d *ProfileDialog) setFocus(i int) {
 	d.onButtons = false
-	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
+	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
 }
 
 func (d *ProfileDialog) focused() focusable {
@@ -100,7 +100,7 @@ func (d *ProfileDialog) step(dir int) {
 		return
 	}
 	d.onButtons = true
-	setFocusIn(d.focusable, -1, d.focusIdx)
+	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
 }
 
 // leaveButtons is Tab/Backtab off the button row, back onto the first or last
@@ -182,7 +182,7 @@ func (d *ProfileDialog) HandleKey(ev *tcell.EventKey) bool {
 		return false
 	}
 	if d.onButtons {
-		return buttonRowKey(ev, &d.btnFocus, len(profileButtons), nil, d.doButton, d.Hide, d.leaveButtons)
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(profileButtons), nil, d.doButton, d.Hide, d.leaveButtons)
 	}
 	if d.ddAllow.OverlayActive() {
 		if ev.Key() == tcell.KeyEscape {
@@ -230,7 +230,7 @@ func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	if forwardReleaseToFocusedField(ev, d.focused()) {
+	if dialogs.ForwardReleaseToFocusedField(ev, d.focused()) {
 		return true
 	}
 	if d.drag.Replay(ev) {
@@ -241,7 +241,7 @@ func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	// The open list overlays the rows below it, the button row included.
 	if d.ddAllow.HandleMouse(ev) {
-		d.setFocus(indexOfFocusable(d.focusable, d.ddAllow))
+		d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.ddAllow))
 		return true
 	}
 	if i := d.ButtonClicked(ev, profileButtons); i >= 0 {
@@ -250,7 +250,7 @@ func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if mx, my := ev.Position(); d.fName.HitTest(mx, my) {
-		d.setFocus(indexOfFocusable(d.focusable, d.fName))
+		d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fName))
 		d.drag.Claim(d.fName, ev)
 	}
 	return true
@@ -263,7 +263,7 @@ func (d *ProfileDialog) FocusClipboardTargetAt(x, y int) bool {
 	if d.ddAllow.OverlayActive() || !d.fName.HitTest(x, y) {
 		return false
 	}
-	d.setFocus(indexOfFocusable(d.focusable, d.fName))
+	d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fName))
 	return true
 }
 

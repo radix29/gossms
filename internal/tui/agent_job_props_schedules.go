@@ -184,7 +184,7 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 				return rows
 			}
 
-			grid := newCellToggleGrid(cols, 0, func() int { return len(edits) },
+			grid := propsheet.NewCellToggleGrid(cols, 0, func() int { return len(edits) },
 				func(row int) { edits[row].attached = !edits[row].attached }, rowsFor)
 
 			nameStatic := propsheet.Static("Name", "")
@@ -193,11 +193,11 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 			startStatic := propsheet.Static("Start date", "")
 			endStatic := propsheet.Static("End date", "")
 			descStatic := propsheet.Static("Description", "")
-			detail := newStaticBlock(nameStatic, enabledStatic, ownerStatic,
+			detail := propsheet.NewStaticBlock(nameStatic, enabledStatic, ownerStatic,
 				startStatic, endStatic, descStatic)
 			syncFromSelection := func(row int) {
 				if row < 0 || row >= len(edits) {
-					detail.set()
+					detail.Set()
 					return
 				}
 				sch := edits[row].sch
@@ -205,7 +205,7 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 				if !sch.ActiveEndDate.IsZero() {
 					endDate = formatAgentDate(sch.ActiveEndDate)
 				}
-				detail.set(sch.Name, boolStr(sch.Enabled), sch.OwnerLoginName,
+				detail.Set(sch.Name, boolStr(sch.Enabled), sch.OwnerLoginName,
 					formatAgentDate(sch.ActiveStartDate), endDate, sch.Description())
 			}
 			grid.OnSelectRow = syncFromSelection

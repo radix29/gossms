@@ -131,10 +131,7 @@ func (v *XEventViewer) refreshToolLabels() {
 		case xeToolSettings:
 			label = "Settings ▾"
 		case xeToolAutoScroll:
-			label = "☐ Auto Scroll"
-			if v.feed.autoScroll {
-				label = "☑ Auto Scroll"
-			}
+			label = controls.CheckMark(v.feed.autoScroll) + "Auto Scroll"
 		case xeToolExport:
 			label = "Export ▾"
 		}
@@ -302,30 +299,24 @@ func (v *XEventViewer) filterByGroup(g *xevent.Group) {
 // events have carried, applied as it is ticked (hiding a column needs no
 // read), then Show All.
 func (v *XEventViewer) showColumnsMenu() {
+	v.popMenu(xeToolColumns, v.columnsItems())
+	v.app.contextMenu.SetRefresh(v.columnsItems)
+}
+
+// columnsItems builds showColumnsMenu's rows, rebuilt by each tick's refresh.
+func (v *XEventViewer) columnsItems() []controls.MenuItem {
 	all := v.allColumns()
-	items := make([]controls.MenuItem, 0, len(all)+2)
-	for _, c := range all {
-		key := xeColumnKey(c)
-		mark := "☑ "
-		if v.hiddenCols[key] {
-			mark = "☐ "
-		}
-		row := len(items)
-		items = append(items, controls.MenuItem{Label: mark + xevent.Header(c, all), Action: func() {
-			v.toggleColumn(key)
-			v.showColumnsMenu()
-			// Re-showing resets the hover; put it back on the row just ticked.
-			v.app.contextMenu.SetHover(row)
-		}})
-	}
-	items = append(items,
+	items := controls.CheckItems(all,
+		func(c xevent.Column) bool { return !v.hiddenCols[xeColumnKey(c)] },
+		func(c xevent.Column) string { return xevent.Header(c, all) },
+		func(c xevent.Column) { v.toggleColumn(xeColumnKey(c)) })
+	return append(items,
 		controls.MenuItem{Divider: true},
 		controls.MenuItem{Label: "Show All", Enabled: func() bool { return len(v.hiddenCols) > 0 }, Note: "all shown",
 			Action: func() {
 				v.hiddenCols = map[string]bool{}
 				v.columnsChanged()
 			}})
-	v.popMenu(xeToolColumns, items)
 }
 
 // toggleColumn hides or shows the column keyed key. The last visible column

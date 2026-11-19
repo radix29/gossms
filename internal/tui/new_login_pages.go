@@ -334,7 +334,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		}
 		return out
 	}
-	grid := newCellToggleGrid(userMappingColumns, 0, func() int { return len(rows) },
+	grid := propsheet.NewCellToggleGrid(userMappingColumns, 0, func() int { return len(rows) },
 		func(row int) { rows[row].mapped = !rows[row].mapped }, rowsFor)
 
 	dbStatic := propsheet.Static("Database", "")
@@ -476,7 +476,7 @@ func buildNewServerPrincipalSecurablesPage(sc *db.ServerConn, principalName func
 		}
 		return rows
 	}
-	grid := newCellToggleGrid(permissionStateColumns, 1, func() int { return len(edits) },
+	grid := propsheet.NewCellToggleGrid(permissionStateColumns, 1, func() int { return len(edits) },
 		func(row int) { edits[row].current = nextPermState(edits[row].current) }, rowsFor)
 
 	gridRow := propsheet.NewGridRow(grid, 12)

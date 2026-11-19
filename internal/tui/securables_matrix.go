@@ -327,14 +327,14 @@ func buildSecurablesMatrix(
 	p.colGrid = controls.NewDataGrid()
 	p.colGrid.SetCellCursor(true)
 	p.colGrid.SetData(securableColumnColumns, nil)
-	wireCellToggle(p.colGrid, securableColumnColumns, 1, func() int { return len(p.loadedCols) },
+	propsheet.BindCellToggle(p.colGrid, securableColumnColumns, 1, func() int { return len(p.loadedCols) },
 		func(row int) { p.loadedCols[row].current = nextPermState(p.loadedCols[row].current) }, p.colRows)
 
 	p.permSection = propsheet.Section("Permissions")
 	p.securableGrid.OnSelectRow = p.loadSecurable
 	p.loadSecurable(0)
 
-	wireCellToggle(p.permGrid, permissionStateColumns, 1, func() int { return len(p.visiblePerms) },
+	propsheet.BindCellToggle(p.permGrid, permissionStateColumns, 1, func() int { return len(p.visiblePerms) },
 		func(row int) { p.visiblePerms[row].current = nextPermState(p.visiblePerms[row].current) },
 		func() [][]string { return p.permRowsFor(p.selectedEdits) })
 

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/radix29/tuikit/dialogs"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -14,7 +15,7 @@ import (
 func selectAuth(t *testing.T, d *ConnectDialog, m config.AuthMethod) {
 	t.Helper()
 	key := func(k tcell.Key) { d.HandleKey(tcell.NewEventKey(k, "", tcell.ModNone)) }
-	d.setFocus(indexOfFocusable(d.focusable, d.ddAuth))
+	d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.ddAuth))
 	key(tcell.KeyF4)
 	methods := config.AllAuthMethods()
 	for range methods {
@@ -122,7 +123,7 @@ func TestConnectDialogTabSkipsDisabledFields(t *testing.T) {
 	// Managed Identity; Client ID is the next live control after the method
 	// dropdown.
 	selectAuth(t, d, config.AuthEntraMSI)
-	d.setFocus(indexOfFocusable(d.focusable, d.ddAuth))
+	d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.ddAuth))
 
 	d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 	if d.focusable[d.focusIdx] != d.fClientID {
@@ -177,7 +178,7 @@ func TestConnectDialogEscapeClosesAnOpenListNotTheDialog(t *testing.T) {
 			d := NewConnectDialog(newTestApp())
 			d.Show()
 			dd := tc.dd(d)
-			d.setFocus(indexOfFocusable(d.focusable, dd))
+			d.setFocus(dialogs.IndexOfFocusable(d.focusable, dd))
 			key(d, tcell.KeyF4)
 			if !dd.OverlayActive() {
 				t.Fatal("F4 did not open the list")

@@ -214,17 +214,17 @@ func TestActivityMonitorScrollingReportsWhatItDid(t *testing.T) {
 func TestActivityMonitorScrollIsPerTab(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	amKey(am, tcell.KeyPgDn)
-	historyY := am.scrollY[amTabHistory]
+	historyY := am.vp[amTabHistory].Y
 	if historyY == 0 {
 		t.Fatal("PgDn on the History tab didn't scroll")
 	}
 
 	am.setTab(amTabSample)
-	if am.scrollY[amTabSample] != 0 {
+	if am.vp[amTabSample].Y != 0 {
 		t.Error("switching tabs carried the History scroll position over")
 	}
 	am.setTab(amTabHistory)
-	if am.scrollY[amTabHistory] != historyY {
+	if am.vp[amTabHistory].Y != historyY {
 		t.Error("returning to History lost its scroll position")
 	}
 }
@@ -254,7 +254,7 @@ func TestActivityMonitorTabClickAndKeyboardSwitching(t *testing.T) {
 		t.Fatalf("Shift+Tab left the panel on tab %d, want History", am.tab)
 	}
 
-	segs := am.tabSegments()
+	segs := am.tabBar().Segments()
 	x := segs[2][0].X + 1
 	am.HandleMouse(tcell.NewEventMouse(x, am.tabRect.Y, tcell.Button1, tcell.ModNone))
 	if am.tab != amTabTempDB {
@@ -294,7 +294,7 @@ func TestActivityMonitorWheelScrolls(t *testing.T) {
 	if !am.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelDown, tcell.ModNone)) {
 		t.Fatal("the wheel didn't scroll the dashboard")
 	}
-	if am.scrollY[amTabHistory] == 0 {
+	if am.vp[amTabHistory].Y == 0 {
 		t.Error("the wheel claimed the event without scrolling")
 	}
 	if am.HandleMouse(tcell.NewEventMouse(mx, am.tabRect.Y, tcell.WheelDown, tcell.ModNone)) {
@@ -370,8 +370,8 @@ func TestActivityMonitorChartClickPinsATooltip(t *testing.T) {
 	amRender(am, 150, 40) // the hit map comes from a draw
 
 	hit := am.hits[0]
-	x := am.viewRect.X + hit.Plot.Right() - 1 - am.scrollX[am.tab]
-	y := am.viewRect.Y + hit.Plot.Y - am.scrollY[am.tab]
+	x := am.viewRect.X + hit.Plot.Right() - 1 - am.vp[am.tab].X
+	y := am.viewRect.Y + hit.Plot.Y - am.vp[am.tab].Y
 	if !amClick(am, x, y) {
 		t.Fatal("a click on the plot area wasn't claimed")
 	}
@@ -385,8 +385,8 @@ func TestActivityMonitorChartClickPinsATooltip(t *testing.T) {
 		t.Errorf("tooltip has %d rows, want one per series (%d)", len(am.tooltip.rows), len(hit.Series))
 	}
 	rows := amRender(am, 150, 40)
-	if !amRowsContain(rows, am.tooltip.rows[0].label) {
-		t.Errorf("the pinned tooltip wasn't drawn: %q", am.tooltip.rows[0].label)
+	if !amRowsContain(rows, am.tooltip.rows[0].Label) {
+		t.Errorf("the pinned tooltip wasn't drawn: %q", am.tooltip.rows[0].Label)
 	}
 
 	amClick(am, x, y)
@@ -402,7 +402,7 @@ func TestActivityMonitorScrollDismissesTheTooltip(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -422,7 +422,7 @@ func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -432,7 +432,7 @@ func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	am.HandleMouse(tcell.NewEventMouse(bar, am.viewRect.Bottom()-1, tcell.Button1, tcell.ModNone))
 	am.HandleMouse(tcell.NewEventMouse(bar, am.viewRect.Bottom()-1, tcell.ButtonNone, tcell.ModNone))
 
-	if am.scrollY[am.tab] == 0 {
+	if am.vp[am.tab].Y == 0 {
 		t.Fatal("the scrollbar drag didn't scroll")
 	}
 	if am.tooltip != nil {
@@ -452,12 +452,12 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	// The rightmost column is newest; the next sample takes it and the box must
 	// move.
 	hit := am.hits[0]
-	x := am.viewRect.X + hit.Plot.Right() - 1 - am.scrollX[am.tab]
+	x := am.viewRect.X + hit.Plot.Right() - 1 - am.vp[am.tab].X
 	amClick(am, x, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned, pinnedTime, col := am.tooltip.rows[0].value, am.tooltip.time, am.tooltip.col
+	pinned, pinnedTime, col := am.tooltip.rows[0].Value, am.tooltip.time, am.tooltip.col
 
 	am.applySample(activity.Sample{
 		At:              time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC),
@@ -472,14 +472,14 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	if got := am.tooltip.time; got != pinnedTime {
 		t.Errorf("the tooltip now names %q, want the sample it was pinned to (%q)", got, pinnedTime)
 	}
-	if got := am.tooltip.rows[0].value; got != pinned {
+	if got := am.tooltip.rows[0].Value; got != pinned {
 		t.Errorf("the tooltip reads %q, want its own sample's %q", got, pinned)
 	}
 	if got := am.tooltip.col; got != col-1 {
 		t.Errorf("the pinned column is %d, want %d — one left, with the sample it names", got, col-1)
 	}
-	if !amRowsContain(rows, am.tooltip.rows[0].value) {
-		t.Errorf("the moved tooltip wasn't drawn: %q", am.tooltip.rows[0].value)
+	if !amRowsContain(rows, am.tooltip.rows[0].Value) {
+		t.Errorf("the moved tooltip wasn't drawn: %q", am.tooltip.rows[0].Value)
 	}
 }
 
@@ -505,7 +505,7 @@ func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.X-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.X-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -531,11 +531,11 @@ func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned := am.tooltip.rows[0].value
+	pinned := am.tooltip.rows[0].Value
 
 	am.applyTempDBSample(activity.TempDBSample{At: time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC)})
 	amRender(am, 150, 40)
@@ -543,7 +543,7 @@ func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("a tempdb tick dismissed a tooltip pinned on History")
 	}
-	if got := am.tooltip.rows[0].value; got != pinned {
+	if got := am.tooltip.rows[0].Value; got != pinned {
 		t.Errorf("a tempdb tick moved a History tooltip from %q to %q", pinned, got)
 	}
 }
@@ -561,11 +561,11 @@ func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 		t.Fatal("the TempDB tab recorded no chart hits to click")
 	}
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y-am.scrollY[am.tab])
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y-am.vp[am.tab].Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned := am.tooltip.rows[0].value
+	pinned := am.tooltip.rows[0].Value
 
 	am.applySample(activity.Sample{
 		At:              time.Date(2026, 8, 6, 20, 5, 30, 0, time.UTC),
@@ -577,7 +577,7 @@ func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("an activity tick dismissed a tooltip pinned on TempDB")
 	}
-	if got := am.tooltip.rows[0].value; got != pinned {
+	if got := am.tooltip.rows[0].Value; got != pinned {
 		t.Errorf("an activity tick moved a TempDB tooltip from %q to %q", pinned, got)
 	}
 }
@@ -589,8 +589,8 @@ func TestActivityMonitorTooltipNamesTheClickedSample(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	newest := am.pinTooltip(am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
-	older := am.pinTooltip(am.viewRect.X+hit.Plot.Right()-6-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	newest := am.pinTooltip(am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
+	older := am.pinTooltip(am.viewRect.X+hit.Plot.Right()-6-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if newest == nil || older == nil {
 		t.Fatal("a column inside the plot produced no tooltip")
 	}
@@ -611,7 +611,7 @@ func TestActivityMonitorTooltipCallsOutItsTimeOnTheAxis(t *testing.T) {
 		t.Fatal("the chart recorded no time-axis row to call out on")
 	}
 	// Near the plot's left, where the box sits clear of the callout.
-	amClick(am, am.viewRect.X+hit.Plot.X+5-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.X+5-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -648,16 +648,16 @@ func TestActivityMonitorMemoryCompositionClickPinsATooltip(t *testing.T) {
 		t.Fatalf("the Sample tab reported %d chart hits, want the composition bar", len(am.hits))
 	}
 	hit := am.hits[0]
-	y := am.viewRect.Y + hit.Plot.Y - am.scrollY[amTabSample]
+	y := am.viewRect.Y + hit.Plot.Y - am.vp[amTabSample].Y
 	for _, dx := range []int{0, hit.Plot.W / 2, hit.Plot.W - 1} {
-		tip := am.pinTooltip(am.viewRect.X+hit.Plot.X+dx-am.scrollX[amTabSample], y)
+		tip := am.pinTooltip(am.viewRect.X+hit.Plot.X+dx-am.vp[amTabSample].X, y)
 		if tip == nil {
 			t.Fatalf("column %d of the composition bar produced no tooltip", dx)
 		}
 		if tip.time != "15:32:45" {
 			t.Errorf("tooltip names sample %q, want the newest sample", tip.time)
 		}
-		if len(tip.rows) != 3 || tip.rows[0].label != "Buffer" {
+		if len(tip.rows) != 3 || tip.rows[0].Label != "Buffer" {
 			t.Errorf("tooltip rows = %+v, want one per memory component", tip.rows)
 		}
 	}
@@ -756,7 +756,7 @@ func TestActivityMonitorTempDBScrollsAndPinsATooltip(t *testing.T) {
 	am.setTab(amTabTempDB)
 	amRender(am, 160, 45)
 
-	if !amKey(am, tcell.KeyDown) || am.scrollY[amTabTempDB] == 0 {
+	if !amKey(am, tcell.KeyDown) || am.vp[amTabTempDB].Y == 0 {
 		t.Fatal("the TempDB tab did not scroll")
 	}
 	am.scrollTo(0, 0)
@@ -983,7 +983,7 @@ func TestTheActivityMonitorOverflowMenuMarksTheRateInForce(t *testing.T) {
 	for _, it := range am.app.contextMenu.Items() {
 		if strings.Contains(it.Label, "5 s") {
 			found = true
-			if !strings.HasPrefix(it.Label, "• ") {
+			if !strings.HasPrefix(it.Label, controls.ChoiceMark) {
 				t.Errorf("the rate in force reads %q in the More menu, want it bulleted", it.Label)
 			}
 		}

@@ -23,18 +23,18 @@ func keyDiagDialogForTest(t *testing.T) (*App, *KeyDiagnosticsDialog) {
 // ordering, so pressing one key and glancing at the dialog shows the right
 // line without scrolling.
 func TestKeyDiagnosticsRecordKeyPrependsNewest(t *testing.T) {
-	d := &KeyDiagnosticsDialog{}
+	d := NewKeyDiagnosticsDialog(nil)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModShift))
 
-	if len(d.lines) != 2 {
-		t.Fatalf("len(lines) = %d, want 2", len(d.lines))
+	if len(d.Lines()) != 2 {
+		t.Fatalf("len(lines) = %d, want 2", len(d.Lines()))
 	}
-	if !strings.Contains(d.lines[0], "Shift") {
-		t.Fatalf("lines[0] = %q, want the most recent (Shift+Left) event first", d.lines[0])
+	if !strings.Contains(d.Lines()[0], "Shift") {
+		t.Fatalf("lines[0] = %q, want the most recent (Shift+Left) event first", d.Lines()[0])
 	}
-	if strings.Contains(d.lines[1], "Shift") {
-		t.Fatalf("lines[1] = %q, want the older (plain Left) event second", d.lines[1])
+	if strings.Contains(d.Lines()[1], "Shift") {
+		t.Fatalf("lines[1] = %q, want the older (plain Left) event second", d.Lines()[1])
 	}
 }
 
@@ -46,7 +46,7 @@ func TestKeyDiagnosticsCopiesTheWholeLog(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModShift))
 	d.RecordKey(tcell.NewEventKey(tcell.KeyRune, "q", tcell.ModCtrl))
-	d.syncIfDirty()
+	d.Sync()
 
 	target := d.FocusedClipboardTarget()
 	if target == nil {
@@ -72,10 +72,10 @@ func TestKeyDiagnosticsCopiesTheWholeLog(t *testing.T) {
 func TestKeyDiagnosticsKeepsASelectionWhileMoreKeysArrive(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModShift))
-	d.syncIfDirty()
+	d.Sync()
 
-	d.editor.SelectAll()
-	before := d.editor.SelectedText()
+	d.Editor().SelectAll()
+	before := d.Editor().SelectedText()
 	if before == "" {
 		t.Fatal("nothing selected to begin with")
 	}
@@ -83,16 +83,16 @@ func TestKeyDiagnosticsKeepsASelectionWhileMoreKeysArrive(t *testing.T) {
 	// Exactly what happens between the user's Ctrl+A and their Ctrl+C: the
 	// Ctrl+A is recorded, then the app draws a frame.
 	d.RecordKey(tcell.NewEventKey(tcell.KeyCtrlA, "", tcell.ModCtrl))
-	d.syncIfDirty()
+	d.Sync()
 
-	if !d.editor.HasSelection() {
+	if !d.Editor().HasSelection() {
 		t.Fatal("the selection was dropped by a sync — Ctrl+A then Ctrl+C copies nothing")
 	}
-	if got := d.editor.SelectedText(); got != before {
+	if got := d.Editor().SelectedText(); got != before {
 		t.Errorf("selected text changed from %q to %q", before, got)
 	}
-	if !strings.HasPrefix(d.editor.Text(), "Ctrl+A") {
-		t.Errorf("the key pressed during the selection is not the first line: %q", d.editor.Text())
+	if !strings.HasPrefix(d.Editor().Text(), "Ctrl+A") {
+		t.Errorf("the key pressed during the selection is not the first line: %q", d.Editor().Text())
 	}
 }
 
@@ -102,19 +102,19 @@ func TestKeyDiagnosticsKeepsASelectionWhileMoreKeysArrive(t *testing.T) {
 func TestKeyDiagnosticsSyncsWhileASelectionIsLive(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
-	d.syncIfDirty()
-	d.editor.SelectAll()
+	d.Sync()
+	d.Editor().SelectAll()
 
 	d.RecordKey(tcell.NewEventKey(tcell.KeyF5, "", tcell.ModNone))
-	d.syncIfDirty()
+	d.Sync()
 
-	if d.dirty {
+	if d.Dirty() {
 		t.Error("still dirty after a sync with a selection live")
 	}
-	if !strings.Contains(d.editor.Text(), "F5") {
-		t.Errorf("the line recorded during the selection never reached the editor: %q", d.editor.Text())
+	if !strings.Contains(d.Editor().Text(), "F5") {
+		t.Errorf("the line recorded during the selection never reached the editor: %q", d.Editor().Text())
 	}
-	if !d.editor.HasSelection() {
+	if !d.Editor().HasSelection() {
 		t.Error("the sync dropped the selection")
 	}
 }
@@ -125,15 +125,15 @@ func TestKeyDiagnosticsSyncsWhileASelectionIsLive(t *testing.T) {
 func TestKeyDiagnosticsShowResetsTheLog(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
-	d.syncIfDirty()
-	d.editor.SelectAll()
+	d.Sync()
+	d.Editor().SelectAll()
 	d.Hide()
 
 	d.Show()
-	if len(d.lines) != 0 {
-		t.Errorf("len(lines) = %d after Show, want 0", len(d.lines))
+	if len(d.Lines()) != 0 {
+		t.Errorf("len(lines) = %d after Show, want 0", len(d.Lines()))
 	}
-	if got := d.editor.Text(); got != "" {
+	if got := d.Editor().Text(); got != "" {
 		t.Errorf("editor still shows the previous session: %q", got)
 	}
 }
@@ -146,10 +146,10 @@ func TestKeyDiagnosticsRecordKeyCapsAtMax(t *testing.T) {
 	for range maxKeyDiagLines {
 		d.RecordKey(tcell.NewEventKey(tcell.KeyF2, "", tcell.ModNone))
 	}
-	if len(d.lines) != maxKeyDiagLines {
-		t.Fatalf("len(lines) = %d, want %d (capped)", len(d.lines), maxKeyDiagLines)
+	if len(d.Lines()) != maxKeyDiagLines {
+		t.Fatalf("len(lines) = %d, want %d (capped)", len(d.Lines()), maxKeyDiagLines)
 	}
-	for _, line := range d.lines {
+	for _, line := range d.Lines() {
 		if strings.Contains(line, "F1") {
 			t.Fatal("the oldest entry survived the cap; newest-first ordering or the trim is wrong")
 		}
@@ -168,7 +168,7 @@ func TestKeyDiagnosticsEscapeAndEnterStillClose(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, d := keyDiagDialogForTest(t)
 			d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
-			d.syncIfDirty()
+			d.Sync()
 
 			d.HandleKey(tcell.NewEventKey(tc.key, "", tcell.ModNone))
 			if d.Visible() {
@@ -178,11 +178,10 @@ func TestKeyDiagnosticsEscapeAndEnterStillClose(t *testing.T) {
 	}
 }
 
-// The Copy button selects the whole log, and a selection is what syncIfDirty
-// refuses to rebuild past — so the selection has to go once the text has been
-// read. Left standing it freezes the log: a read-only Editor ignores every
-// plain rune key without clearing its selection, so the very keys this dialog
-// exists to decode stop appearing until the user happens to press an arrow.
+// The Copy button selects the whole log, and the selection has to go once the
+// text has been read: a read-only Editor ignores every plain rune key without
+// clearing its selection, so a leftover select-all would sit over the log
+// while the keys this dialog exists to decode arrive above it.
 //
 // The clipboard write itself is not exercised here (it shells out to the OS);
 // what is pinned is the selection's lifetime and the recording that depends
@@ -190,17 +189,17 @@ func TestKeyDiagnosticsEscapeAndEnterStillClose(t *testing.T) {
 func TestKeyDiagnosticsKeepsRecordingAfterCopy(t *testing.T) {
 	_, d := keyDiagDialogForTest(t)
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
-	d.syncIfDirty()
+	d.Sync()
 
 	d.copyAll()
 
-	if d.editor.HasSelection() {
+	if d.Editor().HasSelection() {
 		t.Error("the Copy button left its select-all behind — the log stops updating")
 	}
 	d.RecordKey(tcell.NewEventKey(tcell.KeyF5, "", tcell.ModNone))
-	d.syncIfDirty()
-	if !strings.Contains(d.editor.Text(), "F5") {
-		t.Errorf("a key pressed after Copy never reached the log: %q", d.editor.Text())
+	d.Sync()
+	if !strings.Contains(d.Editor().Text(), "F5") {
+		t.Errorf("a key pressed after Copy never reached the log: %q", d.Editor().Text())
 	}
 }
 
@@ -214,43 +213,43 @@ func mouseAt(b tcell.ButtonMask, m tcell.ModMask) *tcell.EventMouse {
 // Shift+click that arrives and a plain one that does not are otherwise
 // indistinguishable from inside the app.
 func TestKeyDiagnosticsRecordsTheModifiersOnAClick(t *testing.T) {
-	d := &KeyDiagnosticsDialog{lastMouse: -1}
+	d := NewKeyDiagnosticsDialog(nil)
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModShift))
 	d.RecordMouse(mouseAt(tcell.ButtonNone, tcell.ModNone))
 
-	if len(d.lines) != 2 {
-		t.Fatalf("len(lines) = %d, want the press and the release", len(d.lines))
+	if len(d.Lines()) != 2 {
+		t.Fatalf("len(lines) = %d, want the press and the release", len(d.Lines()))
 	}
-	if !strings.Contains(d.lines[1], "Shift+Button1") {
-		t.Errorf("the press was logged as %q, want it to name the Shift it carried", d.lines[1])
+	if !strings.Contains(d.Lines()[1], "Shift+Button1") {
+		t.Errorf("the press was logged as %q, want it to name the Shift it carried", d.Lines()[1])
 	}
-	if !strings.Contains(d.lines[0], "Release") {
-		t.Errorf("the release was logged as %q, want it named as one", d.lines[0])
+	if !strings.Contains(d.Lines()[0], "Release") {
+		t.Errorf("the release was logged as %q, want it named as one", d.Lines()[0])
 	}
-	if !strings.Contains(d.lines[0], "At=10,5") {
-		t.Errorf("line %q does not say where the event landed", d.lines[0])
+	if !strings.Contains(d.Lines()[0], "At=10,5") {
+		t.Errorf("line %q does not say where the event landed", d.Lines()[0])
 	}
 }
 
 // A drag is one press and hundreds of resends. Logging each would bury the
 // press that started it — and the press is the line being looked for.
 func TestKeyDiagnosticsCollapsesADrag(t *testing.T) {
-	d := &KeyDiagnosticsDialog{lastMouse: -1}
+	d := NewKeyDiagnosticsDialog(nil)
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
 	for range 20 {
 		d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
 	}
 	d.RecordMouse(mouseAt(tcell.ButtonNone, tcell.ModNone))
 
-	if len(d.lines) != 2 {
-		t.Fatalf("a drag logged %d lines, want the press and the release: %q", len(d.lines), d.lines)
+	if len(d.Lines()) != 2 {
+		t.Fatalf("a drag logged %d lines, want the press and the release: %q", len(d.Lines()), d.Lines())
 	}
 	// A modifier appearing part-way through is a change, not a resend: that is
 	// how a Shift held after the press shows up at all.
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModShift))
-	if len(d.lines) != 4 {
-		t.Fatalf("lines = %q, want the modifier change recorded", d.lines)
+	if len(d.Lines()) != 4 {
+		t.Fatalf("lines = %q, want the modifier change recorded", d.Lines())
 	}
 }
 
@@ -261,7 +260,7 @@ func TestKeyDiagnosticsShowResetsTheMouseCollapse(t *testing.T) {
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
 	d.Show()
 	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
-	if len(d.lines) != 1 {
-		t.Fatalf("lines after reopening = %q, want the first click of the new session", d.lines)
+	if len(d.Lines()) != 1 {
+		t.Fatalf("lines after reopening = %q, want the first click of the new session", d.Lines())
 	}
 }

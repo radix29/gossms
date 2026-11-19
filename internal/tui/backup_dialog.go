@@ -91,7 +91,7 @@ type BackupDialog struct {
 	prevType     int
 
 	// onButtons is set while the button row holds keyboard focus — the stop
-	// after the last field in the Tab ring (buttonRowKey). Every field is
+	// after the last field in the Tab ring (dialogs.ButtonRowKey). Every field is
 	// blurred meanwhile; focusIdx keeps the field focus left.
 	onButtons bool
 
@@ -218,7 +218,7 @@ func (d *BackupDialog) rebuildFocusable() {
 
 func (d *BackupDialog) setFocus(i int) {
 	d.onButtons = false
-	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
+	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
 }
 
 // stepFocus is Tab (+1) or Backtab (-1) in the fields: past either end of the
@@ -229,7 +229,7 @@ func (d *BackupDialog) stepFocus(dir int) {
 		return
 	}
 	d.onButtons = true
-	setFocusIn(d.focusable, -1, d.focusIdx)
+	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
 }
 
 // refocus re-applies focus after rebuildFocusable swapped a widget, leaving it
@@ -237,7 +237,7 @@ func (d *BackupDialog) stepFocus(dir int) {
 // user is on the buttons must not pull them back into the form.
 func (d *BackupDialog) refocus() {
 	if d.onButtons {
-		setFocusIn(d.focusable, -1, d.focusIdx)
+		dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
 		return
 	}
 	d.setFocus(d.focusIdx)
@@ -257,7 +257,7 @@ func (d *BackupDialog) leaveButtons(dir int) {
 
 // focusTo moves focus to w, if it's in the focusable list.
 func (d *BackupDialog) focusTo(w focusable) {
-	if i := indexOfFocusable(d.focusable, w); i >= 0 {
+	if i := dialogs.IndexOfFocusable(d.focusable, w); i >= 0 {
 		d.setFocus(i)
 	}
 }
@@ -617,7 +617,7 @@ func (d *BackupDialog) FocusClipboardTargetAt(x, y int) bool {
 	if d.mode != backupModeForm {
 		return false
 	}
-	i := clipboardFieldAt(d.focusable, x, y)
+	i := dialogs.ClipboardFieldAt(d.focusable, x, y)
 	if i < 0 {
 		return false
 	}
@@ -633,5 +633,5 @@ func (d *BackupDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	if d.mode != backupModeForm || d.onButtons {
 		return nil
 	}
-	return focusedClipboardTarget(d.focusable, d.focusIdx)
+	return dialogs.FocusedClipboardTarget(d.focusable, d.focusIdx)
 }

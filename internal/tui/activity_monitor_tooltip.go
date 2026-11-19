@@ -44,10 +44,10 @@ func (am *ActivityMonitor) readTooltip(t *amTooltip, hit dashboard.ChartHit, idx
 	}
 	t.rows = t.rows[:0]
 	for _, ser := range hit.Series {
-		t.rows = append(t.rows, tooltipRow{
-			label: ser.Label,
-			value: charts.FormatValue(hit.Value(ser, idx)),
-			color: ser.Color,
+		t.rows = append(t.rows, charts.ReadoutRow{
+			Label: ser.Label,
+			Value: charts.FormatValue(hit.Value(ser, idx)),
+			Color: ser.Color,
 		})
 	}
 }
@@ -99,11 +99,11 @@ func (am *ActivityMonitor) chartHit(title string) (dashboard.ChartHit, bool) {
 // canvasPos translates a screen position to canvas coordinates; screenPos
 // translates back.
 func (am *ActivityMonitor) canvasPos(x, y int) (int, int) {
-	return x - am.viewRect.X + am.scrollX[am.tab], y - am.viewRect.Y + am.scrollY[am.tab]
+	return am.viewport().ToCanvas(x, y)
 }
 
 func (am *ActivityMonitor) screenPos(cx, cy int) (int, int) {
-	return cx - am.scrollX[am.tab] + am.viewRect.X, cy - am.scrollY[am.tab] + am.viewRect.Y
+	return am.viewport().ToScreen(cx, cy)
 }
 
 // chartTab reports whether the active tab's charts resolve clicks. Includes
@@ -153,8 +153,8 @@ func (am *ActivityMonitor) bucketIndex(at string) int {
 // than covering the time callout at keepOut (half-hidden, it would read as an
 // age label).
 func (t *amTooltip) place(ax, ay int, view core.Rect, keepOut int) core.Rect {
-	w, h := tooltipBoxSize(t.time, t.rows)
-	return placeTooltipBox(w, h, ax, ay, view, keepOut)
+	w, h := charts.ReadoutSize(t.time, t.rows)
+	return charts.PlaceReadout(w, h, ax, ay, view, keepOut)
 }
 
 // drawTooltip renders the pinned readout: the column's time on the chart's time
@@ -174,7 +174,7 @@ func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *core.Buffer) {
 	if r.W > am.viewRect.W || r.H > am.viewRect.H {
 		return // no room to show it honestly
 	}
-	drawTooltipBox(s, r, am.tooltip.time, am.tooltip.rows)
+	charts.DrawReadout(s, r, am.tooltip.time, am.tooltip.rows)
 }
 
 // drawCallout names the pinned bucket's moment on its chart's time axis and

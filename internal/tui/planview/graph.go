@@ -12,15 +12,24 @@ import (
 // graphState holds the Plan tab's view state: layout, scroll, detail strip.
 type graphState struct {
 	layout     *graphLayout
-	scrollX    int
-	scrollY    int
 	detailOpen bool
 
-	// sbDraggingX/sbDraggingY are true while dragging the horizontal/vertical
-	// scrollbar thumb (see controls.DataGrid's sbDragging); two latches since
-	// either bar can show alone.
-	sbDraggingX bool
-	sbDraggingY bool
+	// vp is the canvas scroll and its scrollbar drag latches; graphView sets
+	// its geometry. The bars are drawn inside the canvas rect.
+	vp core.Viewport
+}
+
+// graphView is the graph canvas's viewport, its geometry refreshed from
+// graphCanvasRect and the current layout, and the offset clamped to them.
+func (v *PlanView) graphView() *core.Viewport {
+	vp := &v.graphSt.vp
+	vp.View, vp.BarsInside = v.graphCanvasRect, true
+	vp.ContentW, vp.ContentH = 0, 0
+	if l := v.graphSt.layout; l != nil {
+		vp.ContentW, vp.ContentH = l.canvasW, l.canvasH
+	}
+	vp.Clamp()
+	return vp
 }
 
 // rebuildGraphLayout re-lays-out the statement's tree and resets scroll, on
@@ -32,7 +41,7 @@ func (v *PlanView) rebuildGraphLayout() {
 		return
 	}
 	v.graphSt.layout = layoutGraph(st.Root, v.graphTileHeight())
-	v.graphSt.scrollX, v.graphSt.scrollY = 0, 0
+	v.graphSt.vp.X, v.graphSt.vp.Y = 0, 0
 }
 
 // layoutGraphTab computes the canvas rect and, while the strip is open, the
@@ -92,6 +101,9 @@ func (v *PlanView) drawGraphCanvas(s tcell.Screen) {
 	if r.H <= 0 || r.W <= 0 {
 		return
 	}
+	// Clamped before the edges and tiles use the offset: a resize can shrink
+	// the view under an older one.
+	vp := v.graphView()
 	pal := theme.Active()
 	for _, e := range v.graphSt.layout.edges {
 		v.drawEdge(s, e, pal)
@@ -99,16 +111,9 @@ func (v *PlanView) drawGraphCanvas(s tcell.Screen) {
 	for _, t := range v.graphSt.layout.tiles {
 		v.drawTile(s, t, pal)
 	}
-	if v.graphSt.layout.canvasW > r.W {
-		sbStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Border)
-		sbThumb := tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.BorderActive)
-		core.DrawScrollbarH(s, r.X, r.Bottom()-1, r.W, v.graphSt.layout.canvasW, r.W, v.graphSt.scrollX, sbStyle, sbThumb)
-	}
-	if v.graphSt.layout.canvasH > r.H {
-		sbStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Border)
-		sbThumb := tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.BorderActive)
-		core.DrawScrollbar(s, r.Right()-1, r.Y, r.H, v.graphSt.layout.canvasH, r.H, v.graphSt.scrollY, sbStyle, sbThumb)
-	}
+	sbStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Border)
+	sbThumb := tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.BorderActive)
+	vp.DrawScrollbars(s, sbStyle, sbThumb)
 }
 
 // drawEdge renders one connector as three clipped segments plus an arrowhead
@@ -116,9 +121,10 @@ func (v *PlanView) drawGraphCanvas(s tcell.Screen) {
 func (v *PlanView) drawEdge(s tcell.Screen, e edge, pal *theme.Palette) {
 	r := v.graphCanvasRect
 	style := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.TextDim)
-	x1, y1 := r.X+e.x1-v.graphSt.scrollX, r.Y+e.y1-v.graphSt.scrollY
-	x2, y2 := r.X+e.x2-v.graphSt.scrollX, r.Y+e.y2-v.graphSt.scrollY
-	midX := r.X + e.midX - v.graphSt.scrollX
+	sx, sy := v.graphSt.vp.X, v.graphSt.vp.Y
+	x1, y1 := r.X+e.x1-sx, r.Y+e.y1-sy
+	x2, y2 := r.X+e.x2-sx, r.Y+e.y2-sy
+	midX := r.X + e.midX - sx
 
 	hlineClipped(s, r, min(x1, midX), y1, absInt(midX-x1), style)
 	top, h := y1, y2-y1
@@ -135,7 +141,7 @@ func (v *PlanView) drawEdge(s tcell.Screen, e edge, pal *theme.Palette) {
 func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	r := v.graphCanvasRect
 	screenRect := core.Rect{
-		X: r.X + t.rect.X - v.graphSt.scrollX, Y: r.Y + t.rect.Y - v.graphSt.scrollY,
+		X: r.X + t.rect.X - v.graphSt.vp.X, Y: r.Y + t.rect.Y - v.graphSt.vp.Y,
 		W: t.rect.W, H: t.rect.H,
 	}
 	if !rectFullyIn(r, screenRect) {
@@ -291,20 +297,7 @@ func (v *PlanView) ensureTileVisible(id int) {
 	if r.W <= 0 || r.H <= 0 {
 		return
 	}
-	if rect.X < v.graphSt.scrollX {
-		v.graphSt.scrollX = rect.X
-	}
-	if rect.Right() > v.graphSt.scrollX+r.W {
-		v.graphSt.scrollX = rect.Right() - r.W
-	}
-	if rect.Y < v.graphSt.scrollY {
-		v.graphSt.scrollY = rect.Y
-	}
-	if rect.Bottom() > v.graphSt.scrollY+r.H {
-		v.graphSt.scrollY = rect.Bottom() - r.H
-	}
-	v.graphSt.scrollX = max(0, v.graphSt.scrollX)
-	v.graphSt.scrollY = max(0, v.graphSt.scrollY)
+	v.graphView().EnsureVisible(rect)
 }
 
 // graphSelectParent, graphSelectFirstChild, graphSelectSibling, and
@@ -431,9 +424,9 @@ func (v *PlanView) handleGraphTabKey(ev *tcell.EventKey) bool {
 // for horizontal), dragging graphSplit, and clicking a tile.
 func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
+	vp := v.graphView()
 	if ev.Buttons() == tcell.ButtonNone {
-		v.graphSt.sbDraggingX = false
-		v.graphSt.sbDraggingY = false
+		vp.Release()
 	}
 	if v.graphSt.detailOpen {
 		if ev.Buttons() == tcell.ButtonNone {
@@ -462,46 +455,28 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 			}
 		}
 	}
+	// A latched scrollbar drag keeps the bar even once the pointer leaves
+	// the canvas.
+	if vp.Dragging() {
+		return vp.HandleScrollbars(ev)
+	}
 	if !v.graphCanvasRect.Contains(mx, my) {
 		return false
 	}
+	// Shift+wheel scrolls sideways too (core.WheelDelta), as DataGrid and
+	// Editor do.
+	if wheel, _ := vp.Wheel(ev, core.WheelCells, core.WheelRows); wheel {
+		return true
+	}
 	switch ev.Buttons() {
-	case tcell.WheelUp:
-		// Shift+wheel is the desktop convention for horizontal scroll; some
-		// terminals report it as WheelUp/Down with Shift rather than
-		// WheelLeft/Right, so honour both (as DataGrid and Editor do).
-		if ev.Modifiers()&tcell.ModShift != 0 {
-			v.graphSt.scrollX = max(0, v.graphSt.scrollX-4)
-		} else {
-			v.graphSt.scrollY = max(0, v.graphSt.scrollY-1)
-		}
-		return true
-	case tcell.WheelDown:
-		if ev.Modifiers()&tcell.ModShift != 0 {
-			v.graphSt.scrollX += 4
-		} else {
-			v.graphSt.scrollY++
-		}
-		return true
-	case tcell.WheelLeft:
-		v.graphSt.scrollX = max(0, v.graphSt.scrollX-4)
-		return true
-	case tcell.WheelRight:
-		v.graphSt.scrollX += 4
-		return true
 	case tcell.Button1:
-		r := v.graphCanvasRect
 		// Scrollbar drag/click outranks tile selection: the bars are drawn over
 		// the canvas's bottom row/right column (see drawGraphCanvas), so a click
 		// would otherwise select the tile underneath.
-		if core.HandleScrollbarDragH(ev, r.X, r.Bottom()-1, r.W, v.graphSt.layout.canvasW, &v.graphSt.sbDraggingX, &v.graphSt.scrollX) {
+		if vp.HandleScrollbars(ev) {
 			return true
 		}
-		if core.HandleScrollbarDrag(ev, r.Right()-1, r.Y, r.H, v.graphSt.layout.canvasH, &v.graphSt.sbDraggingY, &v.graphSt.scrollY) {
-			return true
-		}
-		cx := mx - v.graphCanvasRect.X + v.graphSt.scrollX
-		cy := my - v.graphCanvasRect.Y + v.graphSt.scrollY
+		cx, cy := vp.ToCanvas(mx, my)
 		for _, t := range v.graphSt.layout.tiles {
 			if t.rect.Contains(cx, cy) {
 				v.selectNode(t.node.ID)

@@ -14,8 +14,7 @@ type amDragZone int
 const (
 	amZoneTabs amDragZone = iota
 	amZoneTools
-	amZoneVBar
-	amZoneHBar
+	amZoneBars
 	amZonePlot
 	amZoneProcGrid
 )
@@ -139,8 +138,9 @@ func (am *ActivityMonitor) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 		}
 		am.dragZone.Release()
-		am.vDragging = false
-		am.hDragging = false
+		for i := range am.vp {
+			am.vp[i].Release()
+		}
 		return false
 	}
 
@@ -167,28 +167,24 @@ func (am *ActivityMonitor) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 	}
 
-	switch ev.Buttons() {
-	case tcell.WheelUp:
-		return am.wheel(ev, 0, -1)
-	case tcell.WheelDown:
-		return am.wheel(ev, 0, 1)
-	case tcell.WheelLeft:
-		return am.wheel(ev, -hScrollStep, 0)
-	case tcell.WheelRight:
-		return am.wheel(ev, hScrollStep, 0)
-	case tcell.Button1:
+	if _, _, ok := core.WheelDelta(ev, hScrollStep, 1); ok {
+		return am.wheel(ev)
+	}
+	if ev.Buttons() == tcell.Button1 {
 		return am.press(ev)
 	}
 	return false
 }
 
-// wheel scrolls the dashboard under the pointer.
-func (am *ActivityMonitor) wheel(ev *tcell.EventMouse, dx, dy int) bool {
+// wheel scrolls the dashboard under the pointer (Shift or a horizontal wheel
+// sideways), reporting whether it moved.
+func (am *ActivityMonitor) wheel(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	if !am.viewRect.Contains(mx, my) {
 		return false
 	}
-	return am.scrollBy(dx, dy)
+	_, moved := am.viewport().Wheel(ev, hScrollStep, 1)
+	return am.panned(moved)
 }
 
 // press claims a fresh Button1 press for the sub-region it landed in and acts
@@ -199,13 +195,7 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 
 	if am.tabRect.Contains(mx, my) {
 		am.dragZone.Arm(ev, amZoneTabs)
-		tabs := am.visibleTabs()
-		for i, seg := range am.tabSegments() {
-			if i < len(tabs) && mx >= seg[0].X && mx < seg[0].X+seg[0].W {
-				am.setTab(tabs[i])
-				return true
-			}
-		}
+		am.tabBar().HandleMouse(ev)
 		return true
 	}
 	if am.toolRect.Contains(mx, my) {
@@ -243,7 +233,7 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 // scrollbars (and the grid) use the rest of a gesture; tab bar and toolbar fire
 // once on the press.
 func (am *ActivityMonitor) routeDrag(ev *tcell.EventMouse, zone amDragZone) bool {
-	if zone == amZoneVBar || zone == amZoneHBar {
+	if zone == amZoneBars {
 		return am.scrollbarDrag(ev)
 	}
 	// The grid extends a block selection, so it needs every held event.
@@ -255,24 +245,18 @@ func (am *ActivityMonitor) routeDrag(ev *tcell.EventMouse, zone amDragZone) bool
 	return true
 }
 
-// scrollbarDrag hands the event to its scrollbar; core.HandleScrollbarDrag's
-// latch keeps control once the pointer leaves the bar.
+// scrollbarDrag hands the event to the scrollbars; core.Viewport's latch keeps
+// control once the pointer leaves the bar.
 //
-// The offset goes through scrollTo, which drops a pinned tooltip as wheel and
-// keys do. Returns true regardless: the gesture belongs to the bar.
+// A move drops a pinned tooltip as wheel and keys do. Returns true for any
+// event the bars took, moved or not: the gesture belongs to the bar.
 func (am *ActivityMonitor) scrollbarDrag(ev *tcell.EventMouse) bool {
-	cw, ch := am.canvasSize()
-	sy := am.scrollY[am.tab]
-	if core.HandleScrollbarDrag(ev, am.viewRect.Right(), am.viewRect.Y, am.viewRect.H, ch, &am.vDragging, &sy) {
-		am.dragZone.Arm(ev, amZoneVBar)
-		am.scrollTo(am.scrollX[am.tab], sy)
-		return true
+	vp := am.viewport()
+	x, y := vp.X, vp.Y
+	if !vp.HandleScrollbars(ev) {
+		return false
 	}
-	sx := am.scrollX[am.tab]
-	if core.HandleScrollbarDragH(ev, am.viewRect.X, am.viewRect.Bottom(), am.viewRect.W, cw, &am.hDragging, &sx) {
-		am.dragZone.Arm(ev, amZoneHBar)
-		am.scrollTo(sx, am.scrollY[am.tab])
-		return true
-	}
-	return false
+	am.dragZone.Arm(ev, amZoneBars)
+	am.panned(vp.X != x || vp.Y != y)
+	return true
 }

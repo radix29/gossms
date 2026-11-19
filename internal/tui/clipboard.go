@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"strings"
-
-	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/clipboard"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 )
@@ -16,15 +14,9 @@ type clipboardTarget = core.ClipboardTarget
 
 // appPaste is the state of a paste still arriving, by either route.
 type appPaste struct {
-	// Bracketed paste: bracketed is true between an *tcell.EventPaste start and its
-	// matching end, during which every EventKey is pasted content accumulating in
-	// buf.
-	bracketed bool
-	buf       strings.Builder
-	// afterCR is true when the last pasted key was KeyEnter (a CR), so an LF right
-	// behind it is the second half of a CRLF and adds no second break; see
-	// bufferPastedKey.
-	afterCR bool
+	// Bracketed paste: Active between an *tcell.EventPaste start and its matching
+	// end, during which every EventKey is pasted content (see Run).
+	bracket clipboard.PasteBuffer
 
 	// target is the widget a Ctrl+V was aimed at while the terminal's OSC 52
 	// clipboard reply is outstanding (the fallback when no native tool answered).
@@ -164,10 +156,10 @@ func (a *App) notifyClipboardEdit(target clipboardTarget) {
 }
 
 // writeClipboard sends text to the clipboard off the UI thread: the native OS
-// clipboard (xclip/xsel/wl-copy/pbcopy, the Win32 API on Windows; see
-// os_clipboard.go) first, falling back to tcell's OSC 52 terminal clipboard
-// when no native tool handled it. The shell-out runs on a background goroutine so a stalled tool can't freeze
-// the event loop; the OSC 52 fallback returns to the UI thread, since SetClipboard
+// clipboard (xclip/xsel/wl-copy/pbcopy, the Win32 API on Windows; see tuikit's
+// clipboard.Write) first, falling back to tcell's OSC 52 terminal clipboard
+// when no native tool handled it. The shell-out runs on a background goroutine
+// so a stalled tool can't freeze the event loop; the OSC 52 fallback returns to the UI thread, since SetClipboard
 // writes to the terminal.
 //
 // One write at a time, and only the newest: racing goroutines would let the
@@ -192,7 +184,7 @@ func (a *App) writeClipboard(text string) {
 				// clipboard" may be false: VTE (xfce4-terminal, GNOME Terminal)
 				// ignores OSC 52 writes. Overwrites the caller's status, which
 				// it set synchronously, before this ran.
-				if !terminalClipboardLikely(a.screen) {
+				if !clipboard.TerminalLikely(a.screen) {
 					a.setStatus("Copied via terminal (may be unsupported)")
 				}
 			}
@@ -200,24 +192,8 @@ func (a *App) writeClipboard(text string) {
 	})
 }
 
-// terminalClipboardLikely reports whether an OSC 52 write probably reached
-// the clipboard: the terminal advertised it in its DA1 reply (attribute 52),
-// or it is tmux, which forwards OSC 52 to the outer terminal (set-clipboard
-// on/external) but answers DA1 itself without 52 (3.6: "?1;2;4c"), so
-// HasClipboard alone would flag every copy over SSH-in-tmux. tmux is known
-// by its XTVERSION reply ("tmux 3.6"). GNU screen answers no XTVERSION, and
-// passes OSC 52 through only when wrapped in DCS, which tcell doesn't do —
-// so the hedge is right there.
-func terminalClipboardLikely(s tcell.Screen) bool {
-	if s.HasClipboard() {
-		return true
-	}
-	name, _ := s.Terminal()
-	return name == "tmux"
-}
-
-// clipboardWriter is osClipboardWrite, swapped by tests.
-var clipboardWriter = osClipboardWrite
+// clipboardWriter is clipboard.Write, swapped by tests.
+var clipboardWriter = clipboard.Write
 
 // copyWithStatus is writeClipboard plus the status-line acknowledgement, for
 // grid context menus whose "Copy" item is the whole interaction: nothing else
@@ -242,7 +218,7 @@ func (a *App) pasteFromClipboard() {
 	}
 	token := clipboardTargetToken(a.modals.Top())
 	a.safego("reading the clipboard", func() {
-		text, ok := osClipboardRead()
+		text, ok := clipboard.Read()
 		a.postAndWake(func() {
 			if ok {
 				a.pasteInto(target, token, text)
@@ -284,7 +260,7 @@ func (a *App) pasteInto(target clipboardTarget, token any, text string) {
 	if clipboardTargetToken(a.modals.Top()) != token {
 		return
 	}
-	target.Paste(stripBOMs(text))
+	target.Paste(clipboard.StripBOMs(text))
 	a.notifyClipboardEdit(target)
 }
 
@@ -294,40 +270,11 @@ func (a *App) pasteInto(target clipboardTarget, token any, text string) {
 
 // beginBracketedPaste starts collecting pasted content. tcell's EnablePaste
 // (see core.Init) only brackets the paste with EventPaste start/end markers;
-// the content still arrives as ordinary EventKeys, which Run() buffers here.
+// the content still arrives as ordinary EventKeys, which Run() buffers in
+// paste.bracket (clipboard.PasteBuffer: its Key says which keys survive and
+// how a CR, LF or CRLF becomes one line break).
 func (a *App) beginBracketedPaste() {
-	a.paste.bracketed = true
-	a.paste.buf.Reset()
-	a.paste.afterCR = false
-}
-
-// bufferPastedKey appends one key of an in-progress bracketed paste to paste.buf.
-// Anything that isn't a character, newline or tab is dropped rather than acted on
-// (a stray escape sequence can decode as a function key), so a paste can never
-// trigger a command.
-//
-// A newline arrives as either key. Most terminals rewrite LF to CR inside a paste,
-// which tcell reports as KeyEnter; Alacritty and tmux `paste-buffer -r` send LF
-// unchanged, which tcell's legacy key mode reports as KeyCtrlJ (the decoding
-// isCtrlEnter relies on outside a paste). Dropping KeyCtrlJ would run every pasted
-// line into the next. A CRLF clipboard sends both, so an LF straight after a CR is
-// skipped rather than doubling the break.
-func (a *App) bufferPastedKey(ev *tcell.EventKey) {
-	afterCR := a.paste.afterCR
-	a.paste.afterCR = false
-	switch ev.Key() {
-	case tcell.KeyRune:
-		a.paste.buf.WriteString(ev.Str())
-	case tcell.KeyEnter:
-		a.paste.buf.WriteByte('\n')
-		a.paste.afterCR = true
-	case tcell.KeyCtrlJ:
-		if !afterCR {
-			a.paste.buf.WriteByte('\n')
-		}
-	case tcell.KeyTab:
-		a.paste.buf.WriteByte('\t')
-	}
+	a.paste.bracket.Begin()
 }
 
 // endBracketedPaste applies the whole buffered paste to the current target as
@@ -336,9 +283,7 @@ func (a *App) bufferPastedKey(ev *tcell.EventKey) {
 // as KeyEnter and an open IntelliSense popup commits its candidate, silently
 // rewriting the text. One Paste call is also one undo step.
 func (a *App) endBracketedPaste() {
-	a.paste.bracketed = false
-	text := stripBOMs(a.paste.buf.String())
-	a.paste.buf.Reset()
+	text := a.paste.bracket.End() // BOMs already stripped
 	if text == "" {
 		return
 	}
@@ -346,17 +291,6 @@ func (a *App) endBracketedPaste() {
 		t.Paste(text)
 		a.notifyClipboardEdit(t)
 	}
-}
-
-// stripBOMs removes every U+FEFF from pasted text. It is invisible in the
-// editor, but SQL Server rejects it as a syntax error near a seemingly empty
-// token, and clipboards carry it: clip.exe (gossms's Windows copy until it moved
-// to the Win32 API, and other tools still) leaves a BOM on the clipboard as a
-// leading U+FEFF, which a paste into the middle of a line buries mid-text. As a
-// zero-width no-break space it is deprecated in favour of U+2060, so dropping it
-// everywhere loses nothing meant.
-func stripBOMs(text string) string {
-	return strings.ReplaceAll(text, "\uFEFF", "")
 }
 
 // selectAllInTarget runs Select All (Ctrl+A / Edit > Select All) on whichever

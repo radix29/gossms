@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/radix29/tuikit/controls/editor"
 	"github.com/radix29/tuikit/tuikittest"
 )
 
@@ -15,18 +14,18 @@ import (
 // clicking the status bar right after a message shows it without
 // scrolling.
 func TestStatusHistoryRecordPrependsNewest(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	d.Record("first message")
 	d.Record("second message")
 
-	if len(d.lines) != 2 {
-		t.Fatalf("len(lines) = %d, want 2", len(d.lines))
+	if len(d.Lines()) != 2 {
+		t.Fatalf("len(lines) = %d, want 2", len(d.Lines()))
 	}
-	if !strings.Contains(d.lines[0], "second message") {
-		t.Fatalf("lines[0] = %q, want the most recent (second message) first", d.lines[0])
+	if !strings.Contains(d.Lines()[0], "second message") {
+		t.Fatalf("lines[0] = %q, want the most recent (second message) first", d.Lines()[0])
 	}
-	if !strings.Contains(d.lines[1], "first message") {
-		t.Fatalf("lines[1] = %q, want the older (first message) second", d.lines[1])
+	if !strings.Contains(d.Lines()[1], "first message") {
+		t.Fatalf("lines[1] = %q, want the older (first message) second", d.Lines()[1])
 	}
 }
 
@@ -34,28 +33,28 @@ func TestStatusHistoryRecordPrependsNewest(t *testing.T) {
 // without bound during a long session — only the last
 // maxStatusHistoryLines messages are kept.
 func TestStatusHistoryRecordCapsAtMax(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	for i := range maxStatusHistoryLines + 10 {
 		d.Record("message " + strconv.Itoa(i))
 	}
-	if len(d.lines) != maxStatusHistoryLines {
-		t.Fatalf("len(lines) = %d, want %d (capped)", len(d.lines), maxStatusHistoryLines)
+	if len(d.Lines()) != maxStatusHistoryLines {
+		t.Fatalf("len(lines) = %d, want %d (capped)", len(d.Lines()), maxStatusHistoryLines)
 	}
-	if !strings.Contains(d.lines[0], "message "+strconv.Itoa(maxStatusHistoryLines+9)) {
-		t.Fatalf("lines[0] = %q, want the very last recorded message", d.lines[0])
+	if !strings.Contains(d.Lines()[0], "message "+strconv.Itoa(maxStatusHistoryLines+9)) {
+		t.Fatalf("lines[0] = %q, want the very last recorded message", d.Lines()[0])
 	}
 }
 
 // TestStatusHistoryRecordIncludesTimestamp confirms each line begins with
 // an HH:MM:SS timestamp of when the message was recorded, per the todo.
 func TestStatusHistoryRecordIncludesTimestamp(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	d.Record("hello")
 
-	if len(d.lines) != 1 {
-		t.Fatalf("len(lines) = %d, want 1", len(d.lines))
+	if len(d.Lines()) != 1 {
+		t.Fatalf("len(lines) = %d, want 1", len(d.Lines()))
 	}
-	line := d.lines[0]
+	line := d.Lines()[0]
 	if !strings.HasSuffix(line, "  hello") {
 		t.Fatalf("line = %q, want it to end with %q", line, "  hello")
 	}
@@ -70,13 +69,13 @@ func TestStatusHistoryRecordIncludesTimestamp(t *testing.T) {
 // on every open, the status history accumulates across the whole session
 // and only resets on process restart.
 func TestStatusHistoryShowDoesNotResetLog(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	d.Record("hello")
 
 	d.Show()
 
-	if len(d.lines) != 1 {
-		t.Fatalf("len(lines) after Show() = %d, want 1 (history must not reset on open)", len(d.lines))
+	if len(d.Lines()) != 1 {
+		t.Fatalf("len(lines) after Show() = %d, want 1 (history must not reset on open)", len(d.Lines()))
 	}
 }
 
@@ -85,18 +84,18 @@ func TestStatusHistoryShowDoesNotResetLog(t *testing.T) {
 // dialog is hidden, only mark it dirty; Show() then catches it up before
 // display.
 func TestStatusHistoryRecordDefersSyncWhileHidden(t *testing.T) {
-	d := &StatusHistoryDialog{}
+	d := NewStatusHistoryDialog(nil)
 	if d.Visible() {
 		t.Fatal("zero-value dialog must start hidden")
 	}
 
 	d.Record("hidden message")
-	if !d.dirty {
+	if !d.Dirty() {
 		t.Fatal("dirty must be true after Record() while hidden")
 	}
 
 	d.Show()
-	if d.dirty {
+	if d.Dirty() {
 		t.Fatal("dirty must be false after Show() rebuilds the editor text")
 	}
 }
@@ -107,37 +106,31 @@ func TestStatusHistoryRecordDefersSyncWhileHidden(t *testing.T) {
 // into Draw, so a user watching the dialog must not have to close and
 // reopen it to see new messages.
 func TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible(t *testing.T) {
-	d := &StatusHistoryDialog{}
-	d.InitModal("Status History", 90, 26)
-	d.editor = editor.NewEditor(nil)
-	d.editor.SetReadOnly(true)
+	d := NewStatusHistoryDialog(nil)
 	d.ModalDialog.Show()
 
 	d.Record("visible message")
-	if !d.dirty {
+	if !d.Dirty() {
 		t.Fatal("dirty must still be set after Record(): the editor is the UI goroutine's to write")
 	}
 
 	d.Draw(tuikittest.NewScreen(100, 40))
 
-	if d.dirty {
+	if d.Dirty() {
 		t.Fatal("dirty must be false after Draw() rebuilt the editor text")
 	}
-	if !strings.Contains(d.editor.Text(), "visible message") {
-		t.Fatalf("editor text = %q, want it to contain the message recorded while visible", d.editor.Text())
+	if !strings.Contains(d.Editor().Text(), "visible message") {
+		t.Fatalf("editor text = %q, want it to contain the message recorded while visible", d.Editor().Text())
 	}
 }
 
 // TestStatusHistoryRecordIsSafeFromBackgroundGoroutines pins the ring down as
 // concurrency-safe: App.logStatus reaches Record from the Object Explorer's
 // loader goroutine while the UI goroutine draws the dialog, which was an
-// unsynchronized append to (and read of) d.lines. Fails under -race on the
-// version before the mutex.
+// unsynchronized append to (and read of) the history. Fails under -race on
+// the version before the mutex.
 func TestStatusHistoryRecordIsSafeFromBackgroundGoroutines(t *testing.T) {
-	d := &StatusHistoryDialog{}
-	d.InitModal("Status History", 90, 26)
-	d.editor = editor.NewEditor(nil)
-	d.editor.SetReadOnly(true)
+	d := NewStatusHistoryDialog(nil)
 	d.ModalDialog.Show()
 
 	screen := tuikittest.NewScreen(100, 40)
@@ -157,10 +150,10 @@ func TestStatusHistoryRecordIsSafeFromBackgroundGoroutines(t *testing.T) {
 	wg.Wait()
 	d.Draw(screen)
 
-	if got := d.lineCount(); got != maxStatusHistoryLines {
+	if got := d.Len(); got != maxStatusHistoryLines {
 		t.Fatalf("lineCount() = %d, want %d (400 messages recorded, capped)", got, maxStatusHistoryLines)
 	}
-	if lines := strings.Count(d.editor.Text(), "\n") + 1; lines != maxStatusHistoryLines {
+	if lines := strings.Count(d.Editor().Text(), "\n") + 1; lines != maxStatusHistoryLines {
 		t.Fatalf("editor holds %d lines, want %d — the final Draw must show every retained message", lines, maxStatusHistoryLines)
 	}
 }
@@ -185,27 +178,27 @@ func shownStatusHistoryForTest(t *testing.T, n int) (*StatusHistoryDialog, *tuik
 // dropped the selection and a second Ctrl+C copied nothing.
 func TestStatusHistoryKeepsTheSelectionWhenAMessageArrives(t *testing.T) {
 	d, screen := shownStatusHistoryForTest(t, 5)
-	d.editor.SelectRange(1, 0, 3, 0)
-	before := d.editor.SelectedText()
+	d.Editor().SelectRange(1, 0, 3, 0)
+	before := d.Editor().SelectedText()
 	if before == "" {
 		t.Fatal("nothing selected to begin with")
 	}
-	row, _ := d.editor.CursorPos()
+	row, _ := d.Editor().CursorPos()
 
 	d.Record("Copied to clipboard")
 	d.Draw(screen)
 
-	if !d.editor.HasSelection() {
+	if !d.Editor().HasSelection() {
 		t.Fatal("a recorded message dropped the selection")
 	}
-	if got := d.editor.SelectedText(); got != before {
+	if got := d.Editor().SelectedText(); got != before {
 		t.Errorf("selected text changed from %q to %q", before, got)
 	}
-	if got, _ := d.editor.CursorPos(); got != row+1 {
+	if got, _ := d.Editor().CursorPos(); got != row+1 {
 		t.Errorf("cursor row = %d, want %d (moved down with its text)", got, row+1)
 	}
-	if !strings.Contains(strings.SplitN(d.editor.Text(), "\n", 2)[0], "Copied to clipboard") {
-		t.Errorf("the new message is not the first line: %q", d.editor.Text())
+	if !strings.Contains(strings.SplitN(d.Editor().Text(), "\n", 2)[0], "Copied to clipboard") {
+		t.Errorf("the new message is not the first line: %q", d.Editor().Text())
 	}
 }
 
@@ -214,9 +207,9 @@ func TestStatusHistoryKeepsTheSelectionWhenAMessageArrives(t *testing.T) {
 // back to line 1.
 func TestStatusHistoryKeepsAScrolledViewWhenAMessageArrives(t *testing.T) {
 	d, screen := shownStatusHistoryForTest(t, 100)
-	d.editor.GoToLine(60)
+	d.Editor().GoToLine(60)
 	d.Draw(screen)
-	top, _ := d.editor.ScrollPos()
+	top, _ := d.Editor().ScrollPos()
 	if top == 0 {
 		t.Fatal("the view did not scroll to begin with")
 	}
@@ -224,7 +217,7 @@ func TestStatusHistoryKeepsAScrolledViewWhenAMessageArrives(t *testing.T) {
 	d.Record("Loaded 12 tables")
 	d.Draw(screen)
 
-	if got, _ := d.editor.ScrollPos(); got != top+1 {
+	if got, _ := d.Editor().ScrollPos(); got != top+1 {
 		t.Errorf("scroll row = %d, want %d (the same text at the top of the view)", got, top+1)
 	}
 }
@@ -235,7 +228,7 @@ func TestStatusHistoryTrimsTheEditorAtMax(t *testing.T) {
 	d, screen := shownStatusHistoryForTest(t, maxStatusHistoryLines)
 	d.Record("one more")
 	d.Draw(screen)
-	if got := strings.Count(d.editor.Text(), "\n") + 1; got != maxStatusHistoryLines {
+	if got := strings.Count(d.Editor().Text(), "\n") + 1; got != maxStatusHistoryLines {
 		t.Errorf("editor holds %d lines, want %d", got, maxStatusHistoryLines)
 	}
 }
@@ -261,7 +254,7 @@ func TestStatusHistoryCopiesTwiceInARow(t *testing.T) {
 	// As Run's loop does between an event and its frame.
 	frame := func() { a.modals.Sync(); a.modals.Draw(screen) }
 	frame()
-	d.editor.SelectRange(1, 0, 3, 0)
+	d.Editor().SelectRange(1, 0, 3, 0)
 
 	var got []string
 	for range 2 {
@@ -270,7 +263,7 @@ func TestStatusHistoryCopiesTwiceInARow(t *testing.T) {
 		case text := <-copied:
 			got = append(got, text)
 		case <-time.After(5 * time.Second):
-			t.Fatalf("copy %d never reached the clipboard (selection live: %v)", len(got)+1, d.editor.HasSelection())
+			t.Fatalf("copy %d never reached the clipboard (selection live: %v)", len(got)+1, d.Editor().HasSelection())
 		}
 		frame()
 	}

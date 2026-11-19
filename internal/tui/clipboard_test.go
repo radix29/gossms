@@ -93,69 +93,20 @@ func TestBracketedPasteAppliesAsOneEdit(t *testing.T) {
 		// A key a terminal shouldn't send mid-paste: dropped, not acted on.
 		tcell.NewEventKey(tcell.KeyF5, "", tcell.ModNone),
 	} {
-		a.bufferPastedKey(ev)
+		a.paste.bracket.Key(ev)
 	}
 	a.endBracketedPaste()
 
 	if got := qp.editor.Text(); got != "a\nb" {
 		t.Fatalf("editor text after bracketed paste = %q, want %q", got, "a\nb")
 	}
-	if a.paste.bracketed {
+	if a.paste.bracket.Active() {
 		t.Fatal("still in paste mode after the end marker")
 	}
 	// One Paste call, so one undo step takes the whole paste back out.
 	qp.editor.Undo()
 	if got := qp.editor.Text(); got != "" {
 		t.Fatalf("editor text after one Undo = %q, want it emptied by a single undo step", got)
-	}
-}
-
-// TestBracketedPasteKeepsEveryLineBreakShape confirms a pasted line break
-// survives whichever byte the terminal sends for it. tcell's legacy key mode
-// decodes a raw LF as KeyCtrlJ, which the paste buffer used to drop, running
-// `SELECT a⏎FROM t` together as `SELECT aFROM t` from Alacritty or tmux
-// `paste-buffer -r`. The events are built from the raw bytes so they go
-// through tcell's own normalization instead of naming KeyCtrlJ here.
-func TestBracketedPasteKeepsEveryLineBreakShape(t *testing.T) {
-	for _, tc := range []struct {
-		name, in, want string
-	}{
-		{"LF", "a\nb", "a\nb"},
-		{"CR", "a\rb", "a\nb"},
-		{"CRLF", "a\r\nb", "a\nb"},
-		{"CR CR", "a\r\rb", "a\n\nb"},
-		{"LF LF", "a\n\nb", "a\n\nb"},
-		{"LF CR", "a\n\rb", "a\n\nb"},
-		{"CRLF CRLF", "a\r\n\r\nb", "a\n\nb"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			a := newClipboardTestApp()
-			qp := focusedQueryPanel(t, a)
-			a.beginBracketedPaste()
-			for _, r := range tc.in {
-				a.bufferPastedKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
-			}
-			a.endBracketedPaste()
-			if got := qp.editor.Text(); got != tc.want {
-				t.Fatalf("editor text after pasting %q = %q, want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-// A CR ending one paste must not swallow an LF opening the next.
-func TestBracketedPasteCRDoesNotCarryOver(t *testing.T) {
-	a := newClipboardTestApp()
-	qp := focusedQueryPanel(t, a)
-	for _, in := range []string{"a\r", "\nb"} {
-		a.beginBracketedPaste()
-		for _, r := range in {
-			a.bufferPastedKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
-		}
-		a.endBracketedPaste()
-	}
-	if got, want := qp.editor.Text(), "a\n\nb"; got != want {
-		t.Fatalf("editor text after two pastes = %q, want %q", got, want)
 	}
 }
 
@@ -415,7 +366,7 @@ func TestPasteDropsBOMs(t *testing.T) {
 	qp := focusedQueryPanel(t, a)
 	a.beginBracketedPaste()
 	for _, r := range in {
-		a.bufferPastedKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+		a.paste.bracket.Key(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
 	}
 	a.endBracketedPaste()
 	if got := qp.editor.Text(); got != want {

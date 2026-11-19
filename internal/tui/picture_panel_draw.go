@@ -6,6 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/layout"
 	"github.com/radix29/tuikit/theme"
 )
 
@@ -15,46 +16,22 @@ import (
 
 // Draw renders the panel.
 func (pp *PicturePanel) Draw(s tcell.Screen) {
-	pal := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.MenuText)
-	if pp.active {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
-	}
-	core.FillRect(s, core.Rect{X: pp.rect.X, Y: pp.rect.Y, W: pp.rect.W, H: 1}, ' ', titleStyle)
-	core.DrawTextClipped(s, pp.rect.X+1, pp.rect.Y, pp.rect.W-2, titleStyle, pp.title)
+	layout.DrawTitleBar(s, pp.rect, pp.title, pp.active, "")
 	pp.drawToolbar(s)
 	pp.drawView(s)
 }
 
-// drawToolbar paints the toolbar cells in Activity Monitor's tooltip scheme,
-// then the picture's facts in the room left over.
+// drawToolbar paints the toolbar cells (More never dimmed), then the picture's
+// facts in the room left over.
 func (pp *PicturePanel) drawToolbar(s tcell.Screen) {
 	if pp.toolRect.H != 1 {
 		return
 	}
-	pal := theme.Active()
-	barStyle := theme.StyleMenuBar()
-	core.FillRect(s, pp.toolRect, ' ', barStyle)
 	pp.refreshToolLabels()
 	next := pp.tools.Layout(pp.toolRect, "")
-	for i, t := range pp.tools.Cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if pp.toolDisabled(i) {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
-	if !pp.tools.More.Rect.IsZero() {
-		style := theme.StyleTooltip()
-		core.FillRect(s, pp.tools.More.Rect, ' ', style)
-		core.DrawText(s, pp.tools.More.Rect.X+1, pp.tools.More.Rect.Y, style, pp.tools.More.Label)
-	}
+	pp.tools.Draw(s, pp.toolRect, pp.toolDisabled, false)
 	if w := pp.toolRect.Right() - next; w > 0 {
-		core.DrawTextClipped(s, next, pp.toolRect.Y, w, barStyle, pp.infoText())
+		core.DrawTextClipped(s, next, pp.toolRect.Y, w, theme.StyleMenuBar(), pp.infoText())
 	}
 }
 
@@ -113,10 +90,11 @@ func (pp *PicturePanel) drawView(s tcell.Screen) {
 	// the target brightness over black, gotuipic's default ground, so that is
 	// what goes behind them in every theme.
 	black := tcell.NewRGBColor(0, 0, 0)
-	for y := 0; y < area.H && pp.scrollY+y < art.Rows; y++ {
-		row := (pp.scrollY + y) * art.Cols
-		for x := 0; x < area.W && pp.scrollX+x < art.Cols; x++ {
-			i := row + pp.scrollX + x
+	sx, sy := pp.vp.X, pp.vp.Y
+	for y := 0; y < area.H && sy+y < art.Rows; y++ {
+		row := (sy + y) * art.Cols
+		for x := 0; x < area.W && sx+x < art.Cols; x++ {
+			i := row + sx + x
 			c := art.Cells[i]
 			st := tcell.StyleDefault.
 				Foreground(pictureColor(c.FG, black)).
@@ -127,8 +105,6 @@ func (pp *PicturePanel) drawView(s tcell.Screen) {
 	if pp.zoomed() {
 		track := tcell.StyleDefault.Background(pal.GridHeader).Foreground(pal.Border)
 		thumb := tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.BorderActive)
-		core.DrawScrollbar(s, area.Right(), area.Y, area.H, art.Rows, area.H, pp.scrollY, track, thumb)
-		core.DrawScrollbarH(s, area.X, area.Bottom(), area.W, art.Cols, area.W, pp.scrollX, track, thumb)
-		core.PutRune(s, area.Right(), area.Bottom(), ' ', track)
+		pp.viewport().DrawScrollbars(s, track, thumb)
 	}
 }

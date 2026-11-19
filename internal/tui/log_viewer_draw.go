@@ -27,14 +27,15 @@ func (lv *LogViewer) Draw(s tcell.Screen) {
 	lv.grid.DrawOverlay(s)
 }
 
-// drawToolbar paints the toolbar row (selectors and buttons in Activity
-// Monitor's tooltip scheme), then the filter field.
+// drawToolbar paints the toolbar row (selectors and buttons), then the filter
+// field.
 func (lv *LogViewer) drawToolbar(s tcell.Screen) {
-	// "More ▾", the stand-in for whatever did not fit, is dimmed only while the
-	// whole row is; its items are gated one by one once the menu is open.
-	if !lv.drawToolCells(s, lv.toolDisabled, !lv.toolsEnabled()) {
+	if lv.toolRect.H != 1 {
 		return
 	}
+	// "More ▾", the stand-in for whatever did not fit, is dimmed only while the
+	// whole row is; its items are gated one by one once the menu is open.
+	lv.tools.Draw(s, lv.toolRect, lv.toolDisabled, !lv.toolsEnabled())
 	if lv.filterVisible() {
 		lv.filter.Draw(s)
 	}

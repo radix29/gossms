@@ -252,11 +252,11 @@ func (d *ConnectDialog) rebuildFocusable() {
 			d.fHostCert, d.fExtraProps)
 	}
 	d.focusable = list
-	i := max(indexOfFocusable(list, prev), 0)
+	i := max(dialogs.IndexOfFocusable(list, prev), 0)
 	d.focusIdx = i
 	if d.onButtons {
 		// A resize switching the pane mode is no reason to leave the buttons.
-		setFocusIn(list, -1, i)
+		dialogs.SetFocusIn(list, -1, i)
 		return
 	}
 	d.setFocus(i)
@@ -304,29 +304,22 @@ func (d *ConnectDialog) applyAuthFields() {
 	d.fClientID.SetEnabled(f.Client)
 	// The dropdown is only in the ring on the properties tab; on the other one
 	// nothing focusable can be disabled, so there is nothing to move off.
-	if i := indexOfFocusable(d.focusable, d.ddAuth); i >= 0 && !d.onButtons && !focusableEnabled(d.focusedWidget()) {
+	if i := dialogs.IndexOfFocusable(d.focusable, d.ddAuth); i >= 0 && !d.onButtons && !dialogs.FocusableEnabled(d.focusedWidget()) {
 		d.setFocus(i)
 	}
-}
-
-// focusableEnabled reports whether w accepts input; a widget with no enabled
-// state always does.
-func focusableEnabled(w focusable) bool {
-	e, ok := w.(core.Enabler)
-	return !ok || e.Enabled()
 }
 
 // stepFocus moves focus dir (+1 or -1) along the ring, past any disabled
 // field; past either end is the button row.
 func (d *ConnectDialog) stepFocus(dir int) {
 	for i := d.focusIdx + dir; i >= 0 && i < len(d.focusable); i += dir {
-		if focusableEnabled(d.focusable[i]) {
+		if dialogs.FocusableEnabled(d.focusable[i]) {
 			d.setFocus(i)
 			return
 		}
 	}
 	d.onButtons = true
-	setFocusIn(d.focusable, -1, d.focusIdx)
+	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
 	// Leaving a field is a blur, the point the preview refreshes at — see
 	// setFocus.
 	d.refreshConnStrPreview()
@@ -455,7 +448,7 @@ func (d *ConnectDialog) resetForm() {
 	d.setTab(connectTabProperties)
 	d.applyAuthFields()
 	d.btnFocus = connectBtnConnect
-	if i := indexOfFocusable(d.focusable, d.fServer); i >= 0 {
+	if i := dialogs.IndexOfFocusable(d.focusable, d.fServer); i >= 0 {
 		d.setFocus(i)
 	}
 	d.refreshConnStrPreview()
@@ -505,7 +498,7 @@ func (d *ConnectDialog) ShowForQueryPanel(qp *QueryPanel, then func()) {
 	d.Show()
 	// Onto the form, not History: Enter there re-fills from the highlighted row,
 	// which carries no database and, unremembered, no password.
-	d.setFocus(indexOfFocusable(d.focusable, d.fServer))
+	d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fServer))
 	d.target, d.targetThen = qp, then
 }
 
@@ -523,13 +516,13 @@ func (d *ConnectDialog) ShowForPeer(opts config.Connection, then func()) {
 	d.SetTitle("Connect to " + opts.Server)
 	// Onto the form, as ShowForQueryPanel: Enter on History would replace the
 	// pre-fill with an unrelated row.
-	d.setFocus(indexOfFocusable(d.focusable, d.fServer))
+	d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fServer))
 	d.forPeer, d.peerThen = true, then
 }
 
 func (d *ConnectDialog) setFocus(i int) {
 	d.onButtons = false
-	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
+	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
 	// Every focus change blurs the old field: the preview refreshes once a
 	// field is left, not per keystroke.
 	d.refreshConnStrPreview()
@@ -735,7 +728,7 @@ func (d *ConnectDialog) FocusClipboardTargetAt(x, y int) bool {
 	if d.connecting {
 		return false
 	}
-	i := clipboardFieldAt(d.focusable, x, y)
+	i := dialogs.ClipboardFieldAt(d.focusable, x, y)
 	if i < 0 || d.focusable[i] == focusable(d.fConnStrPreview) {
 		return false
 	}
@@ -749,5 +742,5 @@ func (d *ConnectDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	if d.onButtons {
 		return nil
 	}
-	return focusedClipboardTarget(d.focusable, d.focusIdx)
+	return dialogs.FocusedClipboardTarget(d.focusable, d.focusIdx)
 }

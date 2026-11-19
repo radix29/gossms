@@ -185,12 +185,12 @@ func TestPicturePanelZoomAndPan(t *testing.T) {
 	// Panning stops at the art's edges.
 	pp.scrollBy(1000, 1000)
 	art, area := pp.render(), pp.artArea()
-	if pp.scrollX != art.Cols-area.W || pp.scrollY != art.Rows-area.H {
-		t.Errorf("scrolled to %d,%d, want the far corner %d,%d", pp.scrollX, pp.scrollY, art.Cols-area.W, art.Rows-area.H)
+	if pp.vp.X != art.Cols-area.W || pp.vp.Y != art.Rows-area.H {
+		t.Errorf("scrolled to %d,%d, want the far corner %d,%d", pp.vp.X, pp.vp.Y, art.Cols-area.W, art.Rows-area.H)
 	}
 	pp.scrollBy(-1000, -1000)
-	if pp.scrollX != 0 || pp.scrollY != 0 {
-		t.Errorf("scrolled to %d,%d, want 0,0", pp.scrollX, pp.scrollY)
+	if pp.vp.X != 0 || pp.vp.Y != 0 {
+		t.Errorf("scrolled to %d,%d, want 0,0", pp.vp.X, pp.vp.Y)
 	}
 	// Zoom never passes its cap, and Fit goes back.
 	for range 100 {
@@ -200,7 +200,7 @@ func TestPicturePanelZoomAndPan(t *testing.T) {
 		t.Errorf("zoomed to %d, cap is %d", pp.zoomCols, pp.maxZoomCols())
 	}
 	pp.runTool(picToolFit)
-	if pp.zoomed() || pp.scrollX != 0 || pp.scrollY != 0 {
+	if pp.zoomed() || pp.vp.X != 0 || pp.vp.Y != 0 {
 		t.Error("Fit left the panel zoomed or scrolled")
 	}
 }

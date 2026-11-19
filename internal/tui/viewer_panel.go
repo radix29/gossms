@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/layout"
@@ -67,37 +66,6 @@ func (p *viewerPanel) layoutChildren() {
 	p.gridRect = p.splitter.FirstRect()
 	p.detailRect = p.splitter.SecondRect()
 	p.grid.SetBounds(p.gridRect.X, p.gridRect.Y, p.gridRect.W, p.gridRect.H)
-}
-
-// drawToolCells paints the toolbar row in Activity Monitor's tooltip scheme:
-// each laid-out cell, dimmed where disabled says so, then "More ▾", dimmed
-// when moreDim. Reports false when there is no row to paint.
-func (p *viewerPanel) drawToolCells(s tcell.Screen, disabled func(int) bool, moreDim bool) bool {
-	if p.toolRect.H != 1 {
-		return false
-	}
-	pal := theme.Active()
-	core.FillRect(s, p.toolRect, ' ', theme.StyleMenuBar())
-	for i, t := range p.tools.Cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if disabled(i) {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
-	if !p.tools.More.Rect.IsZero() {
-		style := theme.StyleTooltip()
-		if moreDim {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, p.tools.More.Rect, ' ', style)
-		core.DrawText(s, p.tools.More.Rect.X+1, p.tools.More.Rect.Y, style, p.tools.More.Label)
-	}
-	return true
 }
 
 // scrollDetailLines moves the details pane by delta lines, clamped to n, the

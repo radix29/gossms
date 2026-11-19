@@ -17,14 +17,12 @@ func TestQueryListDialogLastRowAboveButtons(t *testing.T) {
 	scr := tuikittest.NewScreen(80, 30)
 	a.setScreen(scr)
 
-	d := &QueryListDialog{app: a}
-	d.InitModal("Query List", 56, 16)
-	d.SetScreen(a.screen)
+	d := withScreen(NewQueryListDialog(a), a.screen)
 	for i := range 20 {
 		d.titles = append(d.titles, "Query "+strconv.Itoa(i))
 		d.indices = append(d.indices, i)
 	}
-	d.ModalDialog.Show()
+	d.ListDialog.Show() // the rows above, not a snapshot of a.panels
 	for range len(d.titles) {
 		d.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 	}

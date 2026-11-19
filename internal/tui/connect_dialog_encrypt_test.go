@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/radix29/tuikit/dialogs"
 	"slices"
 	"strings"
 	"testing"
@@ -41,7 +42,7 @@ func TestConnectCertificateValidationReachesTheDriver(t *testing.T) {
 	t.Run("explicit opt-in and reset", func(t *testing.T) {
 		d := NewConnectDialog(newTestApp())
 		d.Show()
-		d.setFocus(indexOfFocusable(d.focusable, d.cbTrust))
+		d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.cbTrust))
 		d.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
 		check(t, d, true)
 		d.btnFocus = connectBtnNew

@@ -122,7 +122,7 @@ type RestoreDialog struct {
 	focusable []focusable
 	btnFocus  int
 	// onButtons is set while the form's or the Files view's button row holds keyboard
-	// focus (the stop past either end of the view's Tab ring, see buttonRowKey). The
+	// focus (the stop past either end of the view's Tab ring, see dialogs.ButtonRowKey). The
 	// view's fields are blurred meanwhile.
 	onButtons bool
 
@@ -335,7 +335,7 @@ func (d *RestoreDialog) rebuildFocusable() {
 
 func (d *RestoreDialog) setFocus(i int) {
 	d.onButtons = false
-	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
+	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
 }
 
 // stepFocus is the form's Tab (+1) or Backtab (-1): past either end of the
@@ -346,14 +346,14 @@ func (d *RestoreDialog) stepFocus(dir int) {
 		return
 	}
 	d.onButtons = true
-	setFocusIn(d.focusable, -1, d.focusIdx)
+	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
 }
 
 // refocus re-applies the form's focus after rebuildFocusable swapped a dropdown,
 // leaving it on the button row if it was there; see BackupDialog.refocus.
 func (d *RestoreDialog) refocus() {
 	if d.onButtons {
-		setFocusIn(d.focusable, -1, d.focusIdx)
+		dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
 		return
 	}
 	d.setFocus(d.focusIdx)
@@ -381,7 +381,7 @@ func (d *RestoreDialog) leaveButtons(dir int) {
 
 // focusTo moves focus to w, if it's in the focusable list.
 func (d *RestoreDialog) focusTo(w focusable) {
-	if i := indexOfFocusable(d.focusable, w); i >= 0 {
+	if i := dialogs.IndexOfFocusable(d.focusable, w); i >= 0 {
 		d.setFocus(i)
 	}
 }
@@ -657,12 +657,12 @@ func (d *RestoreDialog) doProgressButton() {
 func (d *RestoreDialog) FocusClipboardTargetAt(x, y int) bool {
 	switch d.mode {
 	case restoreModeForm:
-		if i := clipboardFieldAt(d.focusable, x, y); i >= 0 {
+		if i := dialogs.ClipboardFieldAt(d.focusable, x, y); i >= 0 {
 			d.setFocus(i)
 			return true
 		}
 	case restoreModeFiles:
-		if i := clipboardFieldAt(d.filesFocusCycle(), x, y); i >= 0 {
+		if i := dialogs.ClipboardFieldAt(d.filesFocusCycle(), x, y); i >= 0 {
 			d.setFilesFocus(i)
 			return true
 		}
@@ -679,10 +679,10 @@ func (d *RestoreDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	}
 	switch d.mode {
 	case restoreModeForm:
-		return focusedClipboardTarget(d.focusable, d.focusIdx)
+		return dialogs.FocusedClipboardTarget(d.focusable, d.focusIdx)
 	case restoreModeFiles:
 		// The Files view's folder fields: without this arm Ctrl+C/V there did nothing.
-		return focusedClipboardTarget(d.filesFocusCycle(), d.filesFocus)
+		return dialogs.FocusedClipboardTarget(d.filesFocusCycle(), d.filesFocus)
 	}
 	return nil
 }

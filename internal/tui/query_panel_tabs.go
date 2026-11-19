@@ -8,6 +8,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/controls/editor"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
@@ -85,15 +86,13 @@ func (p *QueryPanel) planTabActive() bool {
 	return p.activeTab == len(p.result.Sets)
 }
 
-// tabSegments computes each result-tab's on-screen extent for labels. Draw and
-// hit-test both build their column math from this call so hits line up with
-// what's on screen.
-func (p *QueryPanel) tabSegments(labels []string) [][]core.TabSegment {
-	widths := make([][]int, len(labels))
-	for i, label := range labels {
-		widths[i] = []int{core.TabLabelWidth(label)}
-	}
-	return core.TabStripSegments(p.tabRect.X+1, widths, p.tabRect.Right())
+// tabBar returns the result-set/Messages tab bar for the current result,
+// built fresh each call so the labels and active tab are never stale; draw and
+// hit-test share it, so hits line up with what's on screen.
+func (p *QueryPanel) tabBar() *controls.TabBar {
+	b := &controls.TabBar{Labels: p.resultTabs(), Active: p.activeTab, Inset: 1, OnSelect: p.setActiveTab}
+	b.SetBounds(p.tabRect.X, p.tabRect.Y, p.tabRect.W)
+	return b
 }
 
 // drawTabBar renders the result-set/Messages tabs, styled like the
@@ -102,17 +101,7 @@ func (p *QueryPanel) drawTabBar(s tcell.Screen) {
 	if p.tabRect.H != 1 {
 		return
 	}
-	pal := theme.Active()
-	barStyle := theme.StyleMenuBar()
-	core.FillRect(s, p.tabRect, ' ', barStyle)
-	labels := p.resultTabs()
-	for i, seg := range p.tabSegments(labels) {
-		tabStyle := barStyle
-		if i == p.activeTab {
-			tabStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
-		}
-		core.DrawText(s, seg[0].X, p.tabRect.Y, tabStyle, " "+labels[i]+" ")
-	}
+	p.tabBar().Draw(s)
 }
 
 // resultTabs returns the tab labels for the last result: one per result set
@@ -161,16 +150,6 @@ func (p *QueryPanel) setActiveTab(i int) {
 	}
 	p.activeTab = i
 	p.renderActiveTab()
-}
-
-// tabAt returns the tab index at screen column mx on the tab bar, or -1.
-func (p *QueryPanel) tabAt(mx int) int {
-	for i, seg := range p.tabSegments(p.resultTabs()) {
-		if mx >= seg[0].X && mx < seg[0].X+seg[0].W {
-			return i
-		}
-	}
-	return -1
 }
 
 // renderActiveTab loads the active tab's content into the results grid or

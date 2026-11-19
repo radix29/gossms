@@ -108,10 +108,7 @@ func (pt *amProcTab) optionByKey(r rune) int {
 
 // optionLabel is option i's toolbar label, its state as a check box.
 func (pt *amProcTab) optionLabel(i int) string {
-	if pt.on[i] {
-		return "☑ " + pt.proc.Options[i].Label
-	}
-	return "☐ " + pt.proc.Options[i].Label
+	return controls.CheckMark(pt.on[i]) + pt.proc.Options[i].Label
 }
 
 // procTab is the showing procedure tab, nil otherwise.

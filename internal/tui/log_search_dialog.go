@@ -159,11 +159,11 @@ func (d *LogSearchDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 	switch ev.Key() {
 	case tcell.KeyTab:
-		d.focusIdx = nextFocus(d.focusIdx, d.focusCount())
+		d.focusIdx = dialogs.NextFocus(d.focusIdx, d.focusCount())
 		d.syncFocus()
 		return true
 	case tcell.KeyBacktab:
-		d.focusIdx = prevFocus(d.focusIdx, d.focusCount())
+		d.focusIdx = dialogs.PrevFocus(d.focusIdx, d.focusCount())
 		d.syncFocus()
 		return true
 	case tcell.KeyEscape:
@@ -311,7 +311,7 @@ func formatLogSearchTime(t time.Time) string {
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
 // search field focuses it.
 func (d *LogSearchDialog) FocusClipboardTargetAt(x, y int) bool {
-	i := clipboardFieldAt(d.fields(), x, y)
+	i := dialogs.ClipboardFieldAt(d.fields(), x, y)
 	if i < 0 {
 		return false
 	}
@@ -323,5 +323,5 @@ func (d *LogSearchDialog) FocusClipboardTargetAt(x, y int) bool {
 // FocusedClipboardTarget implements core.ClipboardHost — every field here is
 // text the user pastes into.
 func (d *LogSearchDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	return focusedClipboardTarget(d.fields(), d.focusIdx)
+	return dialogs.FocusedClipboardTarget(d.fields(), d.focusIdx)
 }

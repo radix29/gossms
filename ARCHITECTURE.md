@@ -348,12 +348,10 @@ gossms/
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
 │       ├── permission_error.go   # names the right a refusal (classified by gosmo.ClassifyRefusal) wants, instead of the wrapped driver error
-│       ├── dialog_common.go      # focus/layout behaviour shared by the hand-rolled dialogs (Connect, Backup, Restore, Tasks, Query List)
+│       ├── dialog_common.go      # the goSSMS-specific part of the hand-rolled dialogs: the Backup/Restore progress button and keyboard, the discard-changes confirmation (the generic focus-ring helpers are tuikit's dialogs/focus_ring.go)
 │       ├── text_encoding.go      # decodeTextFile/encodeTextFile — internal/textenc's BOM-detected encoding plus the file's own line endings, so File > Save writes back what File > Open read
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
-│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields, incl. bracketed-paste buffering
-│       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
-│       ├── os_clipboard_windows.go # the Windows clipboard through the Win32 API (CF_UNICODETEXT); the one GOOS-suffixed file
+│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields: target resolution, newest-copy-wins, OSC 52 fallback, bracketed paste (the OS clipboard and paste buffer are tuikit's clipboard package)
 │       │
 │       │  ── Query panel & IntelliSense ──
 │       ├── query_panel.go        # QueryPanel state/layout, implements layout.Panel
@@ -389,9 +387,8 @@ gossms/
 │       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
 │       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
-│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
+│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, the box itself is tuikit charts.DrawReadout, shared with the Detail Browser strip
 │       ├── activity_monitor_toolbar.go # toolbar cells per tab (rate, Pause/Continue, Refresh), overflow menu, and the collection-state summary and dashboard header
-│       ├── chart_tooltip.go      # the pinned chart readout box itself, shared by Activity Monitor and the Detail Browser's disk-usage strip
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, the procedure's option switches (activity.ProcOption: Sessions' Sleeping Sessions / Additional Info), result grid, Kill Process
 │       │
 │       │  ── Log File Viewer ──
@@ -456,7 +453,7 @@ gossms/
 │       ├── detail_browser_resource_governor.go # Resource Governor: stored vs in-force configuration, pool and group grids with live DMV counters (blank without VIEW SERVER STATE), one pool / group / external pool
 │       ├── detail_browser_database_mail.go # Database Mail: status, queues, profiles, accounts, latest failed items — each section "not visible" alone when its right is missing
 │       ├── detail_browser_xevents.go    # Extended Events: the Sessions folder (state, startup, events, targets, dropped), one session's events + targets, one target's settings + runtime counters
-│       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
+│       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned readout (charts.DrawReadout)
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
 │       ├── detail_browser_drill.go      # double-click navigation: a row selects the tree child it stands for (by row object key, else label), waiting for the folder's first load; Show Value otherwise; the server and database records' leading folder rows (childFolderRows)
 │       ├── detail_browser_sort.go       # header-click column sort of list views: the pane reorders rows and row objects together, numbers by value, placeholders last
@@ -494,9 +491,9 @@ gossms/
 │       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over editor.Editor's search engine
 │       ├── filter_dialog.go      # Object Explorer > Filter Settings — one operator/value row per filterable property
 │       ├── options_dialog.go     # Tools > Options — icon style, max cell length, IntelliSense on/off, saved to config.json
-│       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels
-│       ├── tasks_dialog.go       # Tools > Background Tasks — live task list + Cancel
-│       ├── help_dialog.go        # F1 help modal (embeds dialogs.ModalDialog)
+│       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels (a dialogs.ListDialog)
+│       ├── tasks_dialog.go       # Tools > Background Tasks — live task list + Cancel (a dialogs.ListDialog)
+│       ├── help_dialog.go        # F1 help modal — helpLines in a dialogs.TextDialog
 │       ├── key_diagnostics_dialog.go # Help > Key Diagnostics — shows tcell's decoded Key/Modifiers/rune per keypress
 │       ├── status_history_dialog.go  # running, timestamped, capped log of status-bar messages
 │       ├── update_check.go       # Help > Check for Updates — GitHub releases API + semver compare
@@ -766,7 +763,7 @@ enforces it over its own dialogs and tuikit's from the source:
 reads tuikit's `dialogs` through `go list`); the five tests in
 `internal/tui/dialog_drag_test.go` fail on a mutation of any of the three main
 calls. The release to the *focused* field, as opposed to the one that claimed
-the press, is `forwardReleaseToFocusedField` (`dialog_common.go`): it covers a
+the press, is tuikit's `dialogs.ForwardReleaseToFocusedField`: it covers a
 focused `*editor.Editor`, which no goSSMS dialog hands `FieldGesture` (it
 takes any `core.MouseHandler`, but every `Claim` here is a text field).
 

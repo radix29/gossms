@@ -10,7 +10,6 @@ import (
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/layout"
-	"github.com/radix29/tuikit/theme"
 )
 
 // plan_compare_panel.go is SSMS's Compare Showplan: two plans of one query read
@@ -210,7 +209,7 @@ func statementMenuItems(plan *showplan.Plan, current int, choose func(int)) []co
 	for i, st := range plan.Statements {
 		text := fmt.Sprintf("%d. %s", i+1, core.Truncate(textutil.Collapse(st.Text), 60))
 		if i == current {
-			text = "• " + text
+			text = controls.ChoiceMark + text
 		}
 		hasPlan := st.Root != nil
 		items = append(items, controls.MenuItem{
@@ -458,13 +457,7 @@ func (p *PlanComparePanel) layoutChildren() {
 
 // Draw renders the title bar and both grids.
 func (p *PlanComparePanel) Draw(s tcell.Screen) {
-	pal := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.MenuText)
-	if p.active {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
-	}
-	core.FillRect(s, core.Rect{X: p.rect.X, Y: p.rect.Y, W: p.rect.W, H: 1}, ' ', titleStyle)
-	core.DrawTextClipped(s, p.rect.X+1, p.rect.Y, p.rect.W-2, titleStyle, p.title)
+	layout.DrawTitleBar(s, p.rect, p.title, p.active, "")
 	p.drawPickers(s)
 	p.split.Draw(s)
 	p.props.Draw(s)
@@ -476,25 +469,14 @@ func (p *PlanComparePanel) Draw(s tcell.Screen) {
 	p.ops.DrawOverlay(s)
 }
 
-// drawPickers paints the statement-picker row in the tooltip scheme Query
-// Store's toolbar uses. A picker on a one-statement side is dimmed: its menu
-// would offer the statement already compared.
+// drawPickers paints the statement-picker row. A picker on a one-statement side
+// is dimmed: its menu would offer the statement already compared. The row has no
+// More (NoOverflow).
 func (p *PlanComparePanel) drawPickers(s tcell.Screen) {
-	if p.toolRect.H != 1 {
-		return
-	}
-	core.FillRect(s, p.toolRect, ' ', theme.StyleMenuBar())
-	for i, t := range p.pickers.Cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if plan, _ := p.side(i); statementCount(plan) < 2 {
-			style = style.Foreground(theme.Active().TextDim)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
+	p.pickers.Draw(s, p.toolRect, func(i int) bool {
+		plan, _ := p.side(i)
+		return statementCount(plan) < 2
+	}, false)
 }
 
 // HandleKey routes to the focused grid, after Tab, the statement keys and the

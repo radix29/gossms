@@ -31,7 +31,7 @@ type detailChart struct {
 // move them (layout).
 type detailTooltip struct {
 	title string
-	rows  []tooltipRow
+	rows  []charts.ReadoutRow
 	// x and y are the screen position of the click, which the box is placed
 	// against.
 	x, y int
@@ -120,7 +120,7 @@ func (db *DetailBrowser) pinChartTooltip(mx, my int) *detailTooltip {
 // Segments the bar drops are dropped here too: StackedBar plots only
 // positive values, and a row for one it never drew names a colour that is
 // not in the picture.
-func (c detailChart) tooltipRows() []tooltipRow {
+func (c detailChart) tooltipRows() []charts.ReadoutRow {
 	format := c.Format
 	if format == nil {
 		format = charts.FormatValue
@@ -131,7 +131,7 @@ func (c detailChart) tooltipRows() []tooltipRow {
 			total += v
 		}
 	}
-	rows := make([]tooltipRow, 0, len(c.Series))
+	rows := make([]charts.ReadoutRow, 0, len(c.Series))
 	for _, ser := range c.Series {
 		v := ser.At(0)
 		if v <= 0 {
@@ -141,7 +141,7 @@ func (c detailChart) tooltipRows() []tooltipRow {
 		if total > 0 {
 			value = fmt.Sprintf("%s  %.1f%%", value, v/total*100)
 		}
-		rows = append(rows, tooltipRow{label: ser.Label, value: value, color: ser.Color})
+		rows = append(rows, charts.ReadoutRow{Label: ser.Label, Value: value, Color: ser.Color})
 	}
 	return rows
 }
@@ -153,11 +153,11 @@ func (db *DetailBrowser) drawChartTooltip(s tcell.Screen) {
 	if db.tooltip == nil {
 		return
 	}
-	w, h := tooltipBoxSize(db.tooltip.title, db.tooltip.rows)
+	w, h := charts.ReadoutSize(db.tooltip.title, db.tooltip.rows)
 	if w > db.rect.W || h > db.rect.H {
 		return // no room to show it honestly
 	}
-	drawTooltipBox(s, placeTooltipBox(w, h, db.tooltip.x, db.tooltip.y, db.rect, -1),
+	charts.DrawReadout(s, charts.PlaceReadout(w, h, db.tooltip.x, db.tooltip.y, db.rect, -1),
 		db.tooltip.title, db.tooltip.rows)
 }
 
