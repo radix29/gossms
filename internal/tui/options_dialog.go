@@ -426,7 +426,7 @@ func (d *OptionsDialog) apply() {
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
 // number field focuses it.
 func (d *OptionsDialog) FocusClipboardTargetAt(x, y int) bool {
-	i := clipboardFieldAt(d.focusable, x, y)
+	i := dialogs.ClipboardFieldAt(d.focusable, x, y)
 	if i < 0 {
 		return false
 	}
@@ -437,7 +437,7 @@ func (d *OptionsDialog) FocusClipboardTargetAt(x, y int) bool {
 // FocusedClipboardTarget implements core.ClipboardHost: whichever input field
 // has focus. The radio box, checkbox and button row answer nil.
 func (d *OptionsDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	return focusedClipboardTarget(d.focusable, d.focusIdx)
+	return dialogs.FocusedClipboardTarget(d.focusable, d.focusIdx)
 }
 
 // applyColorTheme makes t's palette the active one, and s's default style its

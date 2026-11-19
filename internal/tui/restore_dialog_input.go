@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -36,7 +37,7 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 
 	if d.onButtons {
-		return buttonRowKey(ev, &d.btnFocus, len(restoreFormButtons), nil, d.doFormButton, d.Hide, d.leaveButtons)
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(restoreFormButtons), nil, d.doFormButton, d.Hide, d.leaveButtons)
 	}
 
 	openDD := d.openDropDown()
@@ -150,7 +151,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	if forwardReleaseToFocusedField(ev, d.focusable[d.focusIdx]) {
+	if dialogs.ForwardReleaseToFocusedField(ev, d.focusable[d.focusIdx]) {
 		return true
 	}
 	if ev.Buttons() != tcell.Button1 {

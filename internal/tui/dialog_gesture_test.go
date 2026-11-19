@@ -311,15 +311,15 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 				"will survive into the next showing and route every click to that field", owner)
 		}
 		// The release forwarded to the *focused* field, as opposed to the
-		// one that claimed the press, is forwardReleaseToFocusedField's job.
-		// Backup, Restore and Connect each wrote the switch out by hand, and
-		// Connect's grew the Editor arm the other two still lack — which is
-		// how a stanza three dialogs share stops being the same stanza. Only
-		// package tui is asked: the helper lives there, and tuikit knows
-		// nothing about it.
+		// one that claimed the press, is dialogs.ForwardReleaseToFocusedField's
+		// job. Backup, Restore and Connect each wrote the switch out by hand,
+		// and Connect's grew the Editor arm the other two still lack — which
+		// is how a stanza three dialogs share stops being the same stanza.
+		// Only package tui is asked: the rule is goSSMS's, and tuikit's own
+		// dialogs keep their private focus handling.
 		if strings.HasPrefix(owner, "tui.") && forwardsReleaseByHand(m.handleMouse) {
 			t.Errorf("%s.HandleMouse type-asserts its focused widget to an InputField or "+
-				"an Editor to forward a release — call forwardReleaseToFocusedField instead, "+
+				"an Editor to forward a release — call dialogs.ForwardReleaseToFocusedField instead, "+
 				"or the arms drift apart per dialog", owner)
 		}
 
@@ -351,8 +351,8 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 }
 
 // forwardsReleaseByHand reports whether d open-codes the release forwarding
-// that forwardReleaseToFocusedField does: a type assertion or a type switch
-// naming InputField or Editor. Matching on the leaf type name rather than the
+// that dialogs.ForwardReleaseToFocusedField does: a type assertion or a type
+// switch naming InputField or Editor. Matching on the leaf type name rather than the
 // qualified one keeps it working from inside either package.
 func forwardsReleaseByHand(d *ast.FuncDecl) bool {
 	isField := func(e ast.Expr) bool {

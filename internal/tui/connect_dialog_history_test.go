@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/radix29/tuikit/dialogs"
 	"slices"
 	"strings"
 	"testing"
@@ -177,7 +178,7 @@ func TestConnectDialogNarrowTerminalDropsTheHistoryPane(t *testing.T) {
 	if d.twoPane {
 		t.Fatalf("an 80-column terminal still drew the History pane")
 	}
-	if i := indexOfFocusable(d.focusable, d.history); i >= 0 {
+	if i := dialogs.IndexOfFocusable(d.focusable, d.history); i >= 0 {
 		t.Errorf("the History pane is in the focus ring at %d in one-pane mode", i)
 	}
 	if got := d.Rect().W; got > 80 {
@@ -194,7 +195,7 @@ func TestConnectDialogNarrowTerminalDropsTheHistoryPane(t *testing.T) {
 	if !d.twoPane {
 		t.Fatalf("widening the terminal did not bring the History pane back")
 	}
-	if indexOfFocusable(d.focusable, d.history) < 0 {
+	if dialogs.IndexOfFocusable(d.focusable, d.history) < 0 {
 		t.Errorf("the History pane is drawn but not in the focus ring")
 	}
 }
@@ -205,23 +206,23 @@ func TestConnectDialogTabRingHoldsOnlyTheVisibleTab(t *testing.T) {
 	d := twoPaneConnectDialog(t)
 
 	for _, w := range []focusable{d.fServer, d.ddAuth, d.fPassword, d.fExtraProps} {
-		if indexOfFocusable(d.focusable, w) < 0 {
+		if dialogs.IndexOfFocusable(d.focusable, w) < 0 {
 			t.Errorf("%T is not reachable on the Connection Properties tab", w)
 		}
 	}
-	if indexOfFocusable(d.focusable, d.fConnStrPreview) >= 0 {
+	if dialogs.IndexOfFocusable(d.focusable, d.fConnStrPreview) >= 0 {
 		t.Error("the connection-string editor is reachable from the properties tab")
 	}
 
 	d.setTab(connectTabString)
-	if indexOfFocusable(d.focusable, d.fConnStrPreview) < 0 {
+	if dialogs.IndexOfFocusable(d.focusable, d.fConnStrPreview) < 0 {
 		t.Error("the connection-string editor is not reachable on its own tab")
 	}
-	if indexOfFocusable(d.focusable, d.fExtraProps) < 0 {
+	if dialogs.IndexOfFocusable(d.focusable, d.fExtraProps) < 0 {
 		t.Error("the Custom Properties editor is on both tabs but not in the ring")
 	}
 	for _, w := range []focusable{d.fServer, d.ddAuth, d.fPassword, d.cbRemember, d.ddEncrypt} {
-		if i := indexOfFocusable(d.focusable, w); i >= 0 {
+		if i := dialogs.IndexOfFocusable(d.focusable, w); i >= 0 {
 			t.Errorf("%T (properties tab) is reachable at %d from the connection-string tab", w, i)
 		}
 	}

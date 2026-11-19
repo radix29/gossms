@@ -125,7 +125,7 @@ func TestRightClickOnADisabledFieldOpensNoClipboardMenu(t *testing.T) {
 }
 
 // FilterDialog has its own hit test over its rows; it skips a disabled value
-// field like clipboardFieldAt does.
+// field like dialogs.ClipboardFieldAt does.
 func TestFilterDialogRightClickSkipsADisabledValueField(t *testing.T) {
 	d := showTestFilterDialogOnScreen(t, 120, 30)
 	v := d.rows[1].value
@@ -149,7 +149,7 @@ func TestFilterDialogRightClickSkipsADisabledValueField(t *testing.T) {
 // over the still-open list.
 func TestRightClickOnAnOpenDropdownListOpensNoClipboardMenu(t *testing.T) {
 	a, d := connectDialogOnStack(t)
-	d.setFocus(indexOfFocusable(d.focusable, d.ddAuth))
+	d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.ddAuth))
 	d.ddAuth.HandleKey(tcell.NewEventKey(tcell.KeyF4, "", tcell.ModNone))
 	if !d.ddAuth.OverlayActive() {
 		t.Fatal("setup: F4 did not open the Authentication list")
@@ -243,7 +243,9 @@ func TestLogViewerFilterIsAClipboardTarget(t *testing.T) {
 		t.Fatalf("target = %T, want the filter box", got)
 	}
 	a.beginBracketedPaste()
-	a.paste.buf.WriteString("error")
+	for _, r := range "error" {
+		a.paste.bracket.Key(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+	}
 	a.endBracketedPaste()
 	if lv.filter.Value() != "error" {
 		t.Errorf("filter = %q after a terminal paste, want %q", lv.filter.Value(), "error")

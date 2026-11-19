@@ -85,7 +85,25 @@ row) and `DrawReadout`, with the placement comment intact. `charts` already
 imports only `core`/`theme`; no new layering edge. The tooltip state and pin
 identity (a sample in time vs a chart panel) stay in each gossms panel.
 
-## 3. Focus-ring helpers — `dialog_common.go` → `dialogs/focus_ring.go`
+## 3. Focus-ring helpers — `dialog_common.go` → `dialogs/focus_ring.go` — DONE 2026-11-19
+
+`SetFocusIn`, `IndexOfFocusable`, `FocusableEnabled` (was Connect's
+`focusableEnabled`; `ClipboardFieldAt` needs it), `FocusedClipboardTarget`,
+`ClipboardFieldAt`, `NextFocus`/`PrevFocus`, `ScrollToShow`, `ButtonRowKey`,
+`StepButton` and `ForwardReleaseToFocusedField` are in tuikit
+`dialogs/focus_ring.go` (tests in `dialogs/focus_ring_test.go`); every gossms
+caller uses them and `dialog_common.go` keeps only `runProgressButton`,
+`progressModeKey` and `confirmDiscardChanges`. `ForwardReleaseToFocusedField`
+can't name `*editor.Editor` from `dialogs` (no `dialogs → controls/editor`
+edge), so it forwards to any focused `core.ClipboardTarget` that is a
+`core.MouseHandler` — the same set in every gossms ring (InputField, Editor;
+checkboxes, radios and dropdowns are not targets). The optional follow-up
+(tuikit's own dialogs adopting the helpers) is not done. Driven live on
+win10cli: Tab/Backtab and the button rows (gated buttons skipped, stops at
+the ends, letters swallowed) in Connect, Back Up, Restore, Find and Log
+Search; right-click Cut/Copy/Paste on a field in each (none on a disabled
+field or a label); a selection drag in Connect's Custom Properties editor
+released outside the dialog stays ended.
 
 The helpers over a dialog's flat `[]core.Focusable` focus ring are generic,
 and pair with what `dialogs.ModalDialog` already offers
@@ -106,7 +124,22 @@ the helpers instead of their private `setFocus`.
 Tests move with the code (the `dialog_common_test.go` cases for these
 functions).
 
-## 4. Clipboard backend → new package `tuikit/clipboard`
+## 4. Clipboard backend → new package `tuikit/clipboard` — DONE 2026-11-19
+
+`clipboard.Write`/`Read` (native.go, with the `lookPath`-seamed `detect`),
+the Win32 path (native_windows.go, now tuikit's one GOOS-suffixed file),
+`TerminalLikely`, `PasteBuffer{Begin, Active, Key, End}` and `StripBOMs` are in
+tuikit `clipboard/` (tests beside them, including the line-break shapes moved
+from gossms). The package imports tcell only — `"clipboard": {}` in
+`tuikitLayers`. `os_clipboard*.go` are gone; `clipboard.go` keeps the App
+wiring and holds a `clipboard.PasteBuffer` in `appPaste`. Driven live:
+locally (xclip) copy/paste in the editor and Connect's Server Name; with no
+native tool under tmux, OSC 52 copy (unhedged status: tmux recognised) and
+OSC 52 paste through a pty proxy, BOM stripped; bracketed pastes of CRLF, raw
+LF and CR-converted text with a tab; on win10cli in Windows Terminal over RDP,
+Win32 copy and read in a dialog field and the editor (BOM stripped) and WT's
+Ctrl+V bracketed paste of a CRLF clipboard (one break per line).
+`scripts/wintest.sh`: `internal/tui` and tuikit `clipboard` pass on Windows.
 
 The biggest move and the most useful to other tuikit hosts: every terminal app
 needs the native clipboard with an OSC 52 fallback, and bracketed paste.

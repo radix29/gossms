@@ -365,11 +365,11 @@ func (d *FindReplaceDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 	switch ev.Key() {
 	case tcell.KeyTab:
-		d.focusIdx = nextFocus(d.focusIdx, d.focusCount())
+		d.focusIdx = dialogs.NextFocus(d.focusIdx, d.focusCount())
 		d.syncFocus()
 		return true
 	case tcell.KeyBacktab:
-		d.focusIdx = prevFocus(d.focusIdx, d.focusCount())
+		d.focusIdx = dialogs.PrevFocus(d.focusIdx, d.focusCount())
 		d.syncFocus()
 		return true
 	case tcell.KeyEscape:
@@ -584,7 +584,7 @@ func (a *App) hasEditorSearch() bool {
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on the
 // Find or Replace field focuses it.
 func (d *FindReplaceDialog) FocusClipboardTargetAt(x, y int) bool {
-	i := clipboardFieldAt(d.fields(), x, y)
+	i := dialogs.ClipboardFieldAt(d.fields(), x, y)
 	if i < 0 {
 		return false
 	}
@@ -596,5 +596,5 @@ func (d *FindReplaceDialog) FocusClipboardTargetAt(x, y int) bool {
 // what / Replace with fields has focus, nil on the checkboxes. Without it
 // Ctrl+X cuts the *editor's* selection behind the dialog.
 func (d *FindReplaceDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	return focusedClipboardTarget(d.fields(), d.focusIdx)
+	return dialogs.FocusedClipboardTarget(d.fields(), d.focusIdx)
 }

@@ -348,12 +348,10 @@ gossms/
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
 │       ├── permission_error.go   # names the right a refusal (classified by gosmo.ClassifyRefusal) wants, instead of the wrapped driver error
-│       ├── dialog_common.go      # focus/layout behaviour shared by the hand-rolled dialogs (Connect, Backup, Restore, Tasks, Query List)
+│       ├── dialog_common.go      # the goSSMS-specific part of the hand-rolled dialogs: the Backup/Restore progress button and keyboard, the discard-changes confirmation (the generic focus-ring helpers are tuikit's dialogs/focus_ring.go)
 │       ├── text_encoding.go      # decodeTextFile/encodeTextFile — internal/textenc's BOM-detected encoding plus the file's own line endings, so File > Save writes back what File > Open read
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
-│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields, incl. bracketed-paste buffering
-│       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
-│       ├── os_clipboard_windows.go # the Windows clipboard through the Win32 API (CF_UNICODETEXT); the one GOOS-suffixed file
+│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields: target resolution, newest-copy-wins, OSC 52 fallback, bracketed paste (the OS clipboard and paste buffer are tuikit's clipboard package)
 │       │
 │       │  ── Query panel & IntelliSense ──
 │       ├── query_panel.go        # QueryPanel state/layout, implements layout.Panel
@@ -765,7 +763,7 @@ enforces it over its own dialogs and tuikit's from the source:
 reads tuikit's `dialogs` through `go list`); the five tests in
 `internal/tui/dialog_drag_test.go` fail on a mutation of any of the three main
 calls. The release to the *focused* field, as opposed to the one that claimed
-the press, is `forwardReleaseToFocusedField` (`dialog_common.go`): it covers a
+the press, is tuikit's `dialogs.ForwardReleaseToFocusedField`: it covers a
 focused `*editor.Editor`, which no goSSMS dialog hands `FieldGesture` (it
 takes any `core.MouseHandler`, but every `Claim` here is a text field).
 

@@ -169,7 +169,7 @@ which owns them; the entries here say how goSSMS applies them.
 - **A dialog's button row is reachable with Tab**, never only through a
   function key or the mouse. A propsheet dialog has `zoneButtons`; a dialog
   driving a flat `focusable` slice makes the row the stop past either end of
-  its ring and hands keys to `buttonRowKey` while it is there (Connect, Back Up,
+  its ring and hands keys to tuikit's `dialogs.ButtonRowKey` while it is there (Connect, Back Up,
   Restore). F1 is Help; it once cycled these rows, and was the only way to
   reach Restore's OK from the keyboard.
 - **A dialog-level scrollbar uses `ModalDialog.DrawContentScrollbar`, not
@@ -205,7 +205,7 @@ which owns them; the entries here say how goSSMS applies them.
   pointer (caret and selection untouched) and `App.openDialogClipboardMenu`
   opens `showClipboardMenu` (tuikit's `controls.ClipboardMenuItems`) there, on
   the fresh Button2 press only, ahead of the dialog's own routing. A flat-slice
-  dialog answers with `clipboardFieldAt` (`dialog_common.go`); a propsheet one
+  dialog answers with tuikit's `dialogs.ClipboardFieldAt`; a propsheet one
   inherits `PropertySheet`'s. Return false for a field with its own menu
   (Connect's preview) and in any mode where the field can't take input.
   `TestEveryDialogWithTextEntryIsAClipboardHost` checks both interfaces. Outside
@@ -223,8 +223,8 @@ which owns them; the entries here say how goSSMS applies them.
   reach the field through the clipboard target, so the right-click must focus
   the field first.
 - **A bracketed-paste newline arrives as `KeyEnter` (CR) or `KeyCtrlJ` (LF)**
-  — tcell's legacy key mode decodes a raw LF as Ctrl+J. `bufferPastedKey`
-  maps both to `\n`, skipping the LF of a CRLF. Dropping `KeyCtrlJ` ran every
+  — tcell's legacy key mode decodes a raw LF as Ctrl+J. tuikit's
+  `clipboard.PasteBuffer.Key` maps both to `\n`, skipping the LF of a CRLF. Dropping `KeyCtrlJ` ran every
   line together from Alacritty and tmux `paste-buffer -r`.
 - **Every dialog is modal: a query window opened from one is unreachable
   until it closes.** `modals.Top()` takes all input, so a button that hands the
@@ -311,9 +311,10 @@ which owns them; the entries here say how goSSMS applies them.
   TypedConfirm hand-rolled it wrong with all tests passing: a drag to the
   button row pressed the button, *accepting* a rename or a typed confirmation.
 - **The release to the *focused* field goes through
-  `forwardReleaseToFocusedField` (`dialog_common.go`)**, not a type switch — it
-  covers the focused `*editor.Editor`, which no dialog here `Claim`s.
-  (Its `InputField` arm is belt-and-braces; `FieldGesture.Clear` +
+  tuikit's `dialogs.ForwardReleaseToFocusedField`**, not a type switch — it
+  covers the focused `*editor.Editor`, which no dialog here `Claim`s (it
+  forwards to any focused text field: a `core.ClipboardTarget` that is a
+  `core.MouseHandler`). (Its `InputField` case is belt-and-braces; `FieldGesture.Clear` +
   `InputField.CancelMouseDrag` closed the one gap,
   `TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture`.) The `!=
   Button1` early return stays at the call site — Connect reads the wheel in

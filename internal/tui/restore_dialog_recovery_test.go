@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"github.com/radix29/tuikit/dialogs"
 	"strings"
 	"testing"
 	"time"
@@ -230,12 +231,12 @@ func TestCheckRecoveryFieldsRefusesOnTheForm(t *testing.T) {
 // STANDBY is picked; a hidden field left in the ring takes invisible keys.
 func TestStandbyFieldFollowsTheRecoveryOption(t *testing.T) {
 	d, _ := restoreDialogOnScreen(t)
-	inRing := func() bool { return indexOfFocusable(d.focusable, d.fStandby) >= 0 }
+	inRing := func() bool { return dialogs.IndexOfFocusable(d.focusable, d.fStandby) >= 0 }
 
 	if inRing() {
 		t.Fatal("the standby file is in the ring under WITH RECOVERY")
 	}
-	if indexOfFocusable(d.focusable, d.fStopAt) < 0 {
+	if dialogs.IndexOfFocusable(d.focusable, d.fStopAt) < 0 {
 		t.Fatal("the point in time is not in the ring")
 	}
 	d.focusTo(d.rbRecovery)

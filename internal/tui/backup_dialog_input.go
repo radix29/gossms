@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -16,7 +17,7 @@ func (d *BackupDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 
 	if d.onButtons {
-		return buttonRowKey(ev, &d.btnFocus, len(backupFormButtons), nil, d.doFormButton, d.Hide, d.leaveButtons)
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(backupFormButtons), nil, d.doFormButton, d.Hide, d.leaveButtons)
 	}
 
 	switch ev.Key() {
@@ -106,7 +107,7 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 
 	// Always forward a release to a focused input so a text-selection drag
 	// terminates cleanly, and drop anything that is not a left press.
-	if forwardReleaseToFocusedField(ev, d.focusable[d.focusIdx]) {
+	if dialogs.ForwardReleaseToFocusedField(ev, d.focusable[d.focusIdx]) {
 		return true
 	}
 	if ev.Buttons() != tcell.Button1 {

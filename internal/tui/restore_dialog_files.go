@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/radix29/tuikit/dialogs"
 	"slices"
 	"strings"
 
@@ -288,7 +289,7 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 // handleFilesKey routes keys in the Files view.
 func (d *RestoreDialog) handleFilesKey(ev *tcell.EventKey) bool {
 	if d.onButtons {
-		return buttonRowKey(ev, &d.btnFocus, len(restoreFilesButtons), nil, d.doFilesButton, d.backToForm, d.leaveButtons)
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(restoreFilesButtons), nil, d.doFilesButton, d.backToForm, d.leaveButtons)
 	}
 	cycle := d.filesFocusCycle()
 	switch ev.Key() {

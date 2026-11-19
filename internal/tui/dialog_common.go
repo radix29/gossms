@@ -2,136 +2,23 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/tuikit/controls/editor"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/widgets"
+	"github.com/radix29/tuikit/dialogs"
 )
 
-// dialog_common.go holds the small behaviours shared by the hand-rolled dialogs —
-// the ones that lay out widgets directly and drive focus with a flat slice, rather
-// than delegating to propsheet.Form's rows: Connect, Backup, Restore, Find/Replace
-// and Log Search. Tasks and Query List share only the list-scroll helper.
-//
-// Each dialog keeps its own state (`focusable`, `focusIdx`, `sel`, `scroll`,
-// `task`); only the operations over that state live here — focus and scroll
-// movement, the Backup/Restore progress button, and the discard-changes
-// confirmation. Embedded structs owning the fields would rename every direct
-// `d.focusable[d.focusIdx]` access for no behavioural gain.
+// dialog_common.go holds the goSSMS-specific behaviours shared by the
+// hand-rolled dialogs — the ones that lay out widgets directly and drive focus
+// with a flat slice, rather than delegating to propsheet.Form's rows: Connect,
+// Backup, Restore, Find/Replace and Log Search. The generic operations over
+// that focus ring (focus and scroll movement, the button-row keyboard, the
+// clipboard hit test, release forwarding) are tuikit's, in
+// dialogs/focus_ring.go; what stays here needs a *Task or the App — the
+// Backup/Restore progress button and the discard-changes confirmation.
 
 // focusable is a dialog's focus-ring entry: any tuikit control that takes
 // keyboard focus. Ask a ring entry for more through core's other control
 // interfaces (core.Enabler, core.KeyHandler), not a switch over widget types.
 type focusable = core.Focusable
-
-// setFocusIn focuses list[i], blurring every other entry, and reports the
-// index that ended up focused. An out-of-range i blurs everything and answers
-// cur, leaving the caller's index where it was.
-func setFocusIn(list []focusable, i, cur int) int {
-	for _, f := range list {
-		f.Focus(false)
-	}
-	if i >= 0 && i < len(list) {
-		list[i].Focus(true)
-		return i
-	}
-	return cur
-}
-
-// indexOfFocusable returns w's position in list, or -1. Identity comparison,
-// not equality: the callers hold the very pointers they put in the list.
-func indexOfFocusable(list []focusable, w focusable) int {
-	for i, f := range list {
-		if f == w {
-			return i
-		}
-	}
-	return -1
-}
-
-// focusedClipboardTarget answers core.ClipboardHost for a dialog that drives
-// focus with a flat slice: list[i] when the focused widget can take part in
-// Copy/Cut/Paste, and nil otherwise.
-//
-// The explicit nil in the miss arms is load-bearing. A typed nil widget put
-// into an interface is not a nil interface, and every caller of
-// App.activeClipboardTarget tests the result against nil before calling
-// through it.
-func focusedClipboardTarget(list []focusable, i int) core.ClipboardTarget {
-	if i < 0 || i >= len(list) {
-		return nil
-	}
-	if t, ok := list[i].(core.ClipboardTarget); ok {
-		return t
-	}
-	return nil
-}
-
-// clipboardFieldAt is core.ClipboardFocuser's hit test for a dialog that drives
-// focus with a flat slice: the index of the entry that is a text field (a
-// core.ClipboardTarget) drawn at (x, y), or -1. An InputField is hit on its box
-// (HitTest), as a left-click is, not on its label; anything else on its Bounds.
-// Buttons, checkboxes and dropdowns are not targets, so a right-click on one is
-// never taken for the clipboard. A disabled (greyed) field is skipped too, as
-// the left-click and Tab paths skip it: focusing one would leave the focus ring
-// on a widget that refuses every key and that Tab can never reach. Nothing is
-// hit while an entry's overlay is open (a dropdown's list): the list is drawn
-// over the fields below it, so the field under (x, y) is not what the user
-// right-clicked (core.ClipboardFocuser). Every dropdown of a dialog using this
-// helper is in its list, so this one check covers them all.
-func clipboardFieldAt(list []focusable, x, y int) int {
-	for _, f := range list {
-		if o, ok := f.(core.Overlay); ok && o.OverlayActive() {
-			return -1
-		}
-	}
-	for i, f := range list {
-		if _, ok := f.(core.ClipboardTarget); ok && focusableEnabled(f) && fieldHit(f, x, y) {
-			return i
-		}
-	}
-	return -1
-}
-
-// fieldHit reports whether (x, y) is on w: its HitTest where it has one (an
-// InputField's box), else its Bounds.
-func fieldHit(w any, x, y int) bool {
-	if h, ok := w.(interface{ HitTest(x, y int) bool }); ok {
-		return h.HitTest(x, y)
-	}
-	if b, ok := w.(core.Bounded); ok {
-		return b.Bounds().Contains(x, y)
-	}
-	return false
-}
-
-// nextFocus and prevFocus are Tab and Backtab over a list of n widgets.
-// n must be positive; every caller builds its list statically and none can be
-// empty, and an empty one divides by zero here exactly as it did at the seven
-// inline sites these replace.
-func nextFocus(idx, n int) int { return (idx + 1) % n }
-
-func prevFocus(idx, n int) int { return (idx - 1 + n) % n }
-
-// scrollToShow returns the scroll offset that brings row sel into a viewport dataH
-// rows tall, moving by the least that does it — up when sel is above the top, down
-// when it is past the bottom, unchanged when it is already in view.
-//
-// A viewport with no rows has nothing to scroll into, so the offset is left alone.
-// Without the guard the "past the bottom" arm is unconditionally true at dataH ==
-// 0 and answers sel+1 — one row past the selection it was asked to reveal, which
-// draws as an empty pane rather than a short one.
-func scrollToShow(sel, scroll, dataH int) int {
-	if dataH <= 0 {
-		return scroll
-	}
-	if sel < scroll {
-		return sel
-	}
-	if sel >= scroll+dataH {
-		return sel - dataH + 1
-	}
-	return scroll
-}
 
 // runProgressButton is the Close/Cancel button pair on the Backup and Restore
 // progress views. A finished or absent task leaves Close as the only outcome
@@ -168,49 +55,11 @@ func progressModeKey(ev *tcell.EventKey, btnFocus *int, buttons []string, hide, 
 		*btnFocus = min(*btnFocus, len(buttons)-1)
 		fire()
 	case tcell.KeyTab:
-		*btnFocus = nextFocus(*btnFocus, len(buttons))
+		*btnFocus = dialogs.NextFocus(*btnFocus, len(buttons))
 	case tcell.KeyBacktab:
-		*btnFocus = prevFocus(*btnFocus, len(buttons))
+		*btnFocus = dialogs.PrevFocus(*btnFocus, len(buttons))
 	}
 	return true
-}
-
-// buttonRowKey is the keyboard of a Connect, Backup or Restore button row while it
-// holds focus: Left/Right move along the row, past a disabled button; Enter fires
-// the focused one; Escape hides; Tab and Backtab leave it back into the fields,
-// through leave(+1) or leave(-1). Everything else is swallowed — a letter typed on
-// the row must not edit the field focus came from.
-//
-// The row is one stop in the Tab ring, crossed with the arrows, as propsheet's
-// zoneButtons is in a Properties dialog (F1, which cycled the buttons, is Help
-// everywhere else).
-func buttonRowKey(ev *tcell.EventKey, btnFocus *int, n int, disabled []bool, fire, hide func(), leave func(dir int)) bool {
-	switch ev.Key() {
-	case tcell.KeyLeft:
-		*btnFocus = stepButton(*btnFocus, -1, n, disabled)
-	case tcell.KeyRight:
-		*btnFocus = stepButton(*btnFocus, +1, n, disabled)
-	case tcell.KeyEnter:
-		fire()
-	case tcell.KeyEscape:
-		hide()
-	case tcell.KeyTab:
-		leave(+1)
-	case tcell.KeyBacktab:
-		leave(-1)
-	}
-	return true
-}
-
-// stepButton is the next enabled button from i in dir, or i at either end of
-// the row. disabled may be nil or shorter than the row.
-func stepButton(i, dir, n int, disabled []bool) int {
-	for j := i + dir; j >= 0 && j < n; j += dir {
-		if j >= len(disabled) || !disabled[j] {
-			return j
-		}
-	}
-	return i
 }
 
 // confirmDiscardChanges asks before throwing away a property page's unsaved
@@ -224,39 +73,4 @@ func (a *App) confirmDiscardChanges(proceed func()) {
 				proceed()
 			}
 		})
-}
-
-// forwardReleaseToFocusedField hands a release to the dialog's focused field so a
-// text-selection drag in it ends cleanly wherever the pointer was when the button
-// came up, and reports whether the event was that release (true: HandleMouse is
-// done with it). Invariant 5 in docs/ui-rules.md: a host that returns early from
-// HandleMouse must still forward ButtonNone to a latch-bearing child. Backup,
-// Restore and Connect all need the same switch.
-//
-// Call it below ConsumeOutsideClick and FieldGesture.Release. The live arm is the
-// Editor, which keeps its own latch outside FieldGesture, so nothing above here
-// ends a selection drag started in one.
-//
-// Only an InputField and an Editor are forwarded to: checkboxes, radio groups and
-// drop-downs already got the release above ConsumeOutsideClick, and a second one
-// would toggle them. The InputField arm is belt-and-braces: a latched field always
-// has the FieldGesture too, so FieldGesture.Release has already ended it, and
-// FieldGesture.Clear covers a dialog dismissed mid-drag. It stays for a dialog that
-// hit-tests a field itself.
-//
-// It deliberately calls neither FieldGesture.Release nor .Replay, nor answers the
-// non-Button1 question: their placement differs per dialog (docs/ui-rules.md; Connect
-// reads the wheel between the two), so a helper fixing an order would be wrong for
-// dialogs with a mode or scrollable pane.
-func forwardReleaseToFocusedField(ev *tcell.EventMouse, focused any) bool {
-	if ev.Buttons() != tcell.ButtonNone {
-		return false
-	}
-	switch f := focused.(type) {
-	case *widgets.InputField:
-		f.HandleMouse(ev)
-	case *editor.Editor:
-		f.HandleMouse(ev)
-	}
-	return true
 }

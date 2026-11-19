@@ -156,7 +156,7 @@ func (d *TasksDialog) HandleMouse(ev *tcell.EventMouse) bool {
 func (d *TasksDialog) dataH() int { return d.ButtonRowY() - d.InnerRect().Y - 1 }
 
 func (d *TasksDialog) ensureVisible(dataH int) {
-	d.scroll = scrollToShow(d.sel, d.scroll, dataH)
+	d.scroll = dialogs.ScrollToShow(d.sel, d.scroll, dataH)
 }
 
 // cancelSelected cancels the selected task, if any and still running —

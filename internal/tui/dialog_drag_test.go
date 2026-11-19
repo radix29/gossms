@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/radix29/tuikit/dialogs"
 	"io"
 	"log"
 	"testing"
@@ -62,7 +63,7 @@ func TestConnectDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	// Two rows below the server field: over the Authentication dropdown and
 	// the User Name field, either of which would otherwise take the focus out
 	// from under the drag.
-	server := indexOfFocusable(d.focusable, d.fServer)
+	server := dialogs.IndexOfFocusable(d.focusable, d.fServer)
 	ix, y := d.fServer.InputX(), d.fServer.Bounds().Y
 	if got := dragOutOf(t, d, d.fServer, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")

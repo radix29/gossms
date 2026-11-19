@@ -174,7 +174,7 @@ func (d *QueryListDialog) HandleMouse(ev *tcell.EventMouse) bool {
 func (d *QueryListDialog) dataH() int { return d.ButtonRowY() - d.InnerRect().Y - 1 }
 
 func (d *QueryListDialog) ensureVisible(dataH int) {
-	d.scroll = scrollToShow(d.sel, d.scroll, dataH)
+	d.scroll = dialogs.ScrollToShow(d.sel, d.scroll, dataH)
 }
 
 func (d *QueryListDialog) activate() {
