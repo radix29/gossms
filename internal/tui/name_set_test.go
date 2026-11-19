@@ -40,6 +40,24 @@ func TestNameSetFollowsCollation(t *testing.T) {
 	}
 }
 
+// Under a Turkish collation the server pairs i with İ and ı with I, so New
+// Index must allow IX_ID beside IX_id and refuse İX_İD beside ix_id.
+func TestNameSetFollowsTurkishCase(t *testing.T) {
+	for _, tt := range []struct {
+		existing, name string
+		taken          bool
+	}{
+		{"IX_id", "IX_ID", false},
+		{"ix_id", "İX_İD", true},
+		{"ıx", "IX", true},
+		{"IX_ID", "ix_id", false},
+	} {
+		if got := newNameSet("Turkish_100_CI_AS", tt.existing).Has(tt.name); got != tt.taken {
+			t.Errorf("Turkish_100_CI_AS: Has(%q) beside %q = %v, want %v", tt.name, tt.existing, got, tt.taken)
+		}
+	}
+}
+
 // nameMap is nameSet's keyed form, and must fold exactly when it does.
 func TestNameMapFollowsCollation(t *testing.T) {
 	for _, tt := range []struct {
