@@ -3,13 +3,14 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // handleKey processes keyboard events; returns true to quit.
 func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 	// Log every key while the diagnostics dialog is open, before anything
 	// consumes it, including clipboard keys and whatever closes the dialog.
-	if kd, ok := builtDialog[*KeyDiagnosticsDialog](a); ok && kd.Visible() {
+	if kd, ok := builtDialog[*dialogs.KeyDiagnosticsDialog](a); ok && kd.Visible() {
 		kd.RecordKey(ev)
 	}
 
@@ -225,7 +226,7 @@ func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
 func (a *App) handleMouse(ev *tcell.EventMouse) {
 	// As handleKey: log first, since what the terminal delivered is what this
 	// dialog shows.
-	if kd, ok := builtDialog[*KeyDiagnosticsDialog](a); ok && kd.Visible() {
+	if kd, ok := builtDialog[*dialogs.KeyDiagnosticsDialog](a); ok && kd.Visible() {
 		kd.RecordMouse(ev)
 	}
 	mx, my := ev.Position()

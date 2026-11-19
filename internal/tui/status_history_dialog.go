@@ -14,7 +14,7 @@ const maxStatusHistoryLines = 256
 // recorded this session, newest first, each prefixed with its timestamp. The
 // log mechanics (a selectable, line-numbered read-only editor, prepend-only
 // sync, Record from any goroutine) are tuikit's dialogs.LogDialog;
-// KeyDiagnosticsDialog is the other one.
+// tuikit's dialogs.KeyDiagnosticsDialog is the other one.
 //
 // Unlike KeyDiagnosticsDialog, Show() does not reset the log: history
 // accumulates across the session, in memory only, with no persistence.

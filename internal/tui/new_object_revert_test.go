@@ -25,7 +25,7 @@ func TestNewAGDatabasesRevertToTheLoadedInclusions(t *testing.T) {
 	gridRow, includeRow, commit := d.databaseRows()
 	f := propsheet.NewForm(propsheet.Section("Availability databases"), gridRow, includeRow)
 
-	// wireGridEditor's initial sync leaves the first row current, which is
+	// BindGridDetail's initial show leaves the first row current, which is
 	// what the checkbox edits.
 	check, ok := includeRow.(*propsheet.CheckRow)
 	if !ok {

@@ -90,8 +90,9 @@ which owns them; the entries here say how goSSMS applies them.
   rows did not move: a new column, appended rows); outside `internal/tui`
   call that directly (`propsheet.ToggleGridRow`) — never hand-roll the pair.
   After Add/Remove/Revert use `resetGrid`, not `SetData` + `SetSelectedRow`
-  (which silently drops widths). Packaged idioms: `wireGridEditor`
-  (`prop_grid_helpers.go`) for grid + detail editor; tuikit's
+  (which silently drops widths). Packaged idioms: tuikit's
+  `propsheet.BindGridDetail` for grid + detail editor (`ListEditor` when it
+  also has Add/Remove);
   `propsheet.BindCellToggle`/`NewCellToggleGrid` for "activate a cell to
   change the row"; `propsheet.StaticBlock` for a read-only detail block (build
   its rows with literal `propsheet.Static` labels, so
@@ -185,7 +186,8 @@ which owns them; the entries here say how goSSMS applies them.
   `ButtonRowY() - inner.Y - 1` (one fewer again above a `DrawSeparator` line);
   `inner.H - 2` ran one row onto the buttons, so Help, Tasks and Query List hid
   their last entry for good (B20, B22).
-- **Key Diagnostics (`key_diagnostics_dialog.go`, Help menu) is a permanent
+- **Key Diagnostics (tuikit's `dialogs.KeyDiagnosticsDialog`, Help menu; fed
+  by `handleKey`/`handleMouse` in `app_events.go`) is a permanent
   feature**, not debug scaffolding — never trim it. It separates app bugs from
   terminal limits.
 - **An open dialog owns the clipboard — `activeClipboardTarget` never falls past

@@ -519,7 +519,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				schemaText.SetValue(e.schema)
 				setRoleToggles(rolesGrid, e.roleNames, e.roles)
 			}
-			reload := wireGridEditor(grid, userMappingColumns, rowsFor, commitCurrent, syncFromSelection)
+			reload := propsheet.BindGridDetail(grid, userMappingColumns, rowsFor, commitCurrent, syncFromSelection)
 
 			mappingRow := propsheet.NewGridRow(grid, 10)
 			mappingRow.DirtyFn = func() bool {

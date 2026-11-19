@@ -181,7 +181,7 @@ func (d *LogSearchDialog) HandleKey(ev *tcell.EventKey) bool {
 	return true
 }
 
-// HandleMouse routes mouse events like FindReplaceDialog's, including the
+// HandleMouse routes mouse events like tuikit's dialogs.FindReplaceDialog, including the
 // release that must reach a latch-bearing field wherever it lands.
 func (d *LogSearchDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {

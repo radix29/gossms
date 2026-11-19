@@ -114,10 +114,10 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 			valueField.SetValue("")
 		}
 	}
-	// wireGridEditor seeds `current` for the initial selection (row 0), and
+	// BindGridDetail seeds `current` for the initial selection (row 0), and
 	// redraws after the commit, so the row moved off shows what Apply will
 	// send rather than its loaded value.
-	wireGridEditor(grid, extendedPropertyColumns, rowsFor, commitCurrent, syncFieldsFromSelection)
+	propsheet.BindGridDetail(grid, extendedPropertyColumns, rowsFor, commitCurrent, syncFieldsFromSelection)
 
 	hint := propsheet.Hint()
 	var addBtn, removeBtn *widgets.Button

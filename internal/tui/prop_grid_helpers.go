@@ -153,26 +153,6 @@ func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row i
 	grid.SetSelectedRow(row)
 }
 
-// wireGridEditor connects a detail editor to a DataGrid's selection (the
-// grid-plus-detail shape of the AG General replica grid, Backup Preferences,
-// Read-Only Routing, User Mapping, Attach and New Index/Statistics/AG pages).
-// Moving off a row commits the editor, loads the new row, and redraws (via
-// redrawGrid, so the cursor survives OnSelectRow; otherwise only the first row is
-// reachable). Returns the redraw a page's RevertFn needs.
-func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [][]string, commitCurrent, syncFromSelection func()) (reload func()) {
-	redraw := func() { redrawGrid(grid, headers, gridRows()) }
-	grid.OnSelectRow = func(int) {
-		commitCurrent()
-		syncFromSelection()
-		redraw()
-	}
-	syncFromSelection()
-	return func() {
-		redraw()
-		syncFromSelection()
-	}
-}
-
 // compatLevelItems is the Compatibility level dropdown's base list, oldest
 // accepted level to newest gosmo names. Don't use it directly: a server can report
 // a level outside it and offers only its own version's levels, so build the list

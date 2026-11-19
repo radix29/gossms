@@ -84,6 +84,10 @@ type DetailBrowser struct {
 	base detailRows
 	perm []int
 
+	// reload is where the cursor was when the node on screen was refetched (a
+	// Refresh), restored by the first rows the refetch shows (showRows).
+	reload detailReload
+
 	// run is the fetch lifecycle: which run's result is still wanted, and the
 	// cancel that stops a superseded one's reads.
 	run detailRuns
@@ -165,6 +169,7 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	db.run.supersede()
 	prev := db.currentNode
 	db.currentNode = node
+	db.reload = detailReload{}
 	db.sort = db.sorts[sortKeyOf(node)]
 
 	if node == nil {
@@ -201,6 +206,10 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	// the previous node's objects on this node's server). A Refresh of the node on
 	// screen keeps its rows but not their objects, as nothing pins which of them
 	// the reload removes.
+	if prev == node {
+		// Before resetForNewNode, which drops the rows this reads.
+		db.reload = db.cursorForReload()
+	}
 	db.resetForNewNode()
 	if prev != node {
 		db.grid.SetFillLastColumn(false)

@@ -288,7 +288,7 @@ func (d *NewIndexDialog) keyColumnRows(pf *nidxPrefetch, ordered bool) []propshe
 			sortRow.SetSelected(boolIdx(d.keyColumns[current].Descending))
 		}
 	}
-	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
+	reload := propsheet.BindGridDetail(grid, headers, rowsFor, commit, sync)
 	d.rows.commitKeyColumn = commit
 
 	// move slides the selected column one place and keeps the selection on it: the

@@ -338,9 +338,9 @@ func (p *databaseFilesPage) form(owner string) *propsheet.Form {
 		p.syncSizeRows(p.effectiveType(p.typeSelect.Value(), p.pickedFilegroup(p.typeSelect.Value())))
 	})
 
-	// wireGridEditor redraws after the commit, so the row moved off shows
+	// BindGridDetail redraws after the commit, so the row moved off shows
 	// what Apply will send rather than its loaded values.
-	wireGridEditor(p.grid, databaseFileColumns, p.rows, p.commitCurrent, p.syncFieldsFromSelection)
+	propsheet.BindGridDetail(p.grid, databaseFileColumns, p.rows, p.commitCurrent, p.syncFieldsFromSelection)
 
 	p.hint = propsheet.Hint()
 	addBtn := widgets.NewButton("Add", p.addFile)

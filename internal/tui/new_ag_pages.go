@@ -236,7 +236,7 @@ func (d *NewAGDialog) databaseRows() (propsheet.Row, propsheet.Row, func()) {
 			includeRow.SetChecked(d.databases[current].included)
 		}
 	}
-	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
+	reload := propsheet.BindGridDetail(grid, headers, rowsFor, commit, sync)
 
 	// The inclusions the page opened with: nothing, since the group doesn't exist.
 	// RevertFn needs its own baseline because the state it restores lives on the
@@ -322,7 +322,7 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 		agSetSelect(secondaryRoleRow, agSecondaryRoleItems, r.secondaryRole)
 		timeoutRow.SetValue(strconv.Itoa(r.sessionTimeout))
 	}
-	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
+	reload := propsheet.BindGridDetail(grid, headers, rowsFor, commit, sync)
 
 	addBtn := widgets.NewButton("Add Replica", func() {
 		commit()
@@ -453,7 +453,7 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 			priorityRow.SetValue(strconv.Itoa(d.replicas[current].backupPriority))
 		}
 	}
-	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
+	reload := propsheet.BindGridDetail(grid, headers, rowsFor, commit, sync)
 
 	// Priorities are keyed by replica name rather than snapshotted as a slice,
 	// unlike the General page's baseline: the replica list belongs to that page,

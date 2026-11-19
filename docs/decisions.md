@@ -1478,8 +1478,9 @@ it from the string 'NULL'.
   list (they vanish if dropped between reads or invisible) — use
   `preservedValue`/`changedTo`. `TestIndexOfSentinelListFallsBackToSentinel`.
 - **Merging the two user-mapping page builders is a non-goal** — the
-  duplication that caused a bug was in `wireGridEditor`, now shared; merging the
-  builders costs six injection points, two row structs, two applies.
+  duplication that caused a bug was in the grid-detail binding, now shared
+  (`propsheet.BindGridDetail`); merging the builders costs six injection
+  points, two row structs, two applies.
 - **`Form.Revert()` is exposed.** `Ctrl+Z` on a `PropertySheet` →
   `RevertPage` → `Form.Revert`, every row's `Revert`, all 25 `RevertFn`s.
   **`Ctrl+Z` is handled before the zone switch, beside `F5`** (works from page
@@ -1493,11 +1494,12 @@ it from the string 'NULL'.
   `EditorRow` inherits this; a new row type with its own `Ctrl+Z` and no
   `KeyHandler` needs a different key.
 - **The two search dialogs' key-routing skeleton stays duplicated**
-  (`FindReplaceDialog.HandleKey`, `LogSearchDialog.HandleKey`). Only the
+  (tuikit's `dialogs.FindReplaceDialog.HandleKey` since 2026-11-19,
+  `LogSearchDialog.HandleKey`). Only the
   Tab/Backtab half is identical; Escape, `F3` and field dispatch differ. A
   twelve-line helper for two callers isn't worth it — extract for a third
   dialog or opportunistically. `log_search_dialog.go`'s `HandleMouse` comment
-  ("the same shape as `FindReplaceDialog`'s") goes stale if either moves.
+  points at tuikit's dialog and goes stale if either moves again.
 - **A combining mark does not shift a row; a tmux capture only looks like
   it.** Arabic stopwords ending in a shadda (`إنّ`, U+0651) seem to push the
   grid's and dialog's right border one column, but tcell emits base and mark in

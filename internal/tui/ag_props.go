@@ -277,7 +277,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 				agSetSelect(seedingRow, agSeedingModeItems, current.seedingMode)
 				timeoutRow.SetValue(strconv.Itoa(current.sessionTimeout))
 			}
-			reload := wireGridEditor(grid, replicaHeaders, replicaRows, commitCurrent, syncFromSelection)
+			reload := propsheet.BindGridDetail(grid, replicaHeaders, replicaRows, commitCurrent, syncFromSelection)
 
 			gridRow := propsheet.NewGridRow(grid, 9)
 			gridRow.DirtyFn = func() bool {

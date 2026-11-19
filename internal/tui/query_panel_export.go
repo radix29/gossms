@@ -166,7 +166,7 @@ func (p *QueryPanel) exportResults(f export.Format, ext string) {
 	var rows export.Table = set
 	if p.resultsMode != ResultsModeText {
 		if s, ok := p.activeSort(); ok {
-			rows = sortedResultSet{set: set, perm: s.perm}
+			rows = controls.PermutedSource{Src: set, Perm: s.perm}
 		}
 	}
 	p.app.fileDialog().ShowSave("Export Results", p.exportFileName(ext), func(path string) {

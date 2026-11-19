@@ -39,7 +39,7 @@ type FilterDialog struct {
 	dbName     string
 
 	// focusIdx walks each row's operator dropdown then its value field, then the
-	// buttons — the one-cycle arrangement FindReplaceDialog uses.
+	// buttons — the one-cycle arrangement tuikit's dialogs.FindReplaceDialog uses.
 	focusIdx int
 
 	// drag is the text-selection gesture a click in a row's value field starts
