@@ -44,10 +44,10 @@ func (am *ActivityMonitor) readTooltip(t *amTooltip, hit dashboard.ChartHit, idx
 	}
 	t.rows = t.rows[:0]
 	for _, ser := range hit.Series {
-		t.rows = append(t.rows, tooltipRow{
-			label: ser.Label,
-			value: charts.FormatValue(hit.Value(ser, idx)),
-			color: ser.Color,
+		t.rows = append(t.rows, charts.ReadoutRow{
+			Label: ser.Label,
+			Value: charts.FormatValue(hit.Value(ser, idx)),
+			Color: ser.Color,
 		})
 	}
 }
@@ -153,8 +153,8 @@ func (am *ActivityMonitor) bucketIndex(at string) int {
 // than covering the time callout at keepOut (half-hidden, it would read as an
 // age label).
 func (t *amTooltip) place(ax, ay int, view core.Rect, keepOut int) core.Rect {
-	w, h := tooltipBoxSize(t.time, t.rows)
-	return placeTooltipBox(w, h, ax, ay, view, keepOut)
+	w, h := charts.ReadoutSize(t.time, t.rows)
+	return charts.PlaceReadout(w, h, ax, ay, view, keepOut)
 }
 
 // drawTooltip renders the pinned readout: the column's time on the chart's time
@@ -174,7 +174,7 @@ func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *core.Buffer) {
 	if r.W > am.viewRect.W || r.H > am.viewRect.H {
 		return // no room to show it honestly
 	}
-	drawTooltipBox(s, r, am.tooltip.time, am.tooltip.rows)
+	charts.DrawReadout(s, r, am.tooltip.time, am.tooltip.rows)
 }
 
 // drawCallout names the pinned bucket's moment on its chart's time axis and

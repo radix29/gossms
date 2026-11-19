@@ -385,8 +385,8 @@ func TestActivityMonitorChartClickPinsATooltip(t *testing.T) {
 		t.Errorf("tooltip has %d rows, want one per series (%d)", len(am.tooltip.rows), len(hit.Series))
 	}
 	rows := amRender(am, 150, 40)
-	if !amRowsContain(rows, am.tooltip.rows[0].label) {
-		t.Errorf("the pinned tooltip wasn't drawn: %q", am.tooltip.rows[0].label)
+	if !amRowsContain(rows, am.tooltip.rows[0].Label) {
+		t.Errorf("the pinned tooltip wasn't drawn: %q", am.tooltip.rows[0].Label)
 	}
 
 	amClick(am, x, y)
@@ -457,7 +457,7 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned, pinnedTime, col := am.tooltip.rows[0].value, am.tooltip.time, am.tooltip.col
+	pinned, pinnedTime, col := am.tooltip.rows[0].Value, am.tooltip.time, am.tooltip.col
 
 	am.applySample(activity.Sample{
 		At:              time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC),
@@ -472,14 +472,14 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	if got := am.tooltip.time; got != pinnedTime {
 		t.Errorf("the tooltip now names %q, want the sample it was pinned to (%q)", got, pinnedTime)
 	}
-	if got := am.tooltip.rows[0].value; got != pinned {
+	if got := am.tooltip.rows[0].Value; got != pinned {
 		t.Errorf("the tooltip reads %q, want its own sample's %q", got, pinned)
 	}
 	if got := am.tooltip.col; got != col-1 {
 		t.Errorf("the pinned column is %d, want %d — one left, with the sample it names", got, col-1)
 	}
-	if !amRowsContain(rows, am.tooltip.rows[0].value) {
-		t.Errorf("the moved tooltip wasn't drawn: %q", am.tooltip.rows[0].value)
+	if !amRowsContain(rows, am.tooltip.rows[0].Value) {
+		t.Errorf("the moved tooltip wasn't drawn: %q", am.tooltip.rows[0].Value)
 	}
 }
 
@@ -535,7 +535,7 @@ func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned := am.tooltip.rows[0].value
+	pinned := am.tooltip.rows[0].Value
 
 	am.applyTempDBSample(activity.TempDBSample{At: time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC)})
 	amRender(am, 150, 40)
@@ -543,7 +543,7 @@ func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("a tempdb tick dismissed a tooltip pinned on History")
 	}
-	if got := am.tooltip.rows[0].value; got != pinned {
+	if got := am.tooltip.rows[0].Value; got != pinned {
 		t.Errorf("a tempdb tick moved a History tooltip from %q to %q", pinned, got)
 	}
 }
@@ -565,7 +565,7 @@ func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned := am.tooltip.rows[0].value
+	pinned := am.tooltip.rows[0].Value
 
 	am.applySample(activity.Sample{
 		At:              time.Date(2026, 8, 6, 20, 5, 30, 0, time.UTC),
@@ -577,7 +577,7 @@ func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("an activity tick dismissed a tooltip pinned on TempDB")
 	}
-	if got := am.tooltip.rows[0].value; got != pinned {
+	if got := am.tooltip.rows[0].Value; got != pinned {
 		t.Errorf("an activity tick moved a TempDB tooltip from %q to %q", pinned, got)
 	}
 }
@@ -657,7 +657,7 @@ func TestActivityMonitorMemoryCompositionClickPinsATooltip(t *testing.T) {
 		if tip.time != "15:32:45" {
 			t.Errorf("tooltip names sample %q, want the newest sample", tip.time)
 		}
-		if len(tip.rows) != 3 || tip.rows[0].label != "Buffer" {
+		if len(tip.rows) != 3 || tip.rows[0].Label != "Buffer" {
 			t.Errorf("tooltip rows = %+v, want one per memory component", tip.rows)
 		}
 	}
@@ -983,7 +983,7 @@ func TestTheActivityMonitorOverflowMenuMarksTheRateInForce(t *testing.T) {
 	for _, it := range am.app.contextMenu.Items() {
 		if strings.Contains(it.Label, "5 s") {
 			found = true
-			if !strings.HasPrefix(it.Label, "• ") {
+			if !strings.HasPrefix(it.Label, controls.ChoiceMark) {
 				t.Errorf("the rate in force reads %q in the More menu, want it bulleted", it.Label)
 			}
 		}

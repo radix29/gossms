@@ -22,21 +22,15 @@ import (
 // the application's context menu for the same first-refusal event handling as
 // every other overlay.
 func (lv *LogViewer) showLogTypeMenu() {
-	items := make([]controls.MenuItem, 0, len(logFamilies))
-	for _, logType := range logFamilies {
-		label := logType.String()
-		if logType == lv.logType {
-			label = "• " + label
-		}
-		items = append(items, controls.MenuItem{Label: label, Action: func() {
+	lv.popMenu(logToolLogType, controls.ChoiceItems(logFamilies, lv.logType,
+		gosmo.ErrorLogType.String,
+		func(logType gosmo.ErrorLogType) {
 			if logType != lv.logType {
 				// Archive numbers aren't comparable across families, so switching family
 				// lands on that family's current log.
 				lv.ShowLog(logType, 0)
 			}
-		}})
-	}
-	lv.popMenu(logToolLogType, items)
+		}))
 }
 
 // showLogFileMenu pops the archive selector for the family the selectors
@@ -64,7 +58,7 @@ func (lv *LogViewer) showLogFileMenu() {
 		// Every selected file is bulleted: with three merged, one bullet would
 		// misdescribe the grid.
 		if lv.isSelected(logFileRef{Type: lv.logType, Num: num}) {
-			label = "• " + label
+			label = controls.ChoiceMark + label
 		}
 		items = append(items, controls.MenuItem{Label: label, Action: func() {
 			lv.ShowLog(lv.logType, num)

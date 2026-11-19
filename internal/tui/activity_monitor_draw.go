@@ -63,7 +63,11 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 	}
 	pal := theme.Active()
 	barStyle := theme.StyleMenuBar()
-	core.FillRect(s, am.toolRect, ' ', barStyle)
+	// Buttons wear the tooltip scheme: both are the panel's raised surfaces. Each
+	// is dimmed from its Disabled field; More never is, its contents being gated
+	// per control once opened. The prefix and collection state below go into
+	// columns the cells leave free.
+	am.tools.Draw(s, am.toolRect, nil, false)
 	if am.toolPrefix != "" && am.prefixVisible() {
 		core.DrawTextClipped(s, am.toolRect.X+1, am.toolRect.Y, am.toolRect.W-2,
 			barStyle.Foreground(pal.TextDim), am.toolPrefix)
@@ -85,26 +89,6 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 		}
 	}
 
-	// Buttons wear the tooltip scheme: both are the panel's raised surfaces.
-	for _, t := range am.tools.Cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if t.Disabled {
-			style = style.Foreground(pal.TextDim)
-		} else if t.Selected {
-			style = theme.StyleMenuSelected().Bold(true)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
-	// Never dimmed: its contents are gated per control once opened.
-	if !am.tools.More.Rect.IsZero() {
-		style := theme.StyleTooltip()
-		core.FillRect(s, am.tools.More.Rect, ' ', style)
-		core.DrawText(s, am.tools.More.Rect.X+1, am.tools.More.Rect.Y, style, am.tools.More.Label)
-	}
 }
 
 // drawDashboard blits the visible window of the active dashboard's fixed-size

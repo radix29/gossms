@@ -1,12 +1,9 @@
 package tui
 
 import (
-	"slices"
-
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/theme"
 )
 
 // replication_monitor_panel_draw.go is Replication Monitor's toolbar and
@@ -68,7 +65,7 @@ func (p *ReplicationMonitorPanel) popMenuAt(r core.Rect, items []controls.MenuIt
 }
 
 func (p *ReplicationMonitorPanel) showRateMenu() {
-	p.popMenuAt(p.tools.Cells[rmToolAuto].Rect, qsMenuItems(rmRates, rmRates[p.rateIdx],
+	p.popMenuAt(p.tools.Cells[rmToolAuto].Rect, controls.ChoiceItems(rmRates, rmRates[p.rateIdx],
 		func(r rmRate) string { return r.label },
 		func(r rmRate) {
 			for i := range rmRates {
@@ -84,7 +81,7 @@ func (p *ReplicationMonitorPanel) showRateMenu() {
 }
 
 func (p *ReplicationMonitorPanel) showWindowMenu() {
-	p.popMenuAt(p.tools.Cells[rmToolHistory].Rect, qsMenuItems(rmWindows, rmWindows[p.windowIdx],
+	p.popMenuAt(p.tools.Cells[rmToolHistory].Rect, controls.ChoiceItems(rmWindows, rmWindows[p.windowIdx],
 		func(w rmWindow) string { return w.label },
 		func(w rmWindow) {
 			for i := range rmWindows {
@@ -120,25 +117,8 @@ func (p *ReplicationMonitorPanel) Draw(s tcell.Screen) {
 	}
 }
 
-// drawToolRow paints the toolbar in Query Store's scheme, dimming Refresh while a
-// read is out: the predicate runTool refuses on.
+// drawToolRow paints the toolbar, dimming Refresh while a read is out: the
+// predicate runTool refuses on. More is never dimmed.
 func (p *ReplicationMonitorPanel) drawToolRow(s tcell.Screen) {
-	r := p.toolRect
-	if r.H != 1 {
-		return
-	}
-	pal := theme.Active()
-	core.FillRect(s, r, ' ', theme.StyleMenuBar())
-	cells := append(slices.Clip(p.tools.Cells), p.tools.More)
-	for i, t := range cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if i < len(p.tools.Cells) && p.toolDisabled(i) {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
+	p.tools.Draw(s, p.toolRect, p.toolDisabled, false)
 }

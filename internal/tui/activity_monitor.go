@@ -9,6 +9,7 @@ import (
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/dashboard"
+	"github.com/radix29/tuikit/charts"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
@@ -282,7 +283,7 @@ type amCanvasKey struct {
 type amTooltip struct {
 	chart string // ChartHit.Title of the chart the pin lives on
 	time  string // the pinned bucket's clock time — its identity and caption
-	rows  []tooltipRow
+	rows  []charts.ReadoutRow
 
 	// snapshot marks a pin on a current-sample chart: one bucket, no time axis,
 	// so nothing drifts.

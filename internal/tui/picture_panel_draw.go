@@ -26,35 +26,17 @@ func (pp *PicturePanel) Draw(s tcell.Screen) {
 	pp.drawView(s)
 }
 
-// drawToolbar paints the toolbar cells in Activity Monitor's tooltip scheme,
-// then the picture's facts in the room left over.
+// drawToolbar paints the toolbar cells (More never dimmed), then the picture's
+// facts in the room left over.
 func (pp *PicturePanel) drawToolbar(s tcell.Screen) {
 	if pp.toolRect.H != 1 {
 		return
 	}
-	pal := theme.Active()
-	barStyle := theme.StyleMenuBar()
-	core.FillRect(s, pp.toolRect, ' ', barStyle)
 	pp.refreshToolLabels()
 	next := pp.tools.Layout(pp.toolRect, "")
-	for i, t := range pp.tools.Cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if pp.toolDisabled(i) {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
-	if !pp.tools.More.Rect.IsZero() {
-		style := theme.StyleTooltip()
-		core.FillRect(s, pp.tools.More.Rect, ' ', style)
-		core.DrawText(s, pp.tools.More.Rect.X+1, pp.tools.More.Rect.Y, style, pp.tools.More.Label)
-	}
+	pp.tools.Draw(s, pp.toolRect, pp.toolDisabled, false)
 	if w := pp.toolRect.Right() - next; w > 0 {
-		core.DrawTextClipped(s, next, pp.toolRect.Y, w, barStyle, pp.infoText())
+		core.DrawTextClipped(s, next, pp.toolRect.Y, w, theme.StyleMenuBar(), pp.infoText())
 	}
 }
 

@@ -245,8 +245,9 @@ which owns them; the entries here say how goSSMS applies them.
 ## Panels, toolbars and grid hosts
 
 - **A panel's text toolbar is a `controls.ToolRow`** — it collapses the cells
-  that don't fit into "More ▾"; drawing and the gate's predicates stay with the
-  panel, and every path that acts on a cell (click, key, More menu) goes
+  that don't fit into "More ▾" and paints itself (`ToolRow.Draw`, given the
+  same `disabled` predicate as `Run`, so a dimmed cell is a refused one); the
+  gate's predicates and anything else on the row stay with the panel, and every path that acts on a cell (click, key, More menu) goes
   through `ToolRow.Run` with the pair it gives `OverflowItems`, so a refusal
   reads "Label: reason" in every panel (Query Store's two rows excepted: their
   reasons are whole sentences naming the report, and a selector label such as

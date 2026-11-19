@@ -40,9 +40,9 @@ func (v *XEventViewer) Draw(s tcell.Screen) {
 	v.grid.DrawOverlay(s)
 }
 
-// drawToolbar paints the toolbar row in Activity Monitor's tooltip scheme.
+// drawToolbar paints the toolbar row.
 func (v *XEventViewer) drawToolbar(s tcell.Screen) {
-	v.drawToolCells(s, v.toolDisabled, false)
+	v.tools.Draw(s, v.toolRect, v.toolDisabled, false)
 }
 
 // drawDetails paints the selected event below the splitter.

@@ -32,38 +32,12 @@ func (p *QueryStorePanel) Draw(s tcell.Screen) {
 	p.plansGrid.DrawOverlay(s)
 }
 
-// drawToolRow paints one toolbar row in Activity Monitor's tooltip scheme,
-// dimming each cell the panel would refuse a click on. The dimmed state and the
-// refusal are the same predicate, so a cell that looks inert is.
+// drawToolRow paints one toolbar row, dimming each cell the panel would refuse a
+// click on. The dimmed state and the refusal are the same predicate, so a cell
+// that looks inert is. More is dimmed only while the whole row is; its items are
+// gated one by one once the menu is open.
 func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, row *controls.ToolRow, disabled func(int) bool) {
-	if r.H != 1 {
-		return
-	}
-	pal := theme.Active()
-	core.FillRect(s, r, ' ', theme.StyleMenuBar())
-	for i, t := range row.Cells {
-		if t.Rect.IsZero() {
-			continue
-		}
-		style := theme.StyleTooltip()
-		if disabled(i) {
-			style = style.Foreground(pal.TextDim)
-		}
-		core.FillRect(s, t.Rect, ' ', style)
-		core.DrawText(s, t.Rect.X+1, t.Rect.Y, style, t.Label)
-	}
-	// The stand-in for whatever did not fit. Dimmed only while the whole row is; its
-	// items are gated one by one once the menu is open.
-	more := row.More
-	if more.Rect.IsZero() {
-		return
-	}
-	style := theme.StyleTooltip()
-	if p.busy {
-		style = style.Foreground(pal.TextDim)
-	}
-	core.FillRect(s, more.Rect, ' ', style)
-	core.DrawText(s, more.Rect.X+1, more.Rect.Y, style, more.Label)
+	row.Draw(s, r, disabled, p.busy)
 }
 
 // drawChart plots the report's rows in the order the loader produced them:

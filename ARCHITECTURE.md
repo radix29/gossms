@@ -389,9 +389,8 @@ gossms/
 │       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
 │       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
-│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
+│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, the box itself is tuikit charts.DrawReadout, shared with the Detail Browser strip
 │       ├── activity_monitor_toolbar.go # toolbar cells per tab (rate, Pause/Continue, Refresh), overflow menu, and the collection-state summary and dashboard header
-│       ├── chart_tooltip.go      # the pinned chart readout box itself, shared by Activity Monitor and the Detail Browser's disk-usage strip
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, the procedure's option switches (activity.ProcOption: Sessions' Sleeping Sessions / Additional Info), result grid, Kill Process
 │       │
 │       │  ── Log File Viewer ──
@@ -456,7 +455,7 @@ gossms/
 │       ├── detail_browser_resource_governor.go # Resource Governor: stored vs in-force configuration, pool and group grids with live DMV counters (blank without VIEW SERVER STATE), one pool / group / external pool
 │       ├── detail_browser_database_mail.go # Database Mail: status, queues, profiles, accounts, latest failed items — each section "not visible" alone when its right is missing
 │       ├── detail_browser_xevents.go    # Extended Events: the Sessions folder (state, startup, events, targets, dropped), one session's events + targets, one target's settings + runtime counters
-│       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
+│       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned readout (charts.DrawReadout)
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
 │       ├── detail_browser_drill.go      # double-click navigation: a row selects the tree child it stands for (by row object key, else label), waiting for the folder's first load; Show Value otherwise; the server and database records' leading folder rows (childFolderRows)
 │       ├── detail_browser_sort.go       # header-click column sort of list views: the pane reorders rows and row objects together, numbers by value, placeholders last
