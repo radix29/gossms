@@ -229,16 +229,3 @@ work; close an item by deleting it when fixed.
   Database (assumed); whether its `HAS_PERMS_BY_NAME` accepts the class words
   for 23/29/31 (a rejection would fail the whole database probe, not just
   these rows). `STATISTICAL_SEMANTICS` ran on 17 only.
-
-### Bugs
-
-- **B29 — Expand on a plan with no tree, then a drag, panics.** On a
-  statement showing "No plan tree for this statement" (Estimated Plan of
-  `select 1`), press `[ Expand ]` and move with Button1 held: the press opens
-  the expanded Execution Plan panel, App's gesture owner routes the motion
-  resends to that new panel, and `PlanView.handleGraphTabMouse`
-  (`planview/graph.go`, the `Button1` case) dereferences a nil
-  `graphSt.layout`. A plain click does not crash. Found 2026-11-19 while
-  driving the TabBar migration; reproduces on `659aeb8`, so it predates it.
-  Two fixes, probably both: nil-guard `graphSt.layout` there, and keep a
-  press that opens a panel from leaking its gesture into it.

@@ -335,3 +335,24 @@ func TestGraph_SelectionSharedWithTreeTab(t *testing.T) {
 		t.Errorf("selectedID changed to %d when switching to the Tree tab, want it to stay %d", v.selectedID, moved)
 	}
 }
+
+// TestGraph_PressOnStatementWithoutTreeDoesNotPanic: a statement with no plan
+// tree (Estimated Plan of `select 1`) has no graph layout, and a Button1 on its
+// canvas dereferenced the nil layout. It surfaced as "[ Expand ]" then a drag,
+// whose resends reached the panel Expand opened (see tuikit's PanelManager).
+func TestGraph_PressOnStatementWithoutTreeDoesNotPanic(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 160, 40)
+	v.SetPlan(&showplan.Plan{Statements: []*showplan.Statement{{Text: "select 1", Type: "SELECT"}}})
+	if v.graphSt.layout != nil {
+		t.Fatal("setup: a statement without a tree should have no graph layout")
+	}
+	r := v.graphCanvasRect
+	if r.W <= 0 || r.H <= 0 {
+		t.Fatalf("setup: empty graph canvas %+v", r)
+	}
+	mx, my := r.X+r.W/2, r.Y+r.H/2
+	for _, b := range []tcell.ButtonMask{tcell.Button1, tcell.Button1, tcell.ButtonNone} {
+		v.HandleMouse(tcell.NewEventMouse(mx, my, b, tcell.ModNone))
+	}
+}

@@ -476,6 +476,11 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		if vp.HandleScrollbars(ev) {
 			return true
 		}
+		// No layout on a statement without a plan tree ("No plan tree for this
+		// statement"); a press there has nothing to select.
+		if v.graphSt.layout == nil {
+			return true
+		}
 		cx, cy := vp.ToCanvas(mx, my)
 		for _, t := range v.graphSt.layout.tiles {
 			if t.rect.Contains(cx, cy) {
