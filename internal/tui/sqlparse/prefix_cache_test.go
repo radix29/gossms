@@ -160,8 +160,8 @@ func TestPrefixCacheMatchesScanPrefixOnEditAboveCursor(t *testing.T) {
 	}
 }
 
-// TestPrefixCacheMatchesScanPrefixOnLineCountChange covers the mutation
-// controls.prefixStates must throw its whole array away for. Boundaries are
+// TestPrefixCacheMatchesScanPrefixOnLineCountChange covers a mutation that
+// changes the line count. Boundaries are
 // keyed by offset, not by line, so a split or a join invalidates only what is
 // at or below it — but only if DirtyFrom is measured against the new lines,
 // the one place this could go wrong silently.

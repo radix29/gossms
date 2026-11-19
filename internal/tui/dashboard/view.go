@@ -202,3 +202,14 @@ func (h ChartHit) Column(idx int) int {
 	}
 	return charts.ColumnAt(h.Plot, idx, charts.BucketCount(h.Series))
 }
+
+// Value is ser's value in bucket idx (from Bucket), read the way the chart
+// drew it: a history aligns every series at its newest bucket
+// (charts.Series.AtBucket), so a tooltip reading At would disagree with the
+// column under the pointer for a series shorter than the chart.
+func (h ChartHit) Value(ser charts.Series, idx int) float64 {
+	if h.Snapshot {
+		return ser.At(idx)
+	}
+	return ser.AtBucket(idx, charts.BucketCount(h.Series))
+}
