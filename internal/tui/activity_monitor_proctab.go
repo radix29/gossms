@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
@@ -56,8 +58,11 @@ type amProcTab struct {
 	// masterStale is set when loc is ProcMaster and master's copy is not this
 	// build's (activity.Proc.Current), which offers Update in master.
 	masterStale bool
-	status      string
-	busy        bool
+	// on is which of proc.Options are switched on, by index; all off at first.
+	// Per panel, not saved: a switch changes what the next run shows.
+	on     []bool
+	status string
+	busy   bool
 
 	// rect is the content area, gridRect the grid's part; they differ by the
 	// credit row.
@@ -68,7 +73,45 @@ type amProcTab struct {
 // newProcTab creates a tab over proc; nothing connects or runs until first
 // shown.
 func (am *ActivityMonitor) newProcTab(proc *activity.Proc, credit string) *amProcTab {
-	return &amProcTab{am: am, proc: proc, credit: credit}
+	return &amProcTab{am: am, proc: proc, credit: credit, on: make([]bool, len(proc.Options))}
+}
+
+// optionsOn is the procedure's switched-on options, in toolbar order.
+func (pt *amProcTab) optionsOn() []activity.ProcOption {
+	var on []activity.ProcOption
+	for i, o := range pt.proc.Options {
+		if pt.on[i] {
+			on = append(on, o)
+		}
+	}
+	return on
+}
+
+// toggleOption flips option i and re-runs, so the grid always shows what the
+// switches say.
+func (pt *amProcTab) toggleOption(i int) {
+	if pt.busy {
+		return
+	}
+	pt.on[i] = !pt.on[i]
+	pt.am.buildTools()
+	pt.refresh()
+}
+
+// optionByKey is the index of the option whose shortcut is r, either case;
+// -1 for none.
+func (pt *amProcTab) optionByKey(r rune) int {
+	return slices.IndexFunc(pt.proc.Options, func(o activity.ProcOption) bool {
+		return o.Key == unicode.ToLower(r)
+	})
+}
+
+// optionLabel is option i's toolbar label, its state as a check box.
+func (pt *amProcTab) optionLabel(i int) string {
+	if pt.on[i] {
+		return "☑ " + pt.proc.Options[i].Label
+	}
+	return "☐ " + pt.proc.Options[i].Label
 }
 
 // procTab is the showing procedure tab, nil otherwise.
@@ -427,7 +470,7 @@ func (pt *amProcTab) refresh() {
 	pt.setStatus("Running " + qualified + "...")
 	pt.am.buildTools()
 
-	conn, script := pt.conn, pt.proc.Exec(pt.loc)
+	conn, script := pt.conn, pt.proc.Exec(pt.loc, pt.optionsOn()...)
 	pt.am.app.safegoRepair("running "+qualified, pt.panicRepair, func() {
 		ctx, cancel := context.WithTimeout(conn.Server.Context(), procRunTimeout)
 		defer cancel()
@@ -455,6 +498,7 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 		pt.setStatus(qualified + " failed")
 		return
 	}
+	prev := pt.result
 	pt.result = res
 	if len(res.Sets) == 0 {
 		pt.grid.SetData(nil, nil)
@@ -467,8 +511,14 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 	pt.grid.SetMaxCellWidth(pt.am.app.cfg.MaxCellLength + 2)
 	// Preserving the view, not SetSource: same columns, so keep dragged
 	// widths; different sessions, so don't keep the cursor row. The set itself
-	// is the source, so its NULLs draw dimmed.
-	pt.grid.SetSourcePreservingView(set.Columns, set)
+	// is the source, so its NULLs draw dimmed. An option can change the
+	// columns (Additional Info adds one mid-row), and widths and sort are kept
+	// by index, so a changed column set starts afresh.
+	if prev != nil && len(prev.Sets) > 0 && slices.Equal(prev.Sets[0].Columns, set.Columns) {
+		pt.grid.SetSourcePreservingView(set.Columns, set)
+	} else {
+		pt.grid.SetSource(set.Columns, set)
+	}
 	pt.grid.SetSelectedRow(0)
 	pt.setStatus(fmt.Sprintf("%d row(s)  %s  (%s)",
 		len(set.Rows), time.Now().Format("15:04:05"), qualified))

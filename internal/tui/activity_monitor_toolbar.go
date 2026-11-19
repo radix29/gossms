@@ -11,7 +11,7 @@ import (
 )
 
 // buildTools rebuilds the toolbar for the active tab: rate and Pause/Continue
-// on dashboards, Refresh on procedure tabs. Positions come from toolRect, so
+// on dashboards, Refresh and the procedure's option switches on procedure tabs. Positions come from toolRect, so
 // SetBounds calls this too.
 func (am *ActivityMonitor) buildTools() {
 	am.tools.Cells = am.tools.Cells[:0]
@@ -48,6 +48,17 @@ func (am *ActivityMonitor) buildTools() {
 			Disabled: pt.busy,
 			Action:   pt.refresh,
 		})
+		// The procedure's switches, after Refresh: each re-runs it, so they
+		// wait for a run in flight as Refresh does.
+		for i := range pt.proc.Options {
+			am.tools.Cells = append(am.tools.Cells, controls.ToolCell{
+				// The check box alone shows the state, as the XEvent
+				// viewer's Auto Scroll does; Selected is the rate radio's look.
+				Label:    pt.optionLabel(i),
+				Disabled: pt.busy,
+				Action:   func() { pt.toggleOption(i) },
+			})
+		}
 		// Installing into master needs sysadmin; a db_owner gets "Cannot alter the
 		// procedure 'sp_block'...". CONTROL SERVER rather than a role test, since
 		// HAS_PERMS_BY_NAME answers 1 for sysadmin while IS_SRVROLEMEMBER doesn't.

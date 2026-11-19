@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
+	"strings"
 )
 
 // ProcLocation says which database holds a helper procedure.
@@ -46,6 +48,14 @@ type Proc struct {
 	// TempDBName is the unqualified name in tempdb, never sp_-prefixed.
 	TempDBName string
 
+	// Options are the switches the procedure's tab offers, in toolbar order;
+	// each is off until the user turns it on.
+	Options []ProcOption
+
+	// Fixed are arguments every run passes, ahead of the options; only Param
+	// and Value apply.
+	Fixed []ProcOption
+
 	// script builds the CREATE OR ALTER for an unqualified name as one batch
 	// (no USE, no GO) for sp_executesql in the target database.
 	script func(name string) string
@@ -70,14 +80,38 @@ func (p *Proc) Qualified(l ProcLocation) string {
 	return ""
 }
 
-// Exec is the batch that runs the procedure, empty for ProcNone. Always
-// database-qualified, as neither name resolves unqualified from an arbitrary
-// database.
-func (p *Proc) Exec(l ProcLocation) string {
-	if q := p.Qualified(l); q != "" {
+// ProcOption is one switch a procedure tab offers. Off, the procedure runs
+// with the parameter's own default (the parameter isn't passed); on, Exec
+// passes Param = Value.
+type ProcOption struct {
+	// Label names the switch on the toolbar.
+	Label string
+	// Key is the switch's letter shortcut on the tab, lower case; the
+	// toolbar has no keyboard route of its own.
+	Key rune
+	// Param is the procedure's parameter, with its @.
+	Param string
+	// Value is the T-SQL literal passed when the switch is on. A constant,
+	// never user input: it is spliced into the batch.
+	Value string
+}
+
+// Exec is the batch that runs the procedure with its Fixed arguments and the
+// options that are on, empty for ProcNone. Always database-qualified, as neither name resolves
+// unqualified from an arbitrary database.
+func (p *Proc) Exec(l ProcLocation, on ...ProcOption) string {
+	q := p.Qualified(l)
+	if q == "" {
+		return ""
+	}
+	var args []string
+	for _, o := range slices.Concat(p.Fixed, on) {
+		args = append(args, o.Param+" = "+o.Value)
+	}
+	if len(args) == 0 {
 		return "exec " + q
 	}
-	return ""
+	return "exec " + q + " " + strings.Join(args, ", ")
 }
 
 // Script is the CREATE OR ALTER that installs the procedure at l, empty for
