@@ -345,29 +345,39 @@ func formatResultsAsText(ctx context.Context, set query.ResultSet, maxW, tabW in
 			}
 		}
 	}
+	// Numeric columns' values right-aligned, as SSMS's text results do; headers
+	// stay left.
+	right := make([]bool, len(widths))
+	for i := range min(len(right), len(set.ColumnTypes)) {
+		right[i] = resultColumnIsNumeric(set.ColumnTypes[i])
+	}
 	lines := editor.NewLineBuffer(tabW)
 	var sb strings.Builder
-	writeRow := func(cells []string) {
+	writeRow := func(cells []string, align bool) {
 		sb.Reset()
 		for i, cell := range cells {
 			if i > 0 {
 				sb.WriteByte(' ')
 			}
-			sb.WriteString(core.PadRight(cell, widths[i]))
+			if align && right[i] {
+				sb.WriteString(core.PadLeft(cell, widths[i]))
+			} else {
+				sb.WriteString(core.PadRight(cell, widths[i]))
+			}
 		}
 		lines.AppendText(sb.String())
 	}
-	writeRow(set.Columns)
+	writeRow(set.Columns, false)
 	seps := make([]string, len(widths))
 	for i, w := range widths {
 		seps[i] = strings.Repeat("-", w)
 	}
-	writeRow(seps)
+	writeRow(seps, false)
 	for r, row := range set.Rows {
 		if r%textCancelEvery == 0 && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		writeRow(row)
+		writeRow(row, true)
 	}
 	return lines, nil
 }

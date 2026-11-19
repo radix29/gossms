@@ -37,6 +37,14 @@ type FindReplaceDialog struct {
 
 	replaceMode bool
 
+	// rescope makes the next search compile afresh even with the options
+	// unchanged: set when Replace opens on a selection that is not the current
+	// match, i.e. a new selection for "In selection only" to scope to. Without it
+	// a reopened dialog kept the scope of the selection it was last compiled
+	// against (emptied, if an edit since touched its first or last row), and Find
+	// Next reported no matches with the new selection on screen.
+	rescope bool
+
 	// drag is the text-selection gesture a click in one of the dialog's text fields
 	// starts; see dialogs.FieldGesture for the ordering its three calls need.
 	drag dialogs.FieldGesture
@@ -65,7 +73,9 @@ func NewFindReplaceDialog(app *App) *FindReplaceDialog {
 	d.cbCase = widgets.NewCheckBox("Match case")
 	d.cbWord = widgets.NewCheckBox("Match whole word")
 	d.cbRegex = widgets.NewCheckBox("Regular expression")
-	d.cbSel = widgets.NewCheckBox("Replace All in selection only")
+	// Find Next and Replace stay inside the selection too (tuikit's InSelection),
+	// not only Replace All.
+	d.cbSel = widgets.NewCheckBox("In selection only")
 	return d
 }
 
@@ -108,6 +118,9 @@ func (d *FindReplaceDialog) show(replace bool) {
 		if sel := d.target.SelectedText(); sel != "" && !strings.Contains(sel, "\n") {
 			d.fFind.SetValue(sel)
 		}
+	}
+	if cur, _ := d.target.MatchPosition(); replace && cur == 0 && d.target.HasSelection() {
+		d.rescope = true
 	}
 	d.focusIdx = 0
 	d.syncFocus()
@@ -189,6 +202,7 @@ func (d *FindReplaceDialog) applyOptions() bool {
 		Regexp:      d.cbRegex.Checked(),
 		InSelection: d.replaceMode && d.cbSel.Checked(),
 	})
+	d.rescope = false
 	if err != nil {
 		// regexp's message is prefixed with "error parsing regexp: ", which costs a
 		// third of the status width and says nothing the label doesn't.
@@ -199,11 +213,11 @@ func (d *FindReplaceDialog) applyOptions() bool {
 	return true
 }
 
-// optionsChanged reports whether the target's compiled search still matches the
-// fields, so a Find Next that changed nothing doesn't recompile and throw the
+// optionsChanged reports whether the target's compiled search no longer matches
+// the fields (or rescope asks for a fresh compile), so a Find Next that changed nothing doesn't recompile and throw the
 // current match away.
 func (d *FindReplaceDialog) optionsChanged() bool {
-	if d.target == nil || !d.target.HasSearch() {
+	if d.target == nil || !d.target.HasSearch() || d.rescope {
 		return true
 	}
 	o := d.target.SearchOpts()

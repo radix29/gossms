@@ -331,6 +331,7 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 			// earlier showing, or superseded by a Refresh, would otherwise install its apply
 			// (for another object, or over the newer form's rows) in this showing's map.
 			d.SetPageReadOnly(page, seq, readOnly)
+			autoAlignFormGrids(form)
 			if d.SetPageForm(page, seq, form) {
 				d.applyFn[page] = apply
 			}

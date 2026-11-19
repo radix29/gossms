@@ -227,6 +227,42 @@ func TestFindModeIgnoresTheSelectionOnlyOption(t *testing.T) {
 	}
 }
 
+// Reopening Replace on a new selection scopes "In selection only" to that
+// selection, though the options are the ones already compiled: unchanged options
+// skip the recompile, so the dialog kept the previous selection's scope, and with
+// Find Next scoped it reported no matches with the new selection on screen.
+func TestReplaceReopenedOnANewSelectionRescopes(t *testing.T) {
+	a, qp := newFindTestApp(t, "foo foo\nfoo end")
+	d := a.findDialog()
+	qp.editor.SelectRange(0, 0, 0, 7)
+	d.ShowReplace()
+	d.fFind.SetValue("foo")
+	d.fReplace.SetValue("Z")
+	d.cbSel.SetChecked(true)
+	d.doFind(1)
+	d.Hide()
+
+	qp.editor.SelectRange(1, 0, 1, 7)
+	d.ShowReplace()
+	d.fFind.SetValue("foo") // ShowReplace seeded it from the selection
+	d.doReplaceAll()
+	if got, want := qp.editor.Text(), "foo foo\nZ end"; got != want {
+		t.Fatalf("text = %q, want %q (status %q)", got, want, d.status)
+	}
+
+	// Reopened on the current match (F3 left it selected), the search carries on.
+	qp.editor.SelectRange(0, 0, 0, 7)
+	d.ShowReplace()
+	d.fFind.SetValue("foo")
+	d.doFind(1)
+	d.Hide()
+	d.ShowReplace()
+	d.fFind.SetValue("foo")
+	if d.rescope {
+		t.Fatal("reopening on the current match asked for a fresh scope")
+	}
+}
+
 func TestFindDialogReportsAnInvalidRegex(t *testing.T) {
 	a, qp := newFindTestApp(t, "abc")
 	a.findDialog().ShowFind()

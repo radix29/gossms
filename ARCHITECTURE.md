@@ -509,7 +509,7 @@ gossms/
 │       ├── new_object_dialog.go  # newObjectDialog — the shell behind the New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── name_set.go           # nameSet/nameMap: name sets and maps keyed by gosmo.NameKey under the scope's collation (server, database or msdb), so they agree with gosmo.SameName
 │       ├── pending_edits.go      # pendingEdits: the master-detail pages' pending-edit list (rows as loaded and as edited; dirty, visible, revert, add/remove, swap); its Add duplicate checks under the scope's collation (pendingNameIndex); pendingNamesRefusal: their pre-Apply check of renames and of names a removal frees only on Apply
-│       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm, redrawGrid/resetGrid, wireGridEditor)
+│       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm, redrawGrid/resetGrid, wireGridEditor, listAutoAlign)
 │       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles
 │       ├── perm_state.go        # the Grant/Grant With Grant/Deny/(none) cell state, the orig→current transition each one needs, and the per-scope gosmo adapters — shared by every permissions grid below

@@ -72,10 +72,37 @@ func (p *QueryPanel) showResultSet(set query.ResultSet) {
 	if !ok {
 		// The set itself, not its Rows: it is the grid's NullSource.
 		p.results.SetSource(set.Columns, set)
+		p.results.SetColumnAlignments(resultColumnAligns(set))
 		return
 	}
 	p.results.SetSource(set.Columns, sortedResultSet{set: set, perm: s.perm})
+	p.results.SetColumnAlignments(resultColumnAligns(set))
 	p.results.SetSortIndicator(s.col, s.desc)
+}
+
+// resultColumnAligns right-aligns set's numeric columns, as SSMS's grid does.
+// bit sorts as a number but SSMS shows it left-aligned, so it stays left.
+func resultColumnAligns(set query.ResultSet) []controls.ColumnAlign {
+	aligns := make([]controls.ColumnAlign, len(set.ColumnTypes))
+	for i, typ := range set.ColumnTypes {
+		if resultColumnIsNumeric(typ) {
+			aligns[i] = controls.AlignRight
+		}
+	}
+	return aligns
+}
+
+// resultColumnIsNumeric reports whether a column of SQL Server type typ holds
+// numbers that are right-aligned in the grid and in Results to Text.
+func resultColumnIsNumeric(typ string) bool {
+	switch resultSortKindOf(typ) {
+	case sortAsInt:
+		name, _, _ := strings.Cut(typ, "(")
+		return name != "bit"
+	case sortAsDecimal, sortAsFloat:
+		return true
+	}
+	return false
 }
 
 // sortResultsByColumn is the results grid's OnHeaderClick: the clicked column

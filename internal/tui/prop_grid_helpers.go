@@ -553,3 +553,47 @@ func tickedAuditGroups(grid *propsheet.ToggleGridRow, groups []string) []string 
 	}
 	return ticked
 }
+
+// listAutoAlign is the DataGrid.SetAutoAlign classifier of the grids whose
+// cells are pre-rendered text (the Object Explorer Details pane, Properties and
+// New-object pages): a column right-aligns when its cells are numbers as
+// parseDetailNumber reads them ("1,234", "12.50 MB", "45%"), placeholders
+// aside. A Property/Value grid is a record, not a list, and stays left.
+func listAutoAlign(columns []string) func(cell string) controls.CellClass {
+	if isPropertyValueColumns(columns) {
+		return nil
+	}
+	return listCellClass
+}
+
+// listCellClass reads one cell for listAutoAlign, by the Details pane sort's
+// own rule (newDetailSortKey), so the columns that sort as numbers are the
+// ones that align as numbers.
+func listCellClass(cell string) controls.CellClass {
+	switch k := newDetailSortKey(cell); {
+	case k.blank:
+		return controls.CellBlank
+	case k.isNum:
+		return controls.CellNumber
+	}
+	return controls.CellText
+}
+
+// autoAlignFormGrids gives every grid on a property-sheet page listAutoAlign,
+// at the one place each page's form is installed (PropDialog.loadPage,
+// newObjectDialog's build), rather than at each page's grid.
+func autoAlignFormGrids(f *propsheet.Form) {
+	if f == nil {
+		return
+	}
+	for _, r := range f.Rows() {
+		// ToggleGridRow embeds a *GridRow, which a type switch on *GridRow
+		// alone misses (the Filegroups page's grid stayed left).
+		switch g := r.(type) {
+		case *propsheet.GridRow:
+			g.Grid.SetAutoAlign(listAutoAlign)
+		case *propsheet.ToggleGridRow:
+			g.Grid.SetAutoAlign(listAutoAlign)
+		}
+	}
+}

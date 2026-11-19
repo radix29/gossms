@@ -108,6 +108,9 @@ type detailResult struct {
 func NewDetailBrowser(title string) *DetailBrowser {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
+	// Numeric columns right-align; re-derived as backfilled cells land, since
+	// that runs RefreshColumnWidths.
+	grid.SetAutoAlign(listAutoAlign)
 	db := new(DetailBrowser{
 		title: title,
 		grid:  grid,
