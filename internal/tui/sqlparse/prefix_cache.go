@@ -47,8 +47,8 @@ type boundary struct {
 //   - Every boundary is a LexNormal position, so resuming needs no saved lexer
 //     state (see boundary).
 //   - A boundary before the edit keeps its offset: only text at or after the edit
-//     point moves. Unlike controls.prefixStates, which is indexed by line and
-//     must start over whenever the line count changes.
+//     point moves. So the resume needs only the unchanged prefix DirtyFrom
+//     bounds, not where the edit ends, and no convergence test.
 //   - Restarting mid-buffer cannot miss a "GO" line. A separator must start a
 //     line; the line holding the restart offset began before it and was already
 //     scanned, and every later line start is still walked.
@@ -210,11 +210,14 @@ func (c *PrefixCache) Scan(lines [][]rune, buf []rune, cursorRow, upTo int, rev 
 // many of its entries reach that far; (0, 0) when the cache cannot justify a
 // resume, which starts the next scan from offset 0.
 //
-// The invalidation rule is controls.prefixStates': the document's identity as
-// well as its version (two documents number versions independently from zero),
-// and a version exactly one ahead (DirtyFrom describes one mutation only). Typing
-// is a single setLine and so hits; a keystroke that first deletes a selection
-// bumps the version twice and costs one cold scan.
+// The invalidation rule: the document's identity as well as its version (two
+// documents number versions independently from zero), and a version exactly one
+// ahead (DirtyFrom describes one mutation only). DirtyFrom bounds only the
+// unchanged prefix; that suffices here because nothing is kept past it, unlike
+// the editor's line-state cache, which stops where a rescan converges and so
+// reads the document's splice log instead. Typing is a single setLine and so
+// hits; a keystroke that first deletes a selection bumps the version twice and
+// costs one cold scan.
 func (c *PrefixCache) validPrefix(lines [][]rune, rev TextRevision) (validTo, keep int) {
 	if !c.valid || rev.Doc == nil || c.doc != rev.Doc {
 		return 0, 0
@@ -228,8 +231,7 @@ func (c *PrefixCache) validPrefix(lines [][]rune, rev TextRevision) (validTo, ke
 		// Exactly one mutation, and it left every line above DirtyFrom alone. That
 		// line's start offset is the same in both revisions because the lines above
 		// it did not move, so it can be measured against the *new* lines even when
-		// the edit changed the line count (the mutation prefixStates must throw its
-		// whole array away for).
+		// the edit changed the line count.
 		validTo = min(validTo, OffsetForCursor(lines, rev.DirtyFrom, 0))
 	default:
 		return 0, 0
