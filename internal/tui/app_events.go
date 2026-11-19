@@ -1,35 +1,9 @@
 package tui
 
 import (
-	"unicode"
-
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/core"
 )
-
-// normalizeCtrlRune folds a Ctrl-modified letter back to KeyCtrlA..KeyCtrlZ,
-// keeping other modifiers.
-//
-// tcell folds only when Ctrl is the sole modifier, so Ctrl+Shift+<letter>
-// arrives as KeyRune with ModCtrl|ModShift and matches no binding. Kitty sends
-// the base rune ('o'), xterm's modifyOtherKeys the shifted one ('O'), hence
-// ToLower. Without this, Ctrl+Shift chords are dead on exactly the terminals
-// that can encode them.
-func normalizeCtrlRune(ev *tcell.EventKey) *tcell.EventKey {
-	// Ctrl+Shift only: Ctrl+Alt is AltGr on many layouts and must stay text.
-	if ev.Key() != tcell.KeyRune || ev.Modifiers()&^tcell.ModShift != tcell.ModCtrl {
-		return ev
-	}
-	str := []rune(ev.Str())
-	if len(str) != 1 {
-		return ev
-	}
-	r := unicode.ToLower(str[0])
-	if r < 'a' || r > 'z' {
-		return ev
-	}
-	return tcell.NewEventKey(tcell.KeyCtrlA+tcell.Key(r-'a'), "", ev.Modifiers())
-}
 
 // handleKey processes keyboard events; returns true to quit.
 func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
@@ -39,7 +13,9 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		kd.RecordKey(ev)
 	}
 
-	ev = normalizeCtrlRune(ev)
+	// Folded once here, not just inside tuikit's widgets: the app's own
+	// dispatch below (Ctrl+C/X/V, Ctrl+Shift+O) matches the KeyCtrlA..Z form.
+	ev = core.NormalizeKey(ev)
 
 	// Clipboard shortcuts are handled centrally before dialogs or focus:
 	// SetClipboard/GetClipboard are Screen methods, available only here.
@@ -118,7 +94,7 @@ func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
 		a.connectDialog().Show()
 		return true, false
 	case tcell.KeyCtrlO:
-		// Ctrl+Shift+O arrives as KeyCtrlO+ModShift only via normalizeCtrlRune
+		// Ctrl+Shift+O arrives as KeyCtrlO+ModShift only via core.NormalizeKey
 		// on modern-protocol terminals; elsewhere it's plain Ctrl+O (open
 		// file). F9 works everywhere.
 		if ev.Modifiers()&tcell.ModShift != 0 {

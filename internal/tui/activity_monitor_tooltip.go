@@ -46,7 +46,7 @@ func (am *ActivityMonitor) readTooltip(t *amTooltip, hit dashboard.ChartHit, idx
 	for _, ser := range hit.Series {
 		t.rows = append(t.rows, tooltipRow{
 			label: ser.Label,
-			value: charts.FormatValue(ser.At(idx)),
+			value: charts.FormatValue(hit.Value(ser, idx)),
 			color: ser.Color,
 		})
 	}

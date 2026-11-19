@@ -119,7 +119,7 @@ which owns them; the entries here say how goSSMS applies them.
 - **`Ctrl+Shift+<letter>` never arrives as `KeyCtrlX`** — tcell folds to
   `KeyCtrlA..Z` only when Ctrl is the sole modifier, so it arrives as `KeyRune`
   with `ModCtrl|ModShift` (Kitty/xterm modifyOtherKeys) or a plain control
-  byte (legacy). `normalizeCtrlRune` (top of `handleKey`, `app_events.go`)
+  byte (legacy). `core.NormalizeKey` (tuikit; top of `handleKey`, `app_events.go`)
   folds it back, on modern protocols only — anything that must work everywhere
   also needs a function key or Ctrl+non-letter (Connect has F9). Verify by
   injecting encodings with `tmux send-keys -H` and reading Key Diagnostics.
