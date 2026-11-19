@@ -111,6 +111,16 @@ terminal on both stdin and stdout.
 You need a modern terminal with UTF-8 and 256-colour support, plus network access
 to a SQL Server instance.
 
+> **Windows: use Windows Terminal.** On Windows 10 and any other setup that still
+> runs in the legacy Windows console host (`conhost.exe` — the plain
+> PowerShell/cmd window), goSSMS can show visual artifacts: wrong colours,
+> misaligned or garbled box-drawing and wide characters, flicker. Run it in
+> [Windows Terminal](https://github.com/microsoft/terminal) instead. Install it
+> from the [Microsoft Store](https://aka.ms/terminal), with
+> `winget install Microsoft.WindowsTerminal`, or from the
+> [GitHub releases](https://github.com/microsoft/terminal/releases). Recent
+> Windows 11 builds already use it as the default terminal.
+
 ### 3. Connect to SQL Server
 
 The Connect to Server dialog opens at startup. **History** (left) lists saved
