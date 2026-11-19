@@ -94,7 +94,7 @@ begin
             ,try_cast('<?query --' + char(13) + char(10) + blc.sql_text + char(13) + char(10) + '--?>'  as xml)  as [sql text]
             ,blc.wait_resource         as [wait resource]
             ,blc.command               as [command]
-            ,rtrim(blc.wait_time)      as [waittime]
+            ,blc.wait_time             as [waittime]
             ,blocking_spid
             ,left([level],charindex('#',[level],1)-1) as root
             ,level

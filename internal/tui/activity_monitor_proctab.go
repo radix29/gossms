@@ -519,6 +519,9 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 	} else {
 		pt.grid.SetSource(set.Columns, set)
 	}
+	// After either branch: SetSource clears the alignments, and a changed
+	// column set (an option toggled) has its numeric columns elsewhere.
+	pt.grid.SetColumnAlignments(resultColumnAligns(set))
 	pt.grid.SetSelectedRow(0)
 	pt.setStatus(fmt.Sprintf("%d row(s)  %s  (%s)",
 		len(set.Rows), time.Now().Format("15:04:05"), qualified))

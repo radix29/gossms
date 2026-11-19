@@ -322,6 +322,9 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 			}
 			d.prefetch = pf
 			d.build(pf)
+			for _, f := range d.forms {
+				autoAlignFormGrids(f)
+			}
 			for _, r := range waiting {
 				d.SetPageForm(r.page, r.seq, d.forms[r.page])
 			}
