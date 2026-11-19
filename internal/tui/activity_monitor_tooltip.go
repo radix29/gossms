@@ -99,11 +99,11 @@ func (am *ActivityMonitor) chartHit(title string) (dashboard.ChartHit, bool) {
 // canvasPos translates a screen position to canvas coordinates; screenPos
 // translates back.
 func (am *ActivityMonitor) canvasPos(x, y int) (int, int) {
-	return x - am.viewRect.X + am.scrollX[am.tab], y - am.viewRect.Y + am.scrollY[am.tab]
+	return am.viewport().ToCanvas(x, y)
 }
 
 func (am *ActivityMonitor) screenPos(cx, cy int) (int, int) {
-	return cx - am.scrollX[am.tab] + am.viewRect.X, cy - am.scrollY[am.tab] + am.viewRect.Y
+	return am.viewport().ToScreen(cx, cy)
 }
 
 // chartTab reports whether the active tab's charts resolve clicks. Includes

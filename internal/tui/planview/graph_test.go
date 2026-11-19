@@ -121,29 +121,29 @@ func TestGraphScrollbarDragScrolls(t *testing.T) {
 	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.X+r.W-1, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("handling a click on the horizontal scrollbar row should return true")
 	}
-	if !v.graphSt.sbDraggingX {
-		t.Fatal("graphSt.sbDraggingX should be true after pressing on the horizontal scrollbar")
+	if !v.graphSt.vp.Dragging() {
+		t.Fatal("graphSt.vp.Dragging() should be true after pressing on the horizontal scrollbar")
 	}
-	if v.graphSt.scrollX == 0 {
-		t.Error("graphSt.scrollX should have jumped forward when clicking near the right of the track")
+	if v.graphSt.vp.X == 0 {
+		t.Error("graphSt.vp.X should have jumped forward when clicking near the right of the track")
 	}
 	v.handleGraphTabMouse(tcell.NewEventMouse(r.X, r.Bottom()-1, tcell.ButtonNone, tcell.ModNone))
-	if v.graphSt.sbDraggingX {
-		t.Error("graphSt.sbDraggingX should reset on release")
+	if v.graphSt.vp.Dragging() {
+		t.Error("graphSt.vp.Dragging() should reset on release")
 	}
 
 	// Vertical bar: right column of the canvas, one row shy of the very
 	// bottom — that exact corner cell is where both bars meet, and favors
-	// the horizontal one (checked first in handleGraphTabMouse), same as
+	// the horizontal one (core.Viewport takes the horizontal one there), same as
 	// many real GUIs' scrollbar corner box.
 	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.Right()-1, r.Bottom()-2, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("handling a click on the vertical scrollbar column should return true")
 	}
-	if !v.graphSt.sbDraggingY {
-		t.Fatal("graphSt.sbDraggingY should be true after pressing on the vertical scrollbar")
+	if !v.graphSt.vp.Dragging() {
+		t.Fatal("graphSt.vp.Dragging() should be true after pressing on the vertical scrollbar")
 	}
-	if v.graphSt.scrollY == 0 {
-		t.Error("graphSt.scrollY should have jumped forward when clicking near the bottom of the track")
+	if v.graphSt.vp.Y == 0 {
+		t.Error("graphSt.vp.Y should have jumped forward when clicking near the bottom of the track")
 	}
 
 	if v.selectedID != selBefore {
@@ -313,16 +313,16 @@ func TestGraph_CanvasWheelLeftRightScrollsHorizontally(t *testing.T) {
 	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelRight, tcell.ModNone)) {
 		t.Fatal("HandleMouse(WheelRight) over the canvas returned false")
 	}
-	if v.graphSt.scrollX <= 0 {
-		t.Errorf("scrollX = %d after WheelRight, want > 0", v.graphSt.scrollX)
+	if v.graphSt.vp.X <= 0 {
+		t.Errorf("scrollX = %d after WheelRight, want > 0", v.graphSt.vp.X)
 	}
 
-	before := v.graphSt.scrollX
+	before := v.graphSt.vp.X
 	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelLeft, tcell.ModNone)) {
 		t.Fatal("HandleMouse(WheelLeft) over the canvas returned false")
 	}
-	if v.graphSt.scrollX >= before {
-		t.Errorf("scrollX = %d after WheelLeft, want less than %d", v.graphSt.scrollX, before)
+	if v.graphSt.vp.X >= before {
+		t.Errorf("scrollX = %d after WheelLeft, want less than %d", v.graphSt.vp.X, before)
 	}
 }
 

@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"slices"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tui/dashboard"
+	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
 )
@@ -21,16 +23,27 @@ func (am *ActivityMonitor) Draw(s tcell.Screen) {
 	am.procTab().draw(s)
 }
 
-// tabSegments computes each tab's extent; drawing and hit-testing share it so
-// clicks land where they look. Indexed by position in visibleTabs, not by
-// amTab.
-func (am *ActivityMonitor) tabSegments() [][]core.TabSegment {
+// tabBar returns the offered tabs' bar, built fresh each call; drawing and
+// hit-testing share it so clicks land where they look. Its indices are
+// positions in visibleTabs, not amTab values.
+func (am *ActivityMonitor) tabBar() *controls.TabBar {
 	tabs := am.visibleTabs()
-	widths := make([][]int, len(tabs))
+	labels := make([]string, len(tabs))
 	for i, t := range tabs {
-		widths[i] = []int{core.TabLabelWidth(amTabLabels[t])}
+		labels[i] = amTabLabels[t]
 	}
-	return core.TabStripSegments(am.tabRect.X+1, widths, am.tabRect.Right())
+	pal := theme.Active()
+	b := &controls.TabBar{
+		Labels: labels,
+		Active: slices.Index(tabs, am.tab),
+		Inset:  1,
+		// Same background as the dashboard section bars, so the dividing
+		// strips read as one system.
+		BarStyle: tcell.StyleDefault.Background(pal.ChartSectionBg).Foreground(pal.Text),
+		OnSelect: func(i int) { am.setTab(tabs[i]) },
+	}
+	b.SetBounds(am.tabRect.X, am.tabRect.Y, am.tabRect.W)
+	return b
 }
 
 // drawTabBar renders the offered tabs, styled like QueryPanel's result tabs.
@@ -38,22 +51,7 @@ func (am *ActivityMonitor) drawTabBar(s tcell.Screen) {
 	if am.tabRect.H != 1 {
 		return
 	}
-	pal := theme.Active()
-	// Same background as the dashboard section bars, so the dividing strips
-	// read as one system.
-	barStyle := tcell.StyleDefault.Background(pal.ChartSectionBg).Foreground(pal.Text)
-	core.FillRect(s, am.tabRect, ' ', barStyle)
-	tabs := am.visibleTabs()
-	for i, seg := range am.tabSegments() {
-		if i >= len(tabs) {
-			break
-		}
-		style := barStyle
-		if tabs[i] == am.tab {
-			style = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
-		}
-		core.DrawText(s, seg[0].X, am.tabRect.Y, style, " "+amTabLabels[tabs[i]]+" ")
-	}
+	am.tabBar().Draw(s)
 }
 
 // drawToolbar renders the active tab's refresh controls.
@@ -103,15 +101,14 @@ func (am *ActivityMonitor) drawDashboard(s tcell.Screen) {
 
 	// Clamped here too: a resize can shrink the canvas under an older scroll
 	// offset.
-	am.scrollTo(am.scrollX[am.tab], am.scrollY[am.tab])
-	sx, sy := am.scrollX[am.tab], am.scrollY[am.tab]
-	c.Blit(s, core.Rect{X: sx, Y: sy, W: am.viewRect.W, H: am.viewRect.H}, am.viewRect)
+	vp := am.viewport()
+	am.panned(vp.Clamp())
+	c.Blit(s, core.Rect{X: vp.X, Y: vp.Y, W: am.viewRect.W, H: am.viewRect.H}, am.viewRect)
 
 	pal := theme.Active()
 	track := tcell.StyleDefault.Background(pal.GridHeader).Foreground(pal.Border)
 	thumb := tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.BorderActive)
-	core.DrawScrollbar(s, am.viewRect.Right(), am.viewRect.Y, am.viewRect.H, ch, am.viewRect.H, sy, track, thumb)
-	core.DrawScrollbarH(s, am.viewRect.X, am.viewRect.Bottom(), am.viewRect.W, cw, am.viewRect.W, sx, track, thumb)
+	vp.DrawScrollbars(s, track, thumb)
 
 	// Last, so the tooltip sits on top. Re-resolved against the freshly rebuilt
 	// hit map, moving it onto its sample's current column.

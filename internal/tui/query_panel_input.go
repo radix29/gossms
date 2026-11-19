@@ -199,9 +199,7 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if p.tabRect.H == 1 && my == p.tabRect.Y && ev.Buttons() == tcell.Button1 {
 		p.dragZone.Arm(ev, qZoneTabs)
-		if i := p.tabAt(mx); i >= 0 {
-			p.setActiveTab(i)
-		}
+		p.tabBar().HandleMouse(ev)
 		return true
 	}
 	// A left- or right-click decides which sub-region owns keyboard focus from now on

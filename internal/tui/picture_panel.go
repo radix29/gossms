@@ -52,8 +52,9 @@ type PicturePanel struct {
 	ascii bool
 	// zoomCols is the art's width in cells while zoomed; 0 fits the view.
 	zoomCols int
-	// scrollX/scrollY is the art cell at the view's top-left while zoomed.
-	scrollX, scrollY int
+	// vp is the zoomed art's scroll (the art cell at the view's top-left)
+	// and its scrollbar latches; viewport sets its geometry.
+	vp core.Viewport
 
 	art    *gotuipic.Art
 	glyphs []string // art.Cells' runes as strings, built once per rendering
@@ -65,8 +66,6 @@ type PicturePanel struct {
 	// latch for the view: set on the press, cleared on release.
 	dragging   bool
 	dragFrom   [2]int
-	vbarDrag   bool
-	hbarDrag   bool
 	renderFail string
 
 	// filePath is where Save last wrote the picture, so a second Ctrl+S
@@ -88,8 +87,7 @@ const (
 	pzNone pictureZone = iota
 	pzToolbar
 	pzView
-	pzVBar
-	pzHBar
+	pzBar
 )
 
 // Toolbar cell indexes, in buildPictureTools' order.
@@ -208,7 +206,7 @@ func (pp *PicturePanel) SetBounds(x, y, w, h int) {
 	pp.rect = core.Rect{X: x, Y: y, W: w, H: h}
 	pp.toolRect = core.Rect{X: x, Y: y + 1, W: w, H: min(1, max(h-1, 0))}
 	pp.viewRect = core.Rect{X: x, Y: y + 2, W: w, H: max(h-2, 0)}
-	pp.clampScroll()
+	pp.viewport()
 }
 
 // ready reports whether there is a picture to render.
@@ -280,7 +278,7 @@ func (pp *PicturePanel) render() *gotuipic.Art {
 	for i, c := range art.Cells {
 		pp.glyphs[i] = string(c.Rune)
 	}
-	pp.clampScroll()
+	pp.viewport()
 	return art
 }
 
@@ -327,19 +325,17 @@ func (pp *PicturePanel) setZoom(cols int) {
 	fx, fy := 0.5, 0.5
 	area := pp.artArea()
 	if old := pp.render(); old != nil && pp.zoomed() {
-		fx = (float64(pp.scrollX) + float64(area.W)/2) / float64(old.Cols)
-		fy = (float64(pp.scrollY) + float64(area.H)/2) / float64(old.Rows)
+		fx = (float64(pp.vp.X) + float64(area.W)/2) / float64(old.Cols)
+		fy = (float64(pp.vp.Y) + float64(area.H)/2) / float64(old.Rows)
 	}
 	pp.zoomCols = cols
 	art := pp.render()
 	if art == nil || !pp.zoomed() {
-		pp.scrollX, pp.scrollY = 0, 0
+		pp.vp.X, pp.vp.Y = 0, 0
 		return
 	}
 	area = pp.artArea()
-	pp.scrollX = int(fx*float64(art.Cols) - float64(area.W)/2)
-	pp.scrollY = int(fy*float64(art.Rows) - float64(area.H)/2)
-	pp.clampScroll()
+	pp.viewport().ScrollTo(int(fx*float64(art.Cols)-float64(area.W)/2), int(fy*float64(art.Rows)-float64(area.H)/2))
 }
 
 // zoomBy steps the zoom in (dir > 0) or out, by at least one column.
@@ -386,21 +382,22 @@ func (pp *PicturePanel) toggleMode() {
 
 // scrollBy pans the zoomed art.
 func (pp *PicturePanel) scrollBy(dx, dy int) {
-	pp.scrollX += dx
-	pp.scrollY += dy
-	pp.clampScroll()
+	pp.viewport().ScrollBy(dx, dy)
 }
 
-// clampScroll keeps the view inside the art; a smaller art is centred and
-// never scrolled.
-func (pp *PicturePanel) clampScroll() {
-	if pp.art == nil || !pp.zoomed() {
-		pp.scrollX, pp.scrollY = 0, 0
-		return
+// viewport is the art's viewport, its geometry refreshed from artArea and the
+// last rendering and the offset clamped to them: the view stays inside the
+// art, and an unzoomed art (no canvas) is never scrolled. It reads pp.art, not
+// render(), which calls it.
+func (pp *PicturePanel) viewport() *core.Viewport {
+	vp := &pp.vp
+	vp.View = pp.artArea()
+	vp.ContentW, vp.ContentH = 0, 0
+	if pp.art != nil && pp.zoomed() {
+		vp.ContentW, vp.ContentH = pp.art.Cols, pp.art.Rows
 	}
-	area := pp.artArea()
-	pp.scrollX = core.Clamp(pp.scrollX, 0, max(pp.art.Cols-area.W, 0))
-	pp.scrollY = core.Clamp(pp.scrollY, 0, max(pp.art.Rows-area.H, 0))
+	vp.Clamp()
+	return vp
 }
 
 // pictureColor maps a gotuipic cell colour to a terminal one; alpha 0 means

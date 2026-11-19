@@ -146,7 +146,7 @@ func TestLiveTilesShowRowsOfEstimateByState(t *testing.T) {
 	var sawRunning, sawDone bool
 	for _, tl := range v.graphSt.layout.tiles {
 		r := v.graphCanvasRect
-		x, y := r.X+tl.rect.X-v.graphSt.scrollX, r.Y+tl.rect.Y-v.graphSt.scrollY
+		x, y := v.graphSt.vp.ToScreen(tl.rect.X, tl.rect.Y)
 		if !rectFullyIn(r, core.Rect{X: x, Y: y, W: tl.rect.W, H: tl.rect.H}) || tl.node.ID == v.selectedID {
 			continue
 		}

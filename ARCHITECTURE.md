@@ -493,7 +493,7 @@ gossms/
 │       ├── options_dialog.go     # Tools > Options — icon style, max cell length, IntelliSense on/off, saved to config.json
 │       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels (a dialogs.ListDialog)
 │       ├── tasks_dialog.go       # Tools > Background Tasks — live task list + Cancel (a dialogs.ListDialog)
-│       ├── help_dialog.go        # F1 help modal (embeds dialogs.ModalDialog)
+│       ├── help_dialog.go        # F1 help modal — helpLines in a dialogs.TextDialog
 │       ├── key_diagnostics_dialog.go # Help > Key Diagnostics — shows tcell's decoded Key/Modifiers/rune per keypress
 │       ├── status_history_dialog.go  # running, timestamped, capped log of status-bar messages
 │       ├── update_check.go       # Help > Check for Updates — GitHub releases API + semver compare

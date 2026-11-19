@@ -10,7 +10,6 @@ import (
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/layout"
-	"github.com/radix29/tuikit/theme"
 )
 
 // plan_compare_panel.go is SSMS's Compare Showplan: two plans of one query read
@@ -458,13 +457,7 @@ func (p *PlanComparePanel) layoutChildren() {
 
 // Draw renders the title bar and both grids.
 func (p *PlanComparePanel) Draw(s tcell.Screen) {
-	pal := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.MenuText)
-	if p.active {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
-	}
-	core.FillRect(s, core.Rect{X: p.rect.X, Y: p.rect.Y, W: p.rect.W, H: 1}, ' ', titleStyle)
-	core.DrawTextClipped(s, p.rect.X+1, p.rect.Y, p.rect.W-2, titleStyle, p.title)
+	layout.DrawTitleBar(s, p.rect, p.title, p.active, "")
 	p.drawPickers(s)
 	p.split.Draw(s)
 	p.props.Draw(s)

@@ -11,7 +11,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/planview"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/layout"
 )
 
 // live_plan_panel.go is Activity Monitor's Show Live Execution Plan: the live
@@ -198,13 +198,7 @@ func (lp *LivePlanPanel) Draw(s tcell.Screen) {
 		default:
 		}
 	}
-	pal := theme.Active()
-	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.MenuText)
-	if lp.active {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
-	}
-	core.FillRect(s, core.Rect{X: lp.rect.X, Y: lp.rect.Y, W: lp.rect.W, H: 1}, ' ', titleStyle)
-	core.DrawTextClipped(s, lp.rect.X+1, lp.rect.Y, lp.rect.W-2, titleStyle, lp.Title()+" · "+lp.state)
+	layout.DrawTitleBar(s, lp.rect, lp.Title()+" · "+lp.state, lp.active, "")
 	lp.planView.Draw(s)
 	// Drawn last — see the "overlays drawn last" rule in ~/go/tuikit/ARCHITECTURE.md § Overlays.
 	lp.planView.DrawOverlay(s)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
 )
@@ -87,14 +88,18 @@ func (d *ConnectDialog) drawButtonRow(s tcell.Screen) {
 	d.DrawSplitButtons(s, connectLeftButtons, connectRightButtons, d.btnFocus, d.buttonsDisabled())
 }
 
-// tabSegments computes each tab's extent; drawing and hit-testing share it so
-// clicks land where they look.
-func (d *ConnectDialog) tabSegments() [][]core.TabSegment {
-	widths := make([][]int, len(connectTabLabels))
-	for i, label := range connectTabLabels {
-		widths[i] = []int{core.TabLabelWidth(label)}
+// tabBar returns the right pane's Login/Connection String tab bar, built fresh
+// each call; drawing and hit-testing share it so clicks land where they look.
+func (d *ConnectDialog) tabBar() *controls.TabBar {
+	p := theme.Active()
+	b := &controls.TabBar{
+		Labels:   connectTabLabels[:],
+		Active:   int(d.tab),
+		BarStyle: tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText),
+		OnSelect: func(i int) { d.setTab(connectTab(i)) },
 	}
-	return core.TabStripSegments(d.tabRect.X, widths, d.tabRect.Right()+1)
+	b.SetBounds(d.tabRect.X, d.tabRect.Y, d.tabRect.W)
+	return b
 }
 
 // Draw renders the dialog.
@@ -165,15 +170,7 @@ func (d *ConnectDialog) drawHistoryPane(s tcell.Screen, labelStyle tcell.Style) 
 // like the query panel's result tabs.
 func (d *ConnectDialog) drawTabBar(s tcell.Screen) {
 	p := theme.Active()
-	barStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
-	core.FillRect(s, d.tabRect, ' ', barStyle)
-	for i, seg := range d.tabSegments() {
-		style := barStyle
-		if connectTab(i) == d.tab {
-			style = tcell.StyleDefault.Background(p.BorderActive).Foreground(p.SelectedText).Bold(true)
-		}
-		core.DrawText(s, seg[0].X, d.tabRect.Y, style, " "+connectTabLabels[i]+" ")
-	}
+	d.tabBar().Draw(s)
 	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
 	core.DrawHLine(s, d.rightX, d.tabRect.Y+1, d.rightWidth(), ruleStyle)
 }

@@ -217,33 +217,39 @@ func TestExpandButton_ClickNoopWithoutCallback(t *testing.T) {
 	v := New()
 	v.SetBounds(0, 0, 80, 24)
 	v.SetPlan(loadTestPlan(t))
-	// expandBtnRect is zero until Draw runs (untested here — tcell v3 has
-	// no SimulationScreen, so Draw itself isn't exercised by any test in
-	// this codebase; see controls/editor/editor_test.go for the same state-only
-	// convention). Clicking where the button would be must still be a
-	// harmless tab-bar click, not a panic, with OnExpand nil.
-	if v.HandleMouse(newClick(1, 0)) == false {
+	// With OnExpand nil there is no button: a click where it would be must
+	// be a harmless tab-bar click, not a panic.
+	if r := v.expandRect(); r != (core.Rect{}) {
+		t.Fatalf("expandRect = %+v with OnExpand nil, want zero", r)
+	}
+	if v.HandleMouse(newClick(72, 0)) == false {
 		t.Fatal("HandleMouse on the tab bar row returned false, want true (tab click)")
 	}
 }
 
-// TestExpandButton_ClickFiresCallback checks a click landing inside
-// expandBtnRect calls OnExpand exactly once — expandBtnRect is normally
-// only populated by drawTabBar (see the no-SimulationScreen note above),
-// so it's set directly here to simulate the post-Draw state.
+// TestExpandButton_ClickFiresCallback checks a click on the drawn Expand
+// button calls OnExpand exactly once, and a search indicator replaces it.
 func TestExpandButton_ClickFiresCallback(t *testing.T) {
 	v := New()
 	v.SetBounds(0, 0, 80, 24)
 	v.SetPlan(loadTestPlan(t))
-	v.expandBtnRect = core.Rect{X: 60, Y: 0, W: 10, H: 1}
 	calls := 0
 	v.OnExpand = func() { calls++ }
+	r := v.expandRect()
+	if r.W == 0 {
+		t.Fatal("expandRect is zero with OnExpand set on an 80-column bar")
+	}
 
-	if !v.HandleMouse(newClick(62, 0)) {
-		t.Fatal("HandleMouse inside expandBtnRect returned false, want true")
+	if !v.HandleMouse(newClick(r.X+2, r.Y)) {
+		t.Fatal("HandleMouse on the Expand button returned false, want true")
 	}
 	if calls != 1 {
 		t.Errorf("OnExpand called %d times, want 1", calls)
+	}
+
+	v.searchSt.active, v.searchSt.query = true, "x"
+	if r := v.expandRect(); r != (core.Rect{}) {
+		t.Errorf("expandRect = %+v while a search shows, want zero", r)
 	}
 }
 

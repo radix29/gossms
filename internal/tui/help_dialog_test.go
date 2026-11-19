@@ -10,8 +10,9 @@ import (
 	"github.com/radix29/tuikit/tuikittest"
 )
 
-// TestHelpDialogLosesNoTail pins B20: at every terminal width the help is
-// wrapped to the width it is drawn at, so no row is wider than the text area
+// TestHelpDialogLosesNoTail pins B20 against the real help text (the
+// mechanics are dialogs.TextDialog's, tested there): at every terminal width
+// the help is wrapped to the width it is drawn at, so no row is wider than the text area
 // (DrawTextClipped would cut it) and the wrapped rows still carry every word of
 // helpLines, in order.
 func TestHelpDialogLosesNoTail(t *testing.T) {
@@ -28,16 +29,16 @@ func TestHelpDialogLosesNoTail(t *testing.T) {
 		}
 		// The last help row must sit above the Close button row, or the button
 		// row overdraws it and the help's final line is never seen.
-		if last := d.InnerRect().Y + d.dataH(); last >= d.ButtonRowY() {
+		if last := d.InnerRect().Y + d.DataH(); last >= d.ButtonRowY() {
 			t.Errorf("%dx%d: last help row %d overlaps the button row %d", sz[0], sz[1], last, d.ButtonRowY())
 		}
 		textW := d.InnerRect().W - 2
-		for i, l := range d.lines {
+		for i, l := range d.Rows() {
 			if w := core.DisplayWidth(l); w > textW {
 				t.Errorf("%dx%d: row %d is %d columns, text area %d: %q", sz[0], sz[1], i, w, textW, l)
 			}
 		}
-		if got := strings.Fields(strings.Join(d.lines, " ")); !slices.Equal(got, want) {
+		if got := strings.Fields(strings.Join(d.Rows(), " ")); !slices.Equal(got, want) {
 			t.Errorf("%dx%d: wrapped help lost or reordered words", sz[0], sz[1])
 		}
 	}
@@ -49,35 +50,8 @@ func TestHelpDialogWideTerminalNeedsNoWrap(t *testing.T) {
 	a := newTestApp()
 	a.setScreen(tuikittest.NewScreen(200, 50))
 	d := withScreen(NewHelpDialog(a), a.screen)
-	if len(d.lines) != len(helpLines) {
-		t.Fatalf("at 200 columns: %d rows, want %d (no wrapping)", len(d.lines), len(helpLines))
-	}
-}
-
-// TestWrapHelpLinesHangsUnderDescription: a wrapped entry continues under its
-// description column, not under the key or at the margin.
-func TestWrapHelpLinesHangsUnderDescription(t *testing.T) {
-	got, _ := wrapHelpLines([]string{"  Ctrl+X      one two three four five"}, 30)
-	want := []string{
-		"  Ctrl+X      one two three",
-		"              four five",
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-// TestWrapHelpLinesKeepsStyleOfSourceLine: every row of a wrapped line is
-// styled as its source line — a heading's continuation stays a heading even
-// when it hangs indented, and an entry's continuation never becomes one.
-func TestWrapHelpLinesKeepsStyleOfSourceLine(t *testing.T) {
-	got, heads := wrapHelpLines([]string{
-		"Heading  with a gap that wraps here",
-		"  Ctrl+X      one two three four five",
-	}, 30)
-	want := []bool{true, true, false, false}
-	if !slices.Equal(heads, want) {
-		t.Errorf("heads %v for rows %q, want %v", heads, got, want)
+	if len(d.Rows()) != len(helpLines) {
+		t.Fatalf("at 200 columns: %d rows, want %d (no wrapping)", len(d.Rows()), len(helpLines))
 	}
 }
 

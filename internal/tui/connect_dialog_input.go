@@ -324,15 +324,5 @@ func (d *ConnectDialog) visibleEditors() []*editor.Editor {
 // tabClicked switches tabs on a click in the tab bar, and reports whether it
 // consumed the event.
 func (d *ConnectDialog) tabClicked(ev *tcell.EventMouse) bool {
-	mx, my := ev.Position()
-	if my != d.tabRect.Y {
-		return false
-	}
-	for i, seg := range d.tabSegments() {
-		if mx >= seg[0].X && mx < seg[0].X+seg[0].W {
-			d.setTab(connectTab(i))
-			return true
-		}
-	}
-	return false
+	return d.tabBar().HandleMouse(ev)
 }

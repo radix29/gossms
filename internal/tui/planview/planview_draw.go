@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/textutil"
+	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
 )
@@ -12,7 +13,7 @@ import (
 // Draw renders the tab bar, statement selector (when shown), and the
 // active tab's content.
 func (v *PlanView) Draw(s tcell.Screen) {
-	v.drawTabBar(s)
+	v.tabBar().Draw(s)
 	v.drawStatementBar(s)
 	v.drawMissingIndexBanner(s)
 	v.drawLiveRow(s)
@@ -74,49 +75,35 @@ func (v *PlanView) drawWrappedMessage(s tcell.Screen, msg string) {
 	}
 }
 
-// tabSegments computes each tab's on-screen extent; Draw and hit-test share it
-// so hits match what's drawn.
-func (v *PlanView) tabSegments() [][]core.TabSegment {
-	widths := make([][]int, len(tabLabels))
-	for i, label := range tabLabels {
-		widths[i] = []int{core.TabLabelWidth(label)}
+// expandLabel is the tab bar's right-aligned Expand button, offered when
+// OnExpand is set and no search is showing.
+const expandLabel = "[ Expand ]"
+
+// tabBar returns the Plan/Tree/XML tab bar, built fresh each call so draw and
+// hit-test share one layout. Its right cell is the search indicator while one
+// shows (it takes priority), else the Expand button when OnExpand is set.
+func (v *PlanView) tabBar() *controls.TabBar {
+	b := &controls.TabBar{
+		Labels:   tabLabels[:],
+		Active:   int(v.activeTab),
+		Inset:    1,
+		Right:    v.searchIndicatorText(),
+		OnSelect: func(i int) { v.setActiveTab(Tab(i)) },
 	}
-	return core.TabStripSegments(v.tabRect.X+1, widths, v.tabRect.Right())
+	if b.Right == "" && v.OnExpand != nil {
+		b.Right = expandLabel
+	}
+	b.SetBounds(v.tabRect.X, v.tabRect.Y, v.tabRect.W)
+	return b
 }
 
-// drawTabBar renders the Plan/Tree/XML tabs and, when OnExpand is set, a
-// right-aligned "[ Expand ]" button.
-func (v *PlanView) drawTabBar(s tcell.Screen) {
-	pal := theme.Active()
-	bar := theme.StyleMenuBar()
-	core.FillRect(s, v.tabRect, ' ', bar)
-	col := v.tabRect.X + 1
-	for i, seg := range v.tabSegments() {
-		st := bar
-		if Tab(i) == v.activeTab {
-			st = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
-		}
-		core.DrawText(s, seg[0].X, v.tabRect.Y, st, " "+tabLabels[i]+" ")
-		col = seg[0].X + seg[0].W + 1
+// expandRect returns where the Expand button is drawn, or the zero Rect when
+// it isn't (no OnExpand, a search indicator in its place, or no room).
+func (v *PlanView) expandRect() core.Rect {
+	if b := v.tabBar(); b.Right == expandLabel {
+		return b.RightRect()
 	}
-	v.expandBtnRect = core.Rect{}
-	if search := v.searchIndicatorText(); search != "" {
-		w := core.DisplayWidth(search)
-		x := v.tabRect.Right() - w - 1
-		if x > col {
-			core.DrawText(s, x, v.tabRect.Y, bar, search)
-		}
-		return // the search indicator takes priority over Expand
-	}
-	if v.OnExpand != nil {
-		label := "[ Expand ]"
-		w := core.DisplayWidth(label)
-		x := v.tabRect.Right() - w - 1
-		if x > col {
-			core.DrawText(s, x, v.tabRect.Y, bar, label)
-			v.expandBtnRect = core.Rect{X: x, Y: v.tabRect.Y, W: w, H: 1}
-		}
-	}
+	return core.Rect{}
 }
 
 // searchIndicatorText returns the tab bar's search display: "/query_" while
@@ -129,16 +116,6 @@ func (v *PlanView) searchIndicatorText() string {
 		return fmt.Sprintf("/%s (%d/%d)", v.searchSt.query, v.searchSt.idx+1, len(v.searchSt.matches))
 	}
 	return ""
-}
-
-// tabAt returns the tab index at screen column mx on the tab bar, or -1.
-func (v *PlanView) tabAt(mx int) int {
-	for i, seg := range v.tabSegments() {
-		if mx >= seg[0].X && mx < seg[0].X+seg[0].W {
-			return i
-		}
-	}
-	return -1
 }
 
 // arrowRects returns the ◀ and ▶ hit-test rectangles for the statement

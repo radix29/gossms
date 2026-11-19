@@ -237,10 +237,10 @@ func TestConnectDialogTabRingHoldsOnlyTheVisibleTab(t *testing.T) {
 }
 
 // Clicking a tab switches the pane, and the columns hit-tested are the ones
-// drawn — both come from the same TabStripSegments call.
+// drawn — both come from the same tabBar layout.
 func TestConnectDialogTabBarClickSwitchesPanes(t *testing.T) {
 	d := twoPaneConnectDialog(t)
-	segs := d.tabSegments()
+	segs := d.tabBar().Segments()
 	if len(segs) != len(connectTabLabels) {
 		t.Fatalf("laid out %d tabs, want %d — the pane is too narrow for both", len(segs), len(connectTabLabels))
 	}

@@ -110,7 +110,7 @@ func TestTabSegmentsPairWithTheVisibleTabs(t *testing.T) {
 		newAzureActivityMonitor(t, 120, 40),
 	} {
 		tabs := am.visibleTabs()
-		segs := am.tabSegments()
+		segs := am.tabBar().Segments()
 		if len(segs) != len(tabs) {
 			t.Fatalf("%d segments for %d visible tabs", len(segs), len(tabs))
 		}

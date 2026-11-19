@@ -86,7 +86,7 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 // read-only editor.Editor, which draws and drags its own scrollbar — the
 // same reason StatusHistoryDialog, built that way from the start, has never
 // had a case here. That half is pinned in tuikit's
-// controls/scrollbar_drag_test.go.
+// controls/editor/scrollbar_drag_test.go.
 func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
 	a.setScreen(tuikittest.NewScreen(80, 30))
@@ -94,7 +94,7 @@ func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	d.Show()
 
 	inner := d.InnerRect()
-	dataH := d.dataH()
+	dataH := d.DataH()
 	if len(helpLines) <= dataH {
 		t.Fatalf("helpLines (%d) must exceed dataH (%d) for this test to mean anything", len(helpLines), dataH)
 	}
@@ -103,7 +103,7 @@ func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	if !d.HandleMouse(tcell.NewEventMouse(sbX, inner.Y+1+dataH-1, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("HandleMouse on the scrollbar column should be handled")
 	}
-	if d.scroll == 0 {
+	if d.Scroll() == 0 {
 		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
 	}
 }

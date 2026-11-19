@@ -4,10 +4,8 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/tuikit/controls/editor"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/dialogs"
-	"github.com/radix29/tuikit/theme"
 )
 
 // maxKeyDiagLines caps the diagnostics log so a long session doesn't grow
@@ -25,18 +23,16 @@ const maxKeyDiagLines = 200
 //
 // Newest entries are prepended, so the most recent key press is the first line.
 //
-// The log lives in a read-only editor.Editor rather than a hand-rolled line
-// list, so it can be selected and copied: what the dialog shows is the text pasted
-// into a bug report, and a non-core.ClipboardTarget widget would make Ctrl+C do
-// nothing.
+// The log is tuikit's dialogs.LogDialog (as StatusHistoryDialog's is): a
+// read-only editor rather than a hand-rolled line list, so it can be selected
+// and copied — what the dialog shows is the text pasted into a bug report. Its
+// prepend-only sync matters doubly here: the dialog records the very keys used
+// to copy from it (Ctrl+A is itself recorded), so a SetText rebuild on the next
+// frame would drop the selection and the following Ctrl+C would copy nothing.
+// Each Show starts a fresh session (ResetOnShow).
 type KeyDiagnosticsDialog struct {
-	dialogs.ModalDialog
-	app    *App
-	editor *editor.Editor
-
-	// feed holds the log and the lines recorded since the last sync, for
-	// syncIfDirty to prepend (see StatusHistoryDialog.feed).
-	feed *editor.LogFeed
+	*dialogs.LogDialog
+	app *App
 
 	// lastMouse is the buttons/modifiers of the last mouse event recorded, so
 	// RecordMouse can drop the resends tcell sends throughout a drag. -1 means
@@ -44,29 +40,32 @@ type KeyDiagnosticsDialog struct {
 	lastMouse int
 }
 
+// keyDiagButtons are the dialog's buttons; Close (the last) is the default.
+var keyDiagButtons = []string{"Copy", "Close"}
+
 // NewKeyDiagnosticsDialog creates the key diagnostics dialog.
 func NewKeyDiagnosticsDialog(app *App) *KeyDiagnosticsDialog {
-	d := &KeyDiagnosticsDialog{app: app, feed: editor.NewLogFeed(maxKeyDiagLines), lastMouse: -1}
-	d.InitModal("Key Diagnostics", 70, 24)
-	d.editor = editor.NewEditor(nil)
-	d.editor.SetReadOnly(true)
-	d.editor.Focus(true)
-	// No gutter: line numbers say nothing about a key log, and every column
-	// they take comes off lines that are already 60-odd wide.
-	d.editor.SetGutterVisible(false)
+	d := &KeyDiagnosticsDialog{app: app, lastMouse: -1}
+	d.LogDialog = dialogs.NewLogDialog(dialogs.LogDialogSpec{
+		Title: "Key Diagnostics", W: 70, H: 24,
+		Max:   maxKeyDiagLines,
+		Empty: "Press any key to see how it was decoded...",
+		// No gutter: line numbers say nothing about a key log, and every column
+		// they take comes off lines that are already 60-odd wide.
+		Gutter:      false,
+		ResetOnShow: true,
+		Buttons:     keyDiagButtons,
+		OnButton:    func(int) { d.copyAll() }, // Copy is the only non-Close button
+	})
 	return d
 }
 
 // RecordKey appends a formatted description of ev to the log. Call only while
 // the dialog is visible (see app_events.go's handleKey); recording unseen keys
 // is wasted work.
-//
-// Unlike StatusHistoryDialog.Record this needs no mutex: handleKey runs on the
-// UI goroutine, the only one that reaches this.
 func (d *KeyDiagnosticsDialog) RecordKey(ev *tcell.EventKey) {
-	line := fmt.Sprintf("%-20s  Key=%-4d Mod=%-3d Str=%-8q Repeat=%d",
-		ev.Name(), ev.Key(), ev.Modifiers(), ev.Str(), ev.Repeat())
-	d.feed.Record(line)
+	d.Record(fmt.Sprintf("%-20s  Key=%-4d Mod=%-3d Str=%-8q Repeat=%d",
+		ev.Name(), ev.Key(), ev.Modifiers(), ev.Str(), ev.Repeat()))
 }
 
 // RecordMouse appends a description of a mouse event: the buttons, the modifiers,
@@ -88,148 +87,33 @@ func (d *KeyDiagnosticsDialog) RecordMouse(ev *tcell.EventMouse) {
 	}
 	d.lastMouse = state
 	x, y := ev.Position()
-	line := fmt.Sprintf("%-20s  Btn=%-4d Mod=%-3d At=%d,%d",
-		core.MouseEventName(ev), ev.Buttons(), ev.Modifiers(), x, y)
-	d.feed.Record(line)
+	d.Record(fmt.Sprintf("%-20s  Btn=%-4d Mod=%-3d At=%d,%d",
+		core.MouseEventName(ev), ev.Buttons(), ev.Modifiers(), x, y))
 }
 
-// syncIfDirty prepends the lines RecordKey or RecordMouse added since the last
-// sync.
-//
-// It must not rebuild with Editor.SetText, which resets cursor, scroll and
-// selection. The dialog records the very keys used to copy from it: Ctrl+A is
-// itself recorded, so a rebuild on the next frame would drop the selection and
-// the following Ctrl+C would copy nothing. LogFeed.Sync prepends with
-// Editor.PrependLines, which moves the selection down with the text it covers,
-// so new keys appear while it stays.
-func (d *KeyDiagnosticsDialog) syncIfDirty() {
-	if d.editor != nil {
-		d.feed.Sync(d.editor)
-	}
-}
-
-// Show resets the log, then displays the dialog; each open starts a fresh
-// session.
-//
-// The editor is cleared with SetText rather than synced, which would keep the
-// previous session's text below the new one and a selection left from the last
-// showing.
+// Show starts a fresh session: LogDialog empties the log (ResetOnShow), and the
+// mouse collapse forgets the previous showing's last event.
 func (d *KeyDiagnosticsDialog) Show() {
-	d.feed.Reset()
 	d.lastMouse = -1
-	if d.editor != nil {
-		d.editor.SetText("")
-	}
-	d.ModalDialog.Show()
-}
-
-// keyDiagButtons are the dialog's buttons; Close is the default.
-var keyDiagButtons = []string{"Copy", "Close"}
-
-// Draw renders the dialog.
-func (d *KeyDiagnosticsDialog) Draw(s tcell.Screen) {
-	if !d.Visible() {
-		return
-	}
-	d.syncIfDirty()
-
-	d.DrawBase(s)
-	inner := d.InnerRect()
-	dataH := inner.H - 2 // leave room for the button row
-
-	if d.feed.Len() == 0 || d.editor == nil {
-		p := theme.Active()
-		dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
-		core.DrawText(s, inner.X+1, inner.Y+1, dimStyle, "Press any key to see how it was decoded...")
-	} else {
-		d.editor.SetBounds(inner.X, inner.Y, inner.W, dataH)
-		d.editor.Draw(s)
-	}
-
-	d.DrawButtons(s, keyDiagButtons, 1)
+	d.LogDialog.Show()
 }
 
 // copyAll selects the whole log and copies it, for the Copy button: the keyboard
 // route (Ctrl+A then Ctrl+C) records two more lines before it completes, and on a
 // narrow terminal the selection is fiddly.
 //
-// The selection is dropped as soon as the text has been read. syncIfDirty refuses
-// to rebuild the editor while one stands, and a read-only Editor ignores every
-// plain rune key without clearing it, so a leftover selection would freeze the log
-// on the keys this dialog exists to decode until the user pressed an arrow.
+// The selection is dropped as soon as the text has been read: a read-only Editor
+// ignores every plain rune key without clearing it, so a leftover select-all
+// would sit over the log while the keys this dialog exists to decode arrive
+// above it, and the next Ctrl+C would copy the stale whole-log selection.
 // copySelection reads SelectedText() synchronously, so clearing right after is
 // safe.
 func (d *KeyDiagnosticsDialog) copyAll() {
-	if d.editor == nil || d.feed.Len() == 0 {
+	if d.Len() == 0 {
 		return
 	}
-	d.editor.SelectAll()
+	e := d.Editor()
+	e.SelectAll()
 	d.app.copySelection()
-	d.editor.ClearSelection()
-}
-
-// HandleKey processes keyboard events. RecordKey (called from app_events.go
-// first) has already logged ev, so Escape/Enter closing the dialog shows up in
-// the log too, as does the Ctrl+C that copies from it, which App.handleKey
-// consumes centrally before any dialog sees it.
-//
-// The read-only editor gets first refusal (arrows, Home/End, PgUp/PgDn,
-// Shift-selection, Ctrl+A); it rejects Escape and Enter in read-only mode,
-// which leaves those free to close the dialog.
-func (d *KeyDiagnosticsDialog) HandleKey(ev *tcell.EventKey) bool {
-	if !d.Visible() {
-		return false
-	}
-	if d.editor != nil && d.editor.HandleKey(ev) {
-		return true
-	}
-	switch ev.Key() {
-	case tcell.KeyEscape, tcell.KeyEnter:
-		d.Hide()
-	}
-	return true
-}
-
-// HandleMouse handles mouse events.
-func (d *KeyDiagnosticsDialog) HandleMouse(ev *tcell.EventMouse) bool {
-	if !d.Visible() {
-		return false
-	}
-	// A release must reach d.editor even when it lands outside the dialog
-	// (consumed below) — otherwise its next press is swallowed as a
-	// continuation of the stale drag. Editor.HandleMouse returns false on
-	// ButtonNone, so this has no effect beyond resetting the latch.
-	if ev.Buttons() == tcell.ButtonNone && d.editor != nil {
-		d.editor.HandleMouse(ev)
-	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	switch d.ButtonClicked(ev, keyDiagButtons) {
-	case 0:
-		d.copyAll()
-		return true
-	case 1:
-		d.Hide()
-		return true
-	}
-	if ev.Buttons() == tcell.ButtonNone {
-		return true
-	}
-	if d.editor != nil {
-		d.editor.HandleMouse(ev)
-	}
-	return true
-}
-
-// FocusClipboardTargetAt implements core.ClipboardFocuser: the log editor is
-// the only field, always focused, so a right-click on it is all it takes.
-func (d *KeyDiagnosticsDialog) FocusClipboardTargetAt(x, y int) bool {
-	return d.editor != nil && d.editor.Bounds().Contains(x, y)
-}
-
-// FocusedClipboardTarget implements core.ClipboardHost. The log editor is
-// read-only, so Copy works and Cut/Paste are no-ops on it.
-func (d *KeyDiagnosticsDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	return d.editor
+	e.ClearSelection()
 }

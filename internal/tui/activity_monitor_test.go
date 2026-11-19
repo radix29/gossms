@@ -214,17 +214,17 @@ func TestActivityMonitorScrollingReportsWhatItDid(t *testing.T) {
 func TestActivityMonitorScrollIsPerTab(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	amKey(am, tcell.KeyPgDn)
-	historyY := am.scrollY[amTabHistory]
+	historyY := am.vp[amTabHistory].Y
 	if historyY == 0 {
 		t.Fatal("PgDn on the History tab didn't scroll")
 	}
 
 	am.setTab(amTabSample)
-	if am.scrollY[amTabSample] != 0 {
+	if am.vp[amTabSample].Y != 0 {
 		t.Error("switching tabs carried the History scroll position over")
 	}
 	am.setTab(amTabHistory)
-	if am.scrollY[amTabHistory] != historyY {
+	if am.vp[amTabHistory].Y != historyY {
 		t.Error("returning to History lost its scroll position")
 	}
 }
@@ -254,7 +254,7 @@ func TestActivityMonitorTabClickAndKeyboardSwitching(t *testing.T) {
 		t.Fatalf("Shift+Tab left the panel on tab %d, want History", am.tab)
 	}
 
-	segs := am.tabSegments()
+	segs := am.tabBar().Segments()
 	x := segs[2][0].X + 1
 	am.HandleMouse(tcell.NewEventMouse(x, am.tabRect.Y, tcell.Button1, tcell.ModNone))
 	if am.tab != amTabTempDB {
@@ -294,7 +294,7 @@ func TestActivityMonitorWheelScrolls(t *testing.T) {
 	if !am.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelDown, tcell.ModNone)) {
 		t.Fatal("the wheel didn't scroll the dashboard")
 	}
-	if am.scrollY[amTabHistory] == 0 {
+	if am.vp[amTabHistory].Y == 0 {
 		t.Error("the wheel claimed the event without scrolling")
 	}
 	if am.HandleMouse(tcell.NewEventMouse(mx, am.tabRect.Y, tcell.WheelDown, tcell.ModNone)) {
@@ -370,8 +370,8 @@ func TestActivityMonitorChartClickPinsATooltip(t *testing.T) {
 	amRender(am, 150, 40) // the hit map comes from a draw
 
 	hit := am.hits[0]
-	x := am.viewRect.X + hit.Plot.Right() - 1 - am.scrollX[am.tab]
-	y := am.viewRect.Y + hit.Plot.Y - am.scrollY[am.tab]
+	x := am.viewRect.X + hit.Plot.Right() - 1 - am.vp[am.tab].X
+	y := am.viewRect.Y + hit.Plot.Y - am.vp[am.tab].Y
 	if !amClick(am, x, y) {
 		t.Fatal("a click on the plot area wasn't claimed")
 	}
@@ -402,7 +402,7 @@ func TestActivityMonitorScrollDismissesTheTooltip(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -422,7 +422,7 @@ func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -432,7 +432,7 @@ func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	am.HandleMouse(tcell.NewEventMouse(bar, am.viewRect.Bottom()-1, tcell.Button1, tcell.ModNone))
 	am.HandleMouse(tcell.NewEventMouse(bar, am.viewRect.Bottom()-1, tcell.ButtonNone, tcell.ModNone))
 
-	if am.scrollY[am.tab] == 0 {
+	if am.vp[am.tab].Y == 0 {
 		t.Fatal("the scrollbar drag didn't scroll")
 	}
 	if am.tooltip != nil {
@@ -452,7 +452,7 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	// The rightmost column is newest; the next sample takes it and the box must
 	// move.
 	hit := am.hits[0]
-	x := am.viewRect.X + hit.Plot.Right() - 1 - am.scrollX[am.tab]
+	x := am.viewRect.X + hit.Plot.Right() - 1 - am.vp[am.tab].X
 	amClick(am, x, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
@@ -505,7 +505,7 @@ func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.X-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.X-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -531,7 +531,7 @@ func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -561,7 +561,7 @@ func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 		t.Fatal("the TempDB tab recorded no chart hits to click")
 	}
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y-am.scrollY[am.tab])
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y-am.vp[am.tab].Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -589,8 +589,8 @@ func TestActivityMonitorTooltipNamesTheClickedSample(t *testing.T) {
 	amRender(am, 150, 40)
 
 	hit := am.hits[0]
-	newest := am.pinTooltip(am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
-	older := am.pinTooltip(am.viewRect.X+hit.Plot.Right()-6-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	newest := am.pinTooltip(am.viewRect.X+hit.Plot.Right()-1-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
+	older := am.pinTooltip(am.viewRect.X+hit.Plot.Right()-6-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if newest == nil || older == nil {
 		t.Fatal("a column inside the plot produced no tooltip")
 	}
@@ -611,7 +611,7 @@ func TestActivityMonitorTooltipCallsOutItsTimeOnTheAxis(t *testing.T) {
 		t.Fatal("the chart recorded no time-axis row to call out on")
 	}
 	// Near the plot's left, where the box sits clear of the callout.
-	amClick(am, am.viewRect.X+hit.Plot.X+5-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	amClick(am, am.viewRect.X+hit.Plot.X+5-am.vp[am.tab].X, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
@@ -648,9 +648,9 @@ func TestActivityMonitorMemoryCompositionClickPinsATooltip(t *testing.T) {
 		t.Fatalf("the Sample tab reported %d chart hits, want the composition bar", len(am.hits))
 	}
 	hit := am.hits[0]
-	y := am.viewRect.Y + hit.Plot.Y - am.scrollY[amTabSample]
+	y := am.viewRect.Y + hit.Plot.Y - am.vp[amTabSample].Y
 	for _, dx := range []int{0, hit.Plot.W / 2, hit.Plot.W - 1} {
-		tip := am.pinTooltip(am.viewRect.X+hit.Plot.X+dx-am.scrollX[amTabSample], y)
+		tip := am.pinTooltip(am.viewRect.X+hit.Plot.X+dx-am.vp[amTabSample].X, y)
 		if tip == nil {
 			t.Fatalf("column %d of the composition bar produced no tooltip", dx)
 		}
@@ -756,7 +756,7 @@ func TestActivityMonitorTempDBScrollsAndPinsATooltip(t *testing.T) {
 	am.setTab(amTabTempDB)
 	amRender(am, 160, 45)
 
-	if !amKey(am, tcell.KeyDown) || am.scrollY[amTabTempDB] == 0 {
+	if !amKey(am, tcell.KeyDown) || am.vp[amTabTempDB].Y == 0 {
 		t.Fatal("the TempDB tab did not scroll")
 	}
 	am.scrollTo(0, 0)

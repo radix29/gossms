@@ -23,13 +23,12 @@ var tabLabels = [...]string{"Plan", "Tree", "XML"}
 // PlanView renders a parsed execution plan as a tabbed control: a
 // graphical plan, an expandable tree, and the raw XML. See doc.go.
 type PlanView struct {
-	rect          core.Rect
-	tabRect       core.Rect
-	stmtRect      core.Rect
-	bannerRect    core.Rect // missing-index banner; zero when the statement has none
-	liveRect      core.Rect // live mode's progress row; zero outside live mode
-	contentRect   core.Rect
-	expandBtnRect core.Rect // zero when OnExpand is nil
+	rect        core.Rect
+	tabRect     core.Rect
+	stmtRect    core.Rect
+	bannerRect  core.Rect // missing-index banner; zero when the statement has none
+	liveRect    core.Rect // live mode's progress row; zero outside live mode
+	contentRect core.Rect
 
 	plan      *showplan.Plan
 	err       error // set by SetPlanXML on a parse failure

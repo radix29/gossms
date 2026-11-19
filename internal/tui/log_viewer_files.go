@@ -67,8 +67,8 @@ func (lv *LogViewer) showLogFileMenu() {
 	items = append(items,
 		controls.MenuItem{Divider: true},
 		controls.MenuItem{Label: "Select Files...", Action: func() {
-			// Seeded here, not in showLogFileChecklist, which every toggle re-enters:
-			// seeding there would undo the tick that called it.
+			// Seeded here, not in logFileChecklist, which every tick's refresh
+			// re-enters: seeding there would undo the tick that called it.
 			lv.pending = slices.Clone(lv.sel)
 			lv.showLogFileChecklist()
 		}})
@@ -103,12 +103,18 @@ func (lv *LogViewer) enumeratedFamilies() []gosmo.ErrorLogType {
 // Agent logs of the same minute side by side is the reason to look at the Agent
 // log at all.
 func (lv *LogViewer) showLogFileChecklist() {
+	lv.popMenu(logToolFile, lv.logFileChecklist())
+	lv.app.contextMenu.SetRefresh(lv.logFileChecklist)
+}
+
+// logFileChecklist builds showLogFileChecklist's rows from pending, as each
+// tick's refresh rebuilds them (the ☑/☐ and the Read entry's count follow).
+func (lv *LogViewer) logFileChecklist() []controls.MenuItem {
 	families := lv.enumeratedFamilies()
 	if len(families) == 0 {
-		lv.popMenu(logToolFile, []controls.MenuItem{
+		return []controls.MenuItem{
 			{Label: "(log list not loaded — Refresh)", Action: lv.Refresh},
-		})
-		return
+		}
 	}
 	// Named only when there is something to tell apart: with one family
 	// enumerated, rows stay unprefixed.
@@ -120,42 +126,31 @@ func (lv *LogViewer) showLogFileChecklist() {
 			items = append(items, controls.MenuItem{Divider: true})
 		}
 		for _, f := range lv.files[t] {
-			ref := logFileRef{Type: t, Num: f.Number}
-			all = append(all, ref)
-			mark := "☐ "
-			if slices.Contains(lv.pending, ref) {
-				mark = "☑ "
-			}
-			label := errorLogFileLabel(f)
-			if named {
-				label = logFamilyShortName(t) + " — " + label
-			}
-			// The item's own index, taken as appended: family dividers make it differ
-			// from the file's list position, and SetHover addresses menu rows.
-			row := len(items)
-			items = append(items, controls.MenuItem{Label: mark + label, Action: func() {
+			all = append(all, logFileRef{Type: t, Num: f.Number})
+		}
+		items = append(items, controls.CheckItems(lv.files[t],
+			func(f *gosmo.ErrorLogFile) bool {
+				return slices.Contains(lv.pending, logFileRef{Type: t, Num: f.Number})
+			},
+			func(f *gosmo.ErrorLogFile) string {
+				if named {
+					return logFamilyShortName(t) + " — " + errorLogFileLabel(f)
+				}
+				return errorLogFileLabel(f)
+			},
+			func(f *gosmo.ErrorLogFile) {
+				ref := logFileRef{Type: t, Num: f.Number}
 				if j := slices.Index(lv.pending, ref); j >= 0 {
 					lv.pending = slices.Delete(lv.pending, j, j+1)
 				} else {
 					lv.pending = append(lv.pending, ref)
 				}
-				lv.showLogFileChecklist()
-				// Re-showing resets the hover, which sends a keyboard user's cursor back to
-				// the top on every tick. Restore it to the ticked row.
-				lv.app.contextMenu.SetHover(row)
-			}})
-		}
+			})...)
 	}
-	items = append(items,
+	return append(items,
 		controls.MenuItem{Divider: true},
-		controls.MenuItem{Label: "Select All", Action: func() {
-			lv.pending = all
-			lv.showLogFileChecklist()
-		}},
-		controls.MenuItem{Label: "Clear", Action: func() {
-			lv.pending = nil
-			lv.showLogFileChecklist()
-		}},
+		controls.MenuItem{Label: "Select All", KeepOpen: true, Action: func() { lv.pending = all }},
+		controls.MenuItem{Label: "Clear", KeepOpen: true, Action: func() { lv.pending = nil }},
 		controls.MenuItem{Divider: true},
 		controls.MenuItem{
 			Label:   lv.checklistApplyLabel(named),
@@ -163,7 +158,6 @@ func (lv *LogViewer) showLogFileChecklist() {
 			Note:    "tick at least one file",
 			Action:  func() { lv.ShowLogs(lv.logType, lv.pending) },
 		})
-	lv.popMenu(logToolFile, items)
 }
 
 // checklistApplyLabel names what the checklist's last entry will read, so the

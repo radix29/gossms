@@ -104,9 +104,9 @@ type ActivityMonitor struct {
 
 	tab amTab
 
-	// scrollX/scrollY are per tab, so returning to a tab restores its position.
-	scrollX [amTabCount]int
-	scrollY [amTabCount]int
+	// vp is per tab, so returning to a tab restores its position; viewport
+	// sets the active one's geometry. Each holds its scrollbar drag latches.
+	vp [amTabCount]core.Viewport
 
 	// act, td and inst are the collector state of the three dashboard feeds
 	// (History/Sample, TempDB, Instance). Tab-dependent reads go through
@@ -178,9 +178,7 @@ type ActivityMonitor struct {
 	// redraws, so a paused dashboard keeps it.
 	tooltip *amTooltip
 
-	dragZone  core.Gesture[amDragZone]
-	vDragging bool
-	hDragging bool
+	dragZone core.Gesture[amDragZone]
 }
 
 // amFeed is one dashboard's collector state: rates, Pause, running, last
@@ -607,34 +605,45 @@ func (am *ActivityMonitor) canvasSize() (int, int) {
 	return max(cw, am.viewRect.W), ch
 }
 
-// scrollLimits is the active tab's max scroll offset per axis; zero on
-// non-canvas tabs, making scroll keys return false.
-func (am *ActivityMonitor) scrollLimits() (maxX, maxY int) {
-	if !am.tab.canvasTab() {
-		return 0, 0
+// viewport is the active tab's viewport, its geometry refreshed from viewRect
+// and the tab's canvas (none on non-canvas tabs, making scroll keys return
+// false). The offset is not clamped here: scrollTo does that, so a clamp after
+// a resize drops the tooltip like any other pan.
+func (am *ActivityMonitor) viewport() *core.Viewport {
+	vp := &am.vp[am.tab]
+	vp.View = am.viewRect
+	vp.ContentW, vp.ContentH = 0, 0
+	if am.tab.canvasTab() {
+		vp.ContentW, vp.ContentH = am.canvasSize()
 	}
-	cw, ch := am.canvasSize()
-	return max(cw-am.viewRect.W, 0), max(ch-am.viewRect.H, 0)
+	return vp
+}
+
+// scrollLimits is the active tab's max scroll offset per axis; zero on
+// non-canvas tabs.
+func (am *ActivityMonitor) scrollLimits() (maxX, maxY int) {
+	vp := am.viewport()
+	return vp.MaxX(), vp.MaxY()
 }
 
 // scrollTo moves the viewport, clamped, and reports whether it moved; HandleKey
 // returns that so a key at a boundary falls through to App.
 func (am *ActivityMonitor) scrollTo(x, y int) bool {
-	maxX, maxY := am.scrollLimits()
-	x = core.Clamp(x, 0, maxX)
-	y = core.Clamp(y, 0, maxY)
-	if x == am.scrollX[am.tab] && y == am.scrollY[am.tab] {
-		return false
-	}
-	am.scrollX[am.tab], am.scrollY[am.tab] = x, y
-	// A pan drops the pinned tooltip; it would cover what the user scrolled to.
-	am.tooltip = nil
-	return true
+	return am.panned(am.viewport().ScrollTo(x, y))
 }
 
 // scrollBy is scrollTo relative to the current position.
 func (am *ActivityMonitor) scrollBy(dx, dy int) bool {
-	return am.scrollTo(am.scrollX[am.tab]+dx, am.scrollY[am.tab]+dy)
+	return am.panned(am.viewport().ScrollBy(dx, dy))
+}
+
+// panned drops the pinned tooltip after a pan (it would cover what the user
+// scrolled to) and passes moved through.
+func (am *ActivityMonitor) panned(moved bool) bool {
+	if moved {
+		am.tooltip = nil
+	}
+	return moved
 }
 
 // visibleTabs is this connection's tab bar, in order: every tab minus those the

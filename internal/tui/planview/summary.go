@@ -108,11 +108,10 @@ func (v *PlanView) drawSummaryOverlay(s tcell.Screen) {
 
 // summaryHeaderStyleAndText builds the header's style and title by focus.
 func (v *PlanView) summaryHeaderStyleAndText() (tcell.Style, string) {
-	hs := theme.StyleMenuBar()
+	hs := theme.StyleTitleInactive()
 	title := "Operator Summary  ('o' to cycle, c/r/t to sort, Tab to focus)"
 	if v.bottomFocused {
-		pal := theme.Active()
-		hs = tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.SelectedText).Bold(true)
+		hs = theme.StyleTitleActive()
 		title = "Operator Summary  (focused — Tab to return, ↑↓/Enter, Ctrl+Space to show full value)"
 	}
 	return hs, title
