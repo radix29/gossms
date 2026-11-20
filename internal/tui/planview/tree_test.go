@@ -323,3 +323,46 @@ func TestTreeRowClickIsOnePerPhysicalPress(t *testing.T) {
 			v.treeSt.collapsed[target.ID])
 	}
 }
+
+// TestTree_LeftJumpsToParent pins Explorer-style Left in the operator tree: a
+// leaf moves to its parent, an expanded operator collapses in place, and a
+// collapsed one moves to its parent in turn.
+func TestTree_LeftJumpsToParent(t *testing.T) {
+	v := newTreeTabView(t)
+	leaf := -1
+	for i, r := range v.treeSt.rows {
+		if r.depth >= 2 && len(r.node.Children) == 0 {
+			leaf = i
+			break
+		}
+	}
+	if leaf < 0 {
+		t.Fatal("test plan needs a leaf operator at depth >= 2")
+	}
+	parentOf := func(i int) int {
+		for j := i - 1; j >= 0; j-- {
+			if v.treeSt.rows[j].depth < v.treeSt.rows[i].depth {
+				return v.treeSt.rows[j].node.ID
+			}
+		}
+		return -1
+	}
+	parent := parentOf(leaf)
+	v.selectNode(v.treeSt.rows[leaf].node.ID)
+
+	v.HandleKey(namedKey(tcell.KeyLeft))
+	if v.selectedID != parent {
+		t.Fatalf("Left on a leaf: selectedID = %d, want parent %d", v.selectedID, parent)
+	}
+	rows := len(v.treeSt.rows)
+	v.HandleKey(namedKey(tcell.KeyLeft))
+	if v.selectedID != parent || !v.treeSt.collapsed[parent] || len(v.treeSt.rows) >= rows {
+		t.Fatalf("Left on expanded parent: selectedID = %d, collapsed = %v; want it collapsed in place",
+			v.selectedID, v.treeSt.collapsed[parent])
+	}
+	grand := parentOf(v.selectedRowIndex())
+	v.HandleKey(namedKey(tcell.KeyLeft))
+	if v.selectedID != grand {
+		t.Errorf("Left on collapsed parent: selectedID = %d, want grandparent %d", v.selectedID, grand)
+	}
+}
