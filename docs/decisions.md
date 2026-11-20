@@ -1725,8 +1725,9 @@ it from the string 'NULL'.
   `Conn.checkBadConn` still "Ignore non-fatal server errors". Cited by symbol —
   lines move.
 - **`App.fanOut` (`safego.go`) is the one pool outside
-  `safego`/`safegoRepair`**, taking label and recover by hand (Detail Browser
-  backfill, Log File Viewer `readLogFiles`).
+  `safego`/`safegoRepair`**, labelling and recovering its own workers through
+  `loop.Runner.FanOut` (Detail Browser backfill, Log File Viewer
+  `readLogFiles`).
 - **`charts.StackedHistoryChart.Draw` stays though unreached** — `doc.go`
   advertises `Draw` on all six chart types; the dashboard uses `DrawFrame` for
   the time row. `Plot`/`TimeRow` mirror `HistoryChart`'s pair.
@@ -1898,6 +1899,19 @@ it from the string 'NULL'.
   and New Database's filegroups pass a closure reading the General page's
   collation at each Add. `pendingNamesRefusal` (via `pendingRefusal`) and its
   English text stay in gossms: the Apply-order rules are SQL Server's.
+- **Background goroutines start through tuikit's `loop.Runner`** (2026-11-20,
+  tuikit reuse round 6): the traceback label (`loop.Label`, pprof `op`), the
+  recover, `GoRepair`'s repair posted before the report, and `FanOut`'s
+  bounded pool recovering per item with its queue filled before any worker
+  starts. The earlier reason for keeping it in gossms ("tuikit has no async
+  layer") went when `loop` got `Poster` and `Latest`. A struct, not package
+  functions, so the ~170 call sites don't repeat `Post`/`Report`/`Workers`.
+  `safego`/`safegoRepair`/`fanOut` stay as one-line delegates over a
+  `Runner` built per call (it holds no state, so no lazy init for a
+  background caller to race on); `reportPanic` (log + status bar) is its
+  `Report`. `App.recoverPanic` went: its one caller was the old `fanOut`.
+  Driven in the binary with a forced panic in a Detail Browser backfill
+  (row repaired to N/A, rest filled) and a Log File Viewer read.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,

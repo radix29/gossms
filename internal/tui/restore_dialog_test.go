@@ -81,7 +81,7 @@ func TestSelectedHeaderSurvivesAStaleIndex(t *testing.T) {
 
 // TestSelectedHeaderOnNoHeaders pins the nil return. The stale-index guard
 // above used to fall back to headers[0], which panics when there is no
-// headers[0] — on the UI goroutine, where recoverPanic cannot catch it.
+// headers[0] — on the UI goroutine, where safego's recovery cannot catch it.
 func TestSelectedHeaderOnNoHeaders(t *testing.T) {
 	d := &RestoreDialog{}
 	if got := d.selectedHeader(); got != nil {

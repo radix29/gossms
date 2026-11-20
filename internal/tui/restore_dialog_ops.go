@@ -216,7 +216,7 @@ func (d *RestoreDialog) deviceForRestore() string { return d.sourceForRestore().
 
 // selectedHeader returns the backup set the inspect view is showing and the
 // restore will target, or nil when there are no headers. The nil return is not
-// decoration: this runs on the UI goroutine, where recoverPanic cannot reach, so an
+// decoration: this runs on the UI goroutine, where safego's recovery cannot reach, so an
 // index into an empty slice takes the process down with the terminal still on the
 // alternate screen. A stale headerIdx falls back to the first set.
 func (d *RestoreDialog) selectedHeader() *gosmo.BackupHeader {

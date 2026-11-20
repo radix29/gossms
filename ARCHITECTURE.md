@@ -164,7 +164,7 @@ race. Background work has one shape:
 - **Work** off-thread, touching nothing the UI owns.
 - **Report** with **`App.postAndWake(fn)`** — `fn` runs on the UI goroutine.
   `postProgress`/`postTaskDone` wrap it.
-- **Start** with **`App.safego(what, fn)`** (or `defer a.recoverPanic(what)`).
+- **Start** with **`App.safego(what, fn)`**.
   An unrecovered background panic kills the process before `screen.Fini()`
   restores the terminal — trace and unsaved query text lost. go-mssqldb
   panics outright on an unknown column type ID, so this is not theoretical.
@@ -343,7 +343,7 @@ gossms/
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── latest.go              # `latest`, an alias of tuikit's loop.Latest (the latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result) — see § Latest-only loads
-│       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one (bar FlushSaves' exit-time waiter)
+│       ├── safego.go             # App.safego/safegoRepair and fanOut (the one bounded worker pool), delegates over tuikit's loop.Runner, plus reportPanic, its Report callback (log + status bar); every background goroutine runs under one (bar FlushSaves' exit-time waiter)
 │       ├── prop_page_gate.go    # withRequires/withRequiresOn: attaches a gate.Right set to a propPage, the one tie between the gate package and the Properties dialogs
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
@@ -806,13 +806,15 @@ win10cli: System32 4551 entries 1.2 s, `C:\Windows` 35 ms, `C:\Program Files`
 ### Starting the goroutine: safego
 
 Start with **`App.safego("what", fn)`**, never a bare `go func()` — it is the
-goroutine plus `defer recoverPanic(what)`, and hand-written halves eventually
-miss the `defer`.
+goroutine plus a labelled recover, and hand-written halves eventually miss the
+`defer`. The mechanism is tuikit's `loop.Runner` (`safego.go` builds one per
+call over `postAndWake`, `reportPanic` and `maxRowFetchConcurrency`); the rules
+below are gossms's use of it.
 
 The one exception is the bounded pool **`App.fanOut(n, what, work, onPanic)`**
 (`safego.go`; Detail Browser backfill, Log File Viewer per-file reads). It
-recovers each item separately, so a panic costs that item, not its worker's
-queue; `onPanic` runs *before* `fanOut` returns, which is how backfill queues
+recovers each item separately (`loop.Runner.FanOut`), so a panic costs that
+item, not its worker's queue; `onPanic` runs *before* `fanOut` returns, which is how backfill queues
 `markFailed` ahead of the caller caching its rows.
 
 `App.FlushSaves` (`app_saves.go`) runs one bare goroutine — a `WaitGroup.Wait`

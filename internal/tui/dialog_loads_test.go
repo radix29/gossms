@@ -14,7 +14,7 @@ import (
 )
 
 // The async loads in these tests run against a bare ServerConn, so their
-// goroutines panic on the nil gosmo.Server and recoverPanic logs it (muted by
+// goroutines panic on the nil gosmo.Server and reportPanic logs it (muted by
 // quietLog). Nothing drains a.wake, so no completion ever runs: what is
 // under test is which runs are still current, not what they deliver.
 

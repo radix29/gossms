@@ -112,9 +112,9 @@ func TestBackupDialogDragOutOfDestKeepsExtending(t *testing.T) {
 	d := withScreen(NewBackupDialog(a), a.screen)
 	// show builds the widgets, and also kicks off the async database-list
 	// fetch. Against a bare ServerConn that goroutine panics on the nil
-	// gosmo.Server and recoverPanic logs the stack — expected, and muted so
+	// gosmo.Server and reportPanic logs the stack — expected, and muted so
 	// it can't be mistaken for this test failing. Dropping the app's screen
-	// makes recoverPanic's postAndWake a no-op rather than dereferencing the
+	// makes reportPanic's postAndWake a no-op rather than dereferencing the
 	// fake's nil embedded tcell.Screen; the dialog kept its own reference
 	// for its rect.
 	quietLog(t)
