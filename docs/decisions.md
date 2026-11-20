@@ -2062,6 +2062,25 @@ it from the string 'NULL'.
   (`renderPreservingView`) named it as if it were tuikit API; both now point
   at `DataGrid.SetDataPreservingView`. The other goSSMS mentions in tuikit
   are history in "why" comments and stay.
+- **Every top/bottom split is tuikit's `layout.NewStackSplitter`**
+  (2026-11-20, tuikit reuse round 13, item 1). It is a horizontal bar at half
+  the rect, labelled; the 0.1/0.9 clamp gossms set by hand was already
+  `NewSplitter`'s default, so the preset takes no ratio or limits parameter
+  (`SetRatio`/`SetLimits` still apply, as `newViewerPanel` does). The label
+  suffix is `layout.ResizeHint` ("(drag or Ctrl+Up/Down to resize)").
+  `newHorizontalSplitter` went; `newVerticalSplitter` (the explorer split,
+  0.3 within 0.1/0.8, one consumer) stays in gossms.
+- **A pinned chart readout's life is tuikit's `charts.Pin`** (2026-11-20,
+  tuikit reuse round 13, item 2; taken with one consumer, Activity Monitor,
+  because tuikit already owned the box, callout and `PlotHit`, and the
+  identity-and-drift logic is what the next chart host would re-derive wrong).
+  `PinAt` pins a bucket by chart title and time, `Refresh` re-derives its
+  column each frame and reports false on chart gone / pruned / aged off the
+  plot / out of view, `Draw` does callout then box and skips a box that
+  doesn't fit. Unlike the plan, the canvas↔screen translation went too: Pin
+  takes a `core.Viewport`, as `DrawAxisCallout` already did. gossms keeps what
+  a bucket's time means per tab (`bucketTime`, `bucketIndex`) and the
+  pan/click/tab-switch drop rules (`panned`, `setTab`, `press`).
 - **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
   `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
   is read at draw time, so labels are fixed and a flip needs no

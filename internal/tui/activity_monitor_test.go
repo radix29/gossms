@@ -386,15 +386,15 @@ func TestActivityMonitorChartClickPinsATooltip(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("clicking a chart pinned no tooltip")
 	}
-	if am.tooltip.time == "" {
+	if am.tooltip.Time == "" {
 		t.Error("the tooltip names no sample time")
 	}
-	if len(am.tooltip.rows) != len(hit.Series) {
-		t.Errorf("tooltip has %d rows, want one per series (%d)", len(am.tooltip.rows), len(hit.Series))
+	if len(am.tooltip.Rows) != len(hit.Series) {
+		t.Errorf("tooltip has %d rows, want one per series (%d)", len(am.tooltip.Rows), len(hit.Series))
 	}
 	rows := amRender(am, 150, 40)
-	if !amRowsContain(rows, am.tooltip.rows[0].Label) {
-		t.Errorf("the pinned tooltip wasn't drawn: %q", am.tooltip.rows[0].Label)
+	if !amRowsContain(rows, am.tooltip.Rows[0].Label) {
+		t.Errorf("the pinned tooltip wasn't drawn: %q", am.tooltip.Rows[0].Label)
 	}
 
 	amClick(am, x, y)
@@ -465,7 +465,7 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned, pinnedTime, col := am.tooltip.rows[0].Value, am.tooltip.time, am.tooltip.col
+	pinned, pinnedTime, col := am.tooltip.Rows[0].Value, am.tooltip.Time, am.tooltip.Col
 
 	am.applySample(activity.Sample{
 		At:              time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC),
@@ -477,17 +477,17 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("the tooltip was dropped by a new sample; its own sample is still on the chart")
 	}
-	if got := am.tooltip.time; got != pinnedTime {
+	if got := am.tooltip.Time; got != pinnedTime {
 		t.Errorf("the tooltip now names %q, want the sample it was pinned to (%q)", got, pinnedTime)
 	}
-	if got := am.tooltip.rows[0].Value; got != pinned {
+	if got := am.tooltip.Rows[0].Value; got != pinned {
 		t.Errorf("the tooltip reads %q, want its own sample's %q", got, pinned)
 	}
-	if got := am.tooltip.col; got != col-1 {
+	if got := am.tooltip.Col; got != col-1 {
 		t.Errorf("the pinned column is %d, want %d — one left, with the sample it names", got, col-1)
 	}
-	if !amRowsContain(rows, am.tooltip.rows[0].Value) {
-		t.Errorf("the moved tooltip wasn't drawn: %q", am.tooltip.rows[0].Value)
+	if !amRowsContain(rows, am.tooltip.Rows[0].Value) {
+		t.Errorf("the moved tooltip wasn't drawn: %q", am.tooltip.Rows[0].Value)
 	}
 }
 
@@ -526,7 +526,7 @@ func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
 	amRender(am, 150, 40)
 
 	if am.tooltip != nil {
-		t.Errorf("the tooltip survived its sample leaving the plot; it now names %q", am.tooltip.time)
+		t.Errorf("the tooltip survived its sample leaving the plot; it now names %q", am.tooltip.Time)
 	}
 }
 
@@ -543,7 +543,7 @@ func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned := am.tooltip.rows[0].Value
+	pinned := am.tooltip.Rows[0].Value
 
 	am.applyTempDBSample(activity.TempDBSample{At: time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC)})
 	amRender(am, 150, 40)
@@ -551,7 +551,7 @@ func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("a tempdb tick dismissed a tooltip pinned on History")
 	}
-	if got := am.tooltip.rows[0].Value; got != pinned {
+	if got := am.tooltip.Rows[0].Value; got != pinned {
 		t.Errorf("a tempdb tick moved a History tooltip from %q to %q", pinned, got)
 	}
 }
@@ -573,7 +573,7 @@ func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned := am.tooltip.rows[0].Value
+	pinned := am.tooltip.Rows[0].Value
 
 	am.applySample(activity.Sample{
 		At:              time.Date(2026, 8, 6, 20, 5, 30, 0, time.UTC),
@@ -585,7 +585,7 @@ func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("an activity tick dismissed a tooltip pinned on TempDB")
 	}
-	if got := am.tooltip.rows[0].Value; got != pinned {
+	if got := am.tooltip.Rows[0].Value; got != pinned {
 		t.Errorf("an activity tick moved a TempDB tooltip from %q to %q", pinned, got)
 	}
 }
@@ -602,8 +602,8 @@ func TestActivityMonitorTooltipNamesTheClickedSample(t *testing.T) {
 	if newest == nil || older == nil {
 		t.Fatal("a column inside the plot produced no tooltip")
 	}
-	if newest.time == older.time {
-		t.Errorf("both columns reported %q; the tooltip isn't reading the clicked bucket", newest.time)
+	if newest.Time == older.Time {
+		t.Errorf("both columns reported %q; the tooltip isn't reading the clicked bucket", newest.Time)
 	}
 }
 
@@ -625,12 +625,12 @@ func TestActivityMonitorTooltipCallsOutItsTimeOnTheAxis(t *testing.T) {
 	}
 	rows := amRender(am, 150, 40)
 
-	_, y := am.screenPos(0, hit.TimeRow.Y)
+	_, y := am.viewport().ToScreen(0, hit.TimeRow.Y)
 	if y < 0 || y >= len(rows) {
 		t.Fatalf("the time-axis row is off screen at y=%d", y)
 	}
-	if !strings.Contains(rows[y], am.tooltip.time) {
-		t.Errorf("the time axis reads %q, want the pinned %q called out on it", rows[y], am.tooltip.time)
+	if !strings.Contains(rows[y], am.tooltip.Time) {
+		t.Errorf("the time axis reads %q, want the pinned %q called out on it", rows[y], am.tooltip.Time)
 	}
 }
 
@@ -662,11 +662,11 @@ func TestActivityMonitorMemoryCompositionClickPinsATooltip(t *testing.T) {
 		if tip == nil {
 			t.Fatalf("column %d of the composition bar produced no tooltip", dx)
 		}
-		if tip.time != "15:32:45" {
-			t.Errorf("tooltip names sample %q, want the newest sample", tip.time)
+		if tip.Time != "15:32:45" {
+			t.Errorf("tooltip names sample %q, want the newest sample", tip.Time)
 		}
-		if len(tip.rows) != 3 || tip.rows[0].Label != "Buffer" {
-			t.Errorf("tooltip rows = %+v, want one per memory component", tip.rows)
+		if len(tip.Rows) != 3 || tip.Rows[0].Label != "Buffer" {
+			t.Errorf("tooltip rows = %+v, want one per memory component", tip.Rows)
 		}
 	}
 }
@@ -780,8 +780,8 @@ func TestActivityMonitorTempDBScrollsAndPinsATooltip(t *testing.T) {
 	if am.tooltip == nil {
 		t.Fatal("clicking a TempDB chart pinned no tooltip")
 	}
-	if am.tooltip.time != "20:02:30" {
-		t.Errorf("tooltip names sample %q, want the newest tempdb sample", am.tooltip.time)
+	if am.tooltip.Time != "20:02:30" {
+		t.Errorf("tooltip names sample %q, want the newest tempdb sample", am.tooltip.Time)
 	}
 }
 

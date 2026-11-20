@@ -6,6 +6,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/layout"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -182,7 +183,7 @@ const (
 // given log file. Nothing is read until Load runs.
 func NewLogViewer(app *App, sc *db.ServerConn, logType gosmo.ErrorLogType, logNum int) *LogViewer {
 	lv := new(LogViewer{
-		viewerPanel: newViewerPanel(app, "─── Selected row details ─── (drag or Ctrl+Up/Down to resize)", 0.7),
+		viewerPanel: newViewerPanel(app, "─── Selected row details ─── "+layout.ResizeHint, 0.7),
 		app:         app,
 		conn:        sc,
 		logType:     logType,

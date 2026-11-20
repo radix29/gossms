@@ -107,7 +107,7 @@ func NewPlanComparePanel(app *App, title string, a, b *showplan.Plan) *PlanCompa
 		stmtB: firstStatement(b),
 		props: newQSGrid(app),
 		ops:   newQSGrid(app),
-		split: newHorizontalSplitter("─── Operators ─── (drag or Ctrl+Up/Down to resize)"),
+		split: layout.NewStackSplitter("─── Operators ─── " + layout.ResizeHint),
 	})
 	p.pickers = controls.ToolRow{NoOverflow: true, Cells: []controls.ToolCell{
 		{Action: func() { p.showStatementMenu(pcPickA) }},

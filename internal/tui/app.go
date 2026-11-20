@@ -355,6 +355,15 @@ func (a *App) buildUI() {
 	a.modals.Register(a.statusHistoryDialog)
 }
 
+// newVerticalSplitter is the app's explorer | panels split: the explorer
+// starts at 30% and can take at most 80%. Every top/bottom split (an editor
+// or grid over results/details) is a layout.NewStackSplitter.
+func newVerticalSplitter() *layout.Splitter {
+	sp := layout.NewSplitter(layout.SplitterVertical, 0.3)
+	sp.SetLimits(0.1, 0.8)
+	return sp
+}
+
 // installEntraSignIn points the two things a Microsoft Entra sign-in shows
 // the user at the TUI rather than at the process's standard output and
 // error, which under tcell are the terminal it is drawing on: the device
@@ -363,23 +372,6 @@ func (a *App) buildUI() {
 // dropped — a browser launched through xdg-open may print a line of its own,
 // which would land on the screen at the cursor and stay there until the next
 // full redraw.
-// newHorizontalSplitter is the app's top/bottom split (an editor or grid over
-// results/details): half each, neither pane below a tenth.
-func newHorizontalSplitter(label string) *layout.Splitter {
-	sp := layout.NewSplitter(layout.SplitterHorizontal, 0.5)
-	sp.SetLimits(0.1, 0.9)
-	sp.SetLabel(label)
-	return sp
-}
-
-// newVerticalSplitter is the app's explorer | panels split: the explorer
-// starts at 30% and can take at most 80%.
-func newVerticalSplitter() *layout.Splitter {
-	sp := layout.NewSplitter(layout.SplitterVertical, 0.3)
-	sp.SetLimits(0.1, 0.8)
-	return sp
-}
-
 func installEntraSignIn(a *App) {
 	db.SetDeviceCodePrompt(a.promptDeviceCode)
 	browser.Stdout, browser.Stderr = io.Discard, io.Discard

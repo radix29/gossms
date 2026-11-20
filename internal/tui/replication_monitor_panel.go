@@ -195,9 +195,9 @@ func NewReplicationMonitorPanel(app *App, sc *db.ServerConn) *ReplicationMonitor
 		sessionsGrid: newQSGrid(app),
 		actionsGrid:  newQSGrid(app),
 	})
-	p.splits[0] = newHorizontalSplitter("─── Subscriptions and agents of the selected publication ───")
-	p.splits[1] = newHorizontalSplitter("─── Sessions of the selected agent ───")
-	p.splits[2] = newHorizontalSplitter("─── Actions of the selected session ───")
+	p.splits[0] = layout.NewStackSplitter("─── Subscriptions and agents of the selected publication ───")
+	p.splits[1] = layout.NewStackSplitter("─── Sessions of the selected agent ───")
+	p.splits[2] = layout.NewStackSplitter("─── Actions of the selected session ───")
 	p.splits[0].SetRatio(0.25)
 	p.splits[1].SetRatio(0.35)
 	p.splits[2].SetRatio(0.45)

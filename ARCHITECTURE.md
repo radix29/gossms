@@ -388,7 +388,7 @@ gossms/
 │       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
 │       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
-│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, the box itself is tuikit charts.DrawReadout, shared with the Detail Browser strip; the time-axis callout is charts.DrawAxisCallout
+│       ├── activity_monitor_tooltip.go # click-pinned chart readout: each tab's bucket times for tuikit charts.Pin, which owns the pin (identity, drift, drop) and draws charts.DrawReadout (shared with the Detail Browser strip) and charts.DrawAxisCallout
 │       ├── activity_monitor_toolbar.go # toolbar cells per tab (rate, Pause/Continue, Refresh), overflow menu, and the collection-state summary and dashboard header
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, the procedure's option switches (activity.ProcOption: Sessions' Sleeping Sessions / Additional Info), result grid, Kill Process
 │       │

@@ -8,46 +8,17 @@ import (
 	"github.com/radix29/tuikit/core"
 )
 
-// pinTooltip builds the readout for a click at (mx, my), or nil if it missed a
+// The pinned readout's life (what it is pinned to, how it follows its sample,
+// when it closes) is tuikit's charts.Pin. This file supplies what a bucket's
+// time means on each tab; the pan-drops-pin rule is panned's.
+
+// pinTooltip pins the readout for a click at (mx, my), or nil if it missed a
 // plot area or hit a column without a sample.
-func (am *ActivityMonitor) pinTooltip(mx, my int) *amTooltip {
-	if !am.chartTab() || !am.viewRect.Contains(mx, my) {
+func (am *ActivityMonitor) pinTooltip(mx, my int) *charts.Pin {
+	if !am.chartTab() {
 		return nil
 	}
-	// Hits are in canvas coordinates; translate the click through the viewport.
-	cx, cy := am.canvasPos(mx, my)
-
-	for _, hit := range am.hits {
-		if !hit.Plot.Contains(cx, cy) {
-			continue
-		}
-		idx := hit.Bucket(cx)
-		if idx < 0 {
-			return nil
-		}
-		tip := &amTooltip{chart: hit.Title, snapshot: hit.Snapshot, col: cx, row: cy}
-		am.readTooltip(tip, hit, idx)
-		return tip
-	}
-	return nil
-}
-
-// readTooltip fills a pin from one bucket of one chart: its time, current
-// column, chart geometry, and one row per series.
-func (am *ActivityMonitor) readTooltip(t *amTooltip, hit charts.PlotHit, idx int) {
-	t.time = am.bucketTime(idx)
-	t.plot, t.timeRow = hit.Plot, hit.TimeRow
-	if !t.snapshot {
-		t.col = hit.Column(idx)
-	}
-	t.rows = t.rows[:0]
-	for _, ser := range hit.Series {
-		t.rows = append(t.rows, charts.ReadoutRow{
-			Label: ser.Label,
-			Value: charts.FormatValue(hit.Value(ser, idx)),
-			Color: ser.Color,
-		})
-	}
+	return charts.PinAt(am.hits, am.viewport(), mx, my, am.bucketTime)
 }
 
 // refreshTooltip re-resolves the pin from its sample so the box tracks its
@@ -59,49 +30,9 @@ func (am *ActivityMonitor) readTooltip(t *amTooltip, hit charts.PlotHit, idx int
 // The pin drops when its chart is gone, its sample is pruned, or it has aged
 // past the plot's left edge.
 func (am *ActivityMonitor) refreshTooltip() {
-	t := am.tooltip
-	if t == nil {
-		return
-	}
-	hit, ok := am.chartHit(t.chart)
-	if !ok {
-		am.tooltip = nil
-		return
-	}
-	idx := 0
-	if !t.snapshot {
-		idx = am.bucketIndex(t.time)
-	}
-	if idx < 0 {
-		am.tooltip = nil
-		return
-	}
-	am.readTooltip(t, hit, idx)
-
-	mx, my := am.screenPos(t.col, t.row)
-	if t.col < 0 || !hit.Plot.Contains(t.col, t.row) || !am.viewRect.Contains(mx, my) {
+	if am.tooltip != nil && !am.tooltip.Refresh(am.hits, am.viewport(), am.bucketIndex, am.bucketTime) {
 		am.tooltip = nil
 	}
-}
-
-// chartHit is the last draw's record for one chart, by title.
-func (am *ActivityMonitor) chartHit(title string) (charts.PlotHit, bool) {
-	for _, hit := range am.hits {
-		if hit.Title == title {
-			return hit, true
-		}
-	}
-	return charts.PlotHit{}, false
-}
-
-// canvasPos translates a screen position to canvas coordinates; screenPos
-// translates back.
-func (am *ActivityMonitor) canvasPos(x, y int) (int, int) {
-	return am.viewport().ToCanvas(x, y)
-}
-
-func (am *ActivityMonitor) screenPos(cx, cy int) (int, int) {
-	return am.viewport().ToScreen(cx, cy)
 }
 
 // chartTab reports whether the active tab's charts resolve clicks. Includes
@@ -147,44 +78,11 @@ func (am *ActivityMonitor) bucketIndex(at string) int {
 	return -1
 }
 
-// place positions the box beside the pinned point, flipping above it rather
-// than covering the time callout at keepOut (half-hidden, it would read as an
-// age label).
-func (t *amTooltip) place(ax, ay int, view core.Rect, keepOut int) core.Rect {
-	w, h := charts.ReadoutSize(t.time, t.rows)
-	return charts.PlaceReadout(w, h, ax, ay, view, keepOut)
-}
-
-// drawTooltip renders the pinned readout: the column's time on the chart's time
-// axis, then the box with the sample time and one line per series in its
-// colour.
-//
-// c is the canvas just blitted, which the callout reads to clear axis labels;
-// see charts.DrawAxisCallout.
+// drawTooltip renders the pinned readout over the canvas just blitted: the
+// column's time on the chart's time axis, then the box with one line per
+// series in its colour. c is that canvas; see charts.DrawAxisCallout.
 func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *core.Buffer) {
-	if am.tooltip == nil || am.viewRect.W <= 0 || am.viewRect.H <= 0 {
-		return
+	if am.tooltip != nil {
+		am.tooltip.Draw(s, c, am.viewport())
 	}
-	callout := am.drawCallout(s, c)
-
-	ax, ay := am.screenPos(am.tooltip.col, am.tooltip.row)
-	r := am.tooltip.place(ax, ay, am.viewRect, callout)
-	if r.W > am.viewRect.W || r.H > am.viewRect.H {
-		return // no room to show it honestly
-	}
-	charts.DrawReadout(s, r, am.tooltip.time, am.tooltip.rows)
-}
-
-// drawCallout names the pinned bucket's moment on its chart's time axis and
-// returns the screen row used, or -1, so the box can avoid it.
-func (am *ActivityMonitor) drawCallout(s tcell.Screen, c *core.Buffer) int {
-	t := am.tooltip
-	if c == nil || t.plot.W <= 0 {
-		return -1
-	}
-	x, _ := am.screenPos(t.col, 0)
-	if x < am.viewRect.X || x >= am.viewRect.Right() {
-		return -1
-	}
-	return charts.DrawAxisCallout(s, c, am.viewport(), t.timeRow, x, t.time)
 }
