@@ -184,6 +184,13 @@ which owns them; the entries here say how goSSMS applies them.
   `dialogs.RingStep` (Find/Replace, Log Search, Filter, Options) rather than a
   per-dialog switch: four of them had drifted into four semantics, one of which
   trapped Tab on OK/Cancel.
+- **Its mouse is `dialogs.RingMouse`**, the whole `HandleMouse` over the same
+  ring (Find/Replace, Log Search, Filter, Options, Profile). It fixes the order
+  of § Mouse's calls — `TrackPress`, the release to every latch, an open
+  dropdown's first refusal, `ConsumeOutsideClick`, `Replay`, buttons, `Claim` —
+  which the five hand-rolled copies had in five variants, and leaves the wheel
+  inside the box to the host. A dialog with tabs, a scrollable pane or a mode
+  (Connect, Back Up, Restore) keeps its own; don't stretch the helper to fit.
 - **A dialog-level scrollbar uses `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a too-small terminal content
   is clipped to `InnerRect` (`dialogs.Stack.Draw`'s `core.ClipScreen`, narrowed by
@@ -226,10 +233,16 @@ which owns them; the entries here say how goSSMS applies them.
   widget itself** — an editor fires it inside `HandleMouse`, before its panel
   moves focus, so `activeClipboardTarget` still names the previous one. Whether
   Cut and Paste appear is the target's `CanPaste`/`CanCut` (part of
-  `core.ClipboardTarget`; read-only → Copy and Select All only), so a panel
-  forwarding to a grid or plan view forwards the four `Can*` methods too. A panel with a text field among other things is a
-  `core.ClipboardHost` (Log Viewer's filter) — `activeClipboardTarget` asks the
-  active panel, so Ctrl+C/X/V and a terminal paste reach it too.
+  `core.ClipboardTarget`; read-only → Copy and Select All only). **A panel
+  is a `core.ClipboardHost`, never a forwarding `ClipboardTarget`**: it names
+  its focused copyable widget, or an explicit nil (Log Viewer's filter, Plan's
+  PlanView, Query Store's focused grid, Detail Browser's grid only while its
+  viewer is open). `activeClipboardTarget` asks the active panel, so
+  Ctrl+C/X/V and a terminal paste reach it. A host answering a different
+  widget per focus needs no `ClipboardTargetTokener` — `pasteInto`'s identity
+  check sees the move; only a host answering with itself does. Return a grid
+  through `gridClipboardTarget` (a typed-nil `*DataGrid` is a non-nil
+  interface).
 - **`App.contextMenu` sits above the dialogs** — drawn after `modals.Draw`,
   and offered keys and mouse ahead of `modals`, so a dialog field's
   `OnRightClick` can open it (Connect's connection string preview). Its items
@@ -323,6 +336,9 @@ which owns them; the entries here say how goSSMS applies them.
   `TestFieldGestureCallsAreOrderedCorrectly` — both needed. Options, Prompt and
   TypedConfirm hand-rolled it wrong with all tests passing: a drag to the
   button row pressed the button, *accepting* a rename or a typed confirmation.
+  A ring dialog gets all three from `dialogs.RingMouse` (§ Dialogs and the
+  clipboard); the order test then checks only `Clear`, and tuikit's
+  `TestRingMouse` pins the rest.
 - **The release to the *focused* field goes through
   tuikit's `dialogs.ForwardReleaseToFocusedField`**, not a type switch — it
   covers the focused `*editor.Editor`, which no dialog here `Claim`s (it

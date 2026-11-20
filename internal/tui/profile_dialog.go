@@ -218,42 +218,29 @@ func (d *ProfileDialog) HandleKey(ev *tcell.EventKey) bool {
 	return true
 }
 
-// HandleMouse routes mouse events.
+// HandleMouse is dialogs.RingMouse over the focus ring; the button row is its
+// stop len(d.focusable), which this dialog records as onButtons.
 func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	if ev.Buttons() == tcell.ButtonNone {
-		d.ddAllow.HandleMouse(ev)
-		d.drag.Release(ev)
+	focus := d.focusIdx
+	if d.onButtons {
+		focus = len(d.focusable)
 	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	if dialogs.ForwardReleaseToFocusedField(ev, d.focused()) {
-		return true
-	}
-	if d.drag.Replay(ev) {
-		return true
-	}
-	if ev.Buttons() != tcell.Button1 {
-		return true
-	}
-	// The open list overlays the rows below it, the button row included.
-	if d.ddAllow.HandleMouse(ev) {
-		d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.ddAllow))
-		return true
-	}
-	if i := d.ButtonClicked(ev, profileButtons); i >= 0 {
-		d.btnFocus = i
-		d.doButton()
-		return true
-	}
-	if mx, my := ev.Position(); d.fName.HitTest(mx, my) {
-		d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fName))
-		d.drag.Claim(d.fName, ev)
-	}
-	return true
+	return dialogs.RingMouse(ev, &d.ModalDialog, &d.drag, d.focusable, focus, profileButtons,
+		func(i int) {
+			if i == len(d.focusable) {
+				d.onButtons = true
+				dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
+				return
+			}
+			d.setFocus(i)
+		},
+		func(btn int) {
+			d.btnFocus = btn
+			d.doButton()
+		})
 }
 
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on the

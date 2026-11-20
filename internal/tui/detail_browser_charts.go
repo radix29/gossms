@@ -103,8 +103,8 @@ func (db *DetailBrowser) pinChartTooltip(mx, my int) *detailTooltip {
 	if r.IsZero() {
 		return nil
 	}
-	body := core.Rect{X: r.X, Y: r.Y + detailChartSectionH, W: r.W, H: r.H - detailChartSectionH}
-	for i, panel := range detailChartPanels(body, len(db.charts)) {
+	_, panels := detailChartPanels(r, len(db.charts))
+	for i, panel := range panels {
 		if !panel.Contains(mx, my) {
 			continue
 		}
@@ -171,11 +171,11 @@ func (db *DetailBrowser) drawCharts(s tcell.Screen) {
 	}
 	charts.DrawSectionBar(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: detailChartSectionH}, "DISK USAGE", nil)
 
-	body := core.Rect{X: r.X, Y: r.Y + detailChartSectionH, W: r.W, H: r.H - detailChartSectionH}
+	body, panels := detailChartPanels(r, len(db.charts))
 	// The panel ground first: the gutter and the bars' margins are never
 	// drawn, and would otherwise show the screen's ground.
 	core.FillRect(s, body, ' ', theme.StylePanel())
-	for i, panel := range detailChartPanels(body, len(db.charts)) {
+	for i, panel := range panels {
 		c := db.charts[i]
 		charts.StackedBar{
 			Series:     c.Series,
@@ -186,9 +186,12 @@ func (db *DetailBrowser) drawCharts(s tcell.Screen) {
 	}
 }
 
-// detailChartPanels divides body between n charts side by side, dropping
-// the ones that would not fit rather than shrinking every panel below what
-// its legend can be read at.
-func detailChartPanels(body core.Rect, n int) []core.Rect {
-	return core.SplitColumns(body, n, detailChartGutter, detailChartMinPanelW)
+// detailChartPanels is the chart strip r's geometry below its section bar:
+// the body, and the body divided between n charts side by side, dropping the
+// ones that would not fit rather than shrinking every panel below what its
+// legend can be read at. Drawing and the click hit-test (pinChartTooltip) both
+// take it from here, so a click always lands on the panel drawn under it.
+func detailChartPanels(r core.Rect, n int) (body core.Rect, panels []core.Rect) {
+	body = core.Rect{X: r.X, Y: r.Y + detailChartSectionH, W: r.W, H: r.H - detailChartSectionH}
+	return body, core.SplitColumns(body, n, detailChartGutter, detailChartMinPanelW)
 }

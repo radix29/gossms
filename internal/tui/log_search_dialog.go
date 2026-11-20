@@ -170,41 +170,21 @@ func (d *LogSearchDialog) HandleKey(ev *tcell.EventKey) bool {
 	return dialogs.FieldRingKey(ev, d.fields()[d.focusIdx], press, d.dismiss, d.moveFocus)
 }
 
-// HandleMouse routes mouse events like tuikit's dialogs.FindReplaceDialog, including the
-// release that must reach a latch-bearing field wherever it lands.
+// HandleMouse is dialogs.RingMouse over the focus ring, as tuikit's
+// FindReplaceDialog is.
 func (d *LogSearchDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	d.drag.Release(ev)
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	if ev.Buttons() == tcell.ButtonNone {
-		return true
-	}
-	if ev.Buttons() != tcell.Button1 {
-		return false
-	}
-	if d.drag.Replay(ev) {
-		return true
-	}
-	if i := d.ButtonClicked(ev, d.buttons()); i >= 0 {
-		d.focusIdx, d.btnFocus = len(d.fields()), i
-		d.syncFocus()
-		d.pressButton(i)
-		return true
-	}
-	mx, my := ev.Position()
-	for i, f := range d.inputFields() {
-		if f.HitTest(mx, my) {
+	return dialogs.RingMouse(ev, &d.ModalDialog, &d.drag, d.fields(), d.focusIdx, d.buttons(),
+		func(i int) {
 			d.focusIdx = i
 			d.syncFocus()
-			d.drag.Claim(f, ev)
-			return true
-		}
-	}
-	return true
+		},
+		func(btn int) {
+			d.btnFocus = btn
+			d.pressButton(btn)
+		})
 }
 
 func (d *LogSearchDialog) pressButton(i int) {

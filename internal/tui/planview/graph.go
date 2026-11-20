@@ -105,8 +105,15 @@ func (v *PlanView) drawGraphCanvas(s tcell.Screen) {
 	// the view under an older one.
 	vp := v.graphView()
 	pal := theme.Active()
+	// Edges run off the canvas, which scrolls a plane larger than its rect,
+	// and core's DrawHLine/DrawVLine write exactly where told: they draw
+	// through a ClipScreen narrowed to the canvas. Wrapping s rather than
+	// narrowing it keeps a clip s already carries (a clamped dialog's), with
+	// nothing to restore.
+	edges := core.NewClipScreen(s)
+	edges.SetClip(r)
 	for _, e := range v.graphSt.layout.edges {
-		v.drawEdge(s, e, pal)
+		v.drawEdge(edges, e, pal)
 	}
 	for _, t := range v.graphSt.layout.tiles {
 		v.drawTile(s, t, pal)
@@ -116,8 +123,8 @@ func (v *PlanView) drawGraphCanvas(s tcell.Screen) {
 	vp.DrawScrollbars(s, sbStyle, sbThumb)
 }
 
-// drawEdge renders one connector as three clipped segments plus an arrowhead
-// into the parent.
+// drawEdge renders one connector as three segments plus an arrowhead into the
+// parent. s clips to the canvas (drawGraphCanvas).
 func (v *PlanView) drawEdge(s tcell.Screen, e edge, pal *theme.Palette) {
 	r := v.graphCanvasRect
 	style := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.TextDim)
@@ -126,14 +133,14 @@ func (v *PlanView) drawEdge(s tcell.Screen, e edge, pal *theme.Palette) {
 	x2, y2 := r.X+e.x2-sx, r.Y+e.y2-sy
 	midX := r.X + e.midX - sx
 
-	hlineClipped(s, r, min(x1, midX), y1, absInt(midX-x1), style)
+	core.DrawHLine(s, min(x1, midX), y1, absInt(midX-x1), style)
 	top, h := y1, y2-y1
 	if h < 0 {
 		top, h = y2, -h
 	}
-	vlineClipped(s, r, midX, top, h+1, style)
-	hlineClipped(s, r, min(midX, x2), y2, absInt(x2-midX), style)
-	putClipped(s, r, x1, y1, '◄', style)
+	core.DrawVLine(s, midX, top, h+1, style)
+	core.DrawHLine(s, min(midX, x2), y2, absInt(x2-midX), style)
+	core.PutRune(s, x1, y1, '◄', style)
 }
 
 // drawTile renders one operator's card, only when fully within the viewport
@@ -228,28 +235,6 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 
 	if badge != "" {
 		core.DrawText(s, inner.Right()-core.DisplayWidth(badge), inner.Y, badgeStyle, badge)
-	}
-}
-
-// putClipped, hlineClipped, and vlineClipped draw single-width box-drawing
-// cells, discarding anything outside viewport: the canvas scrolls a plane larger
-// than its rect and core's DrawHLine/DrawVLine write exactly where told.
-func putClipped(s tcell.Screen, viewport core.Rect, x, y int, ch rune, style tcell.Style) {
-	if x < viewport.X || x >= viewport.Right() || y < viewport.Y || y >= viewport.Bottom() {
-		return
-	}
-	core.PutRune(s, x, y, ch, style)
-}
-
-func hlineClipped(s tcell.Screen, viewport core.Rect, x, y, w int, style tcell.Style) {
-	for i := range w {
-		putClipped(s, viewport, x+i, y, '─', style)
-	}
-}
-
-func vlineClipped(s tcell.Screen, viewport core.Rect, x, y, h int, style tcell.Style) {
-	for i := range h {
-		putClipped(s, viewport, x, y+i, '│', style)
 	}
 }
 

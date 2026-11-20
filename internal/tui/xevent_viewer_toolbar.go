@@ -7,7 +7,6 @@ import (
 
 	"github.com/radix29/gossms/internal/xevent"
 	"github.com/radix29/tuikit/controls"
-	"github.com/radix29/tuikit/core"
 )
 
 // xevent_viewer_toolbar.go is the Extended Events viewer's toolbar: its cells
@@ -199,22 +198,20 @@ func (v *XEventViewer) runToolByID(id xeTool) bool {
 
 // showOverflowMenu pops the cells the row was too narrow to draw.
 func (v *XEventViewer) showOverflowMenu() {
-	r := v.tools.More.Rect
-	if r.IsZero() {
-		r = core.Rect{X: v.rect.X, Y: v.rect.Y}
-	}
-	v.app.contextMenu.Show(r.X, r.Y+1,
+	x, y := v.tools.MenuAnchor(-1, v.rect)
+	v.app.contextMenu.Show(x, y,
 		v.tools.OverflowItems(v.toolDisabled, v.toolReason, v.runTool))
 }
 
 // popMenu shows items under cell id, or at the panel's top-left when the cell
-// is folded into More.
+// is folded into More or not on this row.
 func (v *XEventViewer) popMenu(id xeTool, items []controls.MenuItem) {
-	r := core.Rect{X: v.rect.X, Y: v.rect.Y}
-	if i := v.toolIndex(id); i >= 0 && !v.tools.Cells[i].Rect.IsZero() {
-		r = v.tools.Cells[i].Rect
+	i := v.toolIndex(id)
+	if i < 0 {
+		i = len(v.tools.Cells) // not on the row: the fallback, not More (-1)
 	}
-	v.app.contextMenu.Show(r.X, r.Y+1, items)
+	x, y := v.tools.MenuAnchor(i, v.rect)
+	v.app.contextMenu.Show(x, y, items)
 }
 
 // toggleAutoScroll turns following the newest event on or off.

@@ -215,15 +215,8 @@ func (p *QueryStorePanel) routeDrag(ev *tcell.EventMouse, zone qsDragZone) {
 	}
 }
 
-// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it implement
-// clipboardTarget by forwarding to the focused grid, as DetailBrowser does to its
-// one grid.
-func (p *QueryStorePanel) HasSelection() bool   { return p.focusedGrid().HasSelection() }
-func (p *QueryStorePanel) SelectedText() string { return p.focusedGrid().SelectedText() }
-func (p *QueryStorePanel) Cut() string          { return p.focusedGrid().Cut() }
-func (p *QueryStorePanel) Paste(text string)    { p.focusedGrid().Paste(text) }
-func (p *QueryStorePanel) SelectAll()           { p.focusedGrid().SelectAll() }
-func (p *QueryStorePanel) CanCopy() bool        { return p.focusedGrid().CanCopy() }
-func (p *QueryStorePanel) CanCut() bool         { return p.focusedGrid().CanCut() }
-func (p *QueryStorePanel) CanPaste() bool       { return p.focusedGrid().CanPaste() }
-func (p *QueryStorePanel) CanSelectAll() bool   { return p.focusedGrid().CanSelectAll() }
+// FocusedClipboardTarget implements core.ClipboardHost: the grid with the
+// keyboard (the queries or the plans).
+func (p *QueryStorePanel) FocusedClipboardTarget() clipboardTarget {
+	return gridClipboardTarget(p.focusedGrid())
+}

@@ -30,8 +30,8 @@ type OptionsDialog struct {
 	cbIntelliSense *widgets.CheckBox
 
 	// drag owns the text-selection gesture a press in one of the input fields
-	// starts; see dialogs.FieldGesture for why its three calls sit where they do in
-	// HandleMouse. One value suffices for every field: the gesture is per-target,
+	// starts; dialogs.RingMouse places its three calls (see dialogs.FieldGesture
+	// for why they sit where they do). One value suffices for every field: the gesture is per-target,
 	// holding whichever field claimed the press.
 	drag dialogs.FieldGesture
 
@@ -171,15 +171,15 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 	if d.onButtons() {
 		activeIdx = d.btnFocus
 	}
-	d.DrawButtons(s, []string{"OK", "Cancel"}, activeIdx)
+	d.DrawButtons(s, optionsButtons, activeIdx)
 	for _, dd := range d.dropDowns() {
 		dd.DrawOverlay(s)
 	}
 }
 
 // dropDowns are the dialog's dropdowns, top to bottom: their open lists overlap
-// the controls below them, so Draw paints them last and HandleKey/HandleMouse
-// offer them every event first.
+// the controls below them, so Draw paints them last, and HandleKey (as the
+// focused control) and dialogs.RingMouse offer them every event first.
 func (d *OptionsDialog) dropDowns() []*widgets.DropDown {
 	return []*widgets.DropDown{d.ddTheme, d.ddSQLStyle}
 }
@@ -217,93 +217,20 @@ func (d *OptionsDialog) moveFocus(dir int) {
 	}
 }
 
-// HandleMouse processes mouse events.
+// optionsButtons is the button row, drawn and hit-tested alike.
+var optionsButtons = []string{"OK", "Cancel"}
+
+// HandleMouse is dialogs.RingMouse over the focus ring.
 func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// The open list below sees events before ConsumeOutsideClick does, so the
-	// gesture is tracked here: a list pick's resends, dragged onto the button
-	// row, must not press a button.
-	d.TrackPress(ev)
-	// A release outside the dialog is consumed by ConsumeOutsideClick below before
-	// the radio box's/dropdowns'/cbIntelliSense's own HandleMouse calls see it, leaving their
-	// mouseDragging latch set and swallowing the next press. Reset it here first;
-	// each returns false on ButtonNone so this has no other effect. drag.Release
-	// does the same for the input fields and must likewise come before
-	// ConsumeOutsideClick.
-	if ev.Buttons() == tcell.ButtonNone {
-		for _, f := range d.focusable {
-			if w, ok := optionsMouseTarget(f); ok {
-				w.HandleMouse(ev)
-			}
-		}
-		d.drag.Release(ev)
-	}
-	// An open list gets first refusal (docs/ui-rules.md): it is clamped to the
-	// screen, not the dialog, and the SQL style list drops over the input fields,
-	// which fieldAt below would otherwise hand the click to. A click outside the
-	// list closes it and falls through to whatever it landed on.
-	if dd := d.openDropDown(); dd != nil && ev.Buttons() != tcell.ButtonNone && dd.HandleMouse(ev) {
-		for i, f := range d.focusable {
-			if f == focusable(dd) {
-				d.setFocus(i)
-			}
-		}
-		return true
-	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	// The gesture belongs to the field that claimed its press, so motion is replayed
-	// there without hit-testing, ahead of ButtonClicked below, which would fire OK
-	// the moment a selection drag wandered onto the button row.
-	if d.drag.Replay(ev) {
-		return true
-	}
-	if i := d.ButtonClicked(ev, []string{"OK", "Cancel"}); i >= 0 {
-		d.setFocus(len(d.focusable))
-		d.btnFocus = i
-		d.doButton()
-		return true
-	}
-	// The fields first, hit-tested here rather than left to InputField.HandleMouse's
-	// own bounds check, which a latch left from a previous showing skips.
-	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 {
-		if i, fld := d.fieldAt(mx, my); fld != nil {
-			d.setFocus(i)
-			d.drag.Claim(fld, ev)
-			return true
-		}
-	}
-	for i, f := range d.focusable {
-		if w, ok := optionsMouseTarget(f); ok && w.HandleMouse(ev) {
-			d.setFocus(i)
-			return true
-		}
-	}
-	return true
-}
-
-// fieldAt returns the input field under (x, y) and its focus index, or nil.
-func (d *OptionsDialog) fieldAt(x, y int) (int, *widgets.InputField) {
-	for i, f := range d.focusable {
-		if fld, ok := f.(*widgets.InputField); ok && fld.HitTest(x, y) {
-			return i, fld
-		}
-	}
-	return -1, nil
-}
-
-// optionsMouseTarget answers the controls that take a press themselves (radio
-// box, dropdowns and checkbox). An input field is excluded: its press goes through d.drag,
-// and its own HandleMouse would honour a stale latch.
-func optionsMouseTarget(f focusable) (interface{ HandleMouse(*tcell.EventMouse) bool }, bool) {
-	if _, isField := f.(*widgets.InputField); isField {
-		return nil, false
-	}
-	w, ok := f.(interface{ HandleMouse(*tcell.EventMouse) bool })
-	return w, ok
+	return dialogs.RingMouse(ev, &d.ModalDialog, &d.drag, d.focusable, d.focusIdx, optionsButtons,
+		d.setFocus,
+		func(btn int) {
+			d.btnFocus = btn
+			d.doButton()
+		})
 }
 
 func (d *OptionsDialog) doButton() {

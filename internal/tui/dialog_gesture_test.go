@@ -217,6 +217,12 @@ func packageDir(t *testing.T, path string) string {
 //     so a latch does not survive into the next showing. The opening method is
 //     named Show, ShowX, show or start depending on the dialog, so it is
 //     identified by what it calls rather than by its name.
+//
+// A HandleMouse that delegates to dialogs.RingMouse places Release, Replay and
+// Claim there, in the order tuikit's TestRingMouse pins step by step; only
+// Clear is still asked of it. The delegation must be the whole routing: a
+// RingMouse caller that also calls Release or Replay itself is reported, as
+// the two copies would drift apart.
 func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 	type methods struct {
 		handleMouse *ast.FuncDecl
@@ -301,7 +307,16 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 			t.Errorf("%s owns a FieldGesture but has no HandleMouse to drive it", owner)
 			continue
 		}
-		if !m.claims {
+		ring := callsRingMouse(m.handleMouse)
+		if ring {
+			for _, call := range []string{"Release", "Replay", "Claim"} {
+				if callFound(m.handleMouse, call) {
+					t.Errorf("%s.HandleMouse delegates to dialogs.RingMouse and also calls "+
+						"FieldGesture.%s itself — RingMouse already places it", owner, call)
+				}
+			}
+		}
+		if !m.claims && !ring {
 			t.Errorf("%s never calls FieldGesture.Claim — its press is being routed by "+
 				"the widget's own bounds check, which a latch from the previous showing skips",
 				owner)
@@ -323,6 +338,9 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 				"or the arms drift apart per dialog", owner)
 		}
 
+		if ring {
+			continue
+		}
 		release := firstCallLine(m.handleMouse, fset, "Release")
 		replay := firstCallLine(m.handleMouse, fset, "Replay")
 		consume := firstCallLine(m.handleMouse, fset, "ConsumeOutsideClick")
@@ -427,6 +445,26 @@ func callFound(d *ast.FuncDecl, name string) bool {
 		}
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == name {
 			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// callsRingMouse reports whether d calls dialogs.RingMouse: qualified from
+// package tui, bare from inside package dialogs (Find/Replace).
+func callsRingMouse(d *ast.FuncDecl) bool {
+	found := false
+	ast.Inspect(d, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch fn := call.Fun.(type) {
+		case *ast.Ident:
+			found = found || fn.Name == "RingMouse"
+		case *ast.SelectorExpr:
+			found = found || fn.Sel.Name == "RingMouse"
 		}
 		return true
 	})

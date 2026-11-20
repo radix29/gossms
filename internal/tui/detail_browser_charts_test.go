@@ -98,12 +98,17 @@ func TestDetailChartStripDroppedWhenItWouldCrowdTheGrid(t *testing.T) {
 // Two panels share the width when both fit and the strip drops the second
 // rather than halving itself into two unreadable slivers.
 func TestDetailChartPanelsDropWhatCannotFit(t *testing.T) {
-	body := core.Rect{X: 0, Y: 1, W: 2*detailChartMinPanelW + detailChartGutter, H: 4}
-	if got := detailChartPanels(body, 2); len(got) != 2 {
-		t.Errorf("panels at exactly two minimum widths = %d, want 2", len(got))
+	strip := core.Rect{X: 0, Y: 0, W: 2*detailChartMinPanelW + detailChartGutter, H: 4 + detailChartSectionH}
+	body, got := detailChartPanels(strip, 2)
+	if len(got) != 2 {
+		t.Fatalf("panels at exactly two minimum widths = %d, want 2", len(got))
 	}
-	body.W--
-	got := detailChartPanels(body, 2)
+	// The panels sit below the section bar, not over it.
+	if body.Y != strip.Y+detailChartSectionH || got[0].Y != body.Y {
+		t.Errorf("body %+v, first panel %+v: want both to start below the section bar", body, got[0])
+	}
+	strip.W--
+	_, got = detailChartPanels(strip, 2)
 	if len(got) != 1 {
 		t.Fatalf("panels one column short = %d, want 1", len(got))
 	}

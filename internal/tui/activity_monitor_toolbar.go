@@ -7,7 +7,6 @@ import (
 	"github.com/radix29/gossms/internal/tui/dashboard"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/tuikit/controls"
-	"github.com/radix29/tuikit/core"
 )
 
 // buildTools rebuilds the toolbar for the active tab: rate and Pause/Continue
@@ -113,11 +112,8 @@ func (am *ActivityMonitor) runTool(i int) {
 
 // showOverflowMenu pops the hidden controls under "More ▾".
 func (am *ActivityMonitor) showOverflowMenu() {
-	r := am.tools.More.Rect
-	if r.IsZero() {
-		r = core.Rect{X: am.rect.X, Y: am.rect.Y}
-	}
-	am.app.contextMenu.Show(r.X, r.Y+1, am.tools.OverflowItems(nil, nil, am.runTool))
+	x, y := am.tools.MenuAnchor(-1, am.rect)
+	am.app.contextMenu.Show(x, y, am.tools.OverflowItems(nil, nil, am.runTool))
 }
 
 // resolution names what one plotted column covers. Follows drawInterval, not

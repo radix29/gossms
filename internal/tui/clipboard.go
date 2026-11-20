@@ -33,8 +33,8 @@ type appPaste struct {
 // activeClipboardTarget resolves which widget Copy/Cut/Paste acts on now: the
 // focused field in the frontmost open dialog; the active query panel's editor,
 // or whichever results view has the keyboard (or its results grid while its
-// "Show Value" viewer is open); the Detail Browser's grid while its viewer is
-// open; or the Always On dashboard's focused grid. nil when nothing focused can
+// "Show Value" viewer is open); the Always On dashboard's focused grid; or what
+// any other panel names as a core.ClipboardHost. nil when nothing focused can
 // participate.
 func (a *App) activeClipboardTarget() clipboardTarget {
 	// An open dialog owns the clipboard outright: its focused field, or nothing.
@@ -76,27 +76,31 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 		return qp.editor
 	}
 	switch p := a.panels.ActivePanel().(type) {
-	case *DetailBrowser:
-		if p.HasSelection() {
-			return p
-		}
-		return nil
 	case *AGDashboard:
 		// The Always On dashboard is two grids and nothing else, so whichever has the
 		// keyboard is the target; copySelection's DataGrid branch then copies the cell
 		// under the cursor even with no viewer open.
 		return p.grid()
 	case core.ClipboardHost:
-		// A panel with a text field among other things (the Log Viewer's filter box)
-		// names the focused one, or an explicit nil.
+		// A panel names its focused copyable widget, or an explicit nil: the Log
+		// Viewer's filter box, Plan and Live Plan's PlanView, the focused grid of
+		// Plan Compare, Query Store and Replication Monitor, and the Detail
+		// Browser's grid while its viewer is open. Without this the panels'
+		// clipboard was never reached and Ctrl+C there did nothing.
 		return p.FocusedClipboardTarget()
-	case clipboardTarget:
-		// A panel that is its own target, forwarding to whatever it shows (Plan, Live
-		// Plan, Plan Compare, Query Store, Replication Monitor). Without this arm their
-		// clipboard methods were never reached and Ctrl+C there did nothing.
-		return p
 	}
 	return nil
+}
+
+// gridClipboardTarget is g as a clipboard target, nil for a nil grid. The
+// explicit nil is load-bearing: a nil *DataGrid in the interface is not a nil
+// interface, and activeClipboardTarget's callers test against nil before
+// calling through it.
+func gridClipboardTarget(g *controls.DataGrid) clipboardTarget {
+	if g == nil {
+		return nil
+	}
+	return g
 }
 
 // copySelection runs Copy (Ctrl+C / Edit > Copy): if the resolved target

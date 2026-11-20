@@ -1797,23 +1797,36 @@ it from the string 'NULL'.
     the table. `newTestEditor` stays in both repos: tuikittest importing
     `controls/editor` is an import cycle.
 - **Every section title strip is tuikit's `charts.DrawSectionBar`**
-  (2026-11-20, `docs/tuikit-reuse-plan.md` item 2): Activity Monitor, the
+  (2026-11-20, tuikit reuse round 1): Activity Monitor, the
   Database Detail Browser's DISK USAGE strip and the AG dashboard. The AG
   dashboard adopted the shared look (`ChartHeading` foreground, not bold); its
   own `Text`-on-`ChartSectionBg` bold strip claimed to match the Activity
   Monitor and didn't. A per-caller style override is not wanted.
 - **A click on a dashboard plot maps back through tuikit's `charts.PlotHit`**
-  (2026-11-20, plan item 5), which replaced `dashboard.ChartHit` unchanged.
-  It moved with item 2 despite one consumer (the Activity Monitor readout):
+  (2026-11-20, tuikit reuse round 1), which replaced `dashboard.ChartHit`
+  unchanged. It moved with `DrawSectionBar` despite one consumer (the
+  Activity Monitor readout):
   tuikit ships the readout box, and a host rewriting the hit model tends to
   read `At` where the chart drew `AtBucket`.
 - **Side-by-side chart panels split through tuikit's `core.SplitColumns`**
-  (2026-11-20, plan item 4): fit as many as fit at the minimum width,
+  (2026-11-20, tuikit reuse round 1): fit as many as fit at the minimum width,
   gutters counted, the last column absorbing the remainder. The Database
   Detail Browser's last disk-usage panel gained the 0..n-1 cells it used to
   leave blank; the dashboard keeps "all or one" at its call site and now
   counts the gutters too, so it collapses one or two columns of width earlier
   rather than drawing panels a cell under `minPanelW`. No `lastAbsorbs` flag.
+- **A flat-ring dialog's mouse is tuikit's `dialogs.RingMouse`** (2026-11-20,
+  tuikit reuse round 2): Find/Replace, Log Search, Filter, Options, Profile.
+  Settled with it: an open dropdown gets first refusal *before*
+  `ConsumeOutsideClick` everywhere (Profile offered it after, though its list
+  overhangs the box too); a non-`Button1` event inside the box answers `false`
+  (the wheel reaches the host; Profile answered `true`); members are routed by
+  type (a `core.DragCanceller` through the `FieldGesture`, any other
+  `core.MouseHandler` takes its own press), not by a per-dialog list. Connect,
+  Back Up and Restore stay out: tabs, a wheel, zones. `dialogs.SetFocusIn` no
+  longer blurs its target on the way to focusing it — `DropDown.Focus(false)`
+  closes the list, so a mouse click could never open Profile's Allowed
+  Operations list.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,

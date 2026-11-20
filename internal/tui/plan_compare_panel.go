@@ -236,11 +236,8 @@ func (p *PlanComparePanel) runPicker(i int) {
 // showStatementMenu pops picker i's statement list under its cell.
 func (p *PlanComparePanel) showStatementMenu(i int) {
 	plan, idx := p.side(i)
-	r := p.pickers.Cells[i].Rect
-	if r.IsZero() {
-		r = core.Rect{X: p.rect.X, Y: p.rect.Y}
-	}
-	p.app.contextMenu.Show(r.X, r.Y+1, statementMenuItems(plan, *idx, func(s int) { p.chooseStatement(i, s) }))
+	x, y := p.pickers.MenuAnchor(i, p.rect)
+	p.app.contextMenu.Show(x, y, statementMenuItems(plan, *idx, func(s int) { p.chooseStatement(i, s) }))
 }
 
 // chooseStatement compares statement s on side i.
@@ -616,14 +613,8 @@ func (p *PlanComparePanel) routeDrag(ev *tcell.EventMouse, zone pcDragZone) {
 	}
 }
 
-// HasSelection and the SelectedText, Cut, Paste, SelectAll and Can* beside it
-// implement clipboardTarget by forwarding to the focused grid.
-func (p *PlanComparePanel) HasSelection() bool   { return p.focusedGrid().HasSelection() }
-func (p *PlanComparePanel) SelectedText() string { return p.focusedGrid().SelectedText() }
-func (p *PlanComparePanel) Cut() string          { return p.focusedGrid().Cut() }
-func (p *PlanComparePanel) Paste(text string)    { p.focusedGrid().Paste(text) }
-func (p *PlanComparePanel) SelectAll()           { p.focusedGrid().SelectAll() }
-func (p *PlanComparePanel) CanCopy() bool        { return p.focusedGrid().CanCopy() }
-func (p *PlanComparePanel) CanCut() bool         { return p.focusedGrid().CanCut() }
-func (p *PlanComparePanel) CanPaste() bool       { return p.focusedGrid().CanPaste() }
-func (p *PlanComparePanel) CanSelectAll() bool   { return p.focusedGrid().CanSelectAll() }
+// FocusedClipboardTarget implements core.ClipboardHost: the grid with the
+// keyboard.
+func (p *PlanComparePanel) FocusedClipboardTarget() core.ClipboardTarget {
+	return gridClipboardTarget(p.focusedGrid())
+}

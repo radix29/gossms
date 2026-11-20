@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 func typeProfileName(d *ProfileDialog, s string) {
@@ -167,5 +168,95 @@ func TestProfileDialogClipboardTarget(t *testing.T) {
 	pd.HandleKey(key(tcell.KeyBacktab))
 	if pd.FocusedClipboardTarget() != nil {
 		t.Error("a clipboard target on the button row")
+	}
+}
+
+// showProfileOnScreen opens a Profile dialog drawn once on a screen, so its
+// widgets have their bounds, and counts the accepts.
+func showProfileOnScreen(t *testing.T) (*ProfileDialog, *tuikittest.Screen, *int) {
+	t.Helper()
+	pd := NewProfileDialog()
+	scr := tuikittest.NewScreen(100, 40)
+	pd.SetScreen(scr)
+	accepts := 0
+	pd.ShowProfile(config.Connection{Server: "a"}, func(string, config.AllowClass) error {
+		accepts++
+		return nil
+	})
+	pd.Draw(scr)
+	return pd, scr, &accepts
+}
+
+func mouseAt(d interface{ HandleMouse(*tcell.EventMouse) bool }, x, y int, b tcell.ButtonMask) bool {
+	return d.HandleMouse(tcell.NewEventMouse(x, y, b, tcell.ModNone))
+}
+
+// A click on Allowed Operations opens its list and leaves it open. The click
+// opened it and then focused the drop-down, and focusing blurred every entry
+// first, the target too: DropDown.Focus(false) closed the list again.
+func TestProfileDialogClickOpensTheAllowedOperationsList(t *testing.T) {
+	pd, _, _ := showProfileOnScreen(t)
+	b := pd.ddAllow.Bounds()
+	mouseAt(pd, b.Right()-2, b.Y, tcell.Button1)
+	mouseAt(pd, b.Right()-2, b.Y, tcell.ButtonNone)
+	if !pd.ddAllow.OverlayActive() {
+		t.Fatal("a click on the drop-down did not leave its list open")
+	}
+	if pd.focused() != focusable(pd.ddAllow) {
+		t.Error("the click did not focus the drop-down")
+	}
+}
+
+// The list overlays the button row, so a pick's held button dragged onto OK
+// must not accept: the list sees the press before ConsumeOutsideClick, and
+// RingMouse calls TrackPress ahead of it so the button row knows the press.
+func TestProfileDialogDragFromAListPickDoesNotPressOK(t *testing.T) {
+	pd, scr, accepts := showProfileOnScreen(t)
+	b := pd.ddAllow.Bounds()
+	mouseAt(pd, b.Right()-2, b.Y, tcell.Button1)
+	mouseAt(pd, b.Right()-2, b.Y, tcell.ButtonNone)
+	pd.Draw(scr)
+	mouseAt(pd, b.Right()-3, b.Y+1, tcell.Button1) // the first item
+	if pd.ddAllow.OverlayActive() {
+		t.Fatal("the pick did not land — test premise is wrong")
+	}
+	okX, by := pd.ButtonRowStartX(profileButtons)+2, pd.ButtonRowY()
+	mouseAt(pd, okX, by, tcell.Button1)
+	if *accepts != 0 || !pd.Visible() {
+		t.Fatal("a drag from a list pick pressed OK")
+	}
+	mouseAt(pd, okX, by, tcell.ButtonNone)
+	typeProfileName(pd, "x")
+	mouseAt(pd, okX, by, tcell.Button1)
+	if *accepts != 1 {
+		t.Error("a fresh click on OK did not accept — the test's button position is wrong")
+	}
+}
+
+func TestProfileDialogDragOutOfTheNameFieldDoesNotPressOK(t *testing.T) {
+	pd, _, accepts := showProfileOnScreen(t)
+	typeProfileName(pd, "prod")
+	r, by := pd.Rect(), pd.ButtonRowY()
+	if got := dragOutOf(t, pd, pd.fName, r.Right()-2, by); got != "prod" {
+		t.Errorf("selected %q, want %q — the selection froze when the drag left the field", got, "prod")
+	}
+	for mx := r.X; mx < r.Right(); mx++ {
+		mouseAt(pd, mx, by, tcell.Button1)
+	}
+	if *accepts != 0 || !pd.Visible() {
+		t.Error("a selection drag across the button row pressed a button")
+	}
+}
+
+// The wheel inside the box is left to the host (dialogs.RingMouse), and one
+// outside it is swallowed by the modal.
+func TestProfileDialogLeavesTheWheelToTheHost(t *testing.T) {
+	pd, _, _ := showProfileOnScreen(t)
+	b := pd.fName.Bounds()
+	if mouseAt(pd, b.X+1, b.Y, tcell.WheelDown) {
+		t.Error("a wheel tick inside the box was spoken for")
+	}
+	if !mouseAt(pd, 0, 0, tcell.WheelDown) {
+		t.Error("a wheel tick outside the modal box leaked")
 	}
 }

@@ -270,23 +270,21 @@ func (p *QueryStorePanel) runAct(i int) {
 
 // popMenu shows items under selector cell i of the selector row.
 func (p *QueryStorePanel) popMenu(i int, items []controls.MenuItem) {
-	p.popMenuAt(p.sel.Cells[i].Rect, items)
+	p.popMenuOn(&p.sel, i, items)
 }
 
-// popMenuAt shows items under one toolbar cell, or at the panel's top-left if
-// that cell didn't fit on its row.
-func (p *QueryStorePanel) popMenuAt(r core.Rect, items []controls.MenuItem) {
-	if r.IsZero() {
-		r = core.Rect{X: p.rect.X, Y: p.rect.Y}
-	}
-	p.app.contextMenu.Show(r.X, r.Y+1, items)
+// popMenuOn shows items under cell i of row (i < 0: its More cell), or at the
+// panel's top-left if that cell didn't fit on its row.
+func (p *QueryStorePanel) popMenuOn(row *controls.ToolRow, i int, items []controls.MenuItem) {
+	x, y := row.MenuAnchor(i, p.rect)
+	p.app.contextMenu.Show(x, y, items)
 }
 
 // showOverflowMenu pops the buttons a row was too narrow to draw, under its
 // "More ▾" cell; see ToolRow.OverflowItems for what each entry carries.
 func (p *QueryStorePanel) showOverflowMenu(row *controls.ToolRow,
 	disabled func(int) bool, reason func(int) string, run func(int)) {
-	p.popMenuAt(row.More.Rect, row.OverflowItems(disabled, reason, run))
+	p.popMenuOn(row, -1, row.OverflowItems(disabled, reason, run))
 }
 
 func (p *QueryStorePanel) showReportMenu() {
@@ -333,12 +331,12 @@ func (p *QueryStorePanel) showTopMenu() {
 }
 
 func (p *QueryStorePanel) showMinExecMenu() {
-	p.popMenuAt(p.acts.Cells[qsActMinExec].Rect, controls.ChoiceItems(qsIndexes(len(qsMinExecCounts)), p.minExecIdx,
+	p.popMenuOn(&p.acts, qsActMinExec, controls.ChoiceItems(qsIndexes(len(qsMinExecCounts)), p.minExecIdx,
 		qsMinExecLabel, func(i int) { p.minExecIdx = i; p.Load() }))
 }
 
 func (p *QueryStorePanel) showRegressionMenu() {
-	p.popMenuAt(p.acts.Cells[qsActRegression].Rect, controls.ChoiceItems(qsIndexes(len(qsRegressionPcts)), p.regressIdx,
+	p.popMenuOn(&p.acts, qsActRegression, controls.ChoiceItems(qsIndexes(len(qsRegressionPcts)), p.regressIdx,
 		qsRegressionLabel, func(i int) { p.regressIdx = i; p.Load() }))
 }
 

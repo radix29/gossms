@@ -429,69 +429,21 @@ func (d *FilterDialog) moveFocus(dir int) {
 	d.syncFocus()
 }
 
+// HandleMouse is dialogs.RingMouse over the focus ring: an operator dropdown
+// and a value field per row, then the button row.
 func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// The open list below sees events before ConsumeOutsideClick does, so the
-	// gesture is tracked here: a list pick's resends, dragged onto the button
-	// row, must not press a button.
-	d.TrackPress(ev)
-	// A release must reach every latch-bearing widget even when it lands outside
-	// the dialog, or the widget's next press is swallowed as a continuation of
-	// the stale drag.
-	if ev.Buttons() == tcell.ButtonNone {
-		for i := range d.rows {
-			d.rows[i].op.HandleMouse(ev)
-		}
-		d.drag.Release(ev)
-	}
-	// An open list may extend below the dialog's rows, so it is offered the press
-	// before ConsumeOutsideClick can discard it as "outside".
-	if dd := d.openDropDown(); dd != nil && dd.HandleMouse(ev) {
-		return true
-	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	if ev.Buttons() == tcell.ButtonNone {
-		return true
-	}
-	if ev.Buttons() != tcell.Button1 {
-		return false
-	}
-
-	// The gesture belongs to whichever field claimed its press, so motion is
-	// replayed there without hit-testing, which would stop a selection extending
-	// the moment the pointer leaves the field's rect.
-	if d.drag.Replay(ev) {
-		return true
-	}
-
-	if i := d.ButtonClicked(ev, d.buttons()); i >= 0 {
-		d.focusIdx, d.btnFocus = d.widgetCount(), i
-		d.syncFocus()
-		d.pressButton(i)
-		return true
-	}
-	for i := range d.rows {
-		if d.rows[i].op.HandleMouse(ev) {
-			d.focusIdx = i * 2
+	return dialogs.RingMouse(ev, &d.ModalDialog, &d.drag, d.fields(), d.focusIdx, d.buttons(),
+		func(i int) {
+			d.focusIdx = i
 			d.syncFocus()
-			return true
-		}
-	}
-	mx, my := ev.Position()
-	for i := range d.rows {
-		f := d.rows[i].value
-		if f.HitTest(mx, my) {
-			d.focusIdx = i*2 + 1
-			d.syncFocus()
-			d.drag.Claim(f, ev)
-			return true
-		}
-	}
-	return true
+		},
+		func(btn int) {
+			d.btnFocus = btn
+			d.pressButton(btn)
+		})
 }
 
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
