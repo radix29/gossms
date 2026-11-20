@@ -46,34 +46,12 @@ func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 // message is drawn as the log wrote it; the grid row is the flattened form.
 func (lv *LogViewer) drawDetails(s tcell.Screen) {
 	r := lv.detailRect
-	if r.W <= 0 || r.H <= 0 {
-		return
-	}
-	pal := theme.Active()
-	style := theme.StyleDefault()
-	dimStyle := style.Foreground(pal.TextDim)
-	core.FillRect(s, r, ' ', style)
-
 	row, ok := lv.selectedLogRow()
 	if !ok {
-		core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, dimStyle, "No entry selected")
+		lv.detail.DrawEmpty(s, r, theme.StyleDefault(), "No entry selected")
 		return
 	}
-
-	lines := lv.detailLines(row, r.W-2)
-	for i := lv.detailScroll; i < len(lines); i++ {
-		y := r.Y + i - lv.detailScroll
-		if y >= r.Y+r.H {
-			break
-		}
-		core.DrawTextClipped(s, r.X+1, y, r.W-2, style, lines[i])
-	}
-	// A message longer than the pane is normal (stack dumps), so say so rather
-	// than end mid-sentence.
-	if hidden := len(lines) - lv.detailScroll - r.H; hidden > 0 {
-		core.DrawTextRight(s, r.X, r.Y+r.H-1, r.W-1, dimStyle,
-			core.Truncate("▾ more (Alt+↓)", r.W-1))
-	}
+	lv.detail.Draw(s, r, theme.StyleDefault(), lv.detailLines(row, r.W-2), nil)
 }
 
 // detailLines renders one entry into the details pane's lines, wrapped to w.

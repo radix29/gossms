@@ -13,8 +13,8 @@ import (
 // tokenDialog is a host shaped like propsheet.PropertySheet: it hands back
 // itself as the clipboard target whichever of its fields has focus, and
 // distinguishes them only through ClipboardTargetToken. That shape is the
-// whole reason the token exists — pasteInto's "is this still the target?"
-// check passes unconditionally against it.
+// whole reason the token exists — clipboard.Dispatcher.Deliver's "is this
+// still the target?" check passes unconditionally against it.
 type tokenDialog struct {
 	fields  []*widgets.InputField
 	focused int
@@ -65,7 +65,7 @@ func TestPasteIsDroppedWhenFocusMovedWithinTheSameHost(t *testing.T) {
 	token := clipboardTargetToken(a.modals.Top())
 
 	d.focused = 1 // the read comes back after the user tabbed on
-	a.pasteInto(target, token, "hunter2")
+	a.clip().Deliver(target, token, "hunter2")
 
 	if got := d.fields[0].Value(); got != "" {
 		t.Errorf("field 0 = %q, want it untouched — focus had left it", got)
@@ -79,7 +79,7 @@ func TestPasteIsDroppedWhenFocusMovedWithinTheSameHost(t *testing.T) {
 // simply refusing everything.
 func TestPasteAppliesWhenFocusHasNotMoved(t *testing.T) {
 	a, d := newTokenDialogApp(t)
-	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), "hunter2")
+	a.clip().Deliver(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), "hunter2")
 
 	if got := d.fields[0].Value(); got != "hunter2" {
 		t.Fatalf("field 0 = %q, want the pasted text", got)
@@ -87,8 +87,8 @@ func TestPasteAppliesWhenFocusHasNotMoved(t *testing.T) {
 }
 
 // A host that hands back itself resolves the real field on every call, so
-// App.pasteInto's "is this still the target?" check cannot see focus move
-// between two of its fields — the paste lands wherever focus went. Such a
+// clipboard.Dispatcher.Deliver's "is this still the target?" check cannot see
+// focus move between two of its fields — the paste lands wherever focus went. Such a
 // host has to distinguish them through core.ClipboardTargetTokener, and
 // App.clipboardTargetToken asserts for that on the *dialog*, so the dialog is
 // where the method must be reachable.

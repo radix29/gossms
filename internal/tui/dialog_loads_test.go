@@ -14,8 +14,8 @@ import (
 )
 
 // The async loads in these tests run against a bare ServerConn, so their
-// goroutines panic on the nil gosmo.Server and recoverPanic logs it (muted by
-// quietLog). Nothing drains a.wake.pending, so no completion ever runs: what is
+// goroutines panic on the nil gosmo.Server and reportPanic logs it (muted by
+// quietLog). Nothing drains a.wake, so no completion ever runs: what is
 // under test is which runs are still current, not what they deliver.
 
 // T19: Restore's loads used to share one token, so a history load started
@@ -31,7 +31,7 @@ func TestRestoreHistoryLoadDoesNotDropTheTargetCheck(t *testing.T) {
 	d.fFile.SetValue(`C:\backups\testdb.bak`)
 
 	d.startRestore()
-	check := d.checkRun.seq
+	check := latestToken(&d.checkRun)
 	if d.checkRun.Idle() {
 		t.Fatal("OK started no target-database check")
 	}
@@ -54,7 +54,7 @@ func TestRestoreHideAbandonsItsLoads(t *testing.T) {
 
 	d.loadHistory("testdb")
 	d.startRestore()
-	hist, check := d.historyRun.seq, d.checkRun.seq
+	hist, check := latestToken(&d.historyRun), latestToken(&d.checkRun)
 	d.Hide()
 	if d.historyRun.Current(hist) || !d.historyRun.Idle() {
 		t.Error("Hide left the history load current or running")
@@ -71,7 +71,7 @@ func TestBackupHideAbandonsTheDatabaseList(t *testing.T) {
 	quietLog(t)
 	a.setScreen(nil)
 	d.show(&db.ServerConn{}, "testdb")
-	seq := d.dbListRun.seq
+	seq := latestToken(&d.dbListRun)
 	if d.dbListRun.Idle() {
 		t.Fatal("show started no database-list load")
 	}
@@ -118,7 +118,7 @@ func TestSnapshotNameChangeAbandonsTheDefaultsRead(t *testing.T) {
 	if d.defaultsRead.Idle() {
 		t.Fatal("Default File Paths started no read")
 	}
-	seq := d.defaultsRead.seq
+	seq := latestToken(&d.defaultsRead)
 
 	name.Edit("src_other")
 	if d.defaultsRead.Current(seq) || !d.defaultsRead.Idle() {

@@ -48,7 +48,7 @@ func stopwordRows(words []gosmo.FullTextStopword) [][]string {
 // loaded or added.
 type stopwordEdit struct {
 	word gosmo.FullTextStopword
-	pendingState
+	propsheet.PendingState
 }
 
 // sameStopword reports whether two words are one entry of a stoplist: the
@@ -58,7 +58,7 @@ func sameStopword(a, b gosmo.FullTextStopword) bool {
 	return a.LanguageID == b.LanguageID && strings.EqualFold(a.Word, b.Word)
 }
 
-// pageFullTextStopwords is the stoplist's words, master-detail over pendingEdits:
+// pageFullTextStopwords is the stoplist's words, master-detail over propsheet.PendingEdits:
 // a word and language to Add, Remove for the selected word, and Remove Language
 // for every word of the selected word's language.
 //
@@ -89,7 +89,7 @@ func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.C
 			}
 			edits := newPendingEdits(databaseCollation(l.Database()), loaded, nil, nil, nil)
 			rowsFor := func() [][]string {
-				vis := edits.visible()
+				vis := edits.Visible()
 				out := make([]gosmo.FullTextStopword, len(vis))
 				for k, e := range vis {
 					out[k] = e.word
@@ -99,7 +99,7 @@ func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.C
 			grid := controls.NewDataGrid()
 			grid.SetData(stopwordHeaders, rowsFor())
 			selected := func() *stopwordEdit {
-				vis := edits.visible()
+				vis := edits.Visible()
 				if i := grid.SelectedRow(); i >= 0 && i < len(vis) {
 					return vis[i]
 				}
@@ -122,25 +122,25 @@ func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.C
 				lcid := languages.lcid(langRow.Selected())
 				id, _ := strconv.Atoi(lcid)
 				nw := gosmo.FullTextStopword{Word: w, LanguageID: id, Language: langs[langRow.Selected()].Name}
-				for _, e := range edits.all() {
+				for _, e := range edits.All() {
 					if !sameStopword(e.word, nw) {
 						continue
 					}
-					if e.removing {
+					if e.Removing {
 						// Re-adding a word marked for removal keeps it.
-						edits.restore(e)
+						edits.Restore(e)
 						hint.Clear()
 						wordField.SetValue("")
-						redraw(len(edits.visible()) - 1)
+						redraw(len(edits.Visible()) - 1)
 						return
 					}
 					hint.SetError(fmt.Sprintf("%q is already a %s stopword.", w, nw.Language))
 					return
 				}
 				hint.Clear()
-				edits.add(&stopwordEdit{word: nw})
+				edits.Add(&stopwordEdit{word: nw})
 				wordField.SetValue("")
-				redraw(len(edits.visible()) - 1)
+				redraw(len(edits.Visible()) - 1)
 			})
 			removeBtn := widgets.NewButton("Remove", func() {
 				e := selected()
@@ -149,7 +149,7 @@ func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.C
 					return
 				}
 				hint.Clear()
-				edits.remove(e)
+				edits.Remove(e)
 				redraw(max(0, grid.SelectedRow()-1))
 			})
 			removeLangBtn := widgets.NewButton("Remove Language", func() {
@@ -160,9 +160,9 @@ func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.C
 				}
 				id := e.word.LanguageID
 				n := 0
-				for _, x := range edits.visible() {
+				for _, x := range edits.Visible() {
 					if x.word.LanguageID == id {
-						edits.remove(x)
+						edits.Remove(x)
 						n++
 					}
 				}
@@ -171,9 +171,9 @@ func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.C
 			})
 
 			gridRow := propsheet.NewGridRow(grid, 12)
-			gridRow.DirtyFn = edits.dirty
+			gridRow.DirtyFn = edits.Dirty
 			gridRow.RevertFn = func() {
-				edits.revert()
+				edits.Revert()
 				redraw(0)
 			}
 			f := propsheet.NewForm(
@@ -193,7 +193,7 @@ func pageFullTextStopwords(sc *db.ServerConn, dbName string, find func(context.C
 			}
 			name := l.Name
 			return f, func(ctx context.Context) error {
-				return applyStopwords(ctx, sc.Server.DatabaseRef(dbName).FullText().StoplistRef(name), edits.all())
+				return applyStopwords(ctx, sc.Server.DatabaseRef(dbName).FullText().StoplistRef(name), edits.All())
 			}, nil
 		},
 	}
@@ -206,12 +206,12 @@ func applyStopwords(ctx context.Context, l *gosmo.FullTextStoplist, rows []*stop
 	langLoaded := map[int]int{}
 	langRemoving := map[int]int{}
 	for _, e := range rows {
-		if e.isNew {
+		if e.IsNew {
 			continue
 		}
 		loaded++
 		langLoaded[e.word.LanguageID]++
-		if e.removing {
+		if e.Removing {
 			removing++
 			langRemoving[e.word.LanguageID]++
 		}
@@ -232,7 +232,7 @@ func applyStopwords(ctx context.Context, l *gosmo.FullTextStoplist, rows []*stop
 			}
 		}
 		for _, e := range rows {
-			if e.removing && !e.isNew && !whole[e.word.LanguageID] {
+			if e.Removing && !e.IsNew && !whole[e.word.LanguageID] {
 				if err := l.DropStopword(ctx, e.word.Word, strconv.Itoa(e.word.LanguageID)); err != nil {
 					return err
 				}
@@ -240,7 +240,7 @@ func applyStopwords(ctx context.Context, l *gosmo.FullTextStoplist, rows []*stop
 		}
 	}
 	for _, e := range rows {
-		if e.isNew {
+		if e.IsNew {
 			if err := l.AddStopword(ctx, e.word.Word, strconv.Itoa(e.word.LanguageID)); err != nil {
 				return err
 			}

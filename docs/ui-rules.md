@@ -99,10 +99,11 @@ which owns them; the entries here say how goSSMS applies them.
   `TestNoPropertySheetLabelIsTruncated` still reads them) — its `Set()` clears
   every row not given, so a missed row can't keep describing the previous
   selection. A grid with Add
-  and Remove keeps its rows in `pendingEdits` (`pending_edits.go`): the row
-  type embeds `pendingState`, and the list owns dirty, visible, revert,
-  add/remove and the collation-aware name checks the pages each used to
-  rewrite. When the page also has a detail form and a name field to add by,
+  and Remove keeps its rows in tuikit's `propsheet.PendingEdits`, built by
+  `newPendingEdits` (`pending_edits.go`) to compare names under the scope's
+  collation: the row type embeds `propsheet.PendingState`, and the list owns
+  dirty, visible, revert, add/remove and the name checks the pages each used
+  to rewrite. When the page also has a detail form and a name field to add by,
   the UI half is tuikit's `propsheet.ListEditor` (selection, commit before
   the cursor moves, the Add/Remove/Revert flow and its hint) — Resource
   Governor pools and groups, Database Mail accounts and profiles.
@@ -181,9 +182,30 @@ which owns them; the entries here say how goSSMS applies them.
   focused widget gets every key first (an open dropdown's list, a radio box's
   arrows, a checkbox's Enter); what it declines moves focus (Up/Down too) or
   fires the default button. Use `dialogs.FieldRingKey` + `ButtonRowKey` with
-  `dialogs.RingStep` (Find/Replace, Log Search, Filter, Options) rather than a
-  per-dialog switch: four of them had drifted into four semantics, one of which
-  trapped Tab on OK/Cancel.
+  `dialogs.RingStep` (Find/Replace, Log Search, Filter, Options, Profile,
+  Connect, Back Up, Restore's form and Files view) rather than a per-dialog
+  switch: eight of them had drifted into two models and more semantics, one of
+  which trapped Tab on OK/Cancel and another Tabbed onto greyed controls. The
+  button row is `focusIdx == len(focusable)`, not a flag: re-applying focus
+  after a rebuild is `setFocus(focusIdx)`, and a rebuild that changes the
+  ring's length moves a row index with it. An `editor.Editor` in the ring is
+  the one key the dialog takes first: Tab/Backtab, which it would indent with
+  (`propsheet.EditorRow`'s rule); Enter still goes to it.
+- **Its mouse is `dialogs.RingMouse`**, the whole `HandleMouse` over the same
+  ring (Find/Replace, Log Search, Filter, Options, Profile). It fixes the order
+  of § Mouse's calls — `TrackPress`, the release to every latch, an open
+  dropdown's first refusal, `ConsumeOutsideClick`, `Replay`, buttons, `Claim` —
+  which the five hand-rolled copies had in five variants, and leaves the wheel
+  inside the box to the host. A dialog with tabs, a scrollable pane or a mode
+  (Connect, Back Up, Restore) keeps its own; don't stretch the helper to fit.
+- **A dialog whose whole surface is that ring holds a `dialogs.FieldRing`**
+  (Find/Replace, Log Search, Filter, Options, Profile): it owns `focusIdx`,
+  `btnFocus` and the `FieldGesture` and wires `FieldRingKey`/`ButtonRowKey`,
+  `RingMouse` and the clipboard pair over them. Set its callbacks once in the
+  constructor, call `ring.Reset()` on the opening path (the gesture latch's
+  `Clear` — `TestFieldGestureCallsAreOrderedCorrectly` checks it) and forward
+  `HandleKey`/`HandleMouse`/the clipboard methods; a new flat-ring dialog
+  starts here, not from the free functions.
 - **A dialog-level scrollbar uses `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a too-small terminal content
   is clipped to `InnerRect` (`dialogs.Stack.Draw`'s `core.ClipScreen`, narrowed by
@@ -210,8 +232,15 @@ which owns them; the entries here say how goSSMS applies them.
   **explicit** nil on a miss (a typed nil is not a nil interface).
   `TestEveryDialogWithTextEntryIsAClipboardHost` catches a missing host, not a
   reintroduced fall-through. A dialog reacting to edits implements
-  `core.ClipboardEditHandler` and checks the target it's handed. `App.pasteInto`
-  drops text unless its target is still current (reads are async).
+  `core.ClipboardEditHandler` and checks the target it's handed.
+- **Clipboard traffic goes through `App.clip()`** — tuikit's
+  `clipboard.Dispatcher`, wired to `activeClipboardTarget`,
+  `clipboardTargetToken`, `postAndWake` and `safego`. Never call
+  `clipboard.Write`/`Read` or `SetClipboard`/`GetClipboard` directly: the
+  dispatcher is what keeps the newest copy, drops a paste whose target changed
+  before the text arrived (reads are async), ignores an unsolicited OSC 52
+  reply, and applies a bracketed paste as one edit. `App.handleEvent` offers it
+  every event first.
 - **Every text field gets the right-click Cut/Copy/Paste menu through one route,
   never a per-field handler.** A dialog that is a `core.ClipboardHost` is also a
   `core.ClipboardFocuser`: `FocusClipboardTargetAt` focuses the field under the
@@ -226,10 +255,16 @@ which owns them; the entries here say how goSSMS applies them.
   widget itself** — an editor fires it inside `HandleMouse`, before its panel
   moves focus, so `activeClipboardTarget` still names the previous one. Whether
   Cut and Paste appear is the target's `CanPaste`/`CanCut` (part of
-  `core.ClipboardTarget`; read-only → Copy and Select All only), so a panel
-  forwarding to a grid or plan view forwards the four `Can*` methods too. A panel with a text field among other things is a
-  `core.ClipboardHost` (Log Viewer's filter) — `activeClipboardTarget` asks the
-  active panel, so Ctrl+C/X/V and a terminal paste reach it too.
+  `core.ClipboardTarget`; read-only → Copy and Select All only). **A panel
+  is a `core.ClipboardHost`, never a forwarding `ClipboardTarget`**: it names
+  its focused copyable widget, or an explicit nil (Log Viewer's filter, Plan's
+  PlanView, Query Store's focused grid, Detail Browser's grid only while its
+  viewer is open). `activeClipboardTarget` asks the active panel, so
+  Ctrl+C/X/V and a terminal paste reach it. A host answering a different
+  widget per focus needs no `ClipboardTargetTokener` — `Dispatcher.Deliver`'s
+  identity check sees the move; only a host answering with itself does. Return a grid
+  through `gridClipboardTarget` (a typed-nil `*DataGrid` is a non-nil
+  interface).
 - **`App.contextMenu` sits above the dialogs** — drawn after `modals.Draw`,
   and offered keys and mouse ahead of `modals`, so a dialog field's
   `OnRightClick` can open it (Connect's connection string preview). Its items
@@ -323,6 +358,9 @@ which owns them; the entries here say how goSSMS applies them.
   `TestFieldGestureCallsAreOrderedCorrectly` — both needed. Options, Prompt and
   TypedConfirm hand-rolled it wrong with all tests passing: a drag to the
   button row pressed the button, *accepting* a rename or a typed confirmation.
+  A ring dialog gets all three from `dialogs.RingMouse` (§ Dialogs and the
+  clipboard); the order test then checks only `Clear`, and tuikit's
+  `TestRingMouse` pins the rest.
 - **The release to the *focused* field goes through
   tuikit's `dialogs.ForwardReleaseToFocusedField`**, not a type switch — it
   covers the focused `*editor.Editor`, which no dialog here `Claim`s (it
@@ -346,7 +384,7 @@ which owns them; the entries here say how goSSMS applies them.
   `App.handleMouse` offers `a.panels` every event before routing by position
   — without it a press on Object Explorer left the Details cell menu open.
   `panel_overlay_routing_test.go` lists the implementers; add a new panel there.
-- **Report with `App.postAndWake(fn)`**, never `postEvent` + `wakeEventLoop` by
+- **Report with `App.postAndWake(fn)`**, never `a.wake.Queue` + `wakeEventLoop` by
   hand (tree nodes stuck on "Loading..."). `ARCHITECTURE.md` § Async result delivery:
   postAndWake. The elapsed-timer tick is the one legit bare `wakeEventLoop()`.
 - **An apply closure never writes page state.** `propApply` runs on the
@@ -397,7 +435,7 @@ which owns them; the entries here say how goSSMS applies them.
   the label, and a renamed node keeps the old name every later menu action
   uses. `TestPropertiesApplyReloadsTheFolderListingTheObject` lists them; a new
   one joins it. Details staleness is `staleDetails`, already generic.
-- **A load a newer one replaces uses `latest` (`latest.go`)**, never a
+- **A load a newer one replaces uses `latest` (tuikit's `loop.Latest`)**, never a
   hand-rolled token or cancel. `Begin`/`BeginTimeout` supersede and cancel;
   `Done` checks and releases; `Cancel` stops without superseding; `Abandon`
   does both. Token-only copies were bugs. Wrap for extra bookkeeping
@@ -423,5 +461,7 @@ which owns them; the entries here say how goSSMS applies them.
 - **An operation that latches UI state before starting uses
   `App.safegoRepair`**, not `safego` — a panic skips the posted release and the
   latch lives forever (inert Log Viewer toolbar, Activity Monitor tab stuck at
-  "Running...", dead page button). Test like
+  "Running...", dead page button). A single-flight busy flag goes through
+  `loop.Runner.GoOnce`, which owns the release (a dialog page button:
+  `runPageActionOnce`). Test like
   `TestPageActionLatchClearsWhenTheActionPanics`.

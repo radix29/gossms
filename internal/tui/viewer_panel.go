@@ -27,9 +27,10 @@ type viewerPanel struct {
 	detailRect core.Rect
 	tools      controls.ToolRow
 
-	// detailScroll is the first drawn line of the details pane, so a long value
-	// can be read past the pane's height.
-	detailScroll int
+	// detail is the details pane's scroll state, so a long value can be read
+	// past the pane's height. Each panel builds (and caches) its lines and
+	// passes their count to detail.Draw and scrollDetailLines alike.
+	detail core.LinePane
 }
 
 // newViewerPanel makes the shell: a cell-cursor grid wired to the app's
@@ -41,7 +42,13 @@ func newViewerPanel(app *App, title string, ratio float64) viewerPanel {
 	grid.SetStatusStyle(theme.StyleGridStatus)
 	grid.OnCopyRequest = app.copyWithStatus
 	grid.SetMaxCellWidth(app.cfg.MaxCellLength + 2)
-	p := viewerPanel{grid: grid, splitter: newHorizontalSplitter(title)}
+	p := viewerPanel{
+		grid:     grid,
+		splitter: newHorizontalSplitter(title),
+		// A message longer than the pane is normal (stack dumps, deadlock XML), so
+		// say so rather than end mid-sentence.
+		detail: core.LinePane{More: "▾ more (Alt+↓)"},
+	}
 	p.splitter.SetRatio(ratio)
 	return p
 }
@@ -75,6 +82,5 @@ func (p *viewerPanel) scrollDetailLines(n, delta int) {
 	if p.detailRect.H <= 0 {
 		return
 	}
-	limit := max(0, n-p.detailRect.H)
-	p.detailScroll = min(limit, max(0, p.detailScroll+delta))
+	p.detail.ScrollBy(delta, n, p.detailRect.H)
 }

@@ -180,26 +180,6 @@ func TestRenderAndStatusDoNotPanicOnPlanTabWithResults(t *testing.T) {
 	qp.updateResultsStatus()
 }
 
-// TestQueryMenuActualPlanLabelReflectsToggleState checks
-// actualExecutionPlanMenuLabel and actualPlanToggleIcon produce distinct,
-// equal-width ON/OFF text — equal width so the toolbar toggle button never
-// needs its neighbors to shift.
-func TestQueryMenuActualPlanLabelReflectsToggleState(t *testing.T) {
-	if got := actualExecutionPlanMenuLabel(false); got != "Actual Execution Plan (OFF)" {
-		t.Errorf("actualExecutionPlanMenuLabel(false) = %q", got)
-	}
-	if got := actualExecutionPlanMenuLabel(true); got != "Actual Execution Plan (ON)" {
-		t.Errorf("actualExecutionPlanMenuLabel(true) = %q", got)
-	}
-	off, on := actualPlanToggleIcon(false), actualPlanToggleIcon(true)
-	if off == on {
-		t.Errorf("actualPlanToggleIcon(false) == actualPlanToggleIcon(true) = %q, want distinct text", off)
-	}
-	if len(off) != len(on) {
-		t.Errorf("actualPlanToggleIcon widths differ: off=%q (%d), on=%q (%d) — toggling would shift the toolbar's other buttons", off, len(off), on, len(on))
-	}
-}
-
 func TestFabricExecuteSkipsUnsupportedActualPlan(t *testing.T) {
 	for _, fabric := range []bool{false, true} {
 		for _, mode := range []struct {
@@ -328,7 +308,7 @@ func TestFabricPlanControlsFollowActiveQueryConnection(t *testing.T) {
 		if estimated == nil || (estimated.Enabled != nil && !estimated.Enabled()) {
 			t.Error("Estimated Plan menu was disabled for a query panel")
 		}
-		for _, label := range []string{actualExecutionPlanMenuLabel(false), liveQueryStatisticsMenuLabel(false)} {
+		for _, label := range []string{"Actual Execution Plan", "Live Query Statistics"} {
 			item := findMenuItem(items, label)
 			if item == nil {
 				t.Fatalf("missing %s", label)
@@ -386,7 +366,7 @@ func TestFabricPlanControlsFollowExplorerWithoutQueryConnection(t *testing.T) {
 				if planButtons != 2 {
 					t.Fatalf("found %d actual/live buttons, want 2", planButtons)
 				}
-				for _, label := range []string{actualExecutionPlanMenuLabel(false), liveQueryStatisticsMenuLabel(false)} {
+				for _, label := range []string{"Actual Execution Plan", "Live Query Statistics"} {
 					item := findMenuItem(items, label)
 					if item == nil {
 						t.Fatalf("missing %s", label)

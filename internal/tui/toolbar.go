@@ -29,11 +29,12 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Divider: true, Icon: "|"},
 		{Icon: "Est.Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() }, DropRank: 5,
 			Enabled: func() bool { return a.activeQueryPanel() != nil }},
-		{Icon: actualPlanToggleIcon(a.actualPlanEnabled), Tooltip: "Include Actual Execution Plan", Action: func() { a.toggleActualExecutionPlan() }, DropRank: 6,
-			Enabled: a.actualPlanAvailable},
-		{Icon: liveStatsToggleIcon(a.liveStatsEnabled), Tooltip: "Include Live Query Statistics", Action: func() { a.toggleLiveQueryStatistics() }, DropRank: 7,
-			Enabled: a.actualPlanAvailable},
-		{Icon: metaToggleIcon(a.metaEnabled), Tooltip: "Show Output Column Metadata", Action: func() { a.toggleOutputColumnMeta() }, DropRank: 8},
+		{Icon: "Act.Plan", Tooltip: "Include Actual Execution Plan", Action: func() { a.toggleActualExecutionPlan() }, DropRank: 6,
+			On: func() bool { return a.actualPlanEnabled }, Enabled: a.actualPlanAvailable},
+		{Icon: "Live", Tooltip: "Include Live Query Statistics", Action: func() { a.toggleLiveQueryStatistics() }, DropRank: 7,
+			On: func() bool { return a.liveStatsEnabled }, Enabled: a.actualPlanAvailable},
+		{Icon: "Meta", Tooltip: "Show Output Column Metadata", Action: func() { a.toggleOutputColumnMeta() }, DropRank: 8,
+			On: func() bool { return a.metaEnabled }},
 		{Divider: true, Icon: "|"},
 		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() }, DropRank: 4,
 			Enabled: func() bool {
@@ -41,32 +42,4 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 					gate.Allows(a.activeServerConn(), "", gate.ViewServerState)
 			}},
 	}
-}
-
-// actualPlanToggleIcon renders the "Include Actual Execution Plan" toggle
-// button's text. Both states are the same display width, so toggling never
-// needs the toolbar to relayout its neighbors.
-func actualPlanToggleIcon(on bool) string {
-	if on {
-		return "Act.Plan[ON--]"
-	}
-	return "Act.Plan[-OFF]"
-}
-
-// liveStatsToggleIcon renders the "Include Live Query Statistics" toggle
-// button's text. Same equal-width rule as actualPlanToggleIcon.
-func liveStatsToggleIcon(on bool) string {
-	if on {
-		return "Live[ON--]"
-	}
-	return "Live[-OFF]"
-}
-
-// metaToggleIcon renders the "Show Output Column Metadata" toggle button's
-// text. Same equal-width rule as actualPlanToggleIcon, for the same reason.
-func metaToggleIcon(on bool) string {
-	if on {
-		return "Meta[ON--]"
-	}
-	return "Meta[-OFF]"
 }

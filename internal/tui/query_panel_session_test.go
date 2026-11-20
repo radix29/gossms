@@ -132,7 +132,7 @@ func TestQuitAsksAboutOpenTransactions(t *testing.T) {
 		t.Fatal("quit without asking about an open transaction")
 	}
 	answer(a, 0)
-	drainUntil(t, a, func() bool { return a.quitGate.quitting }, "the quit to go ahead after the commit")
+	drainUntil(t, a, func() bool { return a.wake.Closed() }, "the quit to go ahead after the commit")
 	if !sentStatement(inst, "COMMIT TRANSACTION") {
 		t.Errorf("statements = %q, want the transaction committed before quitting", inst.Statements())
 	}

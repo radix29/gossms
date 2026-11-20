@@ -298,8 +298,8 @@ func TestGraph_PropertiesWheelScrolls(t *testing.T) {
 	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelDown, tcell.ModNone)) {
 		t.Fatal("HandleMouse(WheelDown) over the Properties block returned false")
 	}
-	if v.graphPropsScroll != 1 {
-		t.Errorf("graphPropsScroll = %d after WheelDown, want 1", v.graphPropsScroll)
+	if v.graphPropsPane.Scroll != 1 {
+		t.Errorf("graphPropsPane.Scroll = %d after WheelDown, want 1", v.graphPropsPane.Scroll)
 	}
 }
 
@@ -354,5 +354,54 @@ func TestGraph_PressOnStatementWithoutTreeDoesNotPanic(t *testing.T) {
 	mx, my := r.X+r.W/2, r.Y+r.H/2
 	for _, b := range []tcell.ButtonMask{tcell.Button1, tcell.Button1, tcell.ButtonNone} {
 		v.HandleMouse(tcell.NewEventMouse(mx, my, b, tcell.ModNone))
+	}
+}
+
+// The graph canvas scrolls a plane larger than its rect, so its edges run past
+// it on every side; they draw through a ClipScreen narrowed to the canvas, and
+// one the host already supplied (a clamped dialog's) narrows them further.
+func TestGraphEdgesStayInsideTheCanvasAndAnOuterClip(t *testing.T) {
+	setup := func() (*PlanView, *tuikittest.Screen) {
+		v := New()
+		v.SetBounds(10, 5, 24, 8) // the 12-tile layout overflows both axes
+		v.SetPlan(loadTestPlan(t))
+		v.graphSt.vp.X, v.graphSt.vp.Y = 6, 2 // edges now cross every side
+		scr := tuikittest.NewScreen(60, 30)
+		scr.Fill('x', tcell.StyleDefault)
+		return v, scr
+	}
+
+	v, scr := setup()
+	canvas := v.graphCanvasRect
+	v.drawGraphCanvas(scr)
+	inside := 0
+	for y := range 30 {
+		for x := range 60 {
+			r := scr.RuneAt(x, y)
+			switch {
+			case canvas.Contains(x, y):
+				if r == '◄' { // tile borders share ─ and │; only an edge has ◄
+					inside++
+				}
+			case r != 'x':
+				t.Fatalf("(%d,%d) outside the canvas %+v was drawn: %q", x, y, canvas, r)
+			}
+		}
+	}
+	if inside == 0 {
+		t.Fatal("no edge drawn inside the canvas — the test exercises nothing")
+	}
+
+	v, scr = setup()
+	outer := core.Rect{X: canvas.X + 2, Y: canvas.Y + 1, W: canvas.W - 4, H: canvas.H - 2}
+	clip := core.NewClipScreen(scr)
+	clip.SetClip(outer)
+	v.drawGraphCanvas(clip)
+	for y := range 30 {
+		for x := range 60 {
+			if !outer.Contains(x, y) && scr.RuneAt(x, y) != 'x' {
+				t.Fatalf("(%d,%d) outside the host's clip %+v was drawn: %q", x, y, outer, scr.RuneAt(x, y))
+			}
+		}
 	}
 }

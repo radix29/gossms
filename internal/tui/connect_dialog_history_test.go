@@ -227,10 +227,11 @@ func TestConnectDialogTabRingHoldsOnlyTheVisibleTab(t *testing.T) {
 		}
 	}
 
-	// Every step of a full cycle stays inside the ring.
-	for range len(d.focusable) + 1 {
+	// Every step of a full cycle stays inside the ring, whose last stop is the
+	// button row at len(focusable).
+	for range len(d.focusable) + 2 {
 		d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-		if d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
+		if d.focusIdx < 0 || d.focusIdx > len(d.focusable) {
 			t.Fatalf("Tab left focusIdx = %d, ring of %d", d.focusIdx, len(d.focusable))
 		}
 	}

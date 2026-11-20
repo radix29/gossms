@@ -44,70 +44,37 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 		return true
 	}
 
-	if d.onButtons {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, connectButtonCount, d.buttonsDisabled(), d.doButton, d.Hide, d.leaveButtons)
+	if d.onButtons() {
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, connectButtonCount, d.buttonsDisabled(), d.doButton, d.Hide, d.moveFocus)
 	}
 
-	// The History list owns the arrows and Enter while it has focus, ahead of
-	// the dialog's own Enter-confirms: Enter there connects to the highlighted
-	// saved connection.
-	if d.focusedWidget() == d.history && d.history.HandleKey(ev) {
-		return true
+	focused := d.focusedWidget()
+	// Tab and Backtab never reach an editor, which would indent with them:
+	// they are the only way out of it (propsheet.EditorRow's rule).
+	if _, ok := focused.(*editor.Editor); ok {
+		switch ev.Key() {
+		case tcell.KeyTab:
+			d.moveFocus(+1)
+			return true
+		case tcell.KeyBacktab:
+			d.moveFocus(-1)
+			return true
+		}
 	}
-
-	switch ev.Key() {
-	case tcell.KeyTab:
-		d.stepFocus(+1)
-		return true
-	case tcell.KeyBacktab:
-		d.stepFocus(-1)
-		return true
-	case tcell.KeyEscape:
-		// An open list gets Escape first: it closes the list only, as in
-		// Backup, Restore and Options. The selection is unchanged, so there
-		// is nothing to re-apply.
-		if d.ddAuth.OverlayActive() {
-			d.ddAuth.HandleKey(ev)
-			return true
-		}
-		if d.ddEncrypt.OverlayActive() {
-			d.ddEncrypt.HandleKey(ev)
-			return true
-		}
-		d.Hide()
-		return true
-	case tcell.KeyEnter:
-		if d.ddAuth.OverlayActive() {
-			d.ddAuth.HandleKey(ev)
-			d.applyAuthFields()
-			d.refreshConnStrPreview()
-			return true
-		}
-		if d.ddEncrypt.OverlayActive() {
-			d.ddEncrypt.HandleKey(ev)
-			d.refreshConnStrPreview()
-			return true
-		}
-		d.doButton()
-		return true
-	}
-
-	switch w := d.focusedWidget().(type) {
-	case *widgets.InputField:
-		return w.HandleKey(ev)
-	case *widgets.DropDown:
-		consumed := w.HandleKey(ev)
-		if w == d.ddAuth {
-			d.applyAuthFields()
-		}
+	// The focused widget gets the key first (dialogs.FieldRingKey): History
+	// its arrows and Enter (connect to the highlighted row), an open list its
+	// arrows, Enter and Escape, a closed dropdown Enter (opens it), a
+	// checkbox Enter, an editor Enter (a new line). What it declines is the
+	// ring's; Enter left over presses Connect.
+	dialogs.FieldRingKey(ev, focused, d.doButton, d.Hide, d.moveFocus)
+	// The preview refreshes on a blur (setFocus), not per keystroke in a text
+	// field; a dropdown or checkbox changes a setting without one.
+	switch focused {
+	case d.ddAuth:
+		d.applyAuthFields()
 		d.refreshConnStrPreview()
-		return consumed
-	case *widgets.CheckBox:
-		consumed := w.HandleKey(ev)
+	case d.ddEncrypt, d.cbRemember, d.cbTrust:
 		d.refreshConnStrPreview()
-		return consumed
-	case *editor.Editor:
-		return w.HandleKey(ev)
 	}
 	return true
 }

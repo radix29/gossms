@@ -112,19 +112,21 @@ type RestoreDialog struct {
 
 	// Files view (restoreModeFiles): where the restored database's files land, and
 	// the folders relocFolder puts them in.
-	rbReloc    *widgets.RadioBox
-	fDataDir   *widgets.InputField
-	fLogDir    *widgets.InputField
-	btnDefLoc  *widgets.Button
+	rbReloc   *widgets.RadioBox
+	fDataDir  *widgets.InputField
+	fLogDir   *widgets.InputField
+	btnDefLoc *widgets.Button
+	// filesFocus is the Files view's focusIdx, over filesFocusable.
 	filesFocus int
 
+	// focusIdx == len(focusable) is the form's button row, the stop after the
+	// last field (dialogs.RingStep, ButtonRowKey), and filesFocus ==
+	// len(filesFocusable()) the Files view's; the view's fields are blurred
+	// while it holds focus. btnFocus is the button the row would press: the
+	// first while focus is in a field, so Enter from one presses it.
 	focusIdx  int
 	focusable []focusable
 	btnFocus  int
-	// onButtons is set while the form's or the Files view's button row holds keyboard
-	// focus (the stop past either end of the view's Tab ring, see dialogs.ButtonRowKey). The
-	// view's fields are blurred meanwhile.
-	onButtons bool
 
 	status    string
 	statusErr bool
@@ -313,8 +315,10 @@ const (
 
 // rebuildFocusable assembles the Tab cycle for the current source mode (the file
 // input + Browse button, or the two history dropdowns) and recovery option (the
-// standby file only for WITH STANDBY).
+// standby file only for WITH STANDBY). Focus on the button row stays there: its
+// index moves with the cycle's length.
 func (d *RestoreDialog) rebuildFocusable() {
+	onButtons := d.focusable != nil && d.onButtons()
 	if d.rbSource.Selected() == 0 {
 		d.focusable = []focusable{d.rbSource, d.fFile, d.btnBrowse, d.fTarget}
 	} else {
@@ -328,54 +332,37 @@ func (d *RestoreDialog) rebuildFocusable() {
 		d.focusable = append(d.focusable, d.fStandby)
 	}
 	d.focusable = append(d.focusable, d.fStopAt)
-	if d.focusIdx >= len(d.focusable) {
-		d.focusIdx = 0
+	if onButtons || d.focusIdx > len(d.focusable) {
+		d.focusIdx = len(d.focusable)
 	}
 }
 
+// setFocus focuses the form's focusable[i], or its button row at
+// len(focusable). setFocus(d.focusIdx) re-applies focus after rebuildFocusable
+// swapped a widget, leaving it on the button row if it was there; see
+// BackupDialog.setFocus.
 func (d *RestoreDialog) setFocus(i int) {
-	d.onButtons = false
-	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
+	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, i)
 }
 
-// stepFocus is the form's Tab (+1) or Backtab (-1): past either end of the
-// ring is the button row.
-func (d *RestoreDialog) stepFocus(dir int) {
-	if i := d.focusIdx + dir; i >= 0 && i < len(d.focusable) {
-		d.setFocus(i)
-		return
+// onButtons reports whether the form's button row has focus.
+func (d *RestoreDialog) onButtons() bool { return d.focusIdx == len(d.focusable) }
+
+// focused is the form's focused field, or nil on its button row.
+func (d *RestoreDialog) focused() focusable {
+	if d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
+		return nil
 	}
-	d.onButtons = true
-	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
+	return d.focusable[d.focusIdx]
 }
 
-// refocus re-applies the form's focus after rebuildFocusable swapped a dropdown,
-// leaving it on the button row if it was there; see BackupDialog.refocus.
-func (d *RestoreDialog) refocus() {
-	if d.onButtons {
-		dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
-		return
-	}
-	d.setFocus(d.focusIdx)
-}
-
-// leaveButtons is Tab (+1) or Backtab (-1) off the form's or the Files view's
-// button row onto that view's first or last field. The highlight returns to the
-// first button, which is what Enter in a field fires.
-func (d *RestoreDialog) leaveButtons(dir int) {
-	d.btnFocus = 0
-	if d.mode == restoreModeFiles {
-		if dir > 0 {
-			d.setFilesFocus(0)
-		} else {
-			d.setFilesFocus(-1) // wraps to the last
-		}
-		return
-	}
-	if dir > 0 {
-		d.setFocus(0)
-	} else {
-		d.setFocus(len(d.focusable) - 1)
+// moveFocus steps the form's ring by dir, past a greyed control
+// (dialogs.RingStep). Leaving the button row resets it to Analyze, the button
+// Enter presses from a field.
+func (d *RestoreDialog) moveFocus(dir int) {
+	d.setFocus(dialogs.RingStep(d.focusable, d.focusIdx, dir))
+	if !d.onButtons() {
+		d.btnFocus = 0
 	}
 }
 
@@ -423,12 +410,12 @@ func (d *RestoreDialog) syncSourceState() {
 	if plan := d.planPicked(); plan != d.prevPlan {
 		d.prevPlan = plan
 		d.rebuildFocusable()
-		d.refocus()
+		d.setFocus(d.focusIdx)
 	}
 	if rec := d.rbRecovery.Selected(); rec != d.prevRecovery {
 		d.prevRecovery = rec
 		d.rebuildFocusable()
-		d.refocus()
+		d.setFocus(d.focusIdx)
 		if rec == recoverStandby {
 			d.autoFillStandby()
 		}
@@ -641,7 +628,11 @@ func (d *RestoreDialog) backToForm() {
 	d.btnFocus = 0
 	d.SetTitle("Restore Database")
 	// Into the field the form was left from, even if the view being left had focus on
-	// its buttons.
+	// its buttons. A form left from its own button row comes back on its first
+	// field: the view was opened from there.
+	if d.onButtons() {
+		d.focusIdx = dialogs.RingStep(d.focusable, d.focusIdx, +1)
+	}
 	d.setFocus(d.focusIdx)
 	// The inspect view's ←/→ may have picked a set of another type.
 	d.applyDeviceRules()
@@ -662,7 +653,7 @@ func (d *RestoreDialog) FocusClipboardTargetAt(x, y int) bool {
 			return true
 		}
 	case restoreModeFiles:
-		if i := dialogs.ClipboardFieldAt(d.filesFocusCycle(), x, y); i >= 0 {
+		if i := dialogs.ClipboardFieldAt(d.filesFocusable(), x, y); i >= 0 {
 			d.setFilesFocus(i)
 			return true
 		}
@@ -674,15 +665,12 @@ func (d *RestoreDialog) FocusClipboardTargetAt(x, y int) bool {
 // target-database field while the option form is showing and has it focused. The
 // inspect, files and progress views drive their own focus, so each answers nil.
 func (d *RestoreDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.onButtons {
-		return nil
-	}
 	switch d.mode {
 	case restoreModeForm:
 		return dialogs.FocusedClipboardTarget(d.focusable, d.focusIdx)
 	case restoreModeFiles:
 		// The Files view's folder fields: without this arm Ctrl+C/V there did nothing.
-		return dialogs.FocusedClipboardTarget(d.filesFocusCycle(), d.filesFocus)
+		return dialogs.FocusedClipboardTarget(d.filesFocusable(), d.filesFocus)
 	}
 	return nil
 }

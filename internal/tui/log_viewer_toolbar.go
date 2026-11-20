@@ -8,7 +8,6 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/tuikit/controls"
-	"github.com/radix29/tuikit/core"
 )
 
 // log_viewer_toolbar.go is the viewer's toolbar: what each cell says, when it
@@ -114,11 +113,8 @@ func (lv *LogViewer) toolReason(i int) string {
 // showOverflowMenu pops the buttons the row was too narrow to draw under the
 // "More ▾" cell, each gated as its button is.
 func (lv *LogViewer) showOverflowMenu() {
-	r := lv.tools.More.Rect
-	if r.IsZero() {
-		r = core.Rect{X: lv.rect.X, Y: lv.rect.Y}
-	}
-	lv.app.contextMenu.Show(r.X, r.Y+1, lv.tools.OverflowItems(lv.toolDisabled, lv.toolReason, lv.runTool))
+	x, y := lv.tools.MenuAnchor(-1, lv.rect)
+	lv.app.contextMenu.Show(x, y, lv.tools.OverflowItems(lv.toolDisabled, lv.toolReason, lv.runTool))
 }
 
 // runTool invokes toolbar cell i's action, or says why it did not, through the

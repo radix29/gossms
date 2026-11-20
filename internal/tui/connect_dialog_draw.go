@@ -91,11 +91,10 @@ func (d *ConnectDialog) drawButtonRow(s tcell.Screen) {
 // tabBar returns the right pane's Login/Connection String tab bar, built fresh
 // each call; drawing and hit-testing share it so clicks land where they look.
 func (d *ConnectDialog) tabBar() *controls.TabBar {
-	p := theme.Active()
 	b := &controls.TabBar{
 		Labels:   connectTabLabels[:],
 		Active:   int(d.tab),
-		BarStyle: tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText),
+		BarStyle: theme.StyleDialog(),
 		OnSelect: func(i int) { d.setTab(connectTab(i)) },
 	}
 	b.SetBounds(d.tabRect.X, d.tabRect.Y, d.tabRect.W)
@@ -110,8 +109,7 @@ func (d *ConnectDialog) Draw(s tcell.Screen) {
 	d.DrawBase(s)
 	d.layoutFields()
 
-	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	labelStyle := theme.StyleDialog()
 
 	if d.twoPane {
 		d.drawHistoryPane(s, labelStyle)
@@ -156,10 +154,9 @@ func (d *ConnectDialog) Draw(s tcell.Screen) {
 // drawHistoryPane renders the saved-connection list, its count header and the
 // vertical rule dividing it from the tabbed pane.
 func (d *ConnectDialog) drawHistoryPane(s tcell.Screen, labelStyle tcell.Style) {
-	p := theme.Active()
 	core.DrawTextClipped(s, d.InnerRect().X, d.historyHeaderY, connectHistoryPane,
 		labelStyle.Bold(true), fmt.Sprintf("Recent Connections (%d)", len(d.historyConns)))
-	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
+	ruleStyle := theme.StyleDialogLine()
 	for y := d.InnerRect().Y; y <= d.ButtonRowY()-2; y++ {
 		core.DrawText(s, d.paneRuleX, y, ruleStyle, "│")
 	}
@@ -169,17 +166,15 @@ func (d *ConnectDialog) drawHistoryPane(s tcell.Screen, labelStyle tcell.Style) 
 // drawTabBar renders the right pane's two tabs and the rule under them, styled
 // like the query panel's result tabs.
 func (d *ConnectDialog) drawTabBar(s tcell.Screen) {
-	p := theme.Active()
 	d.tabBar().Draw(s)
-	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
+	ruleStyle := theme.StyleDialogLine()
 	core.DrawHLine(s, d.rightX, d.tabRect.Y+1, d.rightWidth(), ruleStyle)
 }
 
 // drawSection draws a titled horizontal rule across the tabbed pane.
 func (d *ConnectDialog) drawSection(s tcell.Screen, title string, y int) {
-	p := theme.Active()
-	ruleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
-	titleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextHighlight)
+	ruleStyle := theme.StyleDialogLine()
+	titleStyle := theme.StyleDialogHighlight()
 	core.DrawHLine(s, d.rightX, y, d.rightWidth(), ruleStyle)
 	core.DrawText(s, d.rightX+1, y, titleStyle, " "+title+" ")
 }

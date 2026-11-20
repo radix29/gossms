@@ -295,10 +295,6 @@ func TestLiveQueryStatisticsToggleKeepsActualPlanInStep(t *testing.T) {
 	if a.liveStatsEnabled || !a.actualPlanEnabled {
 		t.Fatalf("after turning actual on: live=%v actual=%v, want live still off", a.liveStatsEnabled, a.actualPlanEnabled)
 	}
-	off, on := liveStatsToggleIcon(false), liveStatsToggleIcon(true)
-	if off == on || len(off) != len(on) {
-		t.Errorf("liveStatsToggleIcon off=%q on=%q, want distinct text of equal width", off, on)
-	}
 }
 
 // runWatch runs pollLiveStats as a LivePlanPanel does, under watch, until it

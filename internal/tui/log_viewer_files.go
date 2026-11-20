@@ -10,7 +10,6 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/fileutil"
 	"github.com/radix29/tuikit/controls"
-	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/layout"
 )
 
@@ -176,11 +175,8 @@ func (lv *LogViewer) checklistApplyLabel(named bool) string {
 // popMenu shows items under tool i, or at the panel's top-left if that cell
 // didn't fit.
 func (lv *LogViewer) popMenu(i int, items []controls.MenuItem) {
-	r := lv.tools.Cells[i].Rect
-	if r.IsZero() {
-		r = core.Rect{X: lv.rect.X, Y: lv.rect.Y}
-	}
-	lv.app.contextMenu.Show(r.X, r.Y+1, items)
+	x, y := lv.tools.MenuAnchor(i, lv.rect)
+	lv.app.contextMenu.Show(x, y, items)
 }
 
 // export writes the entries currently shown (the filtered set, not the whole

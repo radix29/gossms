@@ -70,7 +70,7 @@ func (lv *LogViewer) applyFilter() {
 		rows = append(rows, lv.cells(r))
 	}
 	lv.grid.SetData(lv.gridColumns(), rows)
-	lv.detailScroll = 0
+	lv.detail.Scroll = 0
 	lv.setStatus(lv.summary())
 }
 
@@ -148,7 +148,7 @@ func (lv *LogViewer) showSearch() {
 	}
 	lv.app.logSearchDialog().ShowLogSearch(lv.search, func(search gosmo.LogSearch) {
 		lv.search = search
-		lv.detailScroll = 0
+		lv.detail.Scroll = 0
 		lv.Load()
 	})
 }

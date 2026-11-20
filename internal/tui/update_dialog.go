@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/theme"
 )
@@ -11,11 +9,10 @@ import (
 // version, the latest version published on GitHub, and a link to the
 // releases page.
 type UpdateDialog struct {
-	dialogs.ModalDialog
-	app      *App
-	lines    []string
-	linkRow  int // index into lines that gets the "link" style, -1 = none
-	btnFocus int
+	dialogs.MessageDialog
+	app     *App
+	lines   []string
+	linkRow int // index into lines that gets the "link" style, -1 = none
 	// check is the GitHub request in flight (App.checkForUpdates); a newer
 	// showing's supersedes it.
 	check latest
@@ -28,7 +25,10 @@ func NewUpdateDialog(app *App) *UpdateDialog {
 	// result (see ShowResult) spans two lines, and at H=13 the link row
 	// lands on the same screen row as DrawSeparator's line, which is drawn
 	// after the content and paints over it.
-	d.InitModal("Check for Updates", 74, 15)
+	d.InitMessage(dialogs.MessageDialogSpec{
+		Title: "Check for Updates", W: 74, H: 15,
+		OnButton: func(i int) { d.activateButton(d.Buttons()[i]) },
+	})
 	return d
 }
 
@@ -41,8 +41,8 @@ func (d *UpdateDialog) ShowChecking(installed string) {
 		"Checking github.com/radix29/gossms for the latest release...",
 	}
 	d.linkRow = -1
-	d.btnFocus = 0
-	d.ModalDialog.Show()
+	d.sync(0)
+	d.MessageDialog.Show()
 }
 
 // ShowResult replaces the loading state with the outcome of the check. rel
@@ -56,7 +56,7 @@ func (d *UpdateDialog) ShowResult(installed string, rel githubRelease, err error
 			err.Error(),
 		}
 		d.linkRow = -1
-		d.btnFocus = 0
+		d.sync(0)
 		return
 	}
 
@@ -87,7 +87,21 @@ func (d *UpdateDialog) ShowResult(installed string, rel githubRelease, err error
 	d.linkRow = len(d.lines) - 1
 	// Default focus to Close (the last button either way), not the newly
 	// added Copy Link, so Enter still means "dismiss" by default.
-	d.btnFocus = len(d.buttonLabels()) - 1
+	d.sync(len(d.buttonLabels()) - 1)
+}
+
+// sync hands d.lines, the link row's style and the button row to the
+// MessageDialog, focusing button focus.
+func (d *UpdateDialog) sync(focus int) {
+	ml := make([]dialogs.MessageLine, len(d.lines))
+	for i, l := range d.lines {
+		ml[i] = dialogs.MessageLine{Text: l}
+		if i == d.linkRow {
+			ml[i].Style = theme.StyleDialogAccent().Underline(true)
+		}
+	}
+	d.SetLines(ml)
+	d.SetButtons(d.buttonLabels(), focus)
 }
 
 // buttonLabels returns the dialog's current button row: just Close while
@@ -119,65 +133,4 @@ func (d *UpdateDialog) copyLink() {
 	}
 	d.app.writeClipboard(d.lines[d.linkRow])
 	d.app.setStatus("Copied release link to clipboard")
-}
-
-// Draw renders the dialog.
-func (d *UpdateDialog) Draw(s tcell.Screen) {
-	if !d.Visible() {
-		return
-	}
-	d.DrawBase(s)
-	p := theme.Active()
-	textStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
-	linkStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogAccent).Underline(true)
-
-	inner := d.InnerRect()
-	// Rows between the top padding row and DrawSeparator's line (one above
-	// ButtonRowY). It was inner.H-2, which ran onto the button row itself.
-	dataH := d.ButtonRowY() - 1 - inner.Y - 1
-	for row := 0; row < dataH && row < len(d.lines); row++ {
-		st := textStyle
-		if row == d.linkRow {
-			st = linkStyle
-		}
-		core.DrawTextClipped(s, inner.X+1, inner.Y+1+row, inner.W-2, st, d.lines[row])
-	}
-
-	d.DrawSeparator(s)
-	d.DrawButtons(s, d.buttonLabels(), d.btnFocus)
-}
-
-// HandleKey processes keyboard events.
-func (d *UpdateDialog) HandleKey(ev *tcell.EventKey) bool {
-	if !d.Visible() {
-		return false
-	}
-	labels := d.buttonLabels()
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		d.Hide()
-	case tcell.KeyEnter:
-		d.activateButton(labels[d.btnFocus])
-	case tcell.KeyTab, tcell.KeyRight:
-		d.btnFocus = (d.btnFocus + 1) % len(labels)
-	case tcell.KeyBacktab, tcell.KeyLeft:
-		d.btnFocus = (d.btnFocus - 1 + len(labels)) % len(labels)
-	}
-	return true
-}
-
-// HandleMouse processes mouse events.
-func (d *UpdateDialog) HandleMouse(ev *tcell.EventMouse) bool {
-	if !d.Visible() {
-		return false
-	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	labels := d.buttonLabels()
-	if i := d.ButtonClicked(ev, labels); i >= 0 {
-		d.btnFocus = i
-		d.activateButton(labels[i])
-	}
-	return true
 }

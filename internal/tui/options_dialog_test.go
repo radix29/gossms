@@ -186,10 +186,10 @@ func TestOptionsApplyMaxFetchRows(t *testing.T) {
 
 // optionsFocusName names what has keyboard focus on the Options dialog.
 func optionsFocusName(d *OptionsDialog) string {
-	if d.onButtons() {
-		return fmt.Sprintf("button%d", d.btnFocus)
+	if d.ring.OnButtons() {
+		return fmt.Sprintf("button%d", d.ring.BtnFocus)
 	}
-	switch d.focusable[d.focusIdx] {
+	switch d.ring.Focused() {
 	case d.rbIconStyle:
 		return "icons"
 	case d.ddTheme:

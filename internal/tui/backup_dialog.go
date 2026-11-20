@@ -71,6 +71,10 @@ type BackupDialog struct {
 	cbChecksum *widgets.CheckBox
 	cbCopyOnly *widgets.CheckBox
 
+	// focusIdx == len(focusable) is the button row, the stop after the last
+	// field (dialogs.RingStep, ButtonRowKey); every field is blurred while it
+	// holds focus. btnFocus is the button the row would press: Start Backup
+	// while focus is in a field, so Enter from one starts the backup.
 	focusIdx  int
 	focusable []focusable
 	btnFocus  int
@@ -89,11 +93,6 @@ type BackupDialog struct {
 	lastAutoDest string
 	prevDB       string
 	prevType     int
-
-	// onButtons is set while the button row holds keyboard focus — the stop
-	// after the last field in the Tab ring (dialogs.ButtonRowKey). Every field is
-	// blurred meanwhile; focusIdx keeps the field focus left.
-	onButtons bool
 
 	// dbListRun is the Database dropdown's fetch, superseded by each showing
 	// and abandoned by Hide along with defPaths.
@@ -216,42 +215,33 @@ func (d *BackupDialog) rebuildFocusable() {
 	}
 }
 
+// setFocus focuses focusable[i], or the button row at len(focusable). It
+// also re-applies focus after rebuildFocusable swapped a widget
+// (setFocus(d.focusIdx)), which leaves the button row where it was: a database
+// list landing while the user is on the buttons must not pull them back into
+// the form.
 func (d *BackupDialog) setFocus(i int) {
-	d.onButtons = false
-	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
+	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, i)
 }
 
-// stepFocus is Tab (+1) or Backtab (-1) in the fields: past either end of the
-// ring is the button row.
-func (d *BackupDialog) stepFocus(dir int) {
-	if i := d.focusIdx + dir; i >= 0 && i < len(d.focusable) {
-		d.setFocus(i)
-		return
+// onButtons reports whether the button row has focus.
+func (d *BackupDialog) onButtons() bool { return d.focusIdx == len(d.focusable) }
+
+// focused is the focused field, or nil on the button row.
+func (d *BackupDialog) focused() focusable {
+	if d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
+		return nil
 	}
-	d.onButtons = true
-	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
+	return d.focusable[d.focusIdx]
 }
 
-// refocus re-applies focus after rebuildFocusable swapped a widget, leaving it
-// on the button row if that is where it was: a database list landing while the
-// user is on the buttons must not pull them back into the form.
-func (d *BackupDialog) refocus() {
-	if d.onButtons {
-		dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
-		return
-	}
-	d.setFocus(d.focusIdx)
-}
-
-// leaveButtons is Tab (+1) or Backtab (-1) off the button row, onto the first
-// or last field. The highlight goes back to Start Backup, which is what Enter
-// in a field fires.
-func (d *BackupDialog) leaveButtons(dir int) {
-	d.btnFocus = 0
-	if dir > 0 {
-		d.setFocus(0)
-	} else {
-		d.setFocus(len(d.focusable) - 1)
+// moveFocus steps the ring by dir, past a greyed control (dialogs.RingStep).
+// Leaving the button row resets it to Start Backup, the button Enter presses
+// from a field.
+func (d *BackupDialog) moveFocus(dir int) {
+	d.setFocus(dialogs.RingStep(d.focusable, d.focusIdx, dir))
+	if !d.onButtons() {
+		d.btnFocus = 0
 	}
 }
 
@@ -536,12 +526,8 @@ func (d *BackupDialog) loadCompressionDefault() {
 // openDropDown is whichever dropdown has its list open, or nil. An open list
 // is an overlay that gets first refusal of every event.
 func (d *BackupDialog) openDropDown() *widgets.DropDown {
-	for _, dd := range []*widgets.DropDown{d.ddDatabase, d.ddCompress} {
-		if dd.OverlayActive() {
-			return dd
-		}
-	}
-	return nil
+	dd, _ := core.OpenOverlay(d.ddDatabase, d.ddCompress)
+	return dd
 }
 
 // loadDatabases fetches the server's database list in the background and
@@ -606,7 +592,7 @@ func (d *BackupDialog) setDatabaseItems(names []string) {
 	}
 	d.ddDatabase = dd
 	d.rebuildFocusable()
-	d.refocus()
+	d.setFocus(d.focusIdx)
 	d.prevDB = d.ddDatabase.Value()
 	d.syncAutoDest()
 }
@@ -630,7 +616,7 @@ func (d *BackupDialog) FocusClipboardTargetAt(x, y int) bool {
 // is buttons and a log, and drives its own btnFocus rather than focusable, so
 // it answers nil.
 func (d *BackupDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.mode != backupModeForm || d.onButtons {
+	if d.mode != backupModeForm || d.onButtons() {
 		return nil
 	}
 	return dialogs.FocusedClipboardTarget(d.focusable, d.focusIdx)

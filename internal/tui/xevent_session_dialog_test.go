@@ -563,10 +563,7 @@ func xeStaleReadCase(t *testing.T, page func(xeHost) propPage, object string, st
 	close(gate)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		h.app.wake.mu.Lock()
-		n := len(h.app.wake.pending)
-		h.app.wake.mu.Unlock()
-		if n > 0 {
+		if h.app.wake.Pending() > 0 {
 			break
 		}
 		if time.Now().After(deadline) {

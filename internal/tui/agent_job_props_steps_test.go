@@ -29,7 +29,7 @@ func TestJobStepEditFromStepIsUnchangedAndCarriesEveryField(t *testing.T) {
 	if e.changed() {
 		t.Error("a freshly loaded step reports changed() — every OK would rewrite it")
 	}
-	if e.isNew || e.removing {
+	if e.IsNew || e.Removing {
 		t.Error("a loaded step must be neither new nor pending removal")
 	}
 	if e.orig != s {
@@ -127,7 +127,7 @@ func TestJobStepEditableIsTSQLOrNew(t *testing.T) {
 		{"", true, true},
 		{"CmdExec", true, true},
 	} {
-		e := &jobStepEdit{subsystem: tc.subsystem, isNew: tc.isNew}
+		e := &jobStepEdit{subsystem: tc.subsystem, IsNew: tc.isNew}
 		if got := e.editable(); got != tc.want {
 			t.Errorf("editable() for subsystem %q isNew=%v = %v, want %v", tc.subsystem, tc.isNew, got, tc.want)
 		}
@@ -137,7 +137,7 @@ func TestJobStepEditableIsTSQLOrNew(t *testing.T) {
 // A New step has no subsystem and sp_add_jobstep rejects an empty one, so
 // request() defaults it; a loaded step's subsystem must survive.
 func TestJobStepRequestSubsystemDefaultsToTSQLOnly(t *testing.T) {
-	if got := (&jobStepEdit{isNew: true}).request().Subsystem; got != tsqlSubsystem {
+	if got := (&jobStepEdit{IsNew: true}).request().Subsystem; got != tsqlSubsystem {
 		t.Errorf("a new step's request Subsystem = %q, want %q", got, tsqlSubsystem)
 	}
 	if got := (&jobStepEdit{subsystem: "CmdExec"}).request().Subsystem; got != "CmdExec" {
@@ -146,7 +146,7 @@ func TestJobStepRequestSubsystemDefaultsToTSQLOnly(t *testing.T) {
 }
 
 func TestStepNumberText(t *testing.T) {
-	if got := stepNumberText(&jobStepEdit{isNew: true}); got != "New" {
+	if got := stepNumberText(&jobStepEdit{IsNew: true}); got != "New" {
 		t.Errorf("a pending step shows %q, want \"New\" — its step_id is not assigned until Apply", got)
 	}
 	if got := stepNumberText(&jobStepEdit{stepID: 3}); got != "3" {
@@ -211,9 +211,9 @@ func stepNames(edits []*jobStepEdit) []string {
 func TestJobStepDeletesRunHighestStepIDFirst(t *testing.T) {
 	one, two, three, four := loadedStep(1, "one"), loadedStep(2, "two"), loadedStep(3, "three"), loadedStep(4, "four")
 	// Marked out of order, as arbitrary clicks leave them.
-	two.removing = true
-	four.removing = true
-	one.removing = true
+	two.Removing = true
+	four.Removing = true
+	one.Removing = true
 
 	plan := planJobStepWrites([]*jobStepEdit{one, two, three, four})
 
@@ -230,16 +230,16 @@ func TestPlanJobStepWritesSortsEveryEditIntoOnePass(t *testing.T) {
 	edited.command = "SELECT 2"
 
 	removed := loadedStep(3, "removed")
-	removed.removing = true
+	removed.Removing = true
 
 	// A non-T-SQL step isn't changed() anyway; the plan refuses it regardless.
 	readOnly := jobStepEditFromStep(&gosmo.JobStep{StepID: 4, Name: "ps", Subsystem: "PowerShell", Command: "Get-Date"})
 	readOnly.command = "rm -rf /"
 
-	added := &jobStepEdit{isNew: true, subsystem: tsqlSubsystem, name: "added"}
+	added := &jobStepEdit{IsNew: true, subsystem: tsqlSubsystem, name: "added"}
 
 	// Added then deleted: nothing to add or delete.
-	addedThenRemoved := &jobStepEdit{isNew: true, removing: true, subsystem: tsqlSubsystem, name: "transient"}
+	addedThenRemoved := &jobStepEdit{IsNew: true, Removing: true, subsystem: tsqlSubsystem, name: "transient"}
 
 	plan := planJobStepWrites([]*jobStepEdit{unchanged, edited, removed, readOnly, added, addedThenRemoved})
 

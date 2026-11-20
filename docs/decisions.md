@@ -1725,8 +1725,9 @@ it from the string 'NULL'.
   `Conn.checkBadConn` still "Ignore non-fatal server errors". Cited by symbol —
   lines move.
 - **`App.fanOut` (`safego.go`) is the one pool outside
-  `safego`/`safegoRepair`**, taking label and recover by hand (Detail Browser
-  backfill, Log File Viewer `readLogFiles`).
+  `safego`/`safegoRepair`**, labelling and recovering its own workers through
+  `loop.Runner.FanOut` (Detail Browser backfill, Log File Viewer
+  `readLogFiles`).
 - **`charts.StackedHistoryChart.Draw` stays though unreached** — `doc.go`
   advertises `Draw` on all six chart types; the dashboard uses `DrawFrame` for
   the time row. `Plot`/`TimeRow` mirror `HistoryChart`'s pair.
@@ -1797,23 +1798,156 @@ it from the string 'NULL'.
     the table. `newTestEditor` stays in both repos: tuikittest importing
     `controls/editor` is an import cycle.
 - **Every section title strip is tuikit's `charts.DrawSectionBar`**
-  (2026-11-20, `docs/tuikit-reuse-plan.md` item 2): Activity Monitor, the
+  (2026-11-20, tuikit reuse round 1): Activity Monitor, the
   Database Detail Browser's DISK USAGE strip and the AG dashboard. The AG
   dashboard adopted the shared look (`ChartHeading` foreground, not bold); its
   own `Text`-on-`ChartSectionBg` bold strip claimed to match the Activity
   Monitor and didn't. A per-caller style override is not wanted.
 - **A click on a dashboard plot maps back through tuikit's `charts.PlotHit`**
-  (2026-11-20, plan item 5), which replaced `dashboard.ChartHit` unchanged.
-  It moved with item 2 despite one consumer (the Activity Monitor readout):
+  (2026-11-20, tuikit reuse round 1), which replaced `dashboard.ChartHit`
+  unchanged. It moved with `DrawSectionBar` despite one consumer (the
+  Activity Monitor readout):
   tuikit ships the readout box, and a host rewriting the hit model tends to
   read `At` where the chart drew `AtBucket`.
 - **Side-by-side chart panels split through tuikit's `core.SplitColumns`**
-  (2026-11-20, plan item 4): fit as many as fit at the minimum width,
+  (2026-11-20, tuikit reuse round 1): fit as many as fit at the minimum width,
   gutters counted, the last column absorbing the remainder. The Database
   Detail Browser's last disk-usage panel gained the 0..n-1 cells it used to
   leave blank; the dashboard keeps "all or one" at its call site and now
   counts the gutters too, so it collapses one or two columns of width earlier
   rather than drawing panels a cell under `minPanelW`. No `lastAbsorbs` flag.
+- **A flat-ring dialog's mouse is tuikit's `dialogs.RingMouse`** (2026-11-20,
+  tuikit reuse round 2): Find/Replace, Log Search, Filter, Options, Profile.
+  Settled with it: an open dropdown gets first refusal *before*
+  `ConsumeOutsideClick` everywhere (Profile offered it after, though its list
+  overhangs the box too); a non-`Button1` event inside the box answers `false`
+  (the wheel reaches the host; Profile answered `true`); members are routed by
+  type (a `core.DragCanceller` through the `FieldGesture`, any other
+  `core.MouseHandler` takes its own press), not by a per-dialog list. Connect,
+  Back Up and Restore stay out: tabs, a wheel, zones. `dialogs.SetFocusIn` no
+  longer blurs its target on the way to focusing it — `DropDown.Focus(false)`
+  closes the list, so a mouse click could never open Profile's Allowed
+  Operations list.
+- **Enter in a hand-rolled dialog goes to the focused widget first**
+  (2026-11-20, tuikit reuse round 4): Profile, Connect, Back Up and Restore
+  moved onto `dialogs.FieldRingKey`/`ButtonRowKey`/`RingStep`, as Options and
+  Filter already were. So Enter toggles a checkbox, opens a closed dropdown
+  and adds a line in an editor (Connect's Custom Properties and preview); only
+  what the widget declines presses the default button. "Enter always presses
+  the default button" was declined: two Enter rules in one app, and Back Up's
+  Verify checkbox started the backup. Typing a password and pressing Enter
+  still connects (an `InputField` declines Enter). Settled with it: Tab skips
+  greyed controls everywhere (Back Up's Browse on a URL destination; Restore's
+  Files view now greys Default Location with the folder fields and keeps all
+  four in its ring instead of rebuilding a shorter one), and Up/Down move
+  focus once the widget declines them. Escape on an open Authentication list
+  now re-applies the auth fields: the list's moved selection survives Escape,
+  and the old path skipped `applyAuthFields`. Mouse routing is unchanged.
+  `core.OpenOverlay` (tuikit) replaced the per-host "which child has its
+  overlay open" loops in these dialogs, Options, Replication Monitor and the
+  AG dashboard; Connect's mouse keeps its own ordering of its two dropdowns.
+- **A buttons-only dialog's keyboard is tuikit's `dialogs.ButtonsKey`**
+  (2026-11-20, tuikit reuse round 3): Check for Updates, Device Code and the
+  Back Up/Restore progress views. It wraps (through `StepButtonWrap`;
+  `StepButton` still stops at the ends, which `ButtonRowKey` relies on), skips
+  a disabled button, and clamps the focus index on every key, not only on
+  Enter. The progress views gained Left/Right stepping like the other two —
+  they ignored the arrows before; nothing depended on that. tuikit's own
+  `ConfirmDialog` was not switched: its checkbox stop would have to sit in
+  front, a separate change.
+- **Check for Updates and Device Code are tuikit's `dialogs.MessageDialog`**
+  (2026-11-20, tuikit reuse round 3, taken by the author without waiting for
+  a third user): styled `MessageLine`s (`Indent`, `Wrap` at draw time) over
+  the host's own buttons, keyboard `ButtonsKey`, `OnEscape` nil = Hide. It is
+  embedded by value (`InitMessage`), so a zero `UpdateDialog{}` in a test
+  still takes `ShowResult`. The GitHub check, the sign-in wait, the clipboard
+  target and Update's `lines`/`linkRow` (the Copy Link source) stay in gossms.
+- **Clipboard traffic is tuikit's `clipboard.Dispatcher`** (2026-11-20,
+  tuikit reuse round 5): newest-copy-wins writes, the OSC 52 fallback and its
+  hedge hook, a paste aimed once (target + `ClipboardTargetToken`) and dropped
+  if either changed before the text arrived, the OSC 52 reply route (pending
+  target cleared first), and bracketed paste as one `Paste` with keys skipping
+  the frame. It stays a leaf: `Post`, `Go`, `Resolve` and `Token` are
+  injected, so `tuikitLayers` is unchanged. Which widget is active
+  (`activeClipboardTarget`), the menus and the status wording stay in gossms;
+  `App.clip()` builds it on first use so a bare `&App{}` in a test has one.
+- **The plan's tree diagram and tree-with-guides list stay in `planview`**
+  (2026-11-20, tuikit reuse round 5, declined by the author): neither
+  `planview/graph_layout.go`+`graph.go` as a `controls.TreeDiagram` nor
+  `planview/tree.go`'s guides, per-row style and live column as
+  `controls.TreeView` options. One consumer each; do not re-raise.
+- **Details panes are tuikit's `core.LinePane`** (2026-11-20, tuikit reuse
+  round 5): the Log/XEvent viewers' details (`viewerPanel.detail`) and Plan
+  view's Operator Details, bottom Properties and Plan-tab strip share its
+  scroll clamp, inset draw, per-line style and "▾ more" hint. A draw + clamp
+  value like `core.Viewport`, not a control: keys, wheel and focus stay with
+  each host (see "LogViewer vs XEventViewer beyond `viewerPanel`"), as do
+  line building and the per-(item, width) caches. `Draw` now clamps a stale
+  `Scroll`, so a pane grown taller shows its last line at the bottom instead
+  of blank rows. The placeholder is `DrawEmpty`, a separate call, so a pane
+  too narrow to wrap its item stays blank rather than saying nothing is
+  selected; Plan view's "(no operator selected)" is now dim like the
+  viewers'. The `core.AlignKV` the plan floated was not added: Plan view's
+  one padding loop over `[]showplan.KV` would need two slices built for it.
+- **The master-detail pending-edit list is tuikit's `propsheet.PendingEdits`**
+  (2026-11-20, tuikit reuse round 5, taken by the author without waiting for
+  a ListEditor change): the rows as loaded and as edited, Add/Remove/Restore/
+  Swap, `Visible`, `Dirty`, `Revert`, and the `Index`/`Listed`/`Taken` name
+  checks; row types embed `propsheet.PendingState` (`IsNew`, `Removing`).
+  Name equality is injected (`same func(a, b string) bool`); gossms's
+  `newPendingEdits` wires it to `gosmo.SameName` under the scope's collation,
+  and New Database's filegroups pass a closure reading the General page's
+  collation at each Add. `pendingNamesRefusal` (via `pendingRefusal`) and its
+  English text stay in gossms: the Apply-order rules are SQL Server's.
+- **Background goroutines start through tuikit's `loop.Runner`** (2026-11-20,
+  tuikit reuse round 6): the traceback label (`loop.Label`, pprof `op`), the
+  recover, `GoRepair`'s repair posted before the report, and `FanOut`'s
+  bounded pool recovering per item with its queue filled before any worker
+  starts. The earlier reason for keeping it in gossms ("tuikit has no async
+  layer") went when `loop` got `Poster` and `Latest`. A struct, not package
+  functions, so the ~170 call sites don't repeat `Post`/`Report`/`Workers`.
+  `safego`/`safegoRepair`/`fanOut` stay as one-line delegates over a
+  `Runner` built per call (it holds no state, so no lazy init for a
+  background caller to race on); `reportPanic` (log + status bar) is its
+  `Report`. `App.recoverPanic` went: its one caller was the old `fanOut`.
+  Driven in the binary with a forced panic in a Detail Browser backfill
+  (row repaired to N/A, rest filled) and a Log File Viewer read.
+- **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
+  `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
+  is read at draw time, so labels are fixed and a flip needs no
+  `SetMenus`/`SetButtons` rebuild (`OnBeforeOpen`'s rebuild stays for other
+  dynamic labels). Author's calls: the menu mark is a light `✓`-or-blank
+  column (`controls.MenuTick`), not the checklist's `☑`/`☐` — a toggle reads
+  as a desktop menu check, not a checklist row; any toggle in a box reserves
+  the column for every row, so labels align and the width is the same in
+  both states. The toolbar shows "on" by bold `StyleMenuSelected` only
+  (`Act.Plan`, `Live`, `Meta`), dropping the old `[ON--]`/`[-OFF]` text:
+  checked in Dark, Light, mc and mc - retro, where it is a ground swap, not
+  a hue, so it survives the monochrome skins. Accepted cost: hovering an off
+  button looks like an on one but for the bold; the tooltip and status bar
+  name the state.
+- **A single-flight page button's latch is tuikit's `loop.Runner.GoOnce`**
+  (2026-11-20, tuikit reuse round 7, item 2). Taken although its only callers
+  are gossms's two `runPageActionOnce`s: the rule it carries (a panic must
+  release the busy flag, or the button refuses every later click) is the bug
+  class `GoRepair` moved for, and belongs in tuikit's docs beside it. `fn`
+  returns its UI callback rather than taking a separate `done`, so a result
+  passes by closure, not a shared variable. Context, timeout and the stale
+  check stay in gossms (`goPageActionOnce`, shared by `PropDialog` and
+  `newObjectDialog`). The two copies had diverged; both now drop a result
+  whose showing has closed or reopened, as the create dialogs did — every
+  Properties `onDone` writes only its own page's rows, which a reopen builds
+  afresh. Driven live: Effective Permissions' Show clicked three times fast
+  (one run), closed mid-flight and reopened (page empty, Show works); New
+  Database Role's Securables search typed fast (coalesced), closed mid-search
+  and reopened.
+- **`backup_common.go` `wrapMessage` stays an alias of `core.WrapTextLimit`**
+  (2026-11-20, tuikit reuse round 7, item 3). Its comment is the reason
+  server errors wrap (a one-line restore failure clipped right before the
+  cause), and `backup_common_test.go` pins that behaviour by the name the
+  Backup/Restore call sites use; inlining it would scatter the reason over
+  three sites for no gain. The same round dropped `restore_dialog_plan.go`'s
+  `plural`, a copy of `app.go` `pluralSuffix`.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,

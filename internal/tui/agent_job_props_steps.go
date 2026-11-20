@@ -38,11 +38,11 @@ const unchangedDatabaseItem = "(unchanged)"
 const defaultDatabaseItem = "(default)"
 
 // jobStepEdit tracks one Steps row's pending state: a changed existing step, a
-// new step (isNew), or an existing step pending Delete. orig is nil for new
+// new step (IsNew), or an existing step pending Delete. orig is nil for new
 // steps; Update and Delete need a real *gosmo.JobStep.
 type jobStepEdit struct {
 	orig *gosmo.JobStep
-	pendingState
+	propsheet.PendingState
 
 	stepID int // display only; 0 for a not-yet-saved new step
 
@@ -90,7 +90,7 @@ func jobStepEditFromStep(s *gosmo.JobStep) *jobStepEdit {
 // panel has no CmdExec/PowerShell/SSIS fields and JobStepDefinition carries a
 // subsystem, so writing another type back would run its command text as T-SQL.
 func (e *jobStepEdit) editable() bool {
-	return e.isNew || e.subsystem == tsqlSubsystem
+	return e.IsNew || e.subsystem == tsqlSubsystem
 }
 
 func (e *jobStepEdit) changed() bool {
@@ -144,12 +144,12 @@ func planJobStepWrites(edits []*jobStepEdit) jobStepWritePlan {
 	var plan jobStepWritePlan
 	for _, e := range edits {
 		switch {
-		case e.removing:
+		case e.Removing:
 			// Added and removed in one sitting: never on the server.
-			if !e.isNew {
+			if !e.IsNew {
 				plan.deletes = append(plan.deletes, e)
 			}
-		case e.isNew:
+		case e.IsNew:
 			plan.adds = append(plan.adds, e)
 		case e.editable() && e.changed():
 			plan.updates = append(plan.updates, e)
@@ -173,8 +173,8 @@ func reorderedStepIDs(edits []*jobStepEdit) []int {
 	var surviving, added []*jobStepEdit
 	for _, e := range edits {
 		switch {
-		case e.removing:
-		case e.isNew:
+		case e.Removing:
+		case e.IsNew:
 			added = append(added, e)
 		default:
 			surviving = append(surviving, e)
@@ -194,7 +194,7 @@ func reorderedStepIDs(edits []*jobStepEdit) []int {
 	ids := make([]int, 0, len(final))
 	identity := true
 	for _, e := range edits {
-		if e.removing {
+		if e.Removing {
 			continue
 		}
 		id := final[e]
@@ -210,7 +210,7 @@ func reorderedStepIDs(edits []*jobStepEdit) []int {
 }
 
 func stepNumberText(e *jobStepEdit) string {
-	if e.isNew {
+	if e.IsNew {
 		return "New"
 	}
 	return strconv.Itoa(e.stepID)
@@ -246,8 +246,9 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			for i, s := range steps {
 				loaded[i] = jobStepEditFromStep(s)
 			}
-			edits := newJobStepEdits(msdbCollation(ctx, sc), loaded)
-			visible := edits.visible
+			collation := msdbCollation(ctx, sc)
+			edits := newJobStepEdits(collation, loaded)
+			visible := edits.Visible
 			cols := []string{"Step", "Name", "Type", "Database"}
 			rowsFor := func() [][]string {
 				vis := visible()
@@ -333,7 +334,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					return
 				}
 				hint.Clear()
-				edits.swap(vis[i], vis[i+delta])
+				edits.Swap(vis[i], vis[i+delta])
 				resetGrid(grid, cols, rowsFor(), i+delta)
 				syncFieldsFromSelection()
 			}
@@ -347,7 +348,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					return
 				}
 				hint.Clear()
-				edits.remove(e)
+				edits.Remove(e)
 				current = nil
 				resetGrid(grid, cols, rowsFor(), 0)
 				syncFieldsFromSelection()
@@ -356,7 +357,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			statusRow := propsheet.Static("Last action", "")
 			startBtn := d.asyncStatusButton("Start at Step", statusRow, "Starting...", func(ctx context.Context) (string, error) {
 				e := selected()
-				if e == nil || e.isNew {
+				if e == nil || e.IsNew {
 					return "", fmt.Errorf("select an existing step first")
 				}
 				j, err := findAgentJob(ctx, sc, *jobName)
@@ -370,10 +371,10 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			})
 
 			gridRow := propsheet.NewGridRow(grid, 10)
-			gridRow.DirtyFn = func() bool { return reorderedStepIDs(edits.all()) != nil || edits.dirty() }
-			gridRow.ValidateFn = func() error { return jobStepNamesRefusal(edits) }
+			gridRow.DirtyFn = func() bool { return reorderedStepIDs(edits.All()) != nil || edits.Dirty() }
+			gridRow.ValidateFn = func() error { return jobStepNamesRefusal(collation, edits) }
 			gridRow.RevertFn = func() {
-				edits.revert()
+				edits.Revert()
 				resetGrid(grid, cols, rowsFor(), 0)
 				syncFieldsFromSelection()
 			}
@@ -399,7 +400,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			// own BEGIN/COMMIT batch nests in it.
 			apply := func(ctx context.Context) error {
 				return sc.Server.InTransaction(ctx, func(ctx context.Context) error {
-					return applyJobSteps(ctx, sc, *jobName, edits.all())
+					return applyJobSteps(ctx, sc, *jobName, edits.All())
 				})
 			}
 			return f, apply, nil

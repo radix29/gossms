@@ -29,21 +29,12 @@ type OptionsDialog struct {
 	fMaxFetchRows  *widgets.InputField
 	cbIntelliSense *widgets.CheckBox
 
-	// drag owns the text-selection gesture a press in one of the input fields
-	// starts; see dialogs.FieldGesture for why its three calls sit where they do in
-	// HandleMouse. One value suffices for every field: the gesture is per-target,
-	// holding whichever field claimed the press.
-	drag dialogs.FieldGesture
-
 	// focusable is the Tab order, top to bottom; Tab/Backtab, hit-testing and the
 	// clipboard target derive from it, so a new control is one entry here plus its
-	// Draw position. focusIdx == len(focusable) is the button row, not a widget:
-	// one Tab stop crossed with the arrows (dialogs.RingStep, ButtonRowKey).
-	// btnFocus is the button the row would press: OK while focus is in the
-	// fields, so Enter from a field applies.
+	// Draw position. ring is the focus ring over it and optionsButtons; its
+	// default button is OK (0), so Enter from a field applies.
 	focusable []focusable
-	focusIdx  int
-	btnFocus  int // 0=OK 1=Cancel
+	ring      dialogs.FieldRing
 }
 
 // NewOptionsDialog creates the Options dialog.
@@ -79,13 +70,18 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	d.fMaxFetchRows = widgets.NewInputField("Max fetch rows (0 = unlimited):", 9, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
 	d.focusable = []focusable{d.rbIconStyle, d.ddTheme, d.ddSQLStyle, d.fMaxCellLen, d.fMaxTextLen, d.fIndentWidth, d.fXECapacity, d.fMaxFetchRows, d.cbIntelliSense}
+	d.ring = dialogs.FieldRing{
+		Fields:  func() []focusable { return d.focusable },
+		Buttons: func() []string { return optionsButtons },
+		Press:   d.doButton,
+		Dismiss: d.Hide,
+	}
 	return d
 }
 
 // Show opens the dialog with the icon-style radio box focused, pre-filling every
 // control from the current config.
 func (d *OptionsDialog) Show() {
-	d.btnFocus = 0
 	for i, st := range config.AllIconStyles() {
 		if st == d.app.cfg.IconStyle {
 			d.rbIconStyle.SetSelected(i)
@@ -114,23 +110,9 @@ func (d *OptionsDialog) Show() {
 	d.fXECapacity.SetValue(strconv.Itoa(config.ClampXEventStoreCapacity(d.app.cfg.XEventStoreCapacity)))
 	d.fMaxFetchRows.SetValue(strconv.Itoa(max(d.app.cfg.MaxFetchRows, 0)))
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
-	d.setFocus(0)
+	d.ring.Reset()
 	d.ModalDialog.Show()
-	// A latch must not survive into the next showing: a dialog dismissed mid-drag
-	// would reopen still routing every click to that field.
-	d.drag.Clear()
 }
-
-// setFocus focuses focusable[i], or the button row at len(focusable).
-func (d *OptionsDialog) setFocus(i int) {
-	for j, f := range d.focusable {
-		f.Focus(j == i)
-	}
-	d.focusIdx = i
-}
-
-// onButtons reports whether the button row has focus.
-func (d *OptionsDialog) onButtons() bool { return d.focusIdx == len(d.focusable) }
 
 // Draw renders the dialog.
 func (d *OptionsDialog) Draw(s tcell.Screen) {
@@ -141,10 +123,10 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 	inner := d.InnerRect()
 	d.rbIconStyle.SetBounds(inner.X+1, inner.Y+1)
 	d.rbIconStyle.Draw(s)
-	core.DrawText(s, inner.X+31, inner.Y+1, tcell.StyleDefault.Background(theme.Active().DialogBg).Foreground(theme.Active().DialogText), "Color Theme:")
+	core.DrawText(s, inner.X+31, inner.Y+1, theme.StyleDialog(), "Color Theme:")
 	d.ddTheme.SetBounds(inner.X+31, inner.Y+2)
 	d.ddTheme.Draw(s)
-	core.DrawText(s, inner.X+31, inner.Y+4, tcell.StyleDefault.Background(theme.Active().DialogBg).Foreground(theme.Active().DialogText), "SQL Format Style:")
+	core.DrawText(s, inner.X+31, inner.Y+4, theme.StyleDialog(), "SQL Format Style:")
 	d.ddSQLStyle.SetBounds(inner.X+31, inner.Y+5)
 	d.ddSQLStyle.Draw(s)
 
@@ -168,146 +150,51 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 
 	d.DrawSeparator(s)
 	activeIdx := -1
-	if d.onButtons() {
-		activeIdx = d.btnFocus
+	if d.ring.OnButtons() {
+		activeIdx = d.ring.BtnFocus
 	}
-	d.DrawButtons(s, []string{"OK", "Cancel"}, activeIdx)
+	d.DrawButtons(s, optionsButtons, activeIdx)
 	for _, dd := range d.dropDowns() {
 		dd.DrawOverlay(s)
 	}
 }
 
 // dropDowns are the dialog's dropdowns, top to bottom: their open lists overlap
-// the controls below them, so Draw paints them last and HandleKey/HandleMouse
-// offer them every event first.
+// the controls below them, so Draw paints them last, and HandleKey (as the
+// focused control) and dialogs.RingMouse offer them every event first.
 func (d *OptionsDialog) dropDowns() []*widgets.DropDown {
 	return []*widgets.DropDown{d.ddTheme, d.ddSQLStyle}
 }
 
 // openDropDown is the dropdown whose list is open, or nil.
 func (d *OptionsDialog) openDropDown() *widgets.DropDown {
-	for _, dd := range d.dropDowns() {
-		if dd.OverlayActive() {
-			return dd
-		}
-	}
-	return nil
+	dd, _ := core.OpenOverlay(d.dropDowns()...)
+	return dd
 }
 
-// HandleKey processes keyboard events: the focus ring (dialogs.FieldRingKey
-// on a control, ButtonRowKey on the button row). An open dropdown is the
-// focused control (DropDown.Focus(false) closes it), so Escape closes its list
-// only and Up/Down move in it rather than between controls.
+// HandleKey processes keyboard events through the focus ring. An open
+// dropdown is the focused control (DropDown.Focus(false) closes it), so Escape
+// closes its list only and Up/Down move in it rather than between controls.
 func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	if d.onButtons() {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, 2, nil, d.doButton, d.Hide, d.moveFocus)
-	}
-	return dialogs.FieldRingKey(ev, d.focusable[d.focusIdx], d.doButton, d.Hide, d.moveFocus)
+	return d.ring.Key(ev)
 }
 
-// moveFocus steps the ring by dir. Leaving the button row resets it to OK, the
-// button Enter presses from a control.
-func (d *OptionsDialog) moveFocus(dir int) {
-	d.setFocus(dialogs.RingStep(d.focusable, d.focusIdx, dir))
-	if !d.onButtons() {
-		d.btnFocus = 0
-	}
-}
+// optionsButtons is the button row, drawn and hit-tested alike.
+var optionsButtons = []string{"OK", "Cancel"}
 
-// HandleMouse processes mouse events.
+// HandleMouse is the focus ring's (dialogs.RingMouse).
 func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// The open list below sees events before ConsumeOutsideClick does, so the
-	// gesture is tracked here: a list pick's resends, dragged onto the button
-	// row, must not press a button.
-	d.TrackPress(ev)
-	// A release outside the dialog is consumed by ConsumeOutsideClick below before
-	// the radio box's/dropdowns'/cbIntelliSense's own HandleMouse calls see it, leaving their
-	// mouseDragging latch set and swallowing the next press. Reset it here first;
-	// each returns false on ButtonNone so this has no other effect. drag.Release
-	// does the same for the input fields and must likewise come before
-	// ConsumeOutsideClick.
-	if ev.Buttons() == tcell.ButtonNone {
-		for _, f := range d.focusable {
-			if w, ok := optionsMouseTarget(f); ok {
-				w.HandleMouse(ev)
-			}
-		}
-		d.drag.Release(ev)
-	}
-	// An open list gets first refusal (docs/ui-rules.md): it is clamped to the
-	// screen, not the dialog, and the SQL style list drops over the input fields,
-	// which fieldAt below would otherwise hand the click to. A click outside the
-	// list closes it and falls through to whatever it landed on.
-	if dd := d.openDropDown(); dd != nil && ev.Buttons() != tcell.ButtonNone && dd.HandleMouse(ev) {
-		for i, f := range d.focusable {
-			if f == focusable(dd) {
-				d.setFocus(i)
-			}
-		}
-		return true
-	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	// The gesture belongs to the field that claimed its press, so motion is replayed
-	// there without hit-testing, ahead of ButtonClicked below, which would fire OK
-	// the moment a selection drag wandered onto the button row.
-	if d.drag.Replay(ev) {
-		return true
-	}
-	if i := d.ButtonClicked(ev, []string{"OK", "Cancel"}); i >= 0 {
-		d.setFocus(len(d.focusable))
-		d.btnFocus = i
-		d.doButton()
-		return true
-	}
-	// The fields first, hit-tested here rather than left to InputField.HandleMouse's
-	// own bounds check, which a latch left from a previous showing skips.
-	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 {
-		if i, fld := d.fieldAt(mx, my); fld != nil {
-			d.setFocus(i)
-			d.drag.Claim(fld, ev)
-			return true
-		}
-	}
-	for i, f := range d.focusable {
-		if w, ok := optionsMouseTarget(f); ok && w.HandleMouse(ev) {
-			d.setFocus(i)
-			return true
-		}
-	}
-	return true
+	return d.ring.Mouse(ev, &d.ModalDialog)
 }
 
-// fieldAt returns the input field under (x, y) and its focus index, or nil.
-func (d *OptionsDialog) fieldAt(x, y int) (int, *widgets.InputField) {
-	for i, f := range d.focusable {
-		if fld, ok := f.(*widgets.InputField); ok && fld.HitTest(x, y) {
-			return i, fld
-		}
-	}
-	return -1, nil
-}
-
-// optionsMouseTarget answers the controls that take a press themselves (radio
-// box, dropdowns and checkbox). An input field is excluded: its press goes through d.drag,
-// and its own HandleMouse would honour a stale latch.
-func optionsMouseTarget(f focusable) (interface{ HandleMouse(*tcell.EventMouse) bool }, bool) {
-	if _, isField := f.(*widgets.InputField); isField {
-		return nil, false
-	}
-	w, ok := f.(interface{ HandleMouse(*tcell.EventMouse) bool })
-	return w, ok
-}
-
-func (d *OptionsDialog) doButton() {
-	switch d.btnFocus {
+func (d *OptionsDialog) doButton(btn int) {
+	switch btn {
 	case 0: // OK
 		d.apply()
 		d.Hide()
@@ -397,18 +284,13 @@ func (d *OptionsDialog) apply() {
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
 // number field focuses it.
 func (d *OptionsDialog) FocusClipboardTargetAt(x, y int) bool {
-	i := dialogs.ClipboardFieldAt(d.focusable, x, y)
-	if i < 0 {
-		return false
-	}
-	d.setFocus(i)
-	return true
+	return d.ring.FocusClipboardTargetAt(x, y)
 }
 
 // FocusedClipboardTarget implements core.ClipboardHost: whichever input field
 // has focus. The radio box, checkbox and button row answer nil.
 func (d *OptionsDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	return dialogs.FocusedClipboardTarget(d.focusable, d.focusIdx)
+	return d.ring.FocusedClipboardTarget()
 }
 
 // applyColorTheme makes t's palette the active one, and s's default style its

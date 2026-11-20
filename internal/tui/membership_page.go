@@ -14,7 +14,7 @@ import (
 type memberEdit struct {
 	name          string
 	principalType gosmo.PrincipalType
-	pendingState
+	propsheet.PendingState
 }
 
 // membershipConfig is what buildMembershipForm needs that differs between
@@ -67,7 +67,7 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 		loaded[i] = &memberEdit{name: m.Name, principalType: m.Type}
 	}
 	edits := newPendingEdits(cfg.collation, loaded, func(e *memberEdit) string { return e.name }, nil, nil)
-	visible := edits.visible
+	visible := edits.Visible
 	rowsFor := func() [][]string {
 		vis := visible()
 		rows := make([][]string, len(vis))
@@ -98,7 +98,7 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 			return
 		}
 		// A member pending removal is not listed, and Add takes it back.
-		if i := edits.index(name); i >= 0 {
+		if i := edits.Index(name); i >= 0 {
 			// Already a member: say so and select the row rather than leave a button that
 			// looks broken.
 			hint.Set(name + " is already a member.")
@@ -106,7 +106,7 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 			return
 		}
 		hint.Clear()
-		edits.add(&memberEdit{name: name, principalType: cfg.principalType[name]})
+		edits.Add(&memberEdit{name: name, principalType: cfg.principalType[name]})
 		resetGrid(grid, membershipColumns, rowsFor(), len(visible())-1)
 	})
 
@@ -118,14 +118,14 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 			return
 		}
 		hint.Clear()
-		edits.remove(vis[i])
+		edits.Remove(vis[i])
 		resetGrid(grid, membershipColumns, rowsFor(), 0)
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 10)
-	gridRow.DirtyFn = edits.dirty
+	gridRow.DirtyFn = edits.Dirty
 	gridRow.RevertFn = func() {
-		edits.revert()
+		edits.Revert()
 		resetGrid(grid, membershipColumns, rowsFor(), 0)
 		hint.Clear()
 	}
@@ -140,13 +140,13 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 	)
 
 	apply := func(ctx context.Context) error {
-		for _, e := range edits.all() {
+		for _, e := range edits.All() {
 			switch {
-			case e.removing:
+			case e.Removing:
 				if err := cfg.remove(ctx, e.name); err != nil {
 					return err
 				}
-			case e.isNew:
+			case e.IsNew:
 				if err := cfg.add(ctx, e.name); err != nil {
 					return err
 				}

@@ -441,48 +441,51 @@ func TestGroupingToggleKeepsSelection(t *testing.T) {
 }
 
 // Alt+G (and Alt+Shift+G) toggles Group by Schema whatever has focus, flipping
-// the View menu label and regrouping the loaded tree. Plain 'g' is text, and
+// the View menu item's check and regrouping the loaded tree. Plain 'g' is text, and
 // Ctrl+Alt+G (AltGr on many layouts) must not toggle.
 func TestAltGTogglesGroupBySchema(t *testing.T) {
 	a := newKeyTestApp(t)
 	a.newQueryPanel() // the focus plain 'g' falls through to
 	folder := groupTree(t, a, NodeTables, obj(NodeTable, "sales", "Orders"), obj(NodeTable, "dbo", "A"))
-	viewLabel := func() string {
-		for _, m := range a.buildMenus() {
+	// Built once: the item's Checked reads the state at draw time, so the
+	// menu follows the toggle without a rebuild.
+	menus := a.buildMenus()
+	viewChecked := func() bool {
+		for _, m := range menus {
 			if m.Label != "View" {
 				continue
 			}
 			for _, it := range m.Items {
-				if it.Shortcut == "Alt+G" {
-					return it.Label
+				if it.Shortcut == "Alt+G" && it.Label == "Group by Schema" && it.Checked != nil {
+					return it.Checked()
 				}
 			}
 		}
-		t.Fatal("no Alt+G item in the View menu")
-		return ""
+		t.Fatal("no Group by Schema toggle (Alt+G) in the View menu")
+		return false
 	}
-	check := func(step string, on bool, label string, want []string) {
+	check := func(step string, on bool, want []string) {
 		t.Helper()
-		if a.groupBySchema != on || viewLabel() != label || !slices.Equal(shape(folder), want) {
-			t.Fatalf("%s: groupBySchema=%v label=%q tree=%q; want %v %q %q",
-				step, a.groupBySchema, viewLabel(), shape(folder), on, label, want)
+		if a.groupBySchema != on || viewChecked() != on || !slices.Equal(shape(folder), want) {
+			t.Fatalf("%s: groupBySchema=%v checked=%v tree=%q; want %v %q",
+				step, a.groupBySchema, viewChecked(), shape(folder), on, want)
 		}
 	}
 	flat := []string{"sales.Orders", "dbo.A"}
 	grouped := []string{"dbo[dbo.A]", "sales[sales.Orders]"}
 
-	check("startup", false, "Group by Schema (OFF)", flat)
+	check("startup", false, flat)
 	a.handleKey(tcell.NewEventKey(tcell.KeyRune, "g", tcell.ModAlt))
-	check("Alt+G", true, "Group by Schema (ON)", grouped)
+	check("Alt+G", true, grouped)
 	for _, ev := range []*tcell.EventKey{
 		tcell.NewEventKey(tcell.KeyRune, "g", tcell.ModNone),
 		tcell.NewEventKey(tcell.KeyRune, "g", tcell.ModAlt|tcell.ModCtrl),
 	} {
 		a.handleKey(ev)
-		check(ev.Name(), true, "Group by Schema (ON)", grouped)
+		check(ev.Name(), true, grouped)
 	}
 	a.handleKey(tcell.NewEventKey(tcell.KeyRune, "G", tcell.ModAlt|tcell.ModShift))
-	check("Alt+Shift+G", false, "Group by Schema (OFF)", flat)
+	check("Alt+Shift+G", false, flat)
 }
 
 // TestSchemaGroupDrag: a schema group is the one folder that drags, and it

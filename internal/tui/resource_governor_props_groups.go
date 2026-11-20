@@ -54,7 +54,7 @@ type rgGroupEdit struct {
 	name   string
 	system bool
 	locked bool // the internal group: no ALTER
-	pendingState
+	propsheet.PendingState
 	orig rgGroupValues
 	cur  rgGroupValues
 }
@@ -82,7 +82,7 @@ func (e *rgGroupEdit) options(base rgGroupValues) (gosmo.WorkloadGroupOptions, e
 	if cur.maxRequests != base.maxRequests {
 		o.GroupMaxRequests = new(cur.maxRequests)
 	}
-	if e.isNew || cur.pool != base.pool {
+	if e.IsNew || cur.pool != base.pool {
 		o.Pool = new(cur.pool)
 	}
 	if cur.external != base.external {
@@ -148,7 +148,7 @@ func rgFloatValidator(lo, hi float64, whole, blank bool) func(string) error {
 func rgListedPools(pools []string, edits []*rgGroupEdit) []string {
 	out := slices.Clone(pools)
 	for _, e := range edits {
-		if !e.removing && !slices.Contains(out, e.cur.pool) {
+		if !e.Removing && !slices.Contains(out, e.cur.pool) {
 			out = append(out, e.cur.pool)
 		}
 	}
@@ -220,14 +220,14 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 			} else if slices.Contains(poolNames, focus.pool) {
 				startPool = focus.pool
 			}
-			listed := rgListedPools(poolNames, edits.all())
+			listed := rgListedPools(poolNames, edits.All())
 			poolRow := propsheet.Select("Resource pool", listed, max(slices.Index(listed, startPool), 0))
 			// Which pool is listed is a view, not an edit.
 			poolRow.SetDirtyTracked(false)
 
 			visible := func() []*rgGroupEdit {
 				pool := poolRow.Value()
-				return slices.DeleteFunc(edits.visible(), func(e *rgGroupEdit) bool { return e.cur.pool != pool })
+				return slices.DeleteFunc(edits.Visible(), func(e *rgGroupEdit) bool { return e.cur.pool != pool })
 			}
 			headers := []string{"Name", "Importance", "Grant %", "CPU sec", "Timeout sec", "MAXDOP", "Max requests", "External pool"}
 			if tempdb {
@@ -236,7 +236,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 			cells := func(e *rgGroupEdit) []string {
 				v := e.cur
 				row := []string{
-					rgEditName(e.name, e.system, e.isNew), v.importance, grantPercentText(v.grant),
+					rgEditName(e.name, e.system, e.IsNew), v.importance, grantPercentText(v.grant),
 					zeroAs(v.cpuSec, "Unlimited"), zeroAs(v.timeoutSec, "Default"),
 					zeroAs(v.maxDOP, "Default"), zeroAs(v.maxRequests, "Unlimited"), v.external,
 				}
@@ -319,7 +319,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 					return
 				}
 				v := e.cur
-				selectedRow.SetValue(rgEditName(e.name, e.system, e.isNew))
+				selectedRow.SetValue(rgEditName(e.name, e.system, e.IsNew))
 				items, i := propsheet.PreservingItems(rgImportanceItems, v.importance)
 				importanceRow.SetItems(items)
 				importanceRow.SetSelected(i)
@@ -350,7 +350,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				list.Commit()
 				readModel()
 				shown, row := poolRow.Value(), list.Grid().SelectedRow()
-				listed := rgListedPools(poolNames, edits.all())
+				listed := rgListedPools(poolNames, edits.All())
 				poolRow.SetItems(listed)
 				if i := slices.Index(listed, shown); i >= 0 {
 					poolRow.SetSelected(i)
@@ -377,24 +377,24 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 					switch {
 					case pool == "internal":
 						return "The internal pool takes no workload groups; pick another pool above.", false
-					case edits.taken(name):
+					case edits.Taken(name):
 						// Names are unique server-wide, not per pool.
 						return "A workload group named " + name + " already exists.", false
 					}
 					def := rgGroupDefaults(pool)
-					edits.add(&rgGroupEdit{name: name, orig: def, cur: def})
+					edits.Add(&rgGroupEdit{name: name, orig: def, cur: def})
 					return "", true
 				},
 				Remove: func(e *rgGroupEdit) (string, bool) {
 					if e.system {
 						return e.name + " is built in and cannot be removed.", false
 					}
-					edits.remove(e)
+					edits.Remove(e)
 					return "", true
 				},
-				Dirty: edits.dirty,
+				Dirty: edits.Dirty,
 				Revert: func() {
-					edits.revert()
+					edits.Revert()
 					// A reverted group may be back in a pool no longer listed.
 					refreshPools()
 				},
@@ -448,10 +448,10 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				if err != nil {
 					return err
 				}
-				for _, e := range edits.all() {
+				for _, e := range edits.All() {
 					name := e.name
 					switch {
-					case e.isNew:
+					case e.IsNew:
 						o, err := e.options(rgGroupDefaults(e.cur.pool))
 						if err != nil {
 							return fmt.Errorf("workload group %s: %w", name, err)
@@ -460,7 +460,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 							_, err := sc.Server.CreateWorkloadGroup(ctx, gosmo.CreateWorkloadGroupRequest{Name: name, Options: o})
 							return err
 						})
-					case e.removing:
+					case e.Removing:
 						plan.add(rgPhaseDropGroups, func(ctx context.Context) error {
 							return sc.Server.WorkloadGroupRef(name).Drop(ctx)
 						})

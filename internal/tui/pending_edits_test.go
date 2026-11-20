@@ -2,15 +2,17 @@ package tui
 
 import (
 	"github.com/radix29/gosmo/gosmotest"
+	"github.com/radix29/tuikit/propsheet"
 	"strings"
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
 )
 
+// TestPendingNameIndex: newPendingEdits compares names under the scope's
+// collation; Taken also sees a row being removed, Index only what the grid
+// lists.
 func TestPendingNameIndex(t *testing.T) {
-	names := []string{"PRIMARY", "Sales", "sales_archive"}
-	self := func(s string) string { return s }
 	for _, tt := range []struct {
 		collation, name string
 		want            int
@@ -23,12 +25,18 @@ func TestPendingNameIndex(t *testing.T) {
 		{"Latin1_General_CS_AS", "Sales", 1},
 		{"Latin1_General_BIN2", "primary", -1},
 	} {
-		if got := pendingNameIndex(tt.collation, names, self, tt.name); got != tt.want {
+		p := newPendingTestEdits(tt.collation, "PRIMARY", "Sales", "sales_archive")
+		if got := p.Index(tt.name); got != tt.want {
 			t.Errorf("%s: %q = %d, want %d", tt.collation, tt.name, got, tt.want)
 		}
-		if got := pendingNameTaken(tt.collation, names, self, tt.name); got != (tt.want >= 0) {
+		if got := p.Taken(tt.name); got != (tt.want >= 0) {
 			t.Errorf("%s: %q taken = %v, want %v", tt.collation, tt.name, got, tt.want >= 0)
 		}
+	}
+	p := newPendingTestEdits("SQL_Latin1_General_CP1_CI_AS", "Ops")
+	p.Remove(p.All()[0])
+	if p.Listed("ops") || !p.Taken("ops") {
+		t.Error("a row being removed: listed, or not taken")
 	}
 }
 
@@ -164,15 +172,15 @@ func TestPendingNamesRefusal(t *testing.T) {
 	}
 }
 
-// pendingTestRow is a page row for the pendingEdits tests: a name and one
-// edited value.
+// pendingTestRow is a page row for the newPendingEdits tests: a name and one
+// edited value (propsheet's own tests cover the list's lifecycle).
 type pendingTestRow struct {
-	pendingState
+	propsheet.PendingState
 	name, origName string
 	value, orig    int
 }
 
-func newPendingTestEdits(collation string, names ...string) *pendingEdits[*pendingTestRow] {
+func newPendingTestEdits(collation string, names ...string) *propsheet.PendingEdits[*pendingTestRow] {
 	loaded := make([]*pendingTestRow, len(names))
 	for i, n := range names {
 		loaded[i] = &pendingTestRow{name: n, origName: n}
@@ -183,104 +191,20 @@ func newPendingTestEdits(collation string, names ...string) *pendingEdits[*pendi
 		func(e *pendingTestRow) { e.name, e.value = e.origName, e.orig })
 }
 
-func pendingTestNames(rows []*pendingTestRow) string {
-	out := make([]string, len(rows))
-	for i, e := range rows {
-		out[i] = e.name
-	}
-	return strings.Join(out, ",")
-}
-
-// TestPendingEditsLifecycle: what every page used to write for itself — an
-// Add is new, a Remove forgets a new row and marks a loaded one, the grid
-// lists what is not being removed, Revert puts the list back as loaded.
-func TestPendingEditsLifecycle(t *testing.T) {
-	p := newPendingTestEdits("", "a", "b", "c")
-	if p.dirty() {
-		t.Fatal("dirty as loaded")
-	}
-	b := p.all()[1]
-	p.remove(b)
-	p.add(&pendingTestRow{name: "d"})
-	d := p.all()[3]
-	if !d.isNew || !b.removing || !p.dirty() {
-		t.Fatalf("after Remove b and Add d: d.isNew=%v b.removing=%v dirty=%v", d.isNew, b.removing, p.dirty())
-	}
-	if got := pendingTestNames(p.visible()); got != "a,c,d" {
-		t.Errorf("visible = %s, want a,c,d", got)
-	}
-	if got := pendingTestNames(p.all()); got != "a,b,c,d" {
-		t.Errorf("all = %s, want a,b,c,d", got)
-	}
-
-	// A new row removed is forgotten: nothing for Apply to write.
-	p.remove(d)
-	if got := pendingTestNames(p.all()); got != "a,b,c" {
-		t.Errorf("all after removing new d = %s, want a,b,c", got)
-	}
-	p.restore(b)
-	if p.dirty() {
-		t.Error("dirty after the only changes were undone")
-	}
-
-	p.all()[0].value = 7
-	p.all()[2].name = "c2"
-	p.remove(p.all()[1])
-	p.add(&pendingTestRow{name: "e"})
-	p.swap(p.all()[0], p.all()[2])
-	p.revert()
-	if got := pendingTestNames(p.all()); got != "a,b,c" {
-		t.Errorf("all after Revert = %s, want a,b,c in loaded order", got)
-	}
-	if p.dirty() || p.all()[0].value != 0 {
-		t.Errorf("after Revert: dirty=%v a.value=%d, want clean", p.dirty(), p.all()[0].value)
-	}
-}
-
-// TestPendingEditsNameChecks: index and listed see only the rows the grid
-// lists; taken sees a row being removed too, for a page that creates before
-// it drops.
-func TestPendingEditsNameChecks(t *testing.T) {
-	p := newPendingTestEdits("SQL_Latin1_General_CP1_CI_AS", "Ops", "Sales", "Archive")
-	p.remove(p.all()[1])
-	for _, tt := range []struct {
-		name         string
-		index        int
-		listed, take bool
-	}{
-		{"ops", 0, true, true},
-		{"ARCHIVE", 1, true, true},
-		{"sales", -1, false, true},
-		{"other", -1, false, false},
-	} {
-		if got := p.index(tt.name); got != tt.index {
-			t.Errorf("index(%q) = %d, want %d", tt.name, got, tt.index)
-		}
-		if got := p.listed(tt.name); got != tt.listed {
-			t.Errorf("listed(%q) = %v, want %v", tt.name, got, tt.listed)
-		}
-		if got := p.taken(tt.name); got != tt.take {
-			t.Errorf("taken(%q) = %v, want %v", tt.name, got, tt.take)
-		}
-	}
-	if cs := newPendingTestEdits("Latin1_General_CS_AS", "Ops"); cs.listed("ops") {
-		t.Error("ops listed beside Ops under a case-sensitive collation")
-	}
-}
-
 // TestPendingEditsRefusal: a new row has no stored name, whatever stored
 // says of it, so it cannot be mistaken for the row it was seeded like.
 func TestPendingEditsRefusal(t *testing.T) {
+	const ci = "SQL_Latin1_General_CP1_CI_AS"
 	stored := func(e *pendingTestRow) string { return e.origName }
-	p := newPendingTestEdits("SQL_Latin1_General_CP1_CI_AS", "Ops")
-	p.remove(p.all()[0])
-	p.add(&pendingTestRow{name: "ops", origName: "ops"})
-	if err := p.refusal("profile", stored); err == nil || !strings.Contains(err.Error(), "still in use until its removal") {
+	p := newPendingTestEdits(ci, "Ops")
+	p.Remove(p.All()[0])
+	p.Add(&pendingTestRow{name: "ops", origName: "ops"})
+	if err := pendingRefusal(ci, p, "profile", stored); err == nil || !strings.Contains(err.Error(), "still in use until its removal") {
 		t.Errorf("re-adding a removed name: err = %v, want the removal refusal", err)
 	}
-	p.revert()
-	p.add(&pendingTestRow{name: "B", origName: "Ops"})
-	if err := p.refusal("profile", stored); err != nil {
+	p.Revert()
+	p.Add(&pendingTestRow{name: "B", origName: "Ops"})
+	if err := pendingRefusal(ci, p, "profile", stored); err != nil {
 		t.Errorf("a new row seeded with a stored name: refused: %v", err)
 	}
 }

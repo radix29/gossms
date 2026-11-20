@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // replication_monitor_panel_input.go is Replication Monitor's keyboard and
@@ -45,12 +46,9 @@ func (p *ReplicationMonitorPanel) HandleKey(ev *tcell.EventKey) bool {
 
 // overlayGrid is the grid with a value popup or cell menu open, if any.
 func (p *ReplicationMonitorPanel) overlayGrid() *controls.DataGrid {
-	for _, g := range p.grids() {
-		if g.OverlayActive() {
-			return g
-		}
-	}
-	return nil
+	grids := p.grids()
+	g, _ := core.OpenOverlay(grids[:]...)
+	return g
 }
 
 // OverlayActive implements layout.OverlayPanel.
@@ -97,7 +95,7 @@ func (p *ReplicationMonitorPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if ev.Buttons() == tcell.Button1 && p.toolRect.H == 1 && my == p.toolRect.Y {
 		if p.tools.More.Rect.Contains(mx, my) {
-			p.popMenuAt(p.tools.More.Rect, p.tools.OverflowItems(p.toolDisabled, p.toolReason, p.runTool))
+			p.popMenuAt(-1, p.tools.OverflowItems(p.toolDisabled, p.toolReason, p.runTool))
 		} else if i := p.tools.CellAt(mx, my); i >= 0 {
 			p.runTool(i)
 		}
@@ -140,13 +138,8 @@ func (p *ReplicationMonitorPanel) routeDrag(ev *tcell.EventMouse, zone rmDragZon
 	}
 }
 
-// HasSelection and the rest of clipboardTarget forward to the focused grid.
-func (p *ReplicationMonitorPanel) HasSelection() bool   { return p.focusedGrid().HasSelection() }
-func (p *ReplicationMonitorPanel) SelectedText() string { return p.focusedGrid().SelectedText() }
-func (p *ReplicationMonitorPanel) Cut() string          { return p.focusedGrid().Cut() }
-func (p *ReplicationMonitorPanel) Paste(text string)    { p.focusedGrid().Paste(text) }
-func (p *ReplicationMonitorPanel) SelectAll()           { p.focusedGrid().SelectAll() }
-func (p *ReplicationMonitorPanel) CanCopy() bool        { return p.focusedGrid().CanCopy() }
-func (p *ReplicationMonitorPanel) CanCut() bool         { return p.focusedGrid().CanCut() }
-func (p *ReplicationMonitorPanel) CanPaste() bool       { return p.focusedGrid().CanPaste() }
-func (p *ReplicationMonitorPanel) CanSelectAll() bool   { return p.focusedGrid().CanSelectAll() }
+// FocusedClipboardTarget implements core.ClipboardHost: the grid with the
+// keyboard.
+func (p *ReplicationMonitorPanel) FocusedClipboardTarget() clipboardTarget {
+	return gridClipboardTarget(p.focusedGrid())
+}

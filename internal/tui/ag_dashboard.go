@@ -516,12 +516,8 @@ func (d *AGDashboard) grid() *controls.DataGrid {
 // overlayGrid returns the grid whose cell menu or value popup is open, or nil.
 // The overlay is drawn last and gets first refusal of every event.
 func (d *AGDashboard) overlayGrid() *controls.DataGrid {
-	for _, g := range []*controls.DataGrid{d.topGrid, d.bottomGrid} {
-		if g.OverlayActive() {
-			return g
-		}
-	}
-	return nil
+	g, _ := core.OpenOverlay(d.topGrid, d.bottomGrid)
+	return g
 }
 
 // OverlayActive implements layout.OverlayPanel.

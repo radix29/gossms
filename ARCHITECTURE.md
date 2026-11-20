@@ -164,7 +164,7 @@ race. Background work has one shape:
 - **Work** off-thread, touching nothing the UI owns.
 - **Report** with **`App.postAndWake(fn)`** — `fn` runs on the UI goroutine.
   `postProgress`/`postTaskDone` wrap it.
-- **Start** with **`App.safego(what, fn)`** (or `defer a.recoverPanic(what)`).
+- **Start** with **`App.safego(what, fn)`**.
   An unrecovered background panic kills the process before `screen.Fini()`
   restores the terminal — trace and unsaved query text lost. go-mssqldb
   panics outright on an unknown column type ID, so this is not theoretical.
@@ -342,8 +342,8 @@ gossms/
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
-│       ├── latest.go              # the shared latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result — see § Latest-only loads
-│       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one (bar FlushSaves' exit-time waiter)
+│       ├── latest.go              # `latest`, an alias of tuikit's loop.Latest (the latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result) — see § Latest-only loads
+│       ├── safego.go             # App.safego/safegoRepair and fanOut (the one bounded worker pool), delegates over tuikit's loop.Runner, plus reportPanic, its Report callback (log + status bar); every background goroutine runs under one (bar FlushSaves' exit-time waiter)
 │       ├── prop_page_gate.go    # withRequires/withRequiresOn: attaches a gate.Right set to a propPage, the one tie between the gate package and the Properties dialogs
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
@@ -351,7 +351,7 @@ gossms/
 │       ├── dialog_common.go      # the goSSMS-specific part of the hand-rolled dialogs: the Backup/Restore progress button and keyboard, the discard-changes confirmation (the generic focus-ring helpers are tuikit's dialogs/focus_ring.go)
 │       ├── text_encoding.go      # decodeTextFile/encodeTextFile — internal/textenc's BOM-detected encoding plus the file's own line endings, so File > Save writes back what File > Open read
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
-│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields: target resolution, newest-copy-wins, OSC 52 fallback, bracketed paste (the OS clipboard and paste buffer are tuikit's clipboard package)
+│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields: target resolution (activeClipboardTarget) and the right-click menu; the traffic (newest-copy-wins, OSC 52 fallback, paste aimed once, bracketed paste) is tuikit's clipboard.Dispatcher, built by App.clip
 │       │
 │       │  ── Query panel & IntelliSense ──
 │       ├── query_panel.go        # QueryPanel state/layout, implements layout.Panel
@@ -387,7 +387,7 @@ gossms/
 │       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
 │       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
-│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, the box itself is tuikit charts.DrawReadout, shared with the Detail Browser strip
+│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, the box itself is tuikit charts.DrawReadout, shared with the Detail Browser strip; the time-axis callout is charts.DrawAxisCallout
 │       ├── activity_monitor_toolbar.go # toolbar cells per tab (rate, Pause/Continue, Refresh), overflow menu, and the collection-state summary and dashboard header
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, the procedure's option switches (activity.ProcOption: Sessions' Sleeping Sessions / Additional Info), result grid, Kill Process
 │       │
@@ -504,7 +504,7 @@ gossms/
 │       ├── prop_apply.go         # PropDialog's write path: dirty-diff Apply and Script Changes, the commit-tracking step runner, commitRename, and applyPlan for a dialog whose pages' writes are ordered across pages
 │       ├── new_object_dialog.go  # newObjectDialog — the shell behind the New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── name_set.go           # nameSet/nameMap: name sets and maps keyed by gosmo.NameKey under the scope's collation (server, database or msdb), so they agree with gosmo.SameName
-│       ├── pending_edits.go      # pendingEdits: the master-detail pages' pending-edit list (rows as loaded and as edited; dirty, visible, revert, add/remove, swap); its Add duplicate checks under the scope's collation (pendingNameIndex); pendingNamesRefusal: their pre-Apply check of renames and of names a removal frees only on Apply
+│       ├── pending_edits.go      # newPendingEdits: the master-detail pages' pending-edit list (tuikit's propsheet.PendingEdits) comparing names under the scope's collation; pendingNamesRefusal (pendingRefusal over a list): their pre-Apply check of renames and of names a removal frees only on Apply
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm, redrawGrid/resetGrid, listAutoAlign)
 │       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles
@@ -768,8 +768,12 @@ takes any `core.MouseHandler`, but every `Claim` here is a text field).
 
 ## Async result delivery: postAndWake
 
-A background goroutine reports with `App.postAndWake(fn)` — never `postEvent`
-then `wakeEventLoop` by hand. The wakeup must be sent *outside* the posted
+A background goroutine reports with `App.postAndWake(fn)` — never
+`a.wake.Queue` then `wakeEventLoop` by hand. The mechanism is tuikit's
+`loop.Poster` (`App.wake`): `postAndWake`, `drainPending`, `wakeEventLoop`
+and `quit` are one-line forwards to its `Post`, `Drain`, `Wake` and `Close`,
+which hold the coalesced non-blocking wakeup and the gate ordering
+`screen.Fini()` against a wake in flight. The wakeup must be sent *outside* the posted
 closure, from the background goroutine: `Run()` drains callbacks only when it
 wakes for an `EventQ()` event, so a wakeup nested in the closure waiting to be
 drained never fires, and the result sits until an unrelated keypress. Shipped
@@ -802,13 +806,15 @@ win10cli: System32 4551 entries 1.2 s, `C:\Windows` 35 ms, `C:\Program Files`
 ### Starting the goroutine: safego
 
 Start with **`App.safego("what", fn)`**, never a bare `go func()` — it is the
-goroutine plus `defer recoverPanic(what)`, and hand-written halves eventually
-miss the `defer`.
+goroutine plus a labelled recover, and hand-written halves eventually miss the
+`defer`. The mechanism is tuikit's `loop.Runner` (`safego.go` builds one per
+call over `postAndWake`, `reportPanic` and `maxRowFetchConcurrency`); the rules
+below are gossms's use of it.
 
 The one exception is the bounded pool **`App.fanOut(n, what, work, onPanic)`**
 (`safego.go`; Detail Browser backfill, Log File Viewer per-file reads). It
-recovers each item separately, so a panic costs that item, not its worker's
-queue; `onPanic` runs *before* `fanOut` returns, which is how backfill queues
+recovers each item separately (`loop.Runner.FanOut`), so a panic costs that
+item, not its worker's queue; `onPanic` runs *before* `fanOut` returns, which is how backfill queues
 `markFailed` ahead of the caller caching its rows.
 
 `App.FlushSaves` (`app_saves.go`) runs one bare goroutine — a `WaitGroup.Wait`
@@ -834,13 +840,21 @@ selects on — is released by `defer` *inside* `fn`, not by `repair`.
 on entry, else the elapsed-time redraw (`App.animateUntil`) wakes the loop
 every second forever.
 
+When the latch is a plain busy flag guarding a single-flight button, let
+tuikit's **`loop.Runner.GoOnce`** own it instead (`a.runner().GoOnce`): it
+sets the flag, and releases it in the posted result callback or, on a panic,
+in the repair. A dialog's page buttons reach it through `goPageActionOnce`
+(`prop_dialog.go`), which also drops a result for a showing since closed.
+
 Test like `TestPageActionLatchClearsWhenTheActionPanics`: panic the action,
 then assert the *next* one still runs — a flag check passes on a dead latch.
 
 ## Latest-only loads: latest
 
-`internal/tui/latest.go` owns "start a load, cancel the one it replaces, drop
-stale results". Almost every async read is latest-only, and many sites own a
+`latest` owns "start a load, cancel the one it replaces, drop stale results".
+It is tuikit's `loop.Latest` (`~/go/tuikit/loop/latest.go`, where its
+contract's tests live), aliased in `internal/tui/latest.go` so the sites keep
+the short type name; the rules below are how gossms uses it. Almost every async read is latest-only, and many sites own a
 `latest` — among them an Object Explorer node's children (`object_explorer.go`), the
 completion inventory, the Query Store panel's report/plan pane/series, the Log
 File Viewer's read, a `newObjectDialog` prefetch, the Detail Browser fetch,

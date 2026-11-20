@@ -98,7 +98,7 @@ func TestPropDialogReshowIgnoresThePreviousShowingsError(t *testing.T) {
 
 // A page action still running when the dialog is reopened belongs to the
 // showing that started it: it must be cancelled with that showing, not carry
-// on under the new one's context. pageActionBody used to read d.ctx on the
+// on under the new one's context. runPageAction used to read d.ctx on the
 // action's goroutine, which is also a data race with show() rewriting it — so
 // run this under -race.
 func TestPropDialogPageActionKeepsItsShowingsContext(t *testing.T) {

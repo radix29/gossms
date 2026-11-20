@@ -1,3 +1,6 @@
+- left arrow in the tree -> jump to parent node
+- query editor : highlight the background of the current line (just a little)
+
 - add windows store installation? 
 
 Results:

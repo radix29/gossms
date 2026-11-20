@@ -44,17 +44,9 @@ type LogSearchDialog struct {
 	// close so a dismissed showing cannot deliver into the next panel.
 	onApply func(gosmo.LogSearch)
 
-	// drag is the text-selection gesture a click in one of the dialog's text
-	// fields starts — see dialogs.FieldGesture for the ordering its three calls
-	// depend on.
-	drag dialogs.FieldGesture
-
-	// focusIdx is the focused field, or len(fields()) for the button row, one
-	// Tab stop crossed with the arrows (dialogs.RingStep, ButtonRowKey).
-	// btnFocus is the button the row would press: Search while focus is in the
-	// fields, so Enter from a field searches.
-	focusIdx int
-	btnFocus int
+	// ring is the focus ring over fields() and buttons(); its default button is
+	// Search, so Enter from a field searches.
+	ring dialogs.FieldRing
 
 	status    string
 	statusErr bool
@@ -69,6 +61,12 @@ func NewLogSearchDialog(app *App) *LogSearchDialog {
 	d.fText2 = widgets.NewInputField("And contains: ", logSearchFieldW, false)
 	d.fFrom = widgets.NewInputField("From:         ", logSearchFieldW, false)
 	d.fTo = widgets.NewInputField("To:           ", logSearchFieldW, false)
+	d.ring = dialogs.FieldRing{
+		Fields:  d.fields,
+		Buttons: d.buttons,
+		Press:   d.pressButton,
+		Dismiss: d.dismiss,
+	}
 	return d
 }
 
@@ -81,10 +79,7 @@ func (d *LogSearchDialog) ShowLogSearch(current gosmo.LogSearch, onApply func(go
 	d.fFrom.SetValue(formatLogSearchTime(current.From))
 	d.fTo.SetValue(formatLogSearchTime(current.To))
 	d.status, d.statusErr = "", false
-	// A latch must not survive into the next showing — see ModalDialog.Show.
-	d.drag.Clear()
-	d.focusIdx, d.btnFocus = 0, 0
-	d.syncFocus()
+	d.ring.Reset()
 	d.Show()
 }
 
@@ -98,24 +93,6 @@ func (d *LogSearchDialog) inputFields() []*widgets.InputField {
 	return []*widgets.InputField{d.fText1, d.fText2, d.fFrom, d.fTo}
 }
 
-func (d *LogSearchDialog) syncFocus() {
-	for i, f := range d.fields() {
-		f.Focus(i == d.focusIdx)
-	}
-}
-
-func (d *LogSearchDialog) onButtons() bool { return d.focusIdx == len(d.fields()) }
-
-// moveFocus steps the ring by dir. Leaving the button row resets it to Search,
-// the button Enter presses from a field.
-func (d *LogSearchDialog) moveFocus(dir int) {
-	d.focusIdx = dialogs.RingStep(d.fields(), d.focusIdx, dir)
-	if !d.onButtons() {
-		d.btnFocus = 0
-	}
-	d.syncFocus()
-}
-
 // Draw renders the dialog.
 func (d *LogSearchDialog) Draw(s tcell.Screen) {
 	if !d.Visible() {
@@ -124,8 +101,7 @@ func (d *LogSearchDialog) Draw(s tcell.Screen) {
 	d.DrawBase(s)
 	d.layout()
 
-	p := theme.Active()
-	hint := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+	hint := theme.StyleDialogDim()
 	inner := d.InnerRect()
 
 	for _, f := range d.inputFields() {
@@ -140,12 +116,12 @@ func (d *LogSearchDialog) Draw(s tcell.Screen) {
 
 	st := hint
 	if d.statusErr {
-		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogWarning)
+		st = theme.StyleDialogWarning()
 	}
 	core.DrawTextClipped(s, inner.X+1, d.statusY, inner.W-2, st, d.status)
 
 	d.DrawSeparator(s)
-	d.DrawButtons(s, d.buttons(), d.btnFocus)
+	d.DrawButtons(s, d.buttons(), d.ring.BtnFocus)
 }
 
 func (d *LogSearchDialog) layout() {
@@ -158,53 +134,21 @@ func (d *LogSearchDialog) layout() {
 	d.statusY = row + 2
 }
 
-// HandleKey routes keyboard events.
+// HandleKey routes keyboard events through the focus ring.
 func (d *LogSearchDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	press := func() { d.pressButton(d.btnFocus) }
-	if d.onButtons() {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(d.buttons()), nil, press, d.dismiss, d.moveFocus)
-	}
-	return dialogs.FieldRingKey(ev, d.fields()[d.focusIdx], press, d.dismiss, d.moveFocus)
+	return d.ring.Key(ev)
 }
 
-// HandleMouse routes mouse events like tuikit's dialogs.FindReplaceDialog, including the
-// release that must reach a latch-bearing field wherever it lands.
+// HandleMouse is the focus ring's (dialogs.RingMouse), as tuikit's
+// FindReplaceDialog's is.
 func (d *LogSearchDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	d.drag.Release(ev)
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	if ev.Buttons() == tcell.ButtonNone {
-		return true
-	}
-	if ev.Buttons() != tcell.Button1 {
-		return false
-	}
-	if d.drag.Replay(ev) {
-		return true
-	}
-	if i := d.ButtonClicked(ev, d.buttons()); i >= 0 {
-		d.focusIdx, d.btnFocus = len(d.fields()), i
-		d.syncFocus()
-		d.pressButton(i)
-		return true
-	}
-	mx, my := ev.Position()
-	for i, f := range d.inputFields() {
-		if f.HitTest(mx, my) {
-			d.focusIdx = i
-			d.syncFocus()
-			d.drag.Claim(f, ev)
-			return true
-		}
-	}
-	return true
+	return d.ring.Mouse(ev, &d.ModalDialog)
 }
 
 func (d *LogSearchDialog) pressButton(i int) {
@@ -300,17 +244,11 @@ func formatLogSearchTime(t time.Time) string {
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
 // search field focuses it.
 func (d *LogSearchDialog) FocusClipboardTargetAt(x, y int) bool {
-	i := dialogs.ClipboardFieldAt(d.fields(), x, y)
-	if i < 0 {
-		return false
-	}
-	d.focusIdx = i
-	d.syncFocus()
-	return true
+	return d.ring.FocusClipboardTargetAt(x, y)
 }
 
 // FocusedClipboardTarget implements core.ClipboardHost — every field here is
 // text the user pastes into.
 func (d *LogSearchDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	return dialogs.FocusedClipboardTarget(d.fields(), d.focusIdx)
+	return d.ring.FocusedClipboardTarget()
 }

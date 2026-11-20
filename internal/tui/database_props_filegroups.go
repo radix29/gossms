@@ -19,7 +19,7 @@ import (
 type fgEdit struct {
 	name      string
 	fileCount int
-	pendingState
+	propsheet.PendingState
 	isReadOnly    bool
 	origReadOnly  bool
 	isDefault     bool
@@ -51,7 +51,7 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 				func(e *fgEdit) string { return e.name },
 				func(e *fgEdit) bool { return e.isReadOnly != e.origReadOnly || e.isDefault != e.origIsDefault },
 				func(e *fgEdit) { e.isReadOnly, e.isDefault = e.origReadOnly, e.origIsDefault })
-			visible := edits.visible
+			visible := edits.Visible
 			rowsFor := func() ([][]string, [][]bool) {
 				vis := visible()
 				text := make([][]string, len(vis))
@@ -89,12 +89,12 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 					hint.Set("Type a filegroup name first.")
 					return
 				}
-				if edits.listed(name) {
+				if edits.Listed(name) {
 					hint.Set("A filegroup named " + name + " is already listed.")
 					return
 				}
 				hint.Clear()
-				edits.add(&fgEdit{name: name})
+				edits.Add(&fgEdit{name: name})
 				text, values := rowsFor()
 				fgRow.SetRows(text, values)
 				nameField.SetValue("")
@@ -108,17 +108,17 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				hint.Clear()
-				edits.remove(vis[row])
+				edits.Remove(vis[row])
 				text, values := rowsFor()
 				fgRow.SetRows(text, values)
 			})
 
 			fgRow.DirtyFn = func() bool {
 				syncToggles()
-				return edits.dirty()
+				return edits.Dirty()
 			}
 			fgRow.RevertFn = func() {
-				edits.revert()
+				edits.Revert()
 				text, values := rowsFor()
 				fgRow.SetRows(text, values)
 			}
@@ -159,14 +159,14 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 				if err != nil {
 					return err
 				}
-				for _, e := range edits.all() {
+				for _, e := range edits.All() {
 					switch {
-					case e.removing:
+					case e.Removing:
 						if err := d.FileGroupRef(e.name).Drop(ctx); err != nil {
 							return err
 						}
 						continue
-					case e.isNew:
+					case e.IsNew:
 						if err := d.AddFileGroup(ctx, e.name); err != nil {
 							return err
 						}

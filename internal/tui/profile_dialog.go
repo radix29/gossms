@@ -28,8 +28,8 @@ var profileButtons = []string{"OK", "Cancel"}
 // through it — the Connect dialog's Profile... button, on the History row
 // selected. An empty name turns the entry back into a plain recent connection.
 //
-// The focus ring is the name, then the dropdown; past either end is the button
-// row (docs/ui-rules.md § Dialogs).
+// The focus ring is the name, then the dropdown, then the button row
+// (docs/ui-rules.md § Dialogs).
 type ProfileDialog struct {
 	dialogs.ModalDialog
 
@@ -37,17 +37,15 @@ type ProfileDialog struct {
 	fName   *widgets.InputField
 	ddAllow *widgets.DropDown
 
-	focusIdx  int
+	// ring is the focus ring over focusable and profileButtons; its default
+	// button is OK, so Enter from a field accepts.
 	focusable []focusable
-	onButtons bool
-	btnFocus  int
+	ring      dialogs.FieldRing
 	status    string
 
 	// onAccept applies the name and class; an error keeps the dialog open
 	// with it shown (a duplicate name, a failed check).
 	onAccept func(name string, allow config.AllowClass) error
-
-	drag dialogs.FieldGesture
 }
 
 // NewProfileDialog creates the dialog.
@@ -63,6 +61,12 @@ func NewProfileDialog() *ProfileDialog {
 	}
 	d.ddAllow = widgets.NewDropDown(label("Allowed Operations"), items, profileValueWidth)
 	d.focusable = []focusable{d.fName, d.ddAllow}
+	d.ring = dialogs.FieldRing{
+		Fields:  func() []focusable { return d.focusable },
+		Buttons: func() []string { return profileButtons },
+		Press:   d.doButton,
+		Dismiss: d.Hide,
+	}
 	return d
 }
 
@@ -75,43 +79,8 @@ func (d *ProfileDialog) ShowProfile(conn config.Connection, onAccept func(string
 	d.fName.SetValue(conn.Profile)
 	d.fName.SelectAll()
 	d.ddAllow.SetSelected(max(slices.Index(config.AllAllowClasses(), conn.Ceiling()), 0))
-	d.btnFocus = 0
-	d.drag.Clear()
 	d.ModalDialog.Show()
-	d.setFocus(0)
-}
-
-func (d *ProfileDialog) setFocus(i int) {
-	d.onButtons = false
-	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
-}
-
-func (d *ProfileDialog) focused() focusable {
-	if d.onButtons || d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
-		return nil
-	}
-	return d.focusable[d.focusIdx]
-}
-
-// step moves focus dir along the ring; past either end is the button row.
-func (d *ProfileDialog) step(dir int) {
-	if i := d.focusIdx + dir; i >= 0 && i < len(d.focusable) {
-		d.setFocus(i)
-		return
-	}
-	d.onButtons = true
-	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
-}
-
-// leaveButtons is Tab/Backtab off the button row, back onto the first or last
-// field; the highlight returns to OK, which Enter in a field fires.
-func (d *ProfileDialog) leaveButtons(dir int) {
-	d.btnFocus = 0
-	if dir > 0 {
-		d.setFocus(0)
-	} else {
-		d.setFocus(len(d.focusable) - 1)
-	}
+	d.ring.Reset()
 }
 
 func (d *ProfileDialog) allow() config.AllowClass {
@@ -134,8 +103,8 @@ func (d *ProfileDialog) accept() {
 	d.Hide()
 }
 
-func (d *ProfileDialog) doButton() {
-	if d.btnFocus == 0 {
+func (d *ProfileDialog) doButton(btn int) {
+	if btn == 0 {
 		d.accept()
 		return
 	}
@@ -148,9 +117,8 @@ func (d *ProfileDialog) Draw(s tcell.Screen) {
 		return
 	}
 	d.DrawBase(s)
-	p := theme.Active()
-	text := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
-	dim := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+	text := theme.StyleDialog()
+	dim := theme.StyleDialogDim()
 	inner := d.InnerRect()
 	x, w := inner.X+1, inner.W-2
 
@@ -163,115 +131,51 @@ func (d *ProfileDialog) Draw(s tcell.Screen) {
 	core.DrawTextClipped(s, x, inner.Y+7, w, dim, "An empty name makes it a plain recent connection.")
 	if d.status != "" {
 		core.DrawTextClipped(s, x, d.ButtonRowY()-2, w,
-			tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError), d.status)
+			theme.StyleDialogError(), d.status)
 	}
 
 	d.DrawSeparator(s)
 	active := -1
-	if d.onButtons {
-		active = d.btnFocus
+	if d.ring.OnButtons() {
+		active = d.ring.BtnFocus
 	}
 	d.DrawButtons(s, profileButtons, active)
 	d.ddAllow.DrawOverlay(s)
 }
 
-// HandleKey routes keyboard events. Enter in a field is OK, except on an open
-// dropdown, where it picks the item.
+// HandleKey is the focus ring (dialogs.FieldRing.Key): the focused widget
+// gets every key first, so an open dropdown takes Escape and the arrows, and a
+// closed one opens on Enter; Enter anywhere else is OK. Editing the name
+// clears a refusal shown from the last OK.
 func (d *ProfileDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	if d.onButtons {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(profileButtons), nil, d.doButton, d.Hide, d.leaveButtons)
-	}
-	if d.ddAllow.OverlayActive() {
-		if ev.Key() == tcell.KeyEscape {
-			// Close the list, not the dialog.
-			d.ddAllow.HandleKey(ev)
-			return true
-		}
-		d.ddAllow.HandleKey(ev)
-		return true
-	}
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		d.Hide()
-		return true
-	case tcell.KeyTab:
-		d.step(+1)
-		return true
-	case tcell.KeyBacktab:
-		d.step(-1)
-		return true
-	case tcell.KeyEnter:
-		d.btnFocus = 0
-		d.accept()
-		return true
-	}
-	switch w := d.focused().(type) {
-	case *widgets.InputField:
+	name := d.fName.Value()
+	d.ring.Key(ev)
+	if d.fName.Value() != name {
 		d.status = ""
-		return w.HandleKey(ev)
-	case *widgets.DropDown:
-		return w.HandleKey(ev)
 	}
 	return true
 }
 
-// HandleMouse routes mouse events.
+// HandleMouse is the focus ring's (dialogs.RingMouse).
 func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	if ev.Buttons() == tcell.ButtonNone {
-		d.ddAllow.HandleMouse(ev)
-		d.drag.Release(ev)
-	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	if dialogs.ForwardReleaseToFocusedField(ev, d.focused()) {
-		return true
-	}
-	if d.drag.Replay(ev) {
-		return true
-	}
-	if ev.Buttons() != tcell.Button1 {
-		return true
-	}
-	// The open list overlays the rows below it, the button row included.
-	if d.ddAllow.HandleMouse(ev) {
-		d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.ddAllow))
-		return true
-	}
-	if i := d.ButtonClicked(ev, profileButtons); i >= 0 {
-		d.btnFocus = i
-		d.doButton()
-		return true
-	}
-	if mx, my := ev.Position(); d.fName.HitTest(mx, my) {
-		d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fName))
-		d.drag.Claim(d.fName, ev)
-	}
-	return true
+	return d.ring.Mouse(ev, &d.ModalDialog)
 }
 
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on the
-// name field focuses it; nothing does while the Allowed Operations list is
-// open (core.ClipboardFocuser).
+// name field — the ring's one text field — focuses it; nothing does while the
+// Allowed Operations list is open (dialogs.ClipboardFieldAt).
 func (d *ProfileDialog) FocusClipboardTargetAt(x, y int) bool {
-	if d.ddAllow.OverlayActive() || !d.fName.HitTest(x, y) {
-		return false
-	}
-	d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fName))
-	return true
+	return d.ring.FocusClipboardTargetAt(x, y)
 }
 
 // FocusedClipboardTarget implements core.ClipboardHost: the name field while
 // it has focus.
 func (d *ProfileDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.focused() == focusable(d.fName) {
-		return d.fName
-	}
-	return nil
+	return d.ring.FocusedClipboardTarget()
 }

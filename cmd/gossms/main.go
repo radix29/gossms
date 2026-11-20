@@ -158,7 +158,7 @@ func printVersion(w io.Writer) {
 // App.Run's deferred screen.Fini and log it plus a short line on the restored
 // screen. Query panels with unsaved text go to config.RecoveredDir via
 // App.EmergencySave and the files are named. Background goroutines use
-// App.safego/recoverPanic.
+// App.safego/safegoRepair/fanOut (tuikit's loop.Runner).
 func run(app *tui.App) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

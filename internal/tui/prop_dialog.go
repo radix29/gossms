@@ -344,51 +344,53 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 // Syntax, Estimate Rows, Rebuild, ...), which act immediately and independently
 // of OK/Cancel/Apply. Not tied to a page's dirty state; callers needing a value
 // out of fn capture it in an outer variable.
-func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone func(err error)) {
-	d.app.safego("a properties page action", d.pageActionBody(fn, onDone))
-}
-
-// pageActionBody is the goroutine body runPageAction and runPageActionOnce hand
-// to safego: one round trip bounded by propFetchTimeout, reported on the UI
-// goroutine. They differ only in what happens on a panic.
 //
 // d.ctx is read here on the UI goroutine, not inside the closure: show() rewrites
 // it for the next showing, so reading it on the goroutine is a data race, and an
 // action outliving its showing would run under the new context instead of being
 // cancelled with its own.
-func (d *PropDialog) pageActionBody(fn func(ctx context.Context) error, onDone func(err error)) func() {
+func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone func(err error)) {
 	sessionCtx := d.ctx
-	return func() {
+	d.app.safego("a properties page action", func() {
 		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
 		err := fn(ctx)
 		d.post(func() { onDone(err) })
-	}
+	})
 }
 
 // runPageActionOnce is runPageAction with an in-flight latch, for a button that
-// writes its result into captured variables. Without it a second click while the
-// first round trip is out puts two goroutines in flight writing the same variable
-// and filling the same grid, so whichever finishes last wins, possibly the older
-// request.
-//
-// inFlight is a plain bool because both halves run on the UI goroutine: the click
-// handler, and onDone via d.post.
-//
-// safegoRepair, not safego, because of the latch: onDone clears it, and a panic
-// unwinds past onDone, leaving the button refusing every later click for the
-// dialog's lifetime.
+// writes its result into captured variables (goPageActionOnce).
 func (d *PropDialog) runPageActionOnce(inFlight *bool, fn func(ctx context.Context) error, onDone func(err error)) {
-	if *inFlight {
-		return
-	}
-	*inFlight = true
-	d.app.safegoRepair("a properties page action",
-		func() { *inFlight = false },
-		d.pageActionBody(fn, func(err error) {
-			*inFlight = false
+	goPageActionOnce(d.app, "a properties page action", inFlight, d.ctx, func() context.Context { return d.ctx }, fn, onDone)
+}
+
+// goPageActionOnce is the single-flight page action PropDialog and
+// newObjectDialog share: fn runs in the background under propFetchTimeout,
+// onDone on the UI goroutine. Without the latch a second click while the first
+// round trip is out puts two goroutines in flight writing the same variable and
+// filling the same grid, so whichever finishes last wins, possibly the older
+// request. loop.Runner.GoOnce owns the latch, so a panic in fn releases it
+// rather than leaving the button refusing every later click.
+//
+// sessionCtx is the dialog's showing context, read by the caller on the UI
+// goroutine (see runPageAction); current reads the dialog's context again when
+// the result arrives. A result for a showing since closed or reopened is
+// dropped: each showing builds its forms afresh with its own latch, so the rows
+// onDone would fill are no longer on screen.
+func goPageActionOnce(app *App, what string, inFlight *bool, sessionCtx context.Context, current func() context.Context,
+	fn func(ctx context.Context) error, onDone func(err error)) {
+	app.runner().GoOnce(inFlight, what, func() func() {
+		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
+		defer cancel()
+		err := fn(ctx)
+		return func() {
+			if current() != sessionCtx {
+				return
+			}
 			onDone(err)
-		}))
+		}
+	})
 }
 
 // asyncStatusButton returns a button that runs fn via runPageAction, showing

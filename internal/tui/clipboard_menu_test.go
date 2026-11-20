@@ -124,23 +124,23 @@ func TestRightClickOnADisabledFieldOpensNoClipboardMenu(t *testing.T) {
 	}
 }
 
-// FilterDialog has its own hit test over its rows; it skips a disabled value
-// field like dialogs.ClipboardFieldAt does.
+// FilterDialog's hit test (dialogs.ClipboardFieldAt, through its FieldRing)
+// skips a disabled value field.
 func TestFilterDialogRightClickSkipsADisabledValueField(t *testing.T) {
 	d := showTestFilterDialogOnScreen(t, 120, 30)
 	v := d.rows[1].value
 	v.SetEnabled(false)
-	before := d.focusIdx
+	before := d.ring.FocusIdx
 	r := v.Bounds()
 	if d.FocusClipboardTargetAt(v.InputX()+1, r.Y) {
 		t.Error("a right-click on a disabled value field was taken for the clipboard")
 	}
-	if d.focusIdx != before {
-		t.Errorf("focusIdx = %d, want %d unchanged", d.focusIdx, before)
+	if d.ring.FocusIdx != before {
+		t.Errorf("focusIdx = %d, want %d unchanged", d.ring.FocusIdx, before)
 	}
 	v.SetEnabled(true)
-	if !d.FocusClipboardTargetAt(v.InputX()+1, r.Y) || d.focusIdx != 3 {
-		t.Errorf("an enabled value field: focusIdx = %d, want 3", d.focusIdx)
+	if !d.FocusClipboardTargetAt(v.InputX()+1, r.Y) || d.ring.FocusIdx != 3 {
+		t.Errorf("an enabled value field: focusIdx = %d, want 3", d.ring.FocusIdx)
 	}
 }
 
@@ -165,12 +165,11 @@ func TestRightClickOnAnOpenDropdownListOpensNoClipboardMenu(t *testing.T) {
 	}
 }
 
-// FilterDialog's own hit test refuses too while an operator list is open over
-// the value fields of the rows below.
+// FilterDialog's hit test (its FieldRing's) refuses too while an operator list
+// is open over the value fields of the rows below.
 func TestFilterDialogRightClickIgnoredWhileAnOperatorListIsOpen(t *testing.T) {
 	d := showTestFilterDialogOnScreen(t, 120, 30)
-	d.focusIdx = 0
-	d.syncFocus()
+	d.ring.SetFocus(0)
 	d.rows[0].op.HandleKey(tcell.NewEventKey(tcell.KeyF4, "", tcell.ModNone))
 	if !d.rows[0].op.OverlayActive() {
 		t.Fatal("setup: F4 did not open the operator list")
@@ -179,8 +178,8 @@ func TestFilterDialogRightClickIgnoredWhileAnOperatorListIsOpen(t *testing.T) {
 	if d.FocusClipboardTargetAt(v.InputX()+1, v.Bounds().Y) {
 		t.Error("a right-click through the open operator list focused a value field")
 	}
-	if d.focusIdx != 0 {
-		t.Errorf("focusIdx = %d, want 0 unchanged", d.focusIdx)
+	if d.ring.FocusIdx != 0 {
+		t.Errorf("focusIdx = %d, want 0 unchanged", d.ring.FocusIdx)
 	}
 }
 
@@ -204,12 +203,12 @@ func TestReadOnlyViewsGetACopyOnlyMenu(t *testing.T) {
 	// them and were taken as editable, so their menu offered Cut and Paste.
 	a := newClipboardTestApp()
 	for _, target := range []clipboardTarget{&DeviceCodeDialog{}, planview.New(),
-		NewPlanPanel(a, "Plan", loadTestPlan(t)), a.newDetailBrowser()} {
+		NewPlanPanel(a, "Plan", loadTestPlan(t)).FocusedClipboardTarget(), a.newDetailBrowser().grid} {
 		if target.CanCut() || target.CanPaste() {
 			t.Errorf("%T: CanCut=%v CanPaste=%v, want both false", target, target.CanCut(), target.CanPaste())
 		}
 	}
-	a.showClipboardMenu(a.newDetailBrowser(), 0, 0)
+	a.showClipboardMenu(a.newDetailBrowser().grid, 0, 0)
 	if order, _ := menuState(a); slices.Contains(order, "Cut") || slices.Contains(order, "Paste") {
 		t.Errorf("Object Explorer Details menu = %v, want no Cut or Paste", order)
 	}
@@ -242,11 +241,7 @@ func TestLogViewerFilterIsAClipboardTarget(t *testing.T) {
 	if got := a.activeClipboardTarget(); got != clipboardTarget(lv.filter) {
 		t.Fatalf("target = %T, want the filter box", got)
 	}
-	a.beginBracketedPaste()
-	for _, r := range "error" {
-		a.paste.bracket.Key(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
-	}
-	a.endBracketedPaste()
+	bracketedPaste(a, "error")
 	if lv.filter.Value() != "error" {
 		t.Errorf("filter = %q after a terminal paste, want %q", lv.filter.Value(), "error")
 	}
@@ -256,14 +251,79 @@ func TestLogViewerFilterIsAClipboardTarget(t *testing.T) {
 	}
 }
 
-// A panel that is its own clipboard target (Plan, Query Store, …) is asked:
-// Ctrl+C there used to reach nothing.
-func TestAPanelThatIsAClipboardTargetIsAsked(t *testing.T) {
+// A panel answering core.ClipboardHost (Plan, Query Store, …) is asked, and
+// its answer is the widget itself: Ctrl+C there used to reach nothing.
+func TestAPanelThatIsAClipboardHostIsAsked(t *testing.T) {
 	a := newClipboardTestApp()
 	pp := NewPlanPanel(a, "Plan", loadTestPlan(t))
 	a.panels.AddPanel(pp)
 	a.focus = focusOnPanels
-	if got := a.activeClipboardTarget(); got != clipboardTarget(pp) {
-		t.Errorf("target = %T, want the plan panel", got)
+	if got := a.activeClipboardTarget(); got != clipboardTarget(pp.planView) {
+		t.Errorf("target = %T, want the plan panel's PlanView", got)
+	}
+}
+
+// A panel of several grids names the one with the keyboard, a different target
+// per grid. That is what lets clipboard.Dispatcher.Deliver's identity check drop a paste aimed at
+// one grid that arrives after focus moved to the other, with no
+// core.ClipboardTargetTokener; a panel answering with itself would need one.
+// The target being the grid itself also gives Ctrl+C there the results grid's
+// behaviour: with no viewer open it copies the cell under the cursor
+// (copySelection's DataGrid branch), where the forwarding panel copied nothing.
+func TestAGridPanelNamesItsFocusedGrid(t *testing.T) {
+	a := newClipboardTestApp()
+	plan := mustParsePlan(t, comparePlanXML("IX_date", 10, 1))
+	p := NewPlanComparePanel(a, "Compare", plan, plan)
+	a.panels.AddPanel(p)
+	a.focus = focusOnPanels
+
+	p.setFocus(true)
+	if got := a.activeClipboardTarget(); got != clipboardTarget(p.ops) {
+		t.Errorf("operators focused: target = %T, want the operators grid", got)
+	}
+	p.setFocus(false)
+	if got := a.activeClipboardTarget(); got != clipboardTarget(p.props) {
+		t.Errorf("properties focused: target = %T, want the properties grid", got)
+	}
+
+	qs, _, _ := newQSPanel(t, "Top Resource Consuming Queries")
+	qs.setFocus(qsFocusPlans)
+	if got := qs.FocusedClipboardTarget(); got != clipboardTarget(qs.plansGrid) {
+		t.Errorf("Query Store plans focused: target = %T, want the plans grid", got)
+	}
+	qs.setFocus(qsFocusReport)
+	if got := qs.FocusedClipboardTarget(); got != clipboardTarget(qs.grid) {
+		t.Errorf("Query Store report focused: target = %T, want the report grid", got)
+	}
+
+	rm := NewReplicationMonitorPanel(newTestApp(), nil)
+	if got := rm.FocusedClipboardTarget(); got == nil || got != clipboardTarget(rm.focusedGrid()) {
+		t.Errorf("Replication Monitor: target = %T, want its focused grid", got)
+	}
+}
+
+// A nil grid is a nil target, not a non-nil interface holding a nil pointer,
+// which activeClipboardTarget's callers would call through.
+func TestGridClipboardTargetOfANilGridIsNil(t *testing.T) {
+	if got := gridClipboardTarget(nil); got != nil {
+		t.Errorf("gridClipboardTarget(nil) = %#v, want a nil interface", got)
+	}
+}
+
+// Object Explorer Details is a target only while its grid's "Show Value"
+// viewer is open: otherwise Ctrl+C there leaves the clipboard alone rather
+// than copying the cell under the cursor, as it always has.
+func TestDetailBrowserIsATargetOnlyWithItsViewerOpen(t *testing.T) {
+	a := newClipboardTestApp()
+	db := a.newDetailBrowser()
+	db.SetBounds(0, 0, 100, 30)
+	db.grid.SetData([]string{"Name"}, [][]string{{"alpha"}})
+	if got := db.FocusedClipboardTarget(); got != nil {
+		t.Errorf("no viewer open: target = %T, want nil", got)
+	}
+	db.grid.ShowValue()
+	db.grid.SelectAll()
+	if got := db.FocusedClipboardTarget(); got != clipboardTarget(db.grid) {
+		t.Errorf("viewer open: target = %T, want the grid", got)
 	}
 }

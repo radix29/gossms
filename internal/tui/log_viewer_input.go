@@ -76,7 +76,7 @@ func (lv *LogViewer) HandleKey(ev *tcell.EventKey) bool {
 		return false
 	}
 	if lv.grid.SelectedRow() != beforeRow {
-		lv.detailScroll = 0
+		lv.detail.Scroll = 0
 	}
 	return true
 }
@@ -197,7 +197,7 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 			lv.dragZone.Arm(ev, lZoneGrid)
 			lv.setFilterFocused(false)
 			if lv.grid.SelectedRow() != beforeRow {
-				lv.detailScroll = 0
+				lv.detail.Scroll = 0
 			}
 			return true
 		}

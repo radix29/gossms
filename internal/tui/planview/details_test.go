@@ -63,14 +63,14 @@ func TestDetailsPane_WheelScrolls(t *testing.T) {
 	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelDown, tcell.ModNone)) {
 		t.Fatal("HandleMouse(WheelDown) over the details pane returned false")
 	}
-	if v.detailsScroll != 1 {
-		t.Errorf("detailsScroll = %d after WheelDown, want 1", v.detailsScroll)
+	if v.detailsPane.Scroll != 1 {
+		t.Errorf("detailsPane.Scroll = %d after WheelDown, want 1", v.detailsPane.Scroll)
 	}
 	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelUp, tcell.ModNone)) {
 		t.Fatal("HandleMouse(WheelUp) over the details pane returned false")
 	}
-	if v.detailsScroll != 0 {
-		t.Errorf("detailsScroll = %d after WheelUp, want back to 0", v.detailsScroll)
+	if v.detailsPane.Scroll != 0 {
+		t.Errorf("detailsPane.Scroll = %d after WheelUp, want back to 0", v.detailsPane.Scroll)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestNodePropsForDisplay_NilNode(t *testing.T) {
 
 // TestBottomProperties_WheelScrolls checks the bottom Properties section's
 // scroll offset is actually reachable: without a wheel handler driving
-// propsSt.scroll, any node with more attributes than the fixed-height
+// propsPane.Scroll, any node with more attributes than the fixed-height
 // bottom section is unreachable past the last visible row.
 func TestBottomProperties_WheelScrolls(t *testing.T) {
 	v := newTreeTabView(t)
@@ -140,14 +140,14 @@ func TestBottomProperties_WheelScrolls(t *testing.T) {
 	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelDown, tcell.ModNone)) {
 		t.Fatal("HandleMouse(WheelDown) over the bottom Properties section returned false")
 	}
-	if v.propsSt.scroll != 1 {
-		t.Errorf("propsSt.scroll = %d after WheelDown, want 1", v.propsSt.scroll)
+	if v.propsPane.Scroll != 1 {
+		t.Errorf("propsPane.Scroll = %d after WheelDown, want 1", v.propsPane.Scroll)
 	}
 	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelUp, tcell.ModNone)) {
 		t.Fatal("HandleMouse(WheelUp) over the bottom Properties section returned false")
 	}
-	if v.propsSt.scroll != 0 {
-		t.Errorf("propsSt.scroll = %d after WheelUp, want back to 0", v.propsSt.scroll)
+	if v.propsPane.Scroll != 0 {
+		t.Errorf("propsPane.Scroll = %d after WheelUp, want back to 0", v.propsPane.Scroll)
 	}
 }
 

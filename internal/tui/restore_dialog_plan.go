@@ -65,7 +65,7 @@ func (d *RestoreDialog) planSummary() string {
 		}
 	}
 	if logs > 0 {
-		parts = append(parts, fmt.Sprintf("%d log%s", logs, plural(logs)))
+		parts = append(parts, fmt.Sprintf("%d log%s", logs, pluralSuffix(logs)))
 	}
 	if plan.TailLog {
 		parts = append(parts, "the tail log")
@@ -76,13 +76,6 @@ func (d *RestoreDialog) planSummary() string {
 // planError is a PlanRestore refusal without gosmo's prefix, for the status line.
 func planError(err error) string {
 	return strings.TrimPrefix(err.Error(), "gosmo: plan restore: ")
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 // tailLogDevice is where the tail-log backup of dbName goes: SSMS's

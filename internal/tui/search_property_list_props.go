@@ -54,7 +54,7 @@ func searchPropertyRows(props []gosmo.SearchProperty) [][]string {
 // searchPropertyEdit is one row of the Properties page.
 type searchPropertyEdit struct {
 	prop gosmo.SearchProperty
-	pendingState
+	propsheet.PendingState
 }
 
 // guidPattern is PROPERTY_SET_GUID's shape; the server refuses anything else
@@ -62,7 +62,7 @@ type searchPropertyEdit struct {
 var guidPattern = regexp.MustCompile(`^\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?$`)
 
 // pageSearchProperties is the list's registered properties, master-detail
-// over pendingEdits: the four fields to Add, Remove for the selected row. A
+// over propsheet.PendingEdits: the four fields to Add, Remove for the selected row. A
 // property is identified by name within the list (ALTER … DROP names it), so
 // Apply drops before it adds and a removed name can be registered again.
 func pageSearchProperties(sc *db.ServerConn, dbName string, find func(context.Context) (*gosmo.SearchPropertyList, error)) propPage {
@@ -84,7 +84,7 @@ func pageSearchProperties(sc *db.ServerConn, dbName string, find func(context.Co
 			edits := newPendingEdits(databaseCollation(p.Database()), loaded,
 				func(e *searchPropertyEdit) string { return e.prop.Name }, nil, nil)
 			rowsFor := func() [][]string {
-				vis := edits.visible()
+				vis := edits.Visible()
 				out := make([]gosmo.SearchProperty, len(vis))
 				for k, e := range vis {
 					out[k] = e.prop
@@ -110,33 +110,33 @@ func pageSearchProperties(sc *db.ServerConn, dbName string, find func(context.Co
 					hint.SetError(err.Error())
 					return
 				}
-				if edits.listed(prop.Name) {
+				if edits.Listed(prop.Name) {
 					hint.SetError("A property named " + prop.Name + " is already listed.")
 					return
 				}
 				hint.Clear()
-				edits.add(&searchPropertyEdit{prop: prop})
+				edits.Add(&searchPropertyEdit{prop: prop})
 				for _, r := range []*propsheet.TextRow{nameField, guidField, intField, descField} {
 					r.SetValue("")
 				}
-				redraw(len(edits.visible()) - 1)
+				redraw(len(edits.Visible()) - 1)
 			})
 			removeBtn := widgets.NewButton("Remove", func() {
-				vis := edits.visible()
+				vis := edits.Visible()
 				i := grid.SelectedRow()
 				if i < 0 || i >= len(vis) {
 					hint.Set("Select a property in the grid to remove it.")
 					return
 				}
 				hint.Clear()
-				edits.remove(vis[i])
+				edits.Remove(vis[i])
 				redraw(max(0, i-1))
 			})
 
 			gridRow := propsheet.NewGridRow(grid, 10)
-			gridRow.DirtyFn = edits.dirty
+			gridRow.DirtyFn = edits.Dirty
 			gridRow.RevertFn = func() {
-				edits.revert()
+				edits.Revert()
 				redraw(0)
 			}
 			f := propsheet.NewForm(
@@ -153,16 +153,16 @@ func pageSearchProperties(sc *db.ServerConn, dbName string, find func(context.Co
 			name := p.Name
 			return f, func(ctx context.Context) error {
 				l := sc.Server.DatabaseRef(dbName).FullText().SearchPropertyListRef(name)
-				rows := edits.all()
+				rows := edits.All()
 				for _, e := range rows {
-					if e.removing && !e.isNew {
+					if e.Removing && !e.IsNew {
 						if err := l.DropProperty(ctx, e.prop.Name); err != nil {
 							return err
 						}
 					}
 				}
 				for _, e := range rows {
-					if e.isNew {
+					if e.IsNew {
 						if err := l.AddProperty(ctx, e.prop); err != nil {
 							return err
 						}

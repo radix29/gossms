@@ -3,7 +3,6 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls"
-	"github.com/radix29/tuikit/core"
 )
 
 // replication_monitor_panel_draw.go is Replication Monitor's toolbar and
@@ -57,15 +56,15 @@ func (p *ReplicationMonitorPanel) layoutTools() {
 	p.toolEnd = p.tools.Layout(p.toolRect, "")
 }
 
-func (p *ReplicationMonitorPanel) popMenuAt(r core.Rect, items []controls.MenuItem) {
-	if r.IsZero() {
-		r = core.Rect{X: p.rect.X, Y: p.rect.Y}
-	}
-	p.app.contextMenu.Show(r.X, r.Y+1, items)
+// popMenuAt shows items under tool cell i (i < 0: More), or at the panel's
+// top-left if that cell didn't fit.
+func (p *ReplicationMonitorPanel) popMenuAt(i int, items []controls.MenuItem) {
+	x, y := p.tools.MenuAnchor(i, p.rect)
+	p.app.contextMenu.Show(x, y, items)
 }
 
 func (p *ReplicationMonitorPanel) showRateMenu() {
-	p.popMenuAt(p.tools.Cells[rmToolAuto].Rect, controls.ChoiceItems(rmRates, rmRates[p.rateIdx],
+	p.popMenuAt(rmToolAuto, controls.ChoiceItems(rmRates, rmRates[p.rateIdx],
 		func(r rmRate) string { return r.label },
 		func(r rmRate) {
 			for i := range rmRates {
@@ -81,7 +80,7 @@ func (p *ReplicationMonitorPanel) showRateMenu() {
 }
 
 func (p *ReplicationMonitorPanel) showWindowMenu() {
-	p.popMenuAt(p.tools.Cells[rmToolHistory].Rect, controls.ChoiceItems(rmWindows, rmWindows[p.windowIdx],
+	p.popMenuAt(rmToolHistory, controls.ChoiceItems(rmWindows, rmWindows[p.windowIdx],
 		func(w rmWindow) string { return w.label },
 		func(w rmWindow) {
 			for i := range rmWindows {

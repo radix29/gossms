@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/dialogs"
 )
 
 // dialog_common.go holds the goSSMS-specific behaviours shared by the
@@ -35,31 +33,6 @@ func runProgressButton(task *Task, btnFocus int, hide func()) {
 	case 1:
 		task.Cancel()
 	}
-}
-
-// progressModeKey is the whole keyboard of the Backup and Restore progress views:
-// Escape hides, Enter fires the focused button, Tab and Backtab rotate between
-// them.
-//
-// btnFocus is clamped on Enter rather than on every rotation, because the button
-// list shrinks under the view — Cancel disappears the moment the task finishes —
-// and a focus index recorded against the longer list would index past the shorter.
-//
-// It always reports handled: a progress view is modal over its dialog, and a key
-// falling through to the form underneath would edit a page the user cannot see.
-func progressModeKey(ev *tcell.EventKey, btnFocus *int, buttons []string, hide, fire func()) bool {
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		hide()
-	case tcell.KeyEnter:
-		*btnFocus = min(*btnFocus, len(buttons)-1)
-		fire()
-	case tcell.KeyTab:
-		*btnFocus = dialogs.NextFocus(*btnFocus, len(buttons))
-	case tcell.KeyBacktab:
-		*btnFocus = dialogs.PrevFocus(*btnFocus, len(buttons))
-	}
-	return true
 }
 
 // confirmDiscardChanges asks before throwing away a property page's unsaved

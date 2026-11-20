@@ -1,44 +1,39 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"log"
-	"runtime/debug"
-	"runtime/pprof"
-	"sync"
+
+	"github.com/radix29/tuikit/loop"
 )
 
-// safego runs fn on a new goroutine, turning a panic into a status-bar message and
-// a log entry instead of a process-wide crash.
+// The mechanism — the traceback label, the recover, the repair-before-report
+// order and the bounded per-item-recovering pool — is tuikit's loop.Runner
+// (its doc and loop/runner_test.go hold the rules). What stays here is the
+// reporting: where the stack goes and what the status bar says.
 //
-// Every background operation in this package goes through it (or fanOut, which
-// recovers the same way; fanOut's doc names the one bare goroutine). The UI goroutine
-// cannot recover a panic on a background one, so it would take the process down:
-// Run's `defer screen.Fini()` never runs, the terminal is left in raw mode on the
-// alternate screen, and the user's unsaved query text and the trace are gone.
+// Every background operation in this package goes through safego/safegoRepair
+// (or fanOut; fanOut's doc names the one bare goroutine). The UI goroutine
+// cannot recover a panic on a background one, so it would take the process
+// down: Run's `defer screen.Fini()` never runs, the terminal is left in raw mode
+// on the alternate screen, and the user's unsaved query text and the trace are
+// gone.
 //
 // Not theoretical: go-mssqldb's makeGoLangTypeName panics on an unknown column
 // type ID, and query.scanResultSet calls DatabaseTypeName() on every column, so a
 // column type newer than the pinned driver reaches it.
-//
-// The recovered panic is reported through App.postAndWake onto the UI goroutine;
-// the stack goes to the log file (config.LogFilePath), as the screen has no room.
-func (a *App) safego(what string, fn func()) {
-	a.safegoRepair(what, nil, fn)
+
+// runner is the loop.Runner every method below delegates to. Built per call,
+// not cached on App: it holds no state, so a fresh one costs an allocation and
+// needs no lazy initialisation for safego calls from background goroutines to
+// race on, and a bare &App{} in a test has one.
+func (a *App) runner() *loop.Runner {
+	return &loop.Runner{Post: a.postAndWake, Report: a.reportPanic, Workers: maxRowFetchConcurrency}
 }
 
-// labelGoroutine tags the calling goroutine with what, which Go 1.27 prints in the
-// header of every traceback it appears in (the recovered stack reportPanic logs, a
-// goroutine dump, the goroutineleak profile). Without it each is headed by an
-// anonymous func literal naming no background operation.
-//
-// Set directly, not through pprof.Do, whose deferred restore runs while the panic
-// is still unwinding (before the recover below) and would strip the label from the
-// one stack that has to carry it.
-func labelGoroutine(what string) {
-	pprof.SetGoroutineLabels(pprof.WithLabels(context.Background(), pprof.Labels("op", what)))
-}
+// safego runs fn on a new goroutine, turning a panic into a status-bar message and
+// a log entry instead of a process-wide crash.
+func (a *App) safego(what string, fn func()) { a.runner().Go(what, fn) }
 
 // safegoRepair is safego for a background operation that latched UI state before
 // starting: a busy flag, a "loading" placeholder, a dimmed toolbar. repair runs on
@@ -55,102 +50,31 @@ func labelGoroutine(what string) {
 // the panic rather than whatever repair sets. Same ordering and reason as
 // backfillRow's recovery (detail_browser_backfill.go).
 func (a *App) safegoRepair(what string, repair func(), fn func()) {
-	go func() {
-		labelGoroutine(what)
-		defer func() {
-			r := recover()
-			if r == nil {
-				return
-			}
-			if repair != nil {
-				a.postAndWake(repair)
-			}
-			a.reportPanic(r, what)
-		}()
-		fn()
-	}()
-}
-
-// recoverPanic is the bare deferred recovery, for a goroutine that can't be a bare
-// func(): `defer a.recoverPanic("what this was doing")`.
-func (a *App) recoverPanic(what string) {
-	if r := recover(); r != nil {
-		a.reportPanic(r, what)
-	}
+	a.runner().GoRepair(what, repair, fn)
 }
 
 // fanOut runs work(i) for every i in [0, n) across a bounded pool of
-// maxRowFetchConcurrency goroutines and returns once every call has finished. It
-// is the one worker pool in this package (the Detail Browser's per-row backfill
-// and the Log File Viewer's per-file reads both use it) and one of two places
-// that spawn a goroutine outside safego/safegoRepair, so it provides both halves
-// of what they give by hand: the traceback label and the recover. The other is
-// App.FlushSaves' waiter on savesInFlight, which runs after the event loop is
-// gone and does nothing that can panic.
+// maxRowFetchConcurrency goroutines and returns once every call has finished
+// (loop.Runner.FanOut). It is the one worker pool in this package (the Detail
+// Browser's per-row backfill and the Log File Viewer's per-file reads both use
+// it) and one of two places that spawn a goroutine outside safego/safegoRepair;
+// it labels and recovers its workers itself. The other is App.FlushSaves' waiter
+// on savesInFlight, which runs after the event loop is gone and does nothing
+// that can panic.
 //
-// Each call is recovered on its own: a panic in one item reports and moves on
-// rather than taking down its worker and every item that worker still owes.
-// onPanic (optional) runs on the worker for the panicked item *before* fanOut can
-// return, because a caller acting on the results at once needs the repair already
-// queued. The Detail Browser caches its rows then, and a row whose fetch died
-// would otherwise stay cached with its "..." placeholder, since reselecting the
-// node is a cache hit that never refetches.
-//
-// The queue is filled and closed before a worker exists, so no send can block on
-// one. Handing indices out from this goroutine would hang the caller forever if a
-// panic escaped the per-item recovery and took every worker down. n ints is a few
-// KB at the largest sizes this runs on.
-//
-// A fixed set of workers pulling indices off a channel, rather than n goroutines
-// each waiting on a token: the token form parks hundreds of idle goroutines on a
-// folder with hundreds of entries.
+// Each call is recovered on its own. onPanic (optional) runs on the worker for
+// the panicked item *before* fanOut can return, because a caller acting on the
+// results at once needs the repair already queued. The Detail Browser caches its
+// rows then, and a row whose fetch died would otherwise stay cached with its
+// "..." placeholder, since reselecting the node is a cache hit that never
+// refetches.
 func (a *App) fanOut(n int, what string, work func(i int), onPanic func(i int)) {
-	if n <= 0 {
-		return
-	}
-	idx := make(chan int, n)
-	for i := range n {
-		idx <- i
-	}
-	close(idx)
-
-	one := func(i int) {
-		defer func() {
-			r := recover()
-			if r == nil {
-				return
-			}
-			if onPanic != nil {
-				onPanic(i)
-			}
-			a.reportPanic(r, what)
-		}()
-		work(i)
-	}
-
-	var wg sync.WaitGroup
-	for range min(n, maxRowFetchConcurrency) {
-		wg.Go(func() {
-			// The per-item recovery above keeps a worker alive; this is the belt under it, for
-			// a panic in onPanic or reportPanic itself. One escaping both is on a background
-			// goroutine where nothing else can catch it: the process dies and Run's
-			// screen.Fini() never restores the terminal.
-			labelGoroutine(what)
-			defer a.recoverPanic(what)
-			for i := range idx {
-				one(i)
-			}
-		})
-	}
-	wg.Wait()
+	a.runner().FanOut(n, what, work, onPanic)
 }
 
-// reportPanic logs r with a stack and puts it on the status bar. Split out of
-// recoverPanic for a deferred recovery with repair work to do first: see fanOut,
-// whose onPanic must fill the row a backfill abandoned before reporting, or the
-// row is cached blank forever.
-func (a *App) reportPanic(r any, what string) {
-	stack := string(debug.Stack())
+// reportPanic is the loop.Runner Report callback: it logs r with the stack the
+// panicking goroutine captured, and puts it on the status bar.
+func (a *App) reportPanic(what string, r any, stack []byte) {
 	log.Printf("panic in %s: %v\n%s", what, r, stack)
 	msg := fmt.Sprintf("Internal error in %s: %v — see the log for details", what, r)
 	a.postAndWake(func() { a.setStatus(msg) })

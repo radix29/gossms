@@ -188,7 +188,6 @@ func (oe *ObjectExplorer) selectedOwner() *explorerNode {
 // place (regroupAll), so every expanded subtree and the selection survive.
 func (a *App) toggleGroupBySchema() {
 	a.groupBySchema = !a.groupBySchema
-	a.menuBar.SetMenus(a.buildMenus())
 	// Before regroupAll, whose reselect (off a retired group) fetches the
 	// folder: every cached grouped folder and group was built in the other mode.
 	a.detailBrowser.InvalidateWhere(a, func(n *explorerNode) bool {

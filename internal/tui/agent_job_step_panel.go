@@ -181,7 +181,7 @@ func (p *jobStepPanel) write(e *jobStepEdit) {
 
 // newStep builds a T-SQL step from the panel; the caller has checked the name.
 func (p *jobStepPanel) newStep() *jobStepEdit {
-	e := &jobStepEdit{isNew: true, subsystem: tsqlSubsystem}
+	e := &jobStepEdit{IsNew: true, subsystem: tsqlSubsystem}
 	p.read(e)
 	return e
 }
@@ -195,14 +195,14 @@ func (p *jobStepPanel) newStep() *jobStepEdit {
 // seed, so that would misfile a typed name as a rename). Callers check
 // preconditions (e.g. a read-only step) first.
 func (p *jobStepPanel) addStep(grid *controls.DataGrid, hint *propsheet.HintRow,
-	cols []string, edits *pendingEdits[*jobStepEdit], rowsFor func() [][]string, sync func()) {
+	cols []string, edits *propsheet.PendingEdits[*jobStepEdit], rowsFor func() [][]string, sync func()) {
 
 	name := p.nameField.Value()
 	if name == "" {
 		hint.Set("Type a step name first.")
 		return
 	}
-	if i := edits.index(name); i >= 0 {
+	if i := edits.Index(name); i >= 0 {
 		// Already present: say so and select it.
 		hint.Set("A step named " + name + " is already listed — its row is selected below.")
 		grid.SetSelectedRow(i)
@@ -210,14 +210,14 @@ func (p *jobStepPanel) addStep(grid *controls.DataGrid, hint *propsheet.HintRow,
 		return
 	}
 	hint.Clear()
-	edits.add(p.newStep())
-	resetGrid(grid, cols, rowsFor(), len(edits.visible())-1)
+	edits.Add(p.newStep())
+	resetGrid(grid, cols, rowsFor(), len(edits.Visible())-1)
 	sync()
 }
 
 // newJobStepEdits is both Steps pages' pending-edit list. collation decides
 // whether a typed name duplicates a listed one: msdb's, which holds the steps.
-func newJobStepEdits(collation string, loaded []*jobStepEdit) *pendingEdits[*jobStepEdit] {
+func newJobStepEdits(collation string, loaded []*jobStepEdit) *propsheet.PendingEdits[*jobStepEdit] {
 	return newPendingEdits(collation, loaded,
 		func(e *jobStepEdit) string { return e.name }, (*jobStepEdit).changed, (*jobStepEdit).reset)
 }
@@ -226,6 +226,6 @@ func newJobStepEdits(collation string, loaded []*jobStepEdit) *pendingEdits[*job
 // but a step renamed in the panel is not checked until here, and
 // sp_add_jobstep / sp_update_jobstep refuse a name the job already has — in
 // New Job after the job and the steps before it were created.
-func jobStepNamesRefusal(edits *pendingEdits[*jobStepEdit]) error {
-	return edits.refusal("step", func(e *jobStepEdit) string { return e.origName })
+func jobStepNamesRefusal(collation string, edits *propsheet.PendingEdits[*jobStepEdit]) error {
+	return pendingRefusal(collation, edits, "step", func(e *jobStepEdit) string { return e.origName })
 }

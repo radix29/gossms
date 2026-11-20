@@ -40,7 +40,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 			}
 			d.ddHistDB = dd
 			d.rebuildFocusable()
-			d.refocus()
+			d.setFocus(d.focusIdx)
 			d.prevHistDB = d.ddHistDB.Value()
 			d.loadHistory(d.prevHistDB)
 			d.autoFillTarget(d.prevHistDB)
@@ -87,7 +87,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 			}
 			d.ddHistSet = widgets.NewDropDown("Backup Set: ", labels, histSetWidth)
 			d.rebuildFocusable()
-			d.refocus()
+			d.setFocus(d.focusIdx)
 			if len(hist) == 0 && deviceless > 0 {
 				// Form mode wraps the status to two lines; keep it inside them.
 				d.setStatusMsg(fmt.Sprintf("No restorable backups for %s — its %d are automated (no device); "+
@@ -216,7 +216,7 @@ func (d *RestoreDialog) deviceForRestore() string { return d.sourceForRestore().
 
 // selectedHeader returns the backup set the inspect view is showing and the
 // restore will target, or nil when there are no headers. The nil return is not
-// decoration: this runs on the UI goroutine, where recoverPanic cannot reach, so an
+// decoration: this runs on the UI goroutine, where safego's recovery cannot reach, so an
 // index into an empty slice takes the process down with the terminal still on the
 // alternate screen. A stale headerIdx falls back to the first set.
 func (d *RestoreDialog) selectedHeader() *gosmo.BackupHeader {

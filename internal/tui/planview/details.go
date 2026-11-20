@@ -10,11 +10,6 @@ import (
 	"github.com/radix29/tuikit/theme"
 )
 
-// propsState holds the bottom Properties section's own scroll position.
-type propsState struct {
-	scroll int
-}
-
 // detailsHeaderText builds a details header's title plus right-aligned scroll
 // indicator, shared by the Tree tab's "Operator Details" and the Plan tab's
 // "Properties".
@@ -52,44 +47,38 @@ func drawDetailsHeader(s tcell.Screen, rect core.Rect, title string, canUp, canD
 func (v *PlanView) scrollDetails(delta int) {
 	n := v.selectedNode()
 	total := len(detailLines(n, v.currentStatement(), v.liveCountersPtr(n)))
-	maxScroll := max(0, total-v.detailsContentRect.H)
-	v.detailsScroll = core.Clamp(v.detailsScroll+delta, 0, maxScroll)
+	v.detailsPane.ScrollBy(delta, total, v.detailsContentRect.H)
 }
 
 // scrollBottomProps shifts the bottom Properties scroll by delta rows, clamped
 // to its (Warnings-inclusive) row count; mirrors scrollDetails.
 func (v *PlanView) scrollBottomProps(delta int) {
 	total := len(nodePropsForDisplay(v.selectedNode()))
-	maxScroll := max(0, total-v.bottomRect.H)
-	v.propsSt.scroll = core.Clamp(v.propsSt.scroll+delta, 0, maxScroll)
+	v.propsPane.ScrollBy(delta, total, v.bottomRect.H)
 }
 
-// drawDetails renders n's aligned key/value lines scrolled by scroll rows,
-// shared by the Tree tab's right pane and the Plan tab's strip. live is n's live
-// counters, else nil (see detailKVs).
-func drawDetails(s tcell.Screen, rect core.Rect, n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters, scroll int) {
-	pal := theme.Active()
+// drawDetails renders n's aligned key/value lines in pane, shared by the Tree
+// tab's right pane and the Plan tab's strip. live is n's live counters, else
+// nil (see detailKVs).
+func drawDetails(s tcell.Screen, rect core.Rect, pane *core.LinePane, n *showplan.Node, st *showplan.Statement, live *showplan.LiveCounters) {
 	bg := theme.StylePanel()
-	core.FillRect(s, rect, ' ', bg)
-	if rect.H <= 0 || rect.W <= 0 {
-		return
-	}
 	if n == nil {
-		core.DrawTextClipped(s, rect.X+1, rect.Y, rect.W-2, bg, "(no operator selected)")
+		pane.DrawEmpty(s, rect, bg, "(no operator selected)")
 		return
 	}
 	lines := detailLines(n, st, live)
-	for row := range rect.H {
-		idx := scroll + row
-		if idx >= len(lines) {
-			break
+	pane.Draw(s, rect, bg, lines, func(i int) tcell.Style {
+		if strings.HasPrefix(lines[i], "Warnings") && len(n.Warnings) > 0 {
+			return warningStyle()
 		}
-		style := bg
-		if strings.HasPrefix(lines[idx], "Warnings") && len(n.Warnings) > 0 {
-			style = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
-		}
-		core.DrawTextClipped(s, rect.X+1, rect.Y+row, rect.W-2, style, lines[idx])
-	}
+		return bg
+	})
+}
+
+// warningStyle is a Warnings row's style on the panel background.
+func warningStyle() tcell.Style {
+	pal := theme.Active()
+	return tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
 }
 
 // detailKVs builds n's ordered key/value pairs, matching SSMS's Properties grid.
@@ -208,25 +197,18 @@ func nodePropsForDisplay(n *showplan.Node) []showplan.KV {
 }
 
 // drawProperties renders n's full ordered attribute list — the bottom
-// section's "Properties" mode — starting at row scroll.
-func drawProperties(s tcell.Screen, rect core.Rect, n *showplan.Node, scroll int) {
-	pal := theme.Active()
+// section's "Properties" mode — in pane.
+func drawProperties(s tcell.Screen, rect core.Rect, pane *core.LinePane, n *showplan.Node) {
 	bg := theme.StylePanel()
-	core.FillRect(s, rect, ' ', bg)
-	if n == nil || rect.H <= 0 || rect.W <= 0 {
-		return
-	}
 	kvs := nodePropsForDisplay(n)
-	for row := range rect.H {
-		idx := scroll + row
-		if idx >= len(kvs) {
-			break
-		}
-		kv := kvs[idx]
-		style := bg
-		if kv.Key == "Warnings" && len(n.Warnings) > 0 {
-			style = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
-		}
-		core.DrawTextClipped(s, rect.X+1, rect.Y+row, rect.W-2, style, kv.Key+" : "+kv.Value)
+	lines := make([]string, len(kvs))
+	for i, kv := range kvs {
+		lines[i] = kv.Key + " : " + kv.Value
 	}
+	pane.Draw(s, rect, bg, lines, func(i int) tcell.Style {
+		if kvs[i].Key == "Warnings" && len(n.Warnings) > 0 {
+			return warningStyle()
+		}
+		return bg
+	})
 }

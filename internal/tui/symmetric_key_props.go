@@ -113,7 +113,7 @@ type symKeyEncEdit struct {
 	// open says how to open name, for a symmetric-key encryption.
 	open *gosmo.SymmetricKeyDecryptor
 
-	pendingState
+	propsheet.PendingState
 }
 
 func (e *symKeyEncEdit) cells() []string {
@@ -347,7 +347,7 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 	}
 	// A password typed to remove an encryption goes with the removal.
 	edits := newPendingEdits("", loaded, nil, nil, func(e *symKeyEncEdit) { e.password = "" })
-	visible := edits.visible
+	visible := edits.Visible
 	rowsFor := func() [][]string {
 		vis := visible()
 		rows := make([][]string, len(vis))
@@ -417,13 +417,13 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 			e.password = passField.Value()
 			clearPasswords()
 		} else {
-			for _, x := range edits.all() {
+			for _, x := range edits.All() {
 				if x.kind != o.kind || x.name != o.name {
 					continue
 				}
-				if x.removing {
+				if x.Removing {
 					// Undo the Remove rather than dropping and re-adding.
-					edits.restore(x)
+					edits.Restore(x)
 					hint.Clear()
 					resetGrid(grid, symKeyEncColumns, rowsFor(), len(visible())-1)
 					syncRemove()
@@ -434,7 +434,7 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 			}
 		}
 		hint.Clear()
-		edits.add(e)
+		edits.Add(e)
 		resetGrid(grid, symKeyEncColumns, rowsFor(), len(visible())-1)
 		syncRemove()
 	})
@@ -452,15 +452,15 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 		}
 		e := vis[i]
 		switch {
-		case e.isNew:
-			edits.remove(e)
+		case e.IsNew:
+			edits.Remove(e)
 		case e.kind == gosmo.SymmetricKeyByPassword:
 			if passField.Value() == "" {
 				hint.SetError("Type the password to remove in Password, then Remove — the server finds the encryption by its password.")
 				return
 			}
 			e.password = passField.Value()
-			edits.remove(e)
+			edits.Remove(e)
 			clearPasswords()
 		case e.name == "" || e.kind == "" || e.kind == gosmo.SymmetricKeyByMasterKey:
 			hint.SetError("This encryption cannot be removed from here: its encryptor is not one you can see.")
@@ -469,7 +469,7 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 			hint.SetError("Symmetric key " + e.name + " cannot be opened without a password, and removing it needs it open — use a query window.")
 			return
 		default:
-			edits.remove(e)
+			edits.Remove(e)
 		}
 		hint.Clear()
 		resetGrid(grid, symKeyEncColumns, rowsFor(), 0)
@@ -478,9 +478,9 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 	syncRemove()
 
 	gridRow := propsheet.NewGridRow(grid, 8)
-	gridRow.DirtyFn = edits.dirty
+	gridRow.DirtyFn = edits.Dirty
 	gridRow.RevertFn = func() {
-		edits.revert()
+		edits.Revert()
 		resetGrid(grid, symKeyEncColumns, rowsFor(), 0)
 		hint.Clear()
 		syncRemove()
@@ -505,11 +505,11 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 
 	apply := func(ctx context.Context) error {
 		var adds, removes []*symKeyEncEdit
-		for _, e := range edits.all() {
+		for _, e := range edits.All() {
 			switch {
-			case e.isNew:
+			case e.IsNew:
 				adds = append(adds, e)
-			case e.removing:
+			case e.Removing:
 				removes = append(removes, e)
 			}
 		}

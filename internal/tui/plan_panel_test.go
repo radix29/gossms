@@ -25,20 +25,17 @@ func TestNewPlanPanelTitle(t *testing.T) {
 	}
 }
 
-// TestPlanPanelDelegatesToWrappedPlanView checks SetActive, SetBounds, and
-// the clipboardTarget methods all forward to the wrapped PlanView without
-// panicking — mirrors DetailBrowser's own delegation, which this type is
-// modeled on.
+// TestPlanPanelDelegatesToWrappedPlanView checks SetActive and SetBounds
+// forward to the wrapped PlanView without panicking, and that the clipboard
+// goes to it: the panel names it as its core.ClipboardHost target.
 func TestPlanPanelDelegatesToWrappedPlanView(t *testing.T) {
 	pp := NewPlanPanel(newTestApp(), "Execution Plan — Query 1", loadTestPlan(t))
 	pp.SetBounds(0, 0, 80, 24)
 	pp.SetActive(true)
 
-	_ = pp.HasSelection()
-	_ = pp.SelectedText()
-	_ = pp.Cut()
-	pp.Paste("ignored")
-	pp.SelectAll()
+	if got := pp.FocusedClipboardTarget(); got != clipboardTarget(pp.planView) {
+		t.Errorf("FocusedClipboardTarget() = %T, want the wrapped PlanView", got)
+	}
 }
 
 // TestOpenPlanPanelAddsAndActivatesPanel checks App.openPlanPanel — the

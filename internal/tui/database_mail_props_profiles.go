@@ -28,7 +28,7 @@ type mailProfileEdit struct {
 	origName, name         string
 	origDesc, desc         string
 	origAccounts, accounts []string
-	pendingState
+	propsheet.PendingState
 }
 
 // changed reports an edit to an existing profile.
@@ -49,8 +49,8 @@ func mailPublishedProfiles(edits []*mailProfileEdit) []string {
 	var out []string
 	for _, e := range edits {
 		switch {
-		case e.removing:
-		case e.isNew:
+		case e.Removing:
+		case e.IsNew:
 			out = append(out, e.name)
 		default:
 			out = append(out, e.origName)
@@ -91,14 +91,15 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				loaded[i] = &mailProfileEdit{origName: p.Name, name: p.Name, origDesc: p.Description, desc: p.Description,
 					origAccounts: names, accounts: slices.Clone(names)}
 			}
-			edits := newPendingEdits(msdbCollation(ctx, sc), loaded,
+			collation := msdbCollation(ctx, sc)
+			edits := newPendingEdits(collation, loaded,
 				func(e *mailProfileEdit) string { return e.name }, (*mailProfileEdit).changed,
 				func(e *mailProfileEdit) {
 					e.name, e.desc, e.accounts = e.origName, e.origDesc, slices.Clone(e.origAccounts)
 				})
-			model.setProfiles(mailPublishedProfiles(edits.all()))
-			publish := func() { model.publishProfiles(mailPublishedProfiles(edits.all())) }
-			visible := edits.visible
+			model.setProfiles(mailPublishedProfiles(edits.All()))
+			publish := func() { model.publishProfiles(mailPublishedProfiles(edits.All())) }
+			visible := edits.Visible
 			accountText := func(a string) string {
 				if !slices.Contains(available, a) {
 					return a + " (removed)"
@@ -151,7 +152,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					for j, a := range e.accounts {
 						accts[j] = accountText(a)
 					}
-					return []string{mailEditName(e.origName, e.name, e.isNew), strings.Join(accts, ", "), e.desc}
+					return []string{mailEditName(e.origName, e.name, e.IsNew), strings.Join(accts, ", "), e.desc}
 				},
 				Commit: func(e *mailProfileEdit) { e.name, e.desc = nameRow.Value(), descRow.Value() },
 				Show: func(e *mailProfileEdit) {
@@ -167,28 +168,28 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					syncAccounts(e, 0)
 				},
 				Add: func(name string) (string, bool) {
-					if edits.listed(name) {
+					if edits.Listed(name) {
 						return "A profile named " + name + " is already listed.", false
 					}
-					edits.add(&mailProfileEdit{name: name})
+					edits.Add(&mailProfileEdit{name: name})
 					return "Add the accounts " + name + " sends through below, first choice first.", true
 				},
 				Remove: func(e *mailProfileEdit) (string, bool) {
-					edits.remove(e)
-					if e.isNew {
+					edits.Remove(e)
+					if e.IsNew {
 						return "", true
 					}
 					return e.origName + " is deleted on Apply with its grants; its queued mail is marked failed.", true
 				},
-				Dirty: edits.dirty,
+				Dirty: edits.Dirty,
 				Validate: func() error {
-					return edits.refusal("profile", func(e *mailProfileEdit) string { return e.origName })
+					return pendingRefusal(collation, edits, "profile", func(e *mailProfileEdit) string { return e.origName })
 				},
-				Revert:  edits.revert,
+				Revert:  edits.Revert,
 				Changed: publish,
 			})
 			nameRow.SetOnChange(func(string) {
-				if cur := list.Current(); cur != nil && cur.isNew {
+				if cur := list.Current(); cur != nil && cur.IsNew {
 					list.Commit()
 					list.Redraw()
 					publish()
@@ -279,10 +280,10 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 					return err
 				}
 				avail := model.accountNames(loadedAccounts)
-				for _, e := range edits.all() {
+				for _, e := range edits.All() {
 					name, accts := e.origName, e.accountsIn(avail)
 					switch {
-					case e.isNew:
+					case e.IsNew:
 						name, desc := e.name, e.desc
 						plan.add(mailPhaseCreateProfiles, func(ctx context.Context) error {
 							_, err := sc.Server.Mail().CreateProfile(ctx, gosmo.CreateMailProfileRequest{Name: name, Description: desc})
@@ -293,7 +294,7 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 								return sc.Server.Mail().ProfileRef(name).SetAccounts(ctx, accts)
 							})
 						}
-					case e.removing:
+					case e.Removing:
 						plan.add(mailPhaseDropProfiles, func(ctx context.Context) error {
 							return sc.Server.Mail().ProfileRef(name).Drop(ctx)
 						})

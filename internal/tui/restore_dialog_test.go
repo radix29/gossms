@@ -7,7 +7,6 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/vt"
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -82,7 +81,7 @@ func TestSelectedHeaderSurvivesAStaleIndex(t *testing.T) {
 
 // TestSelectedHeaderOnNoHeaders pins the nil return. The stale-index guard
 // above used to fall back to headers[0], which panics when there is no
-// headers[0] — on the UI goroutine, where recoverPanic cannot catch it.
+// headers[0] — on the UI goroutine, where safego's recovery cannot catch it.
 func TestSelectedHeaderOnNoHeaders(t *testing.T) {
 	d := &RestoreDialog{}
 	if got := d.selectedHeader(); got != nil {
@@ -115,33 +114,6 @@ func backupSetFiles() []*gosmo.BackupFile {
 // the folder fallback, the collation — are gosmo's (RestoreRelocation) and
 // pinned in its restore_plan_test.go.
 
-// TestClipPathLeft pins that a path too long for its column keeps its tail.
-// Two files under the same SQL Server default folder are ~70 columns of
-// identical prefix, so a tail-clipped path (core.Truncate) renders them
-// indistinguishable — the file name is the whole point of the line.
-func TestClipPathLeft(t *testing.T) {
-	const path = `C:\Program Files\Microsoft SQL Server\MSSQL17.MSSQLSERVER\MSSQL\DATA\AppDB.mdf`
-	for _, tc := range []struct {
-		w    int
-		want string
-	}{
-		{0, ""},
-		{-1, ""},
-		{len(path), path},            // fits exactly, no ellipsis
-		{len(path) + 5, path},        // room to spare
-		{20, `…SSQL\DATA\AppDB.mdf`}, // fills the column, tail first
-		{1, "…"},
-	} {
-		got := clipPathLeft(path, tc.w)
-		if got != tc.want {
-			t.Errorf("clipPathLeft(w=%d) = %q, want %q", tc.w, got, tc.want)
-		}
-		if w := core.DisplayWidth(got); w > tc.w && tc.w > 0 {
-			t.Errorf("clipPathLeft(w=%d) is %d columns wide", tc.w, w)
-		}
-	}
-}
-
 // analyze opens the inspect view on headers[0] and reads that set's file
 // list; selectHeader's reload reads the selected set's. On a device whose
 // first set is the selected one they must produce the same number, or
@@ -156,8 +128,8 @@ func TestAnalyzeAndSelectionAgreeOnTheFirstSet(t *testing.T) {
 }
 
 // filesDialog builds just enough of a RestoreDialog for the Files view's
-// focus cycle — the four widgets it rotates through, with the folder fields
-// enabled to match relocFolder.
+// focus ring — its four widgets, with the folder fields enabled to match
+// relocFolder.
 func filesDialog() *RestoreDialog {
 	d := &RestoreDialog{}
 	d.rbReloc = widgets.NewRadioBox("File Locations:", []string{"auto", "original", "folder"})
@@ -169,44 +141,40 @@ func filesDialog() *RestoreDialog {
 	return d
 }
 
-// TestFilesFocusSurvivesTheCycleShrinking pins that leaving relocFolder while
-// focus sits past the end of the shorter cycle lands back on the radio. The
-// cycle goes 4 entries to 1 the moment the folder fields are disabled, and
-// handleFilesKey indexes it with filesFocus unguarded — a stale 3 is an
-// out-of-range panic on the next keystroke, not a cosmetic wrong highlight.
-func TestFilesFocusSurvivesTheCycleShrinking(t *testing.T) {
+// TestFilesFocusLeavesAControlGreyedUnderIt pins that leaving relocFolder
+// while focus sits on Default Location lands back on the radio: the folder
+// fields and the button grey out the moment the mode changes, and focus left
+// on one would sit on a control that refuses every key.
+func TestFilesFocusLeavesAControlGreyedUnderIt(t *testing.T) {
 	d := filesDialog()
 	d.setFilesFocus(3)
 	if got := d.filesFocus; got != 3 {
-		t.Fatalf("setFilesFocus(3) = %d, want 3 — the folder cycle should have four entries", got)
+		t.Fatalf("setFilesFocus(3) = %d, want 3", got)
 	}
 
 	d.rbReloc.SetSelected(relocOriginal)
 	d.syncRelocState()
 
-	cycle := d.filesFocusCycle()
-	if len(cycle) != 1 {
-		t.Fatalf("cycle has %d entries outside relocFolder, want 1", len(cycle))
-	}
-	if d.filesFocus >= len(cycle) {
-		t.Fatalf("filesFocus = %d, out of range for a %d-entry cycle", d.filesFocus, len(cycle))
-	}
-	if cycle[d.filesFocus] != focusable(d.rbReloc) {
-		t.Errorf("focus landed on %T, want the radio — it is the only thing left to focus", cycle[d.filesFocus])
+	if d.filesFocus != 0 || !d.rbReloc.Focused() {
+		t.Errorf("filesFocus = %d, want the radio (0)", d.filesFocus)
 	}
 }
 
-// Tab has nowhere to go when the radio is the whole cycle, and must stay on
-// it rather than wrapping to an index the shorter cycle doesn't have.
-func TestFilesTabStaysPutOnASingleEntryCycle(t *testing.T) {
+// Outside relocFolder Tab passes over the greyed folder fields and Default
+// Location (dialogs.RingStep): the radio and the button row are the only stops.
+func TestFilesTabSkipsTheGreyedFolderControls(t *testing.T) {
 	d := filesDialog()
 	d.rbReloc.SetSelected(relocAuto)
 	d.syncRelocState()
-	for i := range 3 {
-		d.handleFilesKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-		if d.filesFocus != 0 {
-			t.Fatalf("Tab %d: filesFocus = %d, want 0", i+1, d.filesFocus)
-		}
+	d.setFilesFocus(0)
+	tab := tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone)
+	d.handleFilesKey(tab)
+	if !d.onFilesButtons() {
+		t.Fatalf("Tab from the radio: filesFocus = %d, want the button row (%d)", d.filesFocus, len(d.filesFocusable()))
+	}
+	d.handleFilesKey(tab)
+	if d.filesFocus != 0 {
+		t.Fatalf("Tab off the button row: filesFocus = %d, want the radio (0)", d.filesFocus)
 	}
 }
 

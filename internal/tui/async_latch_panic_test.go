@@ -88,7 +88,7 @@ func TestDetailBrowserPanicRepairClearsTheLoadingLatch(t *testing.T) {
 	dbr := NewDetailBrowser("details")
 	node := &explorerNode{label: "n"}
 
-	dbr.run.seq = 7
+	latestAt(&dbr.run.latest, 7)
 	dbr.run.pending[node] = 7
 	dbr.grid.SetStatus("Loading...")
 
@@ -116,7 +116,7 @@ func TestDetailBrowserPanicRepairIgnoresASupersededFetch(t *testing.T) {
 
 	// A newer fetch (seq 8) for the same node is in flight, and the user has
 	// since selected something else, so neither guard may fire.
-	dbr.run.seq = 9
+	latestAt(&dbr.run.latest, 9)
 	dbr.run.pending[node] = 8
 
 	dbr.panicRepair(node, 7)()

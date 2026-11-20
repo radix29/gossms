@@ -56,8 +56,8 @@ func (pp *PicturePanel) runTool(i int) {
 
 // showOverflowMenu pops the cells the row was too narrow for.
 func (pp *PicturePanel) showOverflowMenu() {
-	r := pp.tools.More.Rect
-	pp.app.contextMenu.Show(r.X, r.Y+1, pp.tools.OverflowItems(pp.toolDisabled, pp.toolReason, pp.runTool))
+	x, y := pp.tools.MenuAnchor(-1, pp.rect)
+	pp.app.contextMenu.Show(x, y, pp.tools.OverflowItems(pp.toolDisabled, pp.toolReason, pp.runTool))
 }
 
 // HandleKey: + / - zoom, 0 or f fits, 1 shows actual size, m switches mode,

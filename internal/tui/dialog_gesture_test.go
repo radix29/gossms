@@ -217,16 +217,31 @@ func packageDir(t *testing.T, path string) string {
 //     so a latch does not survive into the next showing. The opening method is
 //     named Show, ShowX, show or start depending on the dialog, so it is
 //     identified by what it calls rather than by its name.
+//
+// A HandleMouse that delegates to dialogs.RingMouse places Release, Replay and
+// Claim there, in the order tuikit's TestRingMouse pins step by step; only
+// Clear is still asked of it. The delegation must be the whole routing: a
+// RingMouse caller that also calls Release or Replay itself is reported, as
+// the two copies would drift apart.
+//
+// A dialog holding a dialogs.FieldRing owns its gesture through it: the ring's
+// Mouse is RingMouse and its Reset is the Clear, so such a dialog's HandleMouse
+// must call Mouse and its opening path Reset. FieldRing itself is checked for
+// exactly those two delegations rather than as a dialog.
 func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 	type methods struct {
 		handleMouse *ast.FuncDecl
 		claims      bool
 		cleared     bool
+		ringMouse   bool // a HandleMouse calling FieldRing.Mouse
+		ringReset   bool // an opening path calling FieldRing.Reset
+		decls       map[string]*ast.FuncDecl
 	}
 	fset := token.NewFileSet()
 	// Keyed by "package.Type" so two dialogs of the same name in the two
 	// packages stay apart.
 	owners := map[string]bool{}
+	ringOwners := map[string]bool{}
 	found := map[string]*methods{}
 
 	for _, dir := range gestureSourceDirs(t) {
@@ -259,8 +274,13 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 						if !ok {
 							continue
 						}
-						if structHasFieldGesture(st) {
+						switch {
+						case pkg == "dialogs" && ts.Name.Name == "FieldRing":
+							// The mechanism, checked on its own below.
+						case structHasField(st, "FieldGesture"):
 							owners[pkg+"."+ts.Name.Name] = true
+						case structHasField(st, "FieldRing"):
+							ringOwners[pkg+"."+ts.Name.Name] = true
 						}
 					}
 				case *ast.FuncDecl:
@@ -271,11 +291,13 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 					key := pkg + "." + recv
 					m := found[key]
 					if m == nil {
-						m = &methods{}
+						m = &methods{decls: map[string]*ast.FuncDecl{}}
 						found[key] = m
 					}
+					m.decls[d.Name.Name] = d
 					if d.Name.Name == "HandleMouse" {
 						m.handleMouse = d
+						m.ringMouse = callFound(d, "Mouse")
 					}
 					if callFound(d, "Claim") {
 						m.claims = true
@@ -286,6 +308,9 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 					if callFound(d, "Clear") && callFound(d, "Show") {
 						m.cleared = true
 					}
+					if callFound(d, "Reset") && callFound(d, "Show") {
+						m.ringReset = true
+					}
 				}
 			}
 		}
@@ -295,13 +320,45 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 		t.Fatal("no type with a dialogs.FieldGesture field was found — this test has " +
 			"stopped checking anything")
 	}
+	if len(ringOwners) == 0 {
+		t.Fatal("no type with a dialogs.FieldRing field was found — the FieldRing half " +
+			"of this test has stopped checking anything")
+	}
+	if r := found["dialogs.FieldRing"]; r == nil || r.decls["Mouse"] == nil ||
+		!callsRingMouse(r.decls["Mouse"]) || r.decls["Reset"] == nil || !callFound(r.decls["Reset"], "Clear") {
+		t.Error("dialogs.FieldRing must route Mouse through RingMouse and Clear its gesture " +
+			"in Reset — the dialogs holding one rely on both")
+	}
+	for owner := range ringOwners {
+		m := found[owner]
+		switch {
+		case m == nil || m.handleMouse == nil:
+			t.Errorf("%s holds a FieldRing but has no HandleMouse to drive it", owner)
+		case !m.ringMouse:
+			t.Errorf("%s.HandleMouse does not call its FieldRing's Mouse — the ring's "+
+				"gesture is never claimed, replayed or released", owner)
+		}
+		if m != nil && !m.ringReset {
+			t.Errorf("%s never calls FieldRing.Reset on the path that shows it — a latch "+
+				"will survive into the next showing and route every click to that field", owner)
+		}
+	}
 	for owner := range owners {
 		m := found[owner]
 		if m == nil || m.handleMouse == nil {
 			t.Errorf("%s owns a FieldGesture but has no HandleMouse to drive it", owner)
 			continue
 		}
-		if !m.claims {
+		ring := callsRingMouse(m.handleMouse)
+		if ring {
+			for _, call := range []string{"Release", "Replay", "Claim"} {
+				if callFound(m.handleMouse, call) {
+					t.Errorf("%s.HandleMouse delegates to dialogs.RingMouse and also calls "+
+						"FieldGesture.%s itself — RingMouse already places it", owner, call)
+				}
+			}
+		}
+		if !m.claims && !ring {
 			t.Errorf("%s never calls FieldGesture.Claim — its press is being routed by "+
 				"the widget's own bounds check, which a latch from the previous showing skips",
 				owner)
@@ -323,6 +380,9 @@ func TestFieldGestureCallsAreOrderedCorrectly(t *testing.T) {
 				"or the arms drift apart per dialog", owner)
 		}
 
+		if ring {
+			continue
+		}
 		release := firstCallLine(m.handleMouse, fset, "Release")
 		replay := firstCallLine(m.handleMouse, fset, "Replay")
 		consume := firstCallLine(m.handleMouse, fset, "ConsumeOutsideClick")
@@ -387,9 +447,11 @@ func forwardsReleaseByHand(d *ast.FuncDecl) bool {
 	return found
 }
 
-func structHasFieldGesture(st *ast.StructType) bool {
+// structHasField reports whether st has a field (named or embedded) whose
+// type's leaf name is typ.
+func structHasField(st *ast.StructType, typ string) bool {
 	for _, f := range st.Fields.List {
-		if typeName(f.Type) == "FieldGesture" {
+		if typeName(f.Type) == typ {
 			return true
 		}
 	}
@@ -427,6 +489,26 @@ func callFound(d *ast.FuncDecl, name string) bool {
 		}
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == name {
 			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// callsRingMouse reports whether d calls dialogs.RingMouse: qualified from
+// package tui, bare from inside package dialogs (Find/Replace).
+func callsRingMouse(d *ast.FuncDecl) bool {
+	found := false
+	ast.Inspect(d, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch fn := call.Fun.(type) {
+		case *ast.Ident:
+			found = found || fn.Name == "RingMouse"
+		case *ast.SelectorExpr:
+			found = found || fn.Sel.Name == "RingMouse"
 		}
 		return true
 	})
