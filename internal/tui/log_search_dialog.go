@@ -124,8 +124,7 @@ func (d *LogSearchDialog) Draw(s tcell.Screen) {
 	d.DrawBase(s)
 	d.layout()
 
-	p := theme.Active()
-	hint := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+	hint := theme.StyleDialogDim()
 	inner := d.InnerRect()
 
 	for _, f := range d.inputFields() {
@@ -140,7 +139,7 @@ func (d *LogSearchDialog) Draw(s tcell.Screen) {
 
 	st := hint
 	if d.statusErr {
-		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogWarning)
+		st = theme.StyleDialogWarning()
 	}
 	core.DrawTextClipped(s, inner.X+1, d.statusY, inner.W-2, st, d.status)
 

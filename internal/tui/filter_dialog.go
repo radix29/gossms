@@ -343,9 +343,8 @@ func (d *FilterDialog) Draw(s tcell.Screen) {
 	d.DrawBase(s)
 	d.layout()
 
-	p := theme.Active()
-	label := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
-	dim := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+	label := theme.StyleDialog()
+	dim := theme.StyleDialogDim()
 
 	inner := d.InnerRect()
 	lx := inner.X + 1
@@ -374,7 +373,7 @@ func (d *FilterDialog) Draw(s tcell.Screen) {
 		r.value.Draw(s)
 	}
 
-	msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogWarning)
+	msgStyle := theme.StyleDialogWarning()
 	core.DrawTextClipped(s, lx, d.messageY, inner.W-2, msgStyle, d.message)
 
 	d.DrawSeparator(s)

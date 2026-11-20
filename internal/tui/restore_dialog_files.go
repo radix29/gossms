@@ -177,32 +177,6 @@ func (d *RestoreDialog) plannedPaths() map[string]string {
 	return paths
 }
 
-// clipPathLeft fits path into w display columns by dropping columns off its
-// *front*, marking the cut with "...". core.Truncate cuts the tail, which on a
-// server path discards the only part that differs: two files under "C:\Program
-// Files\Microsoft SQL Server\MSSQL17.MSSQLSERVER\MSSQL\" would clip to the
-// identical string.
-func clipPathLeft(path string, w int) string {
-	if w <= 0 {
-		return ""
-	}
-	if core.DisplayWidth(path) <= w {
-		return path
-	}
-	runes := []rune(path)
-	width := core.DisplayWidth("…")
-	cut := len(runes)
-	for i, r := range slices.Backward(runes) {
-		rw := core.DisplayWidth(string(r))
-		if width+rw > w {
-			break
-		}
-		width += rw
-		cut = i
-	}
-	return "…" + string(runes[cut:])
-}
-
 func (d *RestoreDialog) layoutFiles() {
 	inner := d.InnerRect()
 	lx := inner.X + 1
@@ -228,9 +202,8 @@ func (d *RestoreDialog) filesListY() int {
 func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 	d.layoutFiles()
 
-	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
-	dimStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTextDim)
+	labelStyle := theme.StyleDialog()
+	dimStyle := theme.StyleDialogDim()
 	inner := d.InnerRect()
 	lx := inner.X + 1
 	w := inner.W - 2
@@ -243,7 +216,7 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 	row := d.filesListY()
 	core.DrawText(s, lx, row, labelStyle, "Files in the backup")
 	row++
-	sep := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogLine)
+	sep := theme.StyleDialogLine()
 	core.DrawHLine(s, lx, row, w, sep)
 	row++
 
@@ -264,9 +237,12 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 		if f.Type == gosmo.BackupFileLog {
 			kind = "LOG"
 		}
+		// Paths clip from the front: two files under the same SQL Server default
+		// folder share ~70 columns of prefix, so a tail clip (core.Truncate)
+		// would render them identical.
 		head := core.PadRight(f.LogicalName, 16) + " " + core.PadRight("("+kind+")", 7)
 		core.DrawText(s, lx, row, labelStyle,
-			head+clipPathLeft(f.PhysicalName, w-core.DisplayWidth(head)))
+			head+core.TruncateLeft(f.PhysicalName, w-core.DisplayWidth(head)))
 		row++
 		to, moved := planned[f.LogicalName]
 		if !moved {
@@ -276,7 +252,7 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 		if moved {
 			toStyle = labelStyle
 		}
-		core.DrawText(s, lx+6, row, toStyle, "→ "+clipPathLeft(to, w-8))
+		core.DrawText(s, lx+6, row, toStyle, "→ "+core.TruncateLeft(to, w-8))
 		row++
 	}
 

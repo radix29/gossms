@@ -72,8 +72,7 @@ type taskProgressView struct {
 // elapsed and remaining times, and the task's message wrapped over every row
 // left.
 func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgressView) {
-	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
+	labelStyle := theme.StyleDialog()
 	lx := inner.X + 1
 	w := inner.W - 2
 
@@ -108,10 +107,10 @@ func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgres
 	switch {
 	case t.Done && t.Cancelled:
 		msg = v.verb + " cancelled." + t.repairNote()
-		msgStyle = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError)
+		msgStyle = theme.StyleDialogError()
 	case t.Done && t.Err != nil:
 		msg = "Failed: " + t.Err.Error()
-		msgStyle = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogError)
+		msgStyle = theme.StyleDialogError()
 	case t.Done:
 		msg = v.verb + " completed successfully."
 	case msg == "":

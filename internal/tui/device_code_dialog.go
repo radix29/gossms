@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 
-	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/core"
@@ -21,7 +20,7 @@ import (
 // to standard output — the terminal tcell draws on — and erased by the next
 // redraw.
 type DeviceCodeDialog struct {
-	dialogs.ModalDialog
+	dialogs.MessageDialog
 	app *App
 
 	msg gosmo.DeviceCodeMessage
@@ -30,8 +29,7 @@ type DeviceCodeDialog struct {
 	cancel context.CancelFunc
 	// done identifies the sign-in this showing belongs to, so the end of an
 	// earlier one does not close the dialog a later one opened.
-	done     <-chan struct{}
-	btnFocus int
+	done <-chan struct{}
 }
 
 const (
@@ -44,7 +42,14 @@ var deviceCodeButtons = []string{"Copy Code", "Cancel Sign-in"}
 // NewDeviceCodeDialog creates the dialog.
 func NewDeviceCodeDialog(app *App) *DeviceCodeDialog {
 	d := &DeviceCodeDialog{app: app}
-	d.InitModal("Microsoft Entra Sign-in", deviceCodeDialogMinW, deviceCodeDialogH)
+	d.InitMessage(dialogs.MessageDialogSpec{
+		Title: "Microsoft Entra Sign-in", W: deviceCodeDialogMinW, H: deviceCodeDialogH,
+		Buttons:  deviceCodeButtons,
+		OnButton: d.doButton,
+		// Escape cancels the sign-in, as it cancels the Connect dialog's
+		// attempt: the dialog has no other reason to close.
+		OnEscape: d.cancelSignIn,
+	})
 	return d
 }
 
@@ -66,7 +71,8 @@ func (a *App) promptDeviceCode(ctx context.Context, m gosmo.DeviceCodeMessage) e
 // showCode opens the dialog on m, replacing whatever code it showed.
 func (d *DeviceCodeDialog) showCode(m gosmo.DeviceCodeMessage, cancel context.CancelFunc, done <-chan struct{}) {
 	d.msg, d.cancel, d.done = m, cancel, done
-	d.btnFocus = 0
+	d.SetLines(deviceCodeLines(m))
+	d.SetButtons(deviceCodeButtons, 0)
 	d.SetSize(max(deviceCodeDialogMinW, core.DisplayWidth(m.VerificationURL)+8), deviceCodeDialogH)
 	d.Show()
 }
@@ -101,68 +107,23 @@ func (d *DeviceCodeDialog) doButton(i int) {
 	}
 }
 
-// Draw renders the dialog.
-func (d *DeviceCodeDialog) Draw(s tcell.Screen) {
-	if !d.Visible() {
-		return
-	}
-	d.DrawBase(s)
-	p := theme.Active()
-	text := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogText)
-	strong := text.Bold(true)
-	inner := d.InnerRect()
-	x, w := inner.X+2, inner.W-4
-	y := inner.Y + 1
-	if d.msg.UserCode == "" || d.msg.VerificationURL == "" {
+// deviceCodeLines lays out m: the page and the code, each indented under
+// its own sentence.
+func deviceCodeLines(m gosmo.DeviceCodeMessage) []dialogs.MessageLine {
+	if m.UserCode == "" || m.VerificationURL == "" {
 		// Nothing to lay out; Microsoft's own sentence carries whatever
 		// there is.
-		for i, line := range core.WrapTextLimit(d.msg.Message, w, 6) {
-			core.DrawTextClipped(s, x, y+i, w, text, line)
-		}
-	} else {
-		core.DrawTextClipped(s, x, y, w, text, "To sign in, open this page in a browser on any device:")
-		core.DrawTextClipped(s, x+2, y+1, w-2, strong, d.msg.VerificationURL)
-		core.DrawTextClipped(s, x, y+3, w, text, "and enter the code:")
-		core.DrawTextClipped(s, x+2, y+4, w-2, theme.StyleSelected().Bold(true), " "+d.msg.UserCode+" ")
-		core.DrawTextClipped(s, x, y+6, w, text, "The connection continues once the sign-in completes.")
+		return []dialogs.MessageLine{{Text: m.Message, Indent: 1, Wrap: true}}
 	}
-	d.DrawSeparator(s)
-	d.DrawButtons(s, deviceCodeButtons, d.btnFocus)
-}
-
-// HandleKey handles keyboard events. Escape cancels the sign-in, as it
-// cancels the Connect dialog's attempt: the dialog has no other reason to
-// close.
-func (d *DeviceCodeDialog) HandleKey(ev *tcell.EventKey) bool {
-	if !d.Visible() {
-		return false
+	return []dialogs.MessageLine{
+		{Text: "To sign in, open this page in a browser on any device:", Indent: 1},
+		{Text: m.VerificationURL, Indent: 3, Style: theme.StyleDialog().Bold(true)},
+		{},
+		{Text: "and enter the code:", Indent: 1},
+		{Text: " " + m.UserCode + " ", Indent: 3, Style: theme.StyleSelected().Bold(true)},
+		{},
+		{Text: "The connection continues once the sign-in completes.", Indent: 1},
 	}
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		d.cancelSignIn()
-	case tcell.KeyEnter:
-		d.doButton(d.btnFocus)
-	case tcell.KeyTab, tcell.KeyRight:
-		d.btnFocus = (d.btnFocus + 1) % len(deviceCodeButtons)
-	case tcell.KeyBacktab, tcell.KeyLeft:
-		d.btnFocus = (d.btnFocus + len(deviceCodeButtons) - 1) % len(deviceCodeButtons)
-	}
-	return true
-}
-
-// HandleMouse handles mouse events.
-func (d *DeviceCodeDialog) HandleMouse(ev *tcell.EventMouse) bool {
-	if !d.Visible() {
-		return false
-	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-	if i := d.ButtonClicked(ev, deviceCodeButtons); i >= 0 {
-		d.btnFocus = i
-		d.doButton(i)
-	}
-	return true
 }
 
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click

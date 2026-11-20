@@ -13,7 +13,9 @@ func (d *BackupDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 
 	if d.mode == backupModeProgress {
-		return progressModeKey(ev, &d.btnFocus, d.progressButtons(), d.Hide, d.doProgressButton)
+		// Modal over the form: a key falling through would edit a page
+		// the user cannot see, so ButtonsKey swallows every key.
+		return dialogs.ButtonsKey(ev, &d.btnFocus, len(d.progressButtons()), nil, d.doProgressButton, d.Hide)
 	}
 
 	if d.onButtons {

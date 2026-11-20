@@ -7,7 +7,6 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/vt"
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -114,33 +113,6 @@ func backupSetFiles() []*gosmo.BackupFile {
 // The relocation rules themselves — which mode moves what, the minted names,
 // the folder fallback, the collation — are gosmo's (RestoreRelocation) and
 // pinned in its restore_plan_test.go.
-
-// TestClipPathLeft pins that a path too long for its column keeps its tail.
-// Two files under the same SQL Server default folder are ~70 columns of
-// identical prefix, so a tail-clipped path (core.Truncate) renders them
-// indistinguishable — the file name is the whole point of the line.
-func TestClipPathLeft(t *testing.T) {
-	const path = `C:\Program Files\Microsoft SQL Server\MSSQL17.MSSQLSERVER\MSSQL\DATA\AppDB.mdf`
-	for _, tc := range []struct {
-		w    int
-		want string
-	}{
-		{0, ""},
-		{-1, ""},
-		{len(path), path},            // fits exactly, no ellipsis
-		{len(path) + 5, path},        // room to spare
-		{20, `…SSQL\DATA\AppDB.mdf`}, // fills the column, tail first
-		{1, "…"},
-	} {
-		got := clipPathLeft(path, tc.w)
-		if got != tc.want {
-			t.Errorf("clipPathLeft(w=%d) = %q, want %q", tc.w, got, tc.want)
-		}
-		if w := core.DisplayWidth(got); w > tc.w && tc.w > 0 {
-			t.Errorf("clipPathLeft(w=%d) is %d columns wide", tc.w, w)
-		}
-	}
-}
 
 // analyze opens the inspect view on headers[0] and reads that set's file
 // list; selectHeader's reload reads the selected set's. On a device whose

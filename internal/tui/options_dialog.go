@@ -141,10 +141,10 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 	inner := d.InnerRect()
 	d.rbIconStyle.SetBounds(inner.X+1, inner.Y+1)
 	d.rbIconStyle.Draw(s)
-	core.DrawText(s, inner.X+31, inner.Y+1, tcell.StyleDefault.Background(theme.Active().DialogBg).Foreground(theme.Active().DialogText), "Color Theme:")
+	core.DrawText(s, inner.X+31, inner.Y+1, theme.StyleDialog(), "Color Theme:")
 	d.ddTheme.SetBounds(inner.X+31, inner.Y+2)
 	d.ddTheme.Draw(s)
-	core.DrawText(s, inner.X+31, inner.Y+4, tcell.StyleDefault.Background(theme.Active().DialogBg).Foreground(theme.Active().DialogText), "SQL Format Style:")
+	core.DrawText(s, inner.X+31, inner.Y+4, theme.StyleDialog(), "SQL Format Style:")
 	d.ddSQLStyle.SetBounds(inner.X+31, inner.Y+5)
 	d.ddSQLStyle.Draw(s)
 

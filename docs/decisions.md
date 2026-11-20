@@ -1827,6 +1827,22 @@ it from the string 'NULL'.
   longer blurs its target on the way to focusing it — `DropDown.Focus(false)`
   closes the list, so a mouse click could never open Profile's Allowed
   Operations list.
+- **A buttons-only dialog's keyboard is tuikit's `dialogs.ButtonsKey`**
+  (2026-11-20, tuikit reuse round 3): Check for Updates, Device Code and the
+  Back Up/Restore progress views. It wraps (through `StepButtonWrap`;
+  `StepButton` still stops at the ends, which `ButtonRowKey` relies on), skips
+  a disabled button, and clamps the focus index on every key, not only on
+  Enter. The progress views gained Left/Right stepping like the other two —
+  they ignored the arrows before; nothing depended on that. tuikit's own
+  `ConfirmDialog` was not switched: its checkbox stop would have to sit in
+  front, a separate change.
+- **Check for Updates and Device Code are tuikit's `dialogs.MessageDialog`**
+  (2026-11-20, tuikit reuse round 3, taken by the author without waiting for
+  a third user): styled `MessageLine`s (`Indent`, `Wrap` at draw time) over
+  the host's own buttons, keyboard `ButtonsKey`, `OnEscape` nil = Hide. It is
+  embedded by value (`InitMessage`), so a zero `UpdateDialog{}` in a test
+  still takes `ShowResult`. The GitHub check, the sign-in wait, the clipboard
+  target and Update's `lines`/`linkRow` (the Copy Link source) stay in gossms.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,
