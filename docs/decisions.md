@@ -1912,6 +1912,36 @@ it from the string 'NULL'.
   `Report`. `App.recoverPanic` went: its one caller was the old `fanOut`.
   Driven in the binary with a forced panic in a Detail Browser backfill
   (row repaired to N/A, rest filled) and a Log File Viewer read.
+- **A spinner's redraw clock is tuikit's `loop.Runner.Tick`** (2026-11-20,
+  tuikit reuse round 9, item 1). `widgets.Spinner`, `dialogs.ProgressDialog`
+  and `propsheet.ApplyingSpinner` each told the host to supply the clock and
+  gave it nothing to do it with; the trap (a clock outliving a panicking
+  worker unless `done` is closed in a `defer` inside it) is `GoRepair`'s bug
+  class. `Tick` takes a `tick func()` rather than a `*Poster`, so `Runner`
+  stays stateless and uncoupled from `Poster`. `animateUntil` stays as a
+  one-line delegate, its five call sites unchanged.
+- **A progress job's lifecycle is tuikit's `dialogs.ProgressDialog.Run`**
+  (2026-11-20, tuikit reuse round 9, item 2; shape (a)). The busy refusal
+  (running the caller's repair), the showing sequence that drops a late
+  report, the release on finish *and* panic, and `cancelled = err != nil &&
+  Cancelling()` were ~40 lines every host re-derived, the last easy to get
+  wrong (a completed write reported "cancelled"). This adds the layering edge
+  `dialogs → loop` (`loop` imports no tuikit, so no cycle); `Run` takes the
+  host's `Runner` and `Poster` as arguments, not injected func fields (shape
+  (b): three fields for one helper). `Run` owns the context's cancel and
+  posts its panic repair through the `Poster` whatever `Runner.Post` is, and
+  ticks at the new `widgets.Spinner.Interval` (a zero `Period` would panic the
+  ticker). `runWithProgress` keeps the gossms part — the context's parent and
+  `serverWriteTimeout`, the refusal's status text — and its 28 call sites are
+  unchanged; `App.progressBusy`/`progressSeq` went (`Running()` replaces the
+  former). `animateUntil` is down to four callers.
+- **Ctrl+Enter's two encodings are tuikit's `core.IsCtrlEnter`**
+  (2026-11-20, tuikit reuse round 9, item 3). `KeyEnter`+`ModCtrl` under
+  kitty/modifyOtherKeys, a bare LF (`KeyCtrlJ`) everywhere else: terminal
+  encoding knowledge of `NormalizeKey`'s kind, which a tuikit host binding
+  only the first would find dead on most terminals. Not folded into
+  `NormalizeKey`, which would break hosts that bind Ctrl+J. Its one gossms
+  caller is Execute Current Statement (`query_panel_input.go`).
 - **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
   `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
   is read at draw time, so labels are fixed and a flip needs no

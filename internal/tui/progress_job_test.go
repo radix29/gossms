@@ -51,8 +51,8 @@ func TestCancelStopsADeleteBatchAtTheObjectInFlight(t *testing.T) {
 	}
 	waitAndDrain(t, a)
 
-	if a.progressDialog().Visible() || a.progressBusy {
-		t.Errorf("dialog visible = %v, busy = %v after the batch returned, want both false", a.progressDialog().Visible(), a.progressBusy)
+	if a.progressDialog().Visible() || a.progressDialog().Running() {
+		t.Errorf("dialog visible = %v, busy = %v after the batch returned, want both false", a.progressDialog().Visible(), a.progressDialog().Running())
 	}
 	if joined := strings.Join(inst.Statements(), "\n"); strings.Contains(joined, "[sales].[Gamma]") {
 		t.Errorf("the batch ran on past the cancel:\n%s", joined)
@@ -171,9 +171,9 @@ func TestProgressJobLatchClearsWhenTheWorkPanics(t *testing.T) {
 		func(context.Context, progressReport) error { panic("boom") },
 		func(error, bool) { t.Error("done ran for a job that panicked") })
 	waitAndDrain(t, a)
-	if a.progressBusy || a.progressDialog().Visible() || !repaired {
+	if a.progressDialog().Running() || a.progressDialog().Visible() || !repaired {
 		t.Fatalf("after the panic: busy=%v visible=%v repaired=%v, want false, false, true",
-			a.progressBusy, a.progressDialog().Visible(), repaired)
+			a.progressDialog().Running(), a.progressDialog().Visible(), repaired)
 	}
 
 	var gotErr error

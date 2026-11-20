@@ -132,7 +132,7 @@ func TestClosingTheProfilersViewerAsksToStopDefaultingToNo(t *testing.T) {
 		t.Fatal("no question on closing the Profiler's viewer")
 	}
 	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if a.progressBusy { // a Yes would be stopping the session now
+	if a.progressDialog().Running() { // a Yes would be stopping the session now
 		waitAndDrain(t, a)
 	}
 	if a.panelHosted(v) || len(inst.Statements()) != 0 {

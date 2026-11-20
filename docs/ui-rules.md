@@ -448,8 +448,8 @@ which owns them; the entries here say how goSSMS applies them.
   stays for tests and `FlushSaves`.
 - **A confirmed write runs through `App.runWithProgress` (`progress_job.go`),
   never a bare `safego`** — otherwise nothing shows a DROP waiting on a lock and
-  it can't be stopped. The job owns context, spinner clock and dialog release
-  (panic included); `done` gets `cancelled` only if Cancel was pressed *and*
+  it can't be stopped. The job (`dialogs.ProgressDialog.Run` underneath) owns
+  context, spinner clock and dialog release (panic included); `done` gets `cancelled` only if Cancel was pressed *and*
   the work failed, and a cancelled write still re-reads its folder (the cancel
   may land after commit). `uninterruptible` for statements worse half-stopped
   (Restore from Snapshot, failovers). Batches check `ctx.Err()` per item and

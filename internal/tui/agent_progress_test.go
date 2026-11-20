@@ -43,18 +43,18 @@ func TestAgentWritesRunBehindTheProgressDialog(t *testing.T) {
 			node.data.AgentScheduleID = agentScheduleID
 
 			c.act(a, sc, node)
-			if !a.progressDialog().Visible() || !a.progressBusy {
+			if !a.progressDialog().Visible() || !a.progressDialog().Running() {
 				t.Fatalf("dialog visible = %v, busy = %v while the write runs, want both true",
-					a.progressDialog().Visible(), a.progressBusy)
+					a.progressDialog().Visible(), a.progressDialog().Running())
 			}
 			waitForStatement(t, inst, c.write)
 
 			a.progressDialog().HandleKey(escapeKey())
 			waitAndDrain(t, a)
 
-			if a.progressDialog().Visible() || a.progressBusy {
+			if a.progressDialog().Visible() || a.progressDialog().Running() {
 				t.Errorf("dialog visible = %v, busy = %v after the write returned, want both false",
-					a.progressDialog().Visible(), a.progressBusy)
+					a.progressDialog().Visible(), a.progressDialog().Running())
 			}
 			if !strings.Contains(a.statusText, "cancelled") || !strings.Contains(a.statusText, c.label) {
 				t.Errorf("status = %q, want it to say the action on %q was cancelled", a.statusText, c.label)

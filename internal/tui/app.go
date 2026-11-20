@@ -118,12 +118,6 @@ type App struct {
 	tasks   []*Task
 	taskSeq int
 
-	// progressBusy is set while a runWithProgress job holds the progress
-	// dialog; progressSeq numbers the jobs, so a late progressReport cannot
-	// rewrite a later job's dialog. UI goroutine only.
-	progressBusy bool
-	progressSeq  int
-
 	connections []*db.ServerConn
 	cfg         *config.Config
 	// saves is the background config and tracked-query saves (app_saves.go).
@@ -324,21 +318,11 @@ func (a *App) wakeEventLoop() { a.wake.Wake() }
 
 // animateUntil wakes the event loop every period until done closes — the
 // redraw clock for a widgets.Spinner, which is drawn from elapsed time and has
-// nothing else to repaint it while the work it stands for is quiet. The
-// caller closes done, deferred inside the worker so a panic stops it too.
+// nothing else to repaint it while the work it stands for is quiet
+// (loop.Runner.Tick). The caller closes done, deferred inside the worker so a
+// panic stops it too.
 func (a *App) animateUntil(what string, period time.Duration, done <-chan struct{}) {
-	a.safego(what, func() {
-		ticker := time.NewTicker(period)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				a.wakeEventLoop()
-			}
-		}
-	})
+	a.runner().Tick(what, period, done, a.wakeEventLoop)
 }
 
 // buildUI creates all UI components from tuikit building blocks.

@@ -303,7 +303,7 @@ gossms/
 │       ├── app_query_actions.go  # what the toolbar and Query menu do to the active query panel: execute/cancel, estimated + actual plan, reconnect, results mode, save its text
 │       ├── app_show_panels.go    # opens the non-query panels: Object Explorer Details, query list, Activity Monitor, Log Viewer, Query Store — reusing one already open for the same target
 │       ├── app_show_properties.go # one entry point per Properties and per New dialog, taking the connection and the names its page needs
-│       ├── progress_job.go       # progressJob + App.runWithProgress: one long write run behind dialogs.ProgressDialog, from the answered confirmation until the server comes back; reveal delay, cancellation, and the reasons an uninterruptible job greys Cancel
+│       ├── progress_job.go       # progressJob + App.runWithProgress: one long write run behind dialogs.ProgressDialog (its Run holds the lifecycle; the context's parent, timeout and refusal text stay here), from the answered confirmation until the server comes back; reveal delay, cancellation, and the reasons an uninterruptible job greys Cancel
 │       ├── dialog_stack.go       # Dialog (= dialogs.Dialog); App.modals, a tuikit dialogs.Stack, hosts every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help), context-gated via each MenuItem's Enabled predicate, + About dialog
 │       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row, same Enabled-predicate gating

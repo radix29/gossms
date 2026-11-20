@@ -148,10 +148,14 @@ func TestDependenciesCloseAbandonsTheFetch(t *testing.T) {
 // caller set before asking stays set for good.
 func TestRefusedProgressJobRunsRepair(t *testing.T) {
 	a := newTestApp()
-	a.progressBusy = true // another job's dialog is up
+	sc, _ := newGConn(t)
+	holdOther := make(chan struct{})
+	defer close(holdOther)
+	a.runWithProgress(progressJob{title: "Other", what: "other", sc: sc}, // another job holds the dialog
+		func(context.Context, progressReport) error { <-holdOther; return nil }, func(error, bool) {})
 	repaired := false
 	a.runWithProgress(progressJob{
-		title: "Recycle", sc: &db.ServerConn{}, what: "test",
+		title: "Recycle", sc: sc, what: "test",
 		repair: func() { repaired = true },
 	}, func(context.Context, progressReport) error {
 		t.Error("a refused job ran its work")
