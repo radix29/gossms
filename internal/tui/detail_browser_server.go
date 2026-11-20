@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/core"
 )
 
 // loadServerDetails lists the server's folders (detail_browser_drill.go) above
@@ -172,7 +173,7 @@ func errorLogFilesDetail(ctx context.Context, sc *dbconn.ServerConn, logType gos
 	}
 	rows := make([][]string, 0, len(files))
 	for _, f := range files {
-		rows = append(rows, []string{errorLogFileLabel(f), formatBytes(f.SizeBytes)})
+		rows = append(rows, []string{errorLogFileLabel(f), core.FormatBytes(f.SizeBytes)})
 	}
 	return []string{"Log", "Size"}, rows, nil
 }
@@ -191,7 +192,7 @@ func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 			if f.Number == logNum {
 				rows = append(rows,
 					[]string{"Last written", formatSQLDate(f.LastWritten)},
-					[]string{"Size", formatBytes(f.SizeBytes)})
+					[]string{"Size", core.FormatBytes(f.SizeBytes)})
 				break
 			}
 		}

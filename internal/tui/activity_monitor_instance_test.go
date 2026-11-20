@@ -284,7 +284,7 @@ func TestInstanceDashboardDrawsBeforeItsFirstTick(t *testing.T) {
 
 	// The limits grid ends a 59-row canvas, so a 40-row viewport needs a scroll
 	// — proving the tab scrolls.
-	if !am.scrollTo(0, dashboard.InstanceCanvasH) {
+	if !am.viewport().ScrollTo(0, dashboard.InstanceCanvasH) {
 		t.Fatal("the Instance canvas does not scroll, so its last section is unreachable")
 	}
 	bottom := amRender(am, 120, 40)

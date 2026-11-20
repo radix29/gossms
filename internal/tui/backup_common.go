@@ -43,20 +43,6 @@ func formatHMS(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d:%02d", sec/3600, (sec/60)%60, sec%60)
 }
 
-// formatBytes renders a byte count with a binary unit, e.g. "5.8 GB".
-func formatBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
-}
-
 // taskProgressView is what the Backup and Restore progress views differ in:
 // their header rows, whether a "Progress:" label sits above the bar, and the
 // operation's name in the final message.
@@ -94,7 +80,7 @@ func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgres
 	}
 	widgets.DrawProgressBar(s, lx, y, w, pct, labelStyle)
 
-	elapsed, remaining, haveRemaining := taskTimes(t)
+	elapsed, remaining, haveRemaining := t.Times()
 	core.DrawText(s, lx, y+2, labelStyle, "Elapsed  : "+formatHMS(elapsed))
 	rem := "--:--:--"
 	if haveRemaining {
@@ -106,7 +92,7 @@ func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgres
 	msgStyle := labelStyle
 	switch {
 	case t.Done && t.Cancelled:
-		msg = v.verb + " cancelled." + t.repairNote()
+		msg = v.verb + " cancelled." + taskRepairNote(t)
 		msgStyle = theme.StyleDialogError()
 	case t.Done && t.Err != nil:
 		msg = "Failed: " + t.Err.Error()
@@ -123,21 +109,6 @@ func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgres
 	for i, ln := range wrapMessage(msg, w, bottom-msgY) {
 		core.DrawTextClipped(s, lx, msgY+i, w, msgStyle, ln)
 	}
-}
-
-// taskTimes computes a task's elapsed time and, while it's still running
-// with a known percentage, a linear estimate of the time remaining.
-func taskTimes(t *Task) (elapsed, remaining time.Duration, haveRemaining bool) {
-	end := time.Now()
-	if t.Done {
-		end = t.Finished
-	}
-	elapsed = end.Sub(t.Started)
-	if !t.Done && t.Progress > 0 && t.Progress < 100 {
-		remaining = elapsed * time.Duration(100-t.Progress) / time.Duration(t.Progress)
-		haveRemaining = true
-	}
-	return elapsed, remaining, haveRemaining
 }
 
 // backupTypeLabel names a gosmo.BackupAction the way the Backup/Restore

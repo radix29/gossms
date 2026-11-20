@@ -5,6 +5,7 @@ import (
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/scripting"
+	"github.com/radix29/tuikit/loop"
 	"github.com/radix29/tuikit/propsheet"
 )
 
@@ -108,12 +109,12 @@ func (d *GenerateScriptsDialog) script() {
 	}
 
 	// Parented on the connection, so a disconnect cancels it.
-	task, ctx := a.startTask(sc.Server.Context(), "Generate Scripts: "+dbName)
+	task, ctx := a.tasks.Start(sc.Server.Context(), "Generate Scripts: "+dbName)
 	task.Message = "reading the catalog"
 	a.setStatus(task.Label + " started — Tools > Background Tasks to follow or cancel it")
-	// safegoRepair: only the posted markTaskDone finishes the task, and a
+	// safegoRepair: only the posted tasks.Finish finishes the task, and a
 	// panic past it would leave one the status bar counts as running forever.
-	a.safegoRepair("generating scripts", func() { a.markTaskDone(task, errTaskPanicked) }, func() {
+	a.safegoRepair("generating scripts", func() { a.tasks.Finish(task, loop.ErrTaskPanicked) }, func() {
 		// Whole-percent steps only: one postAndWake per object would queue
 		// thousands of redraws on a large database.
 		last := -1
@@ -124,12 +125,12 @@ func (d *GenerateScriptsDialog) script() {
 			}
 			if pct != last {
 				last = pct
-				a.postProgress(task, pct, fmt.Sprintf("%d of %d objects", done, total))
+				a.tasks.Progress(task, pct, fmt.Sprintf("%d of %d objects", done, total))
 			}
 		}
 		r, err := scripting.DatabaseObjects(ctx, sc.Server, dbName, perms, progress)
 		a.postAndWake(func() {
-			a.markTaskDone(task, err)
+			a.tasks.Finish(task, err)
 			if err != nil {
 				return
 			}

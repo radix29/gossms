@@ -113,10 +113,9 @@ type App struct {
 	// live z-order of the open ones (see dialog_stack.go).
 	modals dialogs.Stack
 
-	// tasks is the background task registry (see tasks.go); taskSeq is its
-	// monotonic ID counter.
-	tasks   []*Task
-	taskSeq int
+	// tasks is the background task registry (see tasks.go), wired by
+	// wireTasks.
+	tasks loop.Tasks
 
 	connections []*db.ServerConn
 	cfg         *config.Config
@@ -169,6 +168,7 @@ func NewApp() *App {
 		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  F9 Connect  |  Ctrl+Q Quit",
 		cfg:        config.Load(),
 	})
+	a.wireTasks()
 	// Editors built where the config is out of reach (the read-only
 	// property-sheet T-SQL rows) pick the width up from this default; the ones
 	// that can reach it call SetIndentWidth as well, so a live change from
@@ -434,12 +434,12 @@ func (a *App) draw() {
 	if n := len(a.connections); n > 0 {
 		connInfo = fmt.Sprintf("  |  %d server%s connected", n, pluralSuffix(n))
 	}
-	if n := a.runningTaskCount(); n > 0 {
+	if n := a.tasks.Running(); n > 0 {
 		connInfo += fmt.Sprintf("  |  %d task%s running", n, pluralSuffix(n))
 	}
 	// DrawTextLine, not DrawTextClipped: a status can carry an error joined
 	// from several (a write's, then the failed repair after it — see
-	// Task.repairNote), and DrawTextClipped drops the line break, running the
+	// taskRepairNote), and DrawTextClipped drops the line break, running the
 	// second message into the first without a space.
 	core.DrawTextLine(s, 1, h-statusH, w-2, statusStyle, a.statusText+connInfo)
 

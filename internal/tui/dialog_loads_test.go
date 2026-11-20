@@ -9,6 +9,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/loop"
 	"github.com/radix29/tuikit/propsheet"
 	"github.com/radix29/tuikit/tuikittest"
 )
@@ -202,49 +203,49 @@ func TestPropDialogOKDoesNotReloadThePageItCloses(t *testing.T) {
 func TestCancelledTaskReadsCancelled(t *testing.T) {
 	a := newTestApp()
 
-	stopped, _ := a.startTask(context.Background(), "Backup db1")
+	stopped, _ := a.tasks.Start(context.Background(), "Backup db1")
 	stopped.Cancel()
-	a.markTaskDone(stopped, context.Canceled)
-	if !stopped.Cancelled || stopped.statusText() != "Backup db1 — cancelled" {
-		t.Errorf("cancelled task: Cancelled=%v, statusText %q", stopped.Cancelled, stopped.statusText())
+	a.tasks.Finish(stopped, context.Canceled)
+	if !stopped.Cancelled || taskStatusText(stopped) != "Backup db1 — cancelled" {
+		t.Errorf("cancelled task: Cancelled=%v, statusText %q", stopped.Cancelled, taskStatusText(stopped))
 	}
 	if a.statusText != "Backup db1 cancelled" {
 		t.Errorf("status bar = %q", a.statusText)
 	}
 
 	// Finished before the cancel reached it: a success stays a success.
-	raced, _ := a.startTask(context.Background(), "Backup db2")
+	raced, _ := a.tasks.Start(context.Background(), "Backup db2")
 	raced.Cancel()
-	a.markTaskDone(raced, nil)
-	if raced.Cancelled || raced.statusText() != "Backup db2 — done" {
-		t.Errorf("finished-anyway task: Cancelled=%v, statusText %q", raced.Cancelled, raced.statusText())
+	a.tasks.Finish(raced, nil)
+	if raced.Cancelled || taskStatusText(raced) != "Backup db2 — done" {
+		t.Errorf("finished-anyway task: Cancelled=%v, statusText %q", raced.Cancelled, taskStatusText(raced))
 	}
 
 	// Not cancelled: an error is a failure.
-	failed, _ := a.startTask(context.Background(), "Backup db3")
-	a.markTaskDone(failed, errors.New("disk full"))
-	if failed.Cancelled || failed.statusText() != "Backup db3 — failed: disk full" {
-		t.Errorf("failed task: Cancelled=%v, statusText %q", failed.Cancelled, failed.statusText())
+	failed, _ := a.tasks.Start(context.Background(), "Backup db3")
+	a.tasks.Finish(failed, errors.New("disk full"))
+	if failed.Cancelled || taskStatusText(failed) != "Backup db3 — failed: disk full" {
+		t.Errorf("failed task: Cancelled=%v, statusText %q", failed.Cancelled, taskStatusText(failed))
 	}
 
 	// Cancelled, but gosmo could not put back what the write changed: the
 	// cancel still reads as one, and the repair's failure is said too — not
 	// the cancellation's own wording.
-	stranded, _ := a.startTask(context.Background(), "Restore db5")
+	stranded, _ := a.tasks.Start(context.Background(), "Restore db5")
 	stranded.Cancel()
 	left := `gosmo: database "db5" may still be SINGLE_USER: setting it back to MULTI_USER failed: timeout`
-	a.markTaskDone(stranded, errors.Join(context.Canceled, &gosmo.RepairError{Err: errors.New(left)}))
-	if !stranded.Cancelled || stranded.statusText() != "Restore db5 — cancelled — "+left {
-		t.Errorf("cancelled task whose repair failed: Cancelled=%v, statusText %q", stranded.Cancelled, stranded.statusText())
+	a.tasks.Finish(stranded, errors.Join(context.Canceled, &gosmo.RepairError{Err: errors.New(left)}))
+	if !stranded.Cancelled || taskStatusText(stranded) != "Restore db5 — cancelled — "+left {
+		t.Errorf("cancelled task whose repair failed: Cancelled=%v, statusText %q", stranded.Cancelled, taskStatusText(stranded))
 	}
 	if a.statusText != "Restore db5 cancelled — "+left {
 		t.Errorf("status bar = %q", a.statusText)
 	}
 
 	// A panic after a cancel is still a panic.
-	panicked, _ := a.startTask(context.Background(), "Backup db4")
+	panicked, _ := a.tasks.Start(context.Background(), "Backup db4")
 	panicked.Cancel()
-	a.markTaskDone(panicked, errTaskPanicked)
+	a.tasks.Finish(panicked, loop.ErrTaskPanicked)
 	if panicked.Cancelled {
 		t.Error("a panicked task reads as cancelled")
 	}

@@ -609,8 +609,9 @@ func (am *ActivityMonitor) canvasSize() (int, int) {
 
 // viewport is the active tab's viewport, its geometry refreshed from viewRect
 // and the tab's canvas (none on non-canvas tabs, making scroll keys return
-// false). The offset is not clamped here: scrollTo does that, so a clamp after
-// a resize drops the tooltip like any other pan.
+// false). The offset is not clamped here: every scroll clamps and goes through
+// panned, and Draw's clamp after a resize does too, so it drops the tooltip
+// like any other pan.
 func (am *ActivityMonitor) viewport() *core.Viewport {
 	vp := &am.vp[am.tab]
 	vp.View = am.viewRect
@@ -619,24 +620,6 @@ func (am *ActivityMonitor) viewport() *core.Viewport {
 		vp.ContentW, vp.ContentH = am.canvasSize()
 	}
 	return vp
-}
-
-// scrollLimits is the active tab's max scroll offset per axis; zero on
-// non-canvas tabs.
-func (am *ActivityMonitor) scrollLimits() (maxX, maxY int) {
-	vp := am.viewport()
-	return vp.MaxX(), vp.MaxY()
-}
-
-// scrollTo moves the viewport, clamped, and reports whether it moved; HandleKey
-// returns that so a key at a boundary falls through to App.
-func (am *ActivityMonitor) scrollTo(x, y int) bool {
-	return am.panned(am.viewport().ScrollTo(x, y))
-}
-
-// scrollBy is scrollTo relative to the current position.
-func (am *ActivityMonitor) scrollBy(dx, dy int) bool {
-	return am.panned(am.viewport().ScrollBy(dx, dy))
 }
 
 // panned drops the pinned tooltip after a pan (it would cover what the user

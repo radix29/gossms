@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/core"
 )
 
 // detail_browser_snapshots.go is the Detail Browser's view of the Database
@@ -89,9 +90,9 @@ func snapshotFileSizes(files []*gosmo.DatabaseFileInfo) (onDisk, maxSize string)
 	}
 	onDisk = "N/A"
 	if known {
-		onDisk = formatBytes(diskKB * 1024)
+		onDisk = core.FormatBytes(diskKB * 1024)
 	}
-	return onDisk, formatBytes(maxKB * 1024)
+	return onDisk, core.FormatBytes(maxKB * 1024)
 }
 
 // snapshotFileSizeOnDisk is one file's on-disk size, "N/A" when unknown.
@@ -99,5 +100,5 @@ func snapshotFileSizeOnDisk(f *gosmo.DatabaseFileInfo) string {
 	if f.SizeOnDiskKB <= 0 {
 		return "N/A"
 	}
-	return formatBytes(f.SizeOnDiskKB * 1024)
+	return core.FormatBytes(f.SizeOnDiskKB * 1024)
 }

@@ -7,6 +7,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/propsheet"
 )
 
@@ -78,7 +79,7 @@ func pageAssemblyFiles(sc *db.ServerConn, dbName, name string) propPage {
 			}
 			rows := make([][]string, len(files))
 			for i, fl := range files {
-				rows[i] = []string{strconv.Itoa(fl.FileID), fl.Name, formatBytes(fl.ContentLength)}
+				rows[i] = []string{strconv.Itoa(fl.FileID), fl.Name, core.FormatBytes(fl.ContentLength)}
 			}
 			grid := controls.NewDataGrid()
 			grid.SetData([]string{"File ID", "Name", "Size"}, rows)

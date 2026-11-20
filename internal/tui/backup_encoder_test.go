@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gosmo/gosmotest"
@@ -190,54 +189,6 @@ func TestBackupProgressButtonsFollowTheTask(t *testing.T) {
 	if got, want := strings.Join(d.progressButtons(), ","), "Close"; got != want {
 		t.Errorf("finished task buttons = %q, want %q", got, want)
 	}
-}
-
-// taskTimes drives the elapsed/remaining readout. The remaining estimate is
-// only meaningful mid-run: at 0% there is nothing to extrapolate from
-// (the arithmetic divides by the progress), and at 100% or once Done there
-// is nothing left to wait for.
-func TestTaskTimes(t *testing.T) {
-	start := time.Now().Add(-10 * time.Second)
-
-	t.Run("no estimate at zero progress", func(t *testing.T) {
-		_, _, have := taskTimes(&Task{Started: start, Progress: 0})
-		if have {
-			t.Error("offered a remaining estimate at 0% — there is nothing to extrapolate from")
-		}
-	})
-
-	t.Run("no estimate for an indeterminate task", func(t *testing.T) {
-		_, _, have := taskTimes(&Task{Started: start, Progress: -1})
-		if have {
-			t.Error("offered a remaining estimate for an indeterminate task")
-		}
-	})
-
-	t.Run("half done estimates about the elapsed time again", func(t *testing.T) {
-		elapsed, remaining, have := taskTimes(&Task{Started: start, Progress: 50})
-		if !have {
-			t.Fatal("no estimate at 50%")
-		}
-		if elapsed < 10*time.Second {
-			t.Errorf("elapsed = %v, want at least 10s", elapsed)
-		}
-		// 50% done in E means about E to go; allow a wide band, the clock
-		// is real.
-		if remaining < 9*time.Second || remaining > 12*time.Second {
-			t.Errorf("remaining = %v at 50%% after ~10s, want roughly 10s", remaining)
-		}
-	})
-
-	t.Run("a finished task measures to its finish, not to now", func(t *testing.T) {
-		fin := start.Add(3 * time.Second)
-		elapsed, _, have := taskTimes(&Task{Started: start, Finished: fin, Done: true, Progress: 100})
-		if have {
-			t.Error("offered a remaining estimate for a finished task")
-		}
-		if elapsed != 3*time.Second {
-			t.Errorf("elapsed = %v, want exactly 3s — a done task's elapsed must stop at Finished", elapsed)
-		}
-	})
 }
 
 // backupHistoryQuery interpolates a database name into T-SQL that is then

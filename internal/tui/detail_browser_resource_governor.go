@@ -9,6 +9,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/core"
 )
 
 // detail_browser_resource_governor.go is the Details pane for Management ▸
@@ -211,14 +212,14 @@ func resourcePoolDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 	if st := ls.pools[p.ID]; st != nil {
 		pairs = append(pairs,
 			"CPU used (ms)", strconv.FormatInt(st.TotalCPUUsageMS, 10),
-			"Used memory", formatBytes(st.UsedMemoryKB*1024),
-			"Target memory", formatBytes(st.TargetMemoryKB*1024),
-			"Max memory", formatBytes(st.MaxMemoryKB*1024),
+			"Used memory", core.FormatBytes(st.UsedMemoryKB*1024),
+			"Target memory", core.FormatBytes(st.TargetMemoryKB*1024),
+			"Max memory", core.FormatBytes(st.MaxMemoryKB*1024),
 			"Active memory grants", strconv.Itoa(st.ActiveMemgrantCount),
 			"Memory grant waiters", strconv.Itoa(st.MemgrantWaiterCount),
 			"Out-of-memory count", strconv.FormatInt(st.OutOfMemoryCount, 10),
-			"Read", formatBytes(st.ReadBytesTotal),
-			"Written", formatBytes(st.WriteBytesTotal),
+			"Read", core.FormatBytes(st.ReadBytesTotal),
+			"Written", core.FormatBytes(st.WriteBytesTotal),
 			"Statistics since", formatSQLDate(st.StatisticsStartTime))
 	}
 	return propertyRows(pairs...)

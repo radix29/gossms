@@ -171,17 +171,11 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 		// The action runs on the press, so tcell's repeats while the button is down
-		// must not reach it again (lZoneToolbar swallows them in routeDrag). RunCell
-		// applies the row's gate, which the draw dims on too, so a dimmed cell is inert, not merely
-		// grey.
-		if i := lv.tools.CellAt(mx, my); i >= 0 {
-			lv.tools.RunCell(i)
-			return true
-		}
-		if lv.tools.More.Rect.Contains(mx, my) {
-			lv.tools.OverflowMenu(lv.app.contextMenu, lv.rect)
-			return true
-		}
+		// must not reach it again (lZoneToolbar swallows them in routeDrag). Press
+		// runs a cell through the row's gate, which the draw dims on too, so a
+		// dimmed cell is inert, not merely grey. The row is claimed even off its
+		// rect (a gap past the filter), as before.
+		lv.tools.Press(lv.toolRect, mx, my, lv.app.contextMenu, lv.rect)
 		return true
 	}
 	// A right-click on the filter box focuses it and opens its Cut/Copy/Paste

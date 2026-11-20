@@ -279,7 +279,7 @@ func TestWatchingASessionWithNoTargetOffersToAddOne(t *testing.T) {
 	v := NewXEventViewer(a, sc, "zz_bare", "", true)
 	a.panels.AddPanel(v)
 	v.feed.running = true
-	task, _ := a.startTask(context.Background(), "watch")
+	task, _ := a.tasks.Start(context.Background(), "watch")
 	_, seq := v.feed.run.Begin(context.Background())
 	v.feedEnded(seq, task, errXENoTarget)
 	answerConfirm(t, a, false)
@@ -293,7 +293,7 @@ func TestWatchingASessionWithNoTargetOffersToAddOne(t *testing.T) {
 	sc.ProbeCapabilities(sc.Server.Context())
 	v = NewXEventViewer(a, sc, "zz_bare", "", true)
 	a.panels.AddPanel(v)
-	task, _ = a.startTask(context.Background(), "watch")
+	task, _ = a.tasks.Start(context.Background(), "watch")
 	_, seq = v.feed.run.Begin(context.Background())
 	v.feedEnded(seq, task, errXENoTarget)
 	if a.confirmDialog().Visible() || len(inst.Statements()) != 0 {

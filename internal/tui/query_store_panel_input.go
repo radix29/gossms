@@ -169,22 +169,17 @@ func (p *QueryStorePanel) HandleMouse(ev *tcell.EventMouse) bool {
 // handleToolbarPress runs the toolbar cell under the pointer, and reports whether
 // the press belonged to a toolbar row at all. The action runs on the press, so
 // tcell's repeats while the button stays down must not reach it again
-// (qsZoneToolbar swallows them in routeDrag). RunCell applies the row's gate,
-// which drawToolRow dims on, so a dimmed cell is inert, not merely grey.
+// (qsZoneToolbar swallows them in routeDrag). Press runs a cell through the
+// row's gate, which drawToolRow dims on, so a dimmed cell is inert, not merely
+// grey.
 func (p *QueryStorePanel) handleToolbarPress(mx, my int) bool {
 	for _, t := range []struct {
 		r   core.Rect
 		row *controls.ToolRow
 	}{{p.selRect, &p.sel}, {p.actRect, &p.acts}} {
-		if t.r.H != 1 || my != t.r.Y {
-			continue
+		if t.row.Press(t.r, mx, my, p.app.contextMenu, p.rect) {
+			return true
 		}
-		if t.row.More.Rect.Contains(mx, my) {
-			t.row.OverflowMenu(p.app.contextMenu, p.rect)
-		} else if i := t.row.CellAt(mx, my); i >= 0 {
-			t.row.RunCell(i)
-		}
-		return true
 	}
 	return false
 }

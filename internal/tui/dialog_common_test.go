@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/loop"
 	"github.com/radix29/tuikit/tuikittest"
 )
 
@@ -31,12 +33,12 @@ func TestRunProgressButtonHidesOnAFinishedOrAbsentTask(t *testing.T) {
 }
 
 func TestRunProgressButtonCancelsARunningTask(t *testing.T) {
-	cancelled := false
-	task := &Task{cancel: func() { cancelled = true }}
+	var reg loop.Tasks
+	task, ctx := reg.Start(context.Background(), "Backup")
 
 	hidden := false
 	runProgressButton(task, 1, func() { hidden = true })
-	if !cancelled {
+	if ctx.Err() == nil {
 		t.Error("button 1 on a running task did not cancel it")
 	}
 	if hidden {
@@ -45,9 +47,10 @@ func TestRunProgressButtonCancelsARunningTask(t *testing.T) {
 
 	// Button 0 is Close, and closing a running task leaves it running — the
 	// status bar and Tasks dialog keep tracking it.
-	cancelled, hidden = false, false
+	task, ctx = reg.Start(context.Background(), "Backup")
+	hidden = false
 	runProgressButton(task, 0, func() { hidden = true })
-	if cancelled {
+	if ctx.Err() != nil {
 		t.Error("button 0 cancelled the task; Close must leave it running")
 	}
 	if !hidden {

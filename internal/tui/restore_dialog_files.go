@@ -2,13 +2,13 @@ package tui
 
 import (
 	"fmt"
-	"github.com/radix29/tuikit/dialogs"
 	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/theme"
 	"github.com/radix29/tuikit/widgets"
 )
@@ -227,11 +227,7 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 	d.btnDefLoc.Draw(s)
 
 	row := d.filesListY()
-	core.DrawText(s, lx, row, labelStyle, "Files in the backup")
-	row++
-	sep := theme.StyleDialogLine()
-	core.DrawHLine(s, lx, row, w, sep)
-	row++
+	row = dialogs.DrawSectionHeading(s, lx, row, w, "Files in the backup")
 
 	if len(d.files) == 0 {
 		core.DrawTextClipped(s, lx, row, w, dimStyle, "No file list for this backup set.")

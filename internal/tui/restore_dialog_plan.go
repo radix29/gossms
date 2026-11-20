@@ -207,7 +207,7 @@ func tailBackupOptions(req restoreRequest) gosmo.BackupOptions {
 // The tail log, whose file does not exist until it is backed up, is verified
 // after its backup.
 func runRestorePlan(ctx context.Context, app *App, srv *gosmo.Server, task *Task, req restoreRequest) error {
-	app.postProgress(task, -1, "Reading backup history...")
+	app.tasks.Progress(task, -1, "Reading backup history...")
 	steps, err := planSteps(ctx, srv, req)
 	if err != nil {
 		return err
@@ -218,7 +218,7 @@ func runRestorePlan(ctx context.Context, app *App, srv *gosmo.Server, task *Task
 	kinds := make([]string, n)
 	for i, step := range steps {
 		if !step.tail {
-			app.postProgress(task, -1, fmt.Sprintf("Reading set %d of %d...", i+1, n))
+			app.tasks.Progress(task, -1, fmt.Sprintf("Reading set %d of %d...", i+1, n))
 		}
 		if opts[i], headers[i], err = stepOptions(ctx, srv, req, step, i, n); err != nil {
 			return err
@@ -229,7 +229,7 @@ func runRestorePlan(ctx context.Context, app *App, srv *gosmo.Server, task *Task
 		}
 	}
 	verify := func(i int) error {
-		app.postProgress(task, -1, fmt.Sprintf("Verifying set %d of %d (%s)...", i+1, n, kinds[i]))
+		app.tasks.Progress(task, -1, fmt.Sprintf("Verifying set %d of %d (%s)...", i+1, n, kinds[i]))
 		vopts := gosmo.VerifyOptions{FileNumber: steps[i].src.setNumber}
 		if headers[i] != nil {
 			vopts.Checksum = headers[i].HasChecksums
@@ -246,9 +246,9 @@ func runRestorePlan(ctx context.Context, app *App, srv *gosmo.Server, task *Task
 		}
 	}
 	if req.plan.tailDevice != "" {
-		app.postProgress(task, -1, "Backing up the tail of the log...")
+		app.tasks.Progress(task, -1, "Backing up the tail of the log...")
 		bopts := tailBackupOptions(req)
-		bopts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
+		bopts.Progress = func(pct int, msg string) { app.tasks.Progress(task, pct, msg) }
 		if err := srv.Backup(ctx, bopts); err != nil {
 			return err
 		}
@@ -259,8 +259,8 @@ func runRestorePlan(ctx context.Context, app *App, srv *gosmo.Server, task *Task
 				return err
 			}
 		}
-		app.postProgress(task, -1, fmt.Sprintf("Restoring set %d of %d (%s)...", i+1, n, kinds[i]))
-		opts[i].Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
+		app.tasks.Progress(task, -1, fmt.Sprintf("Restoring set %d of %d (%s)...", i+1, n, kinds[i]))
+		opts[i].Progress = func(pct int, msg string) { app.tasks.Progress(task, pct, msg) }
 		if err := srv.Restore(ctx, opts[i]); err != nil {
 			return err
 		}

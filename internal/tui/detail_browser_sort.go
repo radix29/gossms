@@ -1,10 +1,7 @@
 package tui
 
 import (
-	"cmp"
 	"slices"
-	"strconv"
-	"strings"
 
 	dbconn "github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls"
@@ -215,17 +212,16 @@ func (db *DetailBrowser) sortedRows() ([][]string, []nodeData, []int) {
 		perm[i] = i
 	}
 	if c, desc := db.sortColumn(); c >= 0 {
-		keys := make([]detailSortKey, len(b.rows))
+		// A row too short for the column keeps the zero key, a blank.
+		keys := make([]controls.TextCellKey, len(b.rows))
 		for i, r := range b.rows {
 			if c < len(r) {
-				keys[i] = newDetailSortKey(r[c])
-			} else {
-				keys[i] = detailSortKey{blank: true}
+				keys[i] = controls.NewTextCellKey(r[c])
 			}
 		}
 		// Stable, so rows tied on the column keep the loader's order between them.
 		slices.SortStableFunc(perm, func(i, j int) int {
-			return compareDetailSortKeys(keys[i], keys[j], desc)
+			return controls.CompareTextCells(keys[i], keys[j], desc)
 		})
 	}
 	rows := make([][]string, len(perm))
@@ -240,112 +236,4 @@ func (db *DetailBrowser) sortedRows() ([][]string, []nodeData, []int) {
 		}
 	}
 	return rows, objs, perm
-}
-
-// detailSortKey is one cell read for sorting: a number when the whole cell is
-// one (thousands separators and a trailing unit allowed: "1,234", "12 MB",
-// "45%"), its case-folded text otherwise, or blank for a cell that holds no
-// value yet or none at all.
-type detailSortKey struct {
-	blank bool
-	isNum bool
-	num   float64
-	text  string
-}
-
-// detailPlaceholders are the cells that stand for a missing value: a backfill
-// not landed yet, one that failed, an empty cell or a dash.
-var detailPlaceholders = map[string]bool{
-	"": true, "…": true, "...": true, "N/A": true, "-": true, "—": true,
-}
-
-func newDetailSortKey(cell string) detailSortKey {
-	s := strings.TrimSpace(cell)
-	if detailPlaceholders[s] {
-		return detailSortKey{blank: true}
-	}
-	if n, ok := parseDetailNumber(s); ok {
-		return detailSortKey{isNum: true, num: n}
-	}
-	return detailSortKey{text: strings.ToLower(s)}
-}
-
-// parseDetailNumber reads a cell rendered from a number: formatMB's "12,345 MB",
-// formatBytes' "4.0 KB", FormatThousands' "1,234", a percentage. Anything else
-// (a name, a date, a version such as 16.0.4135.4) is not a number, so it sorts
-// as text.
-//
-// A byte unit scales the value to bytes: formatBytes picks its unit per cell,
-// so the SQL Server Logs Size column mixes "512 B", "4.0 KB" and "1.2 MB", and
-// comparing the bare mantissas put 4.0 KB before 512 B. Other units (ms, rows)
-// are only stripped.
-func parseDetailNumber(s string) (float64, bool) {
-	scale := 1.0
-	if i := strings.LastIndexByte(s, ' '); i > 0 && isUnitSuffix(s[i+1:]) {
-		if f, ok := byteUnitScale[s[i+1:]]; ok {
-			scale = f
-		}
-		s = s[:i]
-	}
-	s = strings.TrimSuffix(s, "%")
-	s = strings.ReplaceAll(s, ",", "")
-	// ParseFloat also takes "Inf", "NaN" and hex floats, which here are names.
-	if s == "" || !strings.ContainsAny(s[:1], "0123456789+-.") ||
-		strings.ContainsAny(s, "xXpP_") {
-		return 0, false
-	}
-	n, err := strconv.ParseFloat(s, 64)
-	return n * scale, err == nil
-}
-
-// byteUnitScale is the factor to bytes of each binary unit formatBytes writes.
-var byteUnitScale = map[string]float64{
-	"B": 1, "KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30,
-	"TB": 1 << 40, "PB": 1 << 50, "EB": 1 << 60,
-}
-
-// isUnitSuffix reports whether s reads as a short unit after a number (MB, KB,
-// ms, rows).
-func isUnitSuffix(s string) bool {
-	if s == "" || len(s) > 4 {
-		return false
-	}
-	for _, r := range s {
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
-			return false
-		}
-	}
-	return true
-}
-
-// compareDetailSortKeys orders a before b ascending, or the reverse for desc:
-// numbers by value ahead of text, text case-insensitively. Blanks sort last
-// either way, so reversing a half-loaded column doesn't bring every "…" to the
-// top.
-func compareDetailSortKeys(a, b detailSortKey, desc bool) int {
-	if a.blank || b.blank {
-		switch {
-		case a.blank && b.blank:
-			return 0
-		case a.blank:
-			return 1
-		default:
-			return -1
-		}
-	}
-	var c int
-	switch {
-	case a.isNum && b.isNum:
-		c = cmp.Compare(a.num, b.num)
-	case a.isNum:
-		c = -1
-	case b.isNum:
-		c = 1
-	default:
-		c = strings.Compare(a.text, b.text)
-	}
-	if desc {
-		return -c
-	}
-	return c
 }

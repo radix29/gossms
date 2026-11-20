@@ -102,21 +102,3 @@ func TestApplyPermChangeSkipsNoOps(t *testing.T) {
 		t.Errorf("a real change issued %d statement(s), want 1", calls)
 	}
 }
-
-func TestMatchesFilter(t *testing.T) {
-	if !matchesFilter("", "anything") {
-		t.Error("an empty filter must match everything")
-	}
-	if !matchesFilter("  ", "anything") {
-		t.Error("a whitespace-only filter must match everything")
-	}
-	if !matchesFilter("sel", "SELECT") {
-		t.Error("filtering must be case-insensitive")
-	}
-	if !matchesFilter("role", "app_reader", "DATABASE_ROLE") {
-		t.Error("a match in any field must count")
-	}
-	if matchesFilter("zzz", "app_reader", "DATABASE_ROLE") {
-		t.Error("a term matching no field must not match")
-	}
-}

@@ -23,9 +23,6 @@ const (
 // 150-column canvas.
 const hScrollStep = 4
 
-// pageStep is the PgUp/PgDn step when the viewport height is unknown.
-const pageStep = 10
-
 // HandleKey routes keys for the active tab. Unhandled keys return false,
 // including a scroll key at its boundary, so the keyboard can always leave.
 func (am *ActivityMonitor) HandleKey(ev *tcell.EventKey) bool {
@@ -60,38 +57,15 @@ func (am *ActivityMonitor) HandleKey(ev *tcell.EventKey) bool {
 		}
 		am.stepTab(-1)
 		return true
-	case tcell.KeyDown:
-		return am.scrollBy(0, 1)
-	case tcell.KeyUp:
-		return am.scrollBy(0, -1)
-	case tcell.KeyRight:
-		return am.scrollBy(hScrollStep, 0)
-	case tcell.KeyLeft:
-		return am.scrollBy(-hScrollStep, 0)
-	case tcell.KeyPgDn:
-		return am.scrollBy(0, am.pageHeight())
-	case tcell.KeyPgUp:
-		return am.scrollBy(0, -am.pageHeight())
-	case tcell.KeyHome:
-		return am.scrollTo(0, 0)
-	case tcell.KeyEnd:
-		maxX, maxY := am.scrollLimits()
-		return am.scrollTo(maxX, maxY)
 	case tcell.KeyRune:
 		if ev.Modifiers()&tcell.ModCtrl != 0 || ev.Modifiers()&tcell.ModAlt != 0 {
 			return false
 		}
 		return am.handleRune(core.EvRune(ev))
 	}
-	return false
-}
-
-// pageHeight is one PgUp/PgDn step: a viewport less one row of overlap.
-func (am *ActivityMonitor) pageHeight() int {
-	if am.viewRect.H <= 1 {
-		return pageStep
-	}
-	return am.viewRect.H - 1
+	// Arrows, PgUp/PgDn, Home and End (column kept) scroll the canvas.
+	_, moved := am.viewport().ScrollKey(ev, hScrollStep)
+	return am.panned(moved)
 }
 
 // handleRune runs letter shortcuts gated by tab: Pause/Continue and rate on
@@ -198,14 +172,9 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 		am.tabBar().HandleMouse(ev)
 		return true
 	}
-	if am.toolRect.Contains(mx, my) {
+	// Claimed either way, so a disabled control or gap swallows the press.
+	if am.tools.Press(am.toolRect, mx, my, am.app.contextMenu, am.rect) {
 		am.dragZone.Arm(ev, amZoneTools)
-		if i := am.tools.CellAt(mx, my); i >= 0 {
-			am.tools.RunCell(i)
-		} else if am.tools.More.Rect.Contains(mx, my) {
-			am.tools.OverflowMenu(am.app.contextMenu, am.rect)
-		}
-		// Claimed either way, so a disabled control or gap swallows the press.
 		return true
 	}
 	if am.tab.canvasTab() {

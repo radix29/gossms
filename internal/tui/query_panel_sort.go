@@ -320,8 +320,8 @@ func newResultSortKey(cell string, kind resultSortKind) resultSortKey {
 // numbers by value (integers exactly: a bigint past 2^53 is not exact as a
 // float64, nor are decimals past 15 digits), datetimeoffsets by instant, then
 // text. NULL sorts last either way, as the Details pane's blanks do
-// (compareDetailSortKeys), so reversing a column doesn't bring every NULL to the
-// top.
+// (controls.CompareTextCells), so reversing a column doesn't bring every NULL
+// to the top.
 func compareResultSortKeys(a, b resultSortKey, desc bool) int {
 	if a.null || b.null {
 		return cmp.Compare(boolRank(a.null), boolRank(b.null))

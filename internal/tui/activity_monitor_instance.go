@@ -189,7 +189,7 @@ func instanceIOKPIs(g *gosmo.InstanceResourceGovernance) []charts.KPI {
 	}
 	return []charts.KPI{
 		{Label: "Local IOPS limit", Value: core.FormatThousands(int64(g.LocalIOPS))},
-		{Label: "Log rate limit", Value: formatBytes(g.MaxLogRate) + "/s"},
+		{Label: "Log rate limit", Value: core.FormatBytes(g.MaxLogRate) + "/s"},
 	}
 }
 
@@ -205,7 +205,7 @@ func instanceLimitRows(g *gosmo.InstanceResourceGovernance, j *gosmo.OSJobObject
 	if g != nil {
 		add("Instance CPU cap", fmt.Sprintf("%d %%", g.CapCPU))
 		add("Max worker threads", core.FormatThousands(int64(g.MaxWorkerThreads)))
-		add("Max log rate", formatBytes(g.MaxLogRate)+"/s")
+		add("Max log rate", core.FormatBytes(g.MaxLogRate)+"/s")
 		add("Local volume IOPS", core.FormatThousands(int64(g.LocalIOPS)))
 		add("Managed xStore IOPS", core.FormatThousands(int64(g.ManagedXStoreIOPS)))
 		add("Local outstanding IO", core.FormatThousands(int64(g.LocalMaxOutstandingIO)))

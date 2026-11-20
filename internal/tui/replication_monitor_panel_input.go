@@ -93,12 +93,7 @@ func (p *ReplicationMonitorPanel) HandleMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 	}
-	if ev.Buttons() == tcell.Button1 && p.toolRect.H == 1 && my == p.toolRect.Y {
-		if p.tools.More.Rect.Contains(mx, my) {
-			p.tools.OverflowMenu(p.app.contextMenu, p.rect)
-		} else if i := p.tools.CellAt(mx, my); i >= 0 {
-			p.tools.RunCell(i)
-		}
+	if ev.Buttons() == tcell.Button1 && p.tools.Press(p.toolRect, mx, my, p.app.contextMenu, p.rect) {
 		p.dragZone.Arm(ev, rmZoneToolbar)
 		return true
 	}

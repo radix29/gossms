@@ -12,6 +12,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/xevent"
+	"github.com/radix29/tuikit/loop"
 )
 
 // xevent_viewer_feed.go is the Extended Events viewer's reads: the panel's
@@ -194,7 +195,7 @@ func (v *XEventViewer) startFeed() {
 	case !v.live:
 		label = "View Target Data — " + v.session + " " + v.target
 	}
-	task, taskCtx := v.app.startTask(v.conn.Server.Context(), label)
+	task, taskCtx := v.app.tasks.Start(v.conn.Server.Context(), label)
 	ctx, seq := v.feed.run.Begin(taskCtx)
 	v.feed.task = task
 	v.feed.running = true
@@ -203,7 +204,7 @@ func (v *XEventViewer) startFeed() {
 	v.updateStatus()
 
 	r := v.feed.reader
-	v.app.safegoRepair("reading Extended Events", func() { v.feedEnded(seq, task, errTaskPanicked) }, func() {
+	v.app.safegoRepair("reading Extended Events", func() { v.feedEnded(seq, task, loop.ErrTaskPanicked) }, func() {
 		err := r.run(ctx, func(b xeBatch) {
 			v.app.postAndWake(func() {
 				if v.feed.run.Current(seq) {
@@ -222,7 +223,7 @@ func (v *XEventViewer) feedEnded(seq int, task *Task, err error) {
 	if errors.Is(err, context.Canceled) {
 		err = nil
 	}
-	v.app.markTaskDone(task, err)
+	v.app.tasks.Finish(task, err)
 	if !v.feed.run.Done(seq) {
 		return
 	}

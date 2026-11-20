@@ -114,24 +114,3 @@ func TestFormatHMS(t *testing.T) {
 		}
 	}
 }
-
-// TestFormatBytes pins the unit walk. It is now the only byte renderer —
-// formatKB, which the log detail pages used, capped at KB and showed a 40 MB
-// log as "40960.0 KB".
-func TestFormatBytes(t *testing.T) {
-	cases := []struct {
-		n    int64
-		want string
-	}{
-		{0, "0 B"},
-		{1023, "1023 B"},
-		{1024, "1.0 KB"},
-		{40 * 1024 * 1024, "40.0 MB"},
-		{5 * 1024 * 1024 * 1024, "5.0 GB"},
-	}
-	for _, c := range cases {
-		if got := formatBytes(c.n); got != c.want {
-			t.Errorf("formatBytes(%d) = %q, want %q", c.n, got, c.want)
-		}
-	}
-}

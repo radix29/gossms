@@ -7,6 +7,7 @@ import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/propsheet"
 )
 
@@ -147,48 +148,40 @@ func buildPermissionsMatrix(
 		return edits
 	}
 
-	// visible is the filtered view of principals; the grid's row indices
+	// principalView is the filtered view of principals; the grid's row indices
 	// address it, never principals directly. Filtering by name is what makes
 	// these pages usable against a server with hundreds of logins.
-	visible := slices.Clone(principals)
+	principalView := propsheet.NewFilterIndex(func(p permPrincipal, term string) bool {
+		return core.MatchesAny(term, p.Name, string(p.Type))
+	})
+	principalView.SetItems(principals)
 	principalGrid := controls.NewDataGrid()
 	principalRowsFor := func() [][]string {
-		rows := make([][]string, len(visible))
-		for i, p := range visible {
-			rows[i] = []string{p.Name, string(p.Type)}
-		}
-		return rows
+		return principalView.Rows(func(p permPrincipal) []string { return []string{p.Name, string(p.Type)} })
 	}
 	principalGrid.SetData([]string{"Name", "Type"}, principalRowsFor())
 
 	permGrid := controls.NewDataGrid()
 	permGrid.SetCellCursor(true)
 
-	// permFilter narrows the bottom grid the same way, and visiblePerms maps
-	// its row indices back onto the selected principal's full edit slice —
-	// which is indexed by the whole catalog, filter or no filter.
-	permFilter := ""
-	var visiblePerms []*permEdit
-	permRowsFor := func(edits []*permEdit) [][]string {
-		visiblePerms = visiblePerms[:0]
-		for _, e := range edits {
-			if matchesFilter(permFilter, e.entry.Permission) {
-				visiblePerms = append(visiblePerms, e)
-			}
-		}
-		rows := make([][]string, len(visiblePerms))
-		for i, e := range visiblePerms {
-			rows[i] = []string{e.entry.Permission, displayPermState(e.current)}
-		}
-		return rows
+	// permView narrows the bottom grid the same way, mapping its row indices
+	// back onto the selected principal's full edit slice — which is indexed by
+	// the whole catalog, filter or no filter.
+	permView := propsheet.NewFilterIndex(func(e *permEdit, term string) bool {
+		return core.MatchesAny(term, e.entry.Permission)
+	})
+	permRowsFor := func() [][]string {
+		return permView.Rows(func(e *permEdit) []string {
+			return []string{e.entry.Permission, displayPermState(e.current)}
+		})
 	}
 
 	permSection := propsheet.Section("Explicit permissions")
 	selected := -1
 	// selectedEdits is the edit slice the bottom grid is showing, held directly
-	// rather than re-derived from an index into visible: a filter change rebuilds
-	// visible underneath it, and an index would then address a different principal
-	// than the one on screen.
+	// rather than re-derived from an index into principalView: a filter change
+	// rebuilds the view underneath it, and an index would then address a different
+	// principal than the one on screen.
 	var selectedEdits []*permEdit
 	// clearSelection empties the bottom grid. A filter matching nothing must reach
 	// this: leaving the previous principal showing means cycling a State there
@@ -196,12 +189,13 @@ func buildPermissionsMatrix(
 	clearSelection := func() {
 		selected = -1
 		selectedEdits = nil
-		visiblePerms = visiblePerms[:0]
+		permView.SetItems(nil)
 		resetGrid(permGrid, permissionStateColumns, nil, 0)
 		permSection.SetTitle("Explicit permissions")
 	}
 	loadPrincipal := func(row int) {
-		if row < 0 || row >= len(visible) {
+		p, ok := principalView.At(row)
+		if !ok {
 			clearSelection()
 			return
 		}
@@ -209,29 +203,23 @@ func buildPermissionsMatrix(
 			return
 		}
 		selected = row
-		selectedEdits = editsFor(visible[row])
-		resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
-		permSection.SetTitle("Explicit permissions for " + visible[row].Name)
+		selectedEdits = editsFor(p)
+		permView.SetItems(selectedEdits)
+		resetGrid(permGrid, permissionStateColumns, permRowsFor(), 0)
+		permSection.SetTitle("Explicit permissions for " + p.Name)
 	}
 	principalGrid.OnSelectRow = loadPrincipal
 	loadPrincipal(0)
 
-	propsheet.BindCellToggle(permGrid, permissionStateColumns, 1, func() int { return len(visiblePerms) },
+	propsheet.BindCellToggle(permGrid, permissionStateColumns, 1, permView.Len,
 		func(row int) {
-			e := visiblePerms[row]
-			e.current = nextPermState(e.current)
-		},
-		func() [][]string { return permRowsFor(selectedEdits) })
-
-	principalFilterRow := propsheet.Text("Filter principals", "", 28)
-	principalFilterRow.SetDirtyTracked(false)
-	principalFilterRow.SetOnChange(func(term string) {
-		visible = visible[:0]
-		for _, p := range principals {
-			if matchesFilter(term, p.Name, string(p.Type)) {
-				visible = append(visible, p)
+			if e, ok := permView.At(row); ok {
+				e.current = nextPermState(e.current)
 			}
-		}
+		},
+		permRowsFor)
+
+	principalFilterRow := principalView.FilterRow("Filter principals", 28, func() {
 		redrawGrid(principalGrid, []string{"Name", "Type"}, principalRowsFor())
 		// The row that was selected is probably not at the same index (or present at
 		// all) in the new list, so re-select from the top rather than leave the bottom
@@ -241,12 +229,9 @@ func buildPermissionsMatrix(
 		loadPrincipal(0)
 	})
 
-	permFilterRow := propsheet.Text("Filter permissions", "", 28)
-	permFilterRow.SetDirtyTracked(false)
-	permFilterRow.SetOnChange(func(term string) {
-		permFilter = term
+	permFilterRow := permView.FilterRow("Filter permissions", 28, func() {
 		if selectedEdits != nil {
-			resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
+			resetGrid(permGrid, permissionStateColumns, permRowsFor(), 0)
 		}
 	})
 
@@ -269,7 +254,7 @@ func buildPermissionsMatrix(
 			}
 		}
 		if selectedEdits != nil {
-			redrawGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits))
+			redrawGrid(permGrid, permissionStateColumns, permRowsFor())
 		}
 	}
 
@@ -352,30 +337,25 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 				edits[i] = &permEdit{entry: entry, orig: state, current: state}
 			}
 
-			// visible maps the grid's row indices onto edits, which stays
+			// view maps the grid's row indices onto edits, which stays
 			// indexed by the full catalog however the filter is set.
-			filter := ""
-			var visible []*permEdit
+			view := propsheet.NewFilterIndex(func(e *permEdit, term string) bool {
+				return core.MatchesAny(term, e.entry.Permission)
+			})
+			view.SetItems(edits)
 			rowsFor := func() [][]string {
-				visible = visible[:0]
-				for _, e := range edits {
-					if matchesFilter(filter, e.entry.Permission) {
-						visible = append(visible, e)
-					}
-				}
-				rows := make([][]string, len(visible))
-				for i, e := range visible {
-					rows[i] = []string{e.entry.Permission, displayPermState(e.current)}
-				}
-				return rows
+				return view.Rows(func(e *permEdit) []string {
+					return []string{e.entry.Permission, displayPermState(e.current)}
+				})
 			}
-			grid := propsheet.NewCellToggleGrid(permissionStateColumns, 1, func() int { return len(visible) },
-				func(row int) { visible[row].current = nextPermState(visible[row].current) }, rowsFor)
+			grid := propsheet.NewCellToggleGrid(permissionStateColumns, 1, view.Len,
+				func(row int) {
+					if e, ok := view.At(row); ok {
+						e.current = nextPermState(e.current)
+					}
+				}, rowsFor)
 
-			filterRow := propsheet.Text("Filter permissions", "", 28)
-			filterRow.SetDirtyTracked(false)
-			filterRow.SetOnChange(func(term string) {
-				filter = term
+			filterRow := view.FilterRow("Filter permissions", 28, func() {
 				resetGrid(grid, permissionStateColumns, rowsFor(), 0)
 			})
 

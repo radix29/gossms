@@ -1942,6 +1942,91 @@ it from the string 'NULL'.
   only the first would find dead on most terminals. Not folded into
   `NormalizeKey`, which would break hosts that bind Ctrl+J. Its one gossms
   caller is Execute Current Statement (`query_panel_input.go`).
+- **Byte sizes render through tuikit's `core.FormatBytes`** (2026-11-20,
+  tuikit reuse round 10, item 1). gossms's own `formatBytes`
+  (`backup_common.go`) was a stale copy that picked the unit before rounding,
+  so 1 MiB − 1 read "1024.0 KB"; tuikit's reads "1.0 MB". Same format
+  otherwise, so `parseDetailNumber`'s byte-unit sort is unaffected. Its
+  `TestFormatBytes` went: every row is in `~/go/tuikit/core/strutil_test.go`.
+- **A tool-row press is tuikit's `controls.ToolRow.Press`** (2026-11-20,
+  tuikit reuse round 10, item 2). The six hosts (Activity Monitor, Picture
+  panel, XEvent viewer, Log Viewer, Query Store's two rows, Replication
+  Monitor) each hand-rolled "More → `OverflowMenu`, cell → `RunCell`, gap →
+  swallow" in their own order; `Press` owns the order (More first) and
+  reports whether the press fell on the row, so the host arms its gesture
+  zone either way. Arming stays with the host (`core.Gesture[Z]` is
+  host-typed); the Log Viewer still tests its filter field first. `Press`
+  takes the host's `app.contextMenu` eagerly, so a test panel built without
+  an `App` needs a zero one (`newTestLogViewer`).
+- **Canvas scroll keys are tuikit's `core.Viewport.ScrollKey`, and End keeps
+  the column** (2026-11-20, tuikit reuse round 10, item 3). The Activity
+  Monitor and the Picture panel each mapped arrows, PgUp/PgDn, Home and End
+  by hand, and disagreed on End: the Activity Monitor went to the far corner
+  (MaxX, MaxY), the Picture panel to the last row in the same column. The
+  author chose the column-keeping End (SSMS text views), so the Activity
+  Monitor's End changed. Steps stay per host (`hScrollStep` 4, the picture's
+  2); a page is View less one row, at least one (the Activity Monitor's
+  `pageStep` 10 fallback for an unknown height went). The Activity Monitor
+  returns `moved` so a key at a boundary falls through, through `panned` so a
+  scroll still drops the pinned tooltip; the Picture panel claims a bound key
+  either way, as before. **The grab-and-drag pan stayed in the Picture
+  panel** (`dragFrom`): one consumer, so no `Viewport.StartPan`/`PanTo`.
+- **A filter box over a grid is tuikit's `propsheet.FilterIndex`, matching
+  with `core.MatchesAny`** (2026-11-20, tuikit reuse round 10, item 4; the
+  plan called it weak, the author took it). The five hand-rolled pairs in
+  `server_permissions_matrix.go` (principals and permissions in
+  `buildPermissionsMatrix`, the single grid in
+  `pagePrincipalServerPermissions`) and `securables_matrix.go` (securables,
+  permissions) each kept a `visible` slice, rebuilt it on every edit and
+  indexed it raw; they now map grid rows through `At` (bounds-checked) and
+  build their filter boxes with `FilterRow` (a view control, never dirty).
+  The empty-result trap stays the host's, in `onFilter`: clearing the detail
+  grid needs the page's own selection state, so `FilterIndex` names it in
+  its doc comment rather than owning it. gossms's `matchesFilter` and its
+  test went (`core.TestMatchesAny` has every row). A list that changes
+  under the filter (Add growing the securables, a new selection's edits) is
+  re-fed with `SetItems`, which keeps the typed term.
+- **A pre-rendered text cell is read for sorting and alignment by tuikit**
+  (2026-11-20, tuikit reuse round 11, item 1; reverses rounds 1–6, which kept
+  it because it parsed gossms's own format — round 10 made that format
+  tuikit's `core.FormatBytes`). `core.ParseFormattedNumber` is the inverse of
+  `FormatBytes`/`FormatThousands` (byte units scaled to bytes), pinned by a
+  round-trip test so the pair can't drift; `controls.NewTextCellKey`,
+  `CompareTextCells` and `ClassifyTextCell` replace `detailSortKey`,
+  `compareDetailSortKeys` and `listCellClass`. Author's calls as recommended:
+  the placeholder set is fixed (`""`, `…`, `...`, `N/A`, `-`, `—`), not
+  host-injected; no stable-permutation helper (`sortedRows` also permutes the
+  row objects). The zero `TextCellKey` is a blank, so a row too short for the
+  column needs no special key. `TestParseDetailNumber` and
+  `TestDetailSortScalesByteUnits` moved to tuikit; `listAutoAlign`'s
+  Property/Value exemption stays gossms's. `query_panel_sort.go` is
+  untouched (it compares by declared SQL type).
+- **The background task registry is tuikit's `loop.Tasks`** (2026-11-20,
+  tuikit reuse round 11, item 2). It carries the rule
+  `dialogs.ProgressDialog.Run` carries for a modal run: a task is
+  `Cancelled` only if it failed after a Cancel asked for while it ran, never
+  when it panicked. `Start`/`Progress`/`Done`/`Finish`/`Running`/`All`
+  replace `startTask`/`postProgress`/`postTaskDone`/`markTaskDone`/
+  `runningTaskCount`/`a.tasks`; `Task.Times` replaces `taskTimes`;
+  `pruneFinishedTasks` is `Keep` (50). Author's calls as recommended: a panic
+  finishes a task with the exported sentinel `loop.ErrTaskPanicked`, and
+  `Task` keeps exported fields documented as UI-goroutine-only. One change
+  from the plan's sketch: the registry takes `Post func(func())`, the hook
+  `loop.Runner` takes, not a `*Poster`. gossms keeps `type Task = loop.Task`,
+  the wording (`taskStatusText`, `taskRepairNote` reading
+  `*gosmo.RepairError`, `taskFinished` as `OnFinish` with
+  `withPermissionAdvice`), `TasksDialog`, `drawTaskProgress` and
+  `runProgressButton`; `wireTasks` connects the registry in `NewApp` and
+  `newTestApp`. The generic rows of `tasks_test.go` and `TestTaskTimes` moved
+  to tuikit; `TestTaskStatusText` stays.
+- **A section heading (a bold title over a rule) is tuikit's
+  `dialogs.DrawSectionHeading`** (2026-11-20, tuikit reuse round 11, item 3).
+  It returns the first free row under the rule and clips the title to the
+  width. propsheet's `SectionRow.Draw` and page title use it, and so do
+  Restore's "Files Included" and "Files in the backup", which had drifted to
+  not-bold. Author's call as recommended: Restore adopts the bold look, as
+  round 1 did for `DrawSectionBar`. Connect's `drawSection` (the title set
+  into the rule, one row) is a different shape and stays.
 - **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
   `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
   is read at draw time, so labels are fixed and a flip needs no

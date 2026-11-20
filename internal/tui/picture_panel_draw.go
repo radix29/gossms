@@ -43,7 +43,7 @@ func (pp *PicturePanel) infoText() string {
 	b := pp.flat.Bounds()
 	parts := []string{
 		fmt.Sprintf("%s %d×%d", strings.ToUpper(pp.format), b.Dx(), b.Dy()),
-		formatBytes(int64(len(pp.data))),
+		core.FormatBytes(int64(len(pp.data))),
 	}
 	zoom := fmt.Sprintf("%d%%", pp.zoomPercent())
 	if !pp.zoomed() {
