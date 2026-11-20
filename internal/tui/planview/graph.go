@@ -86,11 +86,10 @@ func (v *PlanView) drawGraphTab(s tcell.Screen) {
 	v.graphSplit.Draw(s)
 	n, st := v.selectedNode(), v.currentStatement()
 	live := v.liveCountersPtr(n)
+	drawDetails(s, v.graphPropsRect, &v.graphPropsPane, n, st, live) // clamps first, as in drawTreeTab
 	total := len(detailLines(n, st, live))
-	canUp := v.graphPropsScroll > 0
-	canDown := v.graphPropsScroll+v.graphPropsRect.H < total
-	drawDetailsHeader(s, v.graphPropsHeaderRect, "Properties", canUp, canDown)
-	drawDetails(s, v.graphPropsRect, n, st, live, v.graphPropsScroll)
+	p := &v.graphPropsPane
+	drawDetailsHeader(s, v.graphPropsHeaderRect, "Properties", p.CanUp(), p.CanDown(total, v.graphPropsRect.H))
 }
 
 // drawGraphCanvas draws edges then tiles, scrolled and clipped to the canvas.
@@ -368,8 +367,7 @@ func (v *PlanView) graphSelectRoot() {
 func (v *PlanView) scrollGraphProps(delta int) {
 	n := v.selectedNode()
 	total := len(detailLines(n, v.currentStatement(), v.liveCountersPtr(n)))
-	maxScroll := max(0, total-v.graphPropsRect.H)
-	v.graphPropsScroll = core.Clamp(v.graphPropsScroll+delta, 0, maxScroll)
+	v.graphPropsPane.ScrollBy(delta, total, v.graphPropsRect.H)
 }
 
 // handleGraphTabKey handles Plan tab navigation, the strip toggle, and (strip

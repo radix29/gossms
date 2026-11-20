@@ -70,7 +70,7 @@ func (v *XEventViewer) HandleKey(ev *tcell.EventKey) bool {
 		return false
 	}
 	if v.grid.SelectedRow() != beforeRow {
-		v.detailScroll = 0
+		v.detail.Scroll = 0
 	}
 	return true
 }
@@ -145,7 +145,7 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 		if v.grid.HandleMouse(ev) {
 			v.dragZone.Arm(ev, xZoneGrid)
 			if v.grid.SelectedRow() != beforeRow {
-				v.detailScroll = 0
+				v.detail.Scroll = 0
 			}
 			if ev.Buttons() == tcell.Button1 {
 				v.clickGroup(mx, beforeRow)

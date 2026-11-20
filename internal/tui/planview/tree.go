@@ -172,11 +172,12 @@ func (v *PlanView) drawTreeTab(s tcell.Screen) {
 	v.treeSplit.Draw(s)
 	n := v.selectedNode()
 	live := v.liveCountersPtr(n)
+	// Content first: its Draw clamps a scroll left stale by a resize, which the
+	// header's ▲/▼ then reflects.
+	drawDetails(s, v.detailsContentRect, &v.detailsPane, n, st, live)
 	total := len(detailLines(n, st, live))
-	canUp := v.detailsScroll > 0
-	canDown := v.detailsScroll+v.detailsContentRect.H < total
-	drawDetailsHeader(s, v.detailsHeaderRect, "Operator Details", canUp, canDown)
-	drawDetails(s, v.detailsContentRect, n, st, live, v.detailsScroll)
+	p := &v.detailsPane
+	drawDetailsHeader(s, v.detailsHeaderRect, "Operator Details", p.CanUp(), p.CanDown(total, v.detailsContentRect.H))
 	v.drawBottomSection(s)
 }
 
@@ -317,21 +318,22 @@ func (v *PlanView) drawBottomSection(s tcell.Screen) {
 	if v.bottomMode == bottomSummary {
 		hs, title = v.summaryHeaderStyleAndText()
 	}
+	// Content first: drawProperties clamps a scroll left stale by a resize, which
+	// the header's ▲/▼ then reflects.
+	switch v.bottomMode {
+	case bottomProperties:
+		drawProperties(s, v.bottomRect, &v.propsPane, v.selectedNode())
+	case bottomSummary:
+		v.drawSummary(s, v.bottomRect)
+	}
 	core.FillRect(s, v.bottomHeaderRect, ' ', hs)
 	text := title
 	if v.bottomMode == bottomProperties {
 		total := len(nodePropsForDisplay(v.selectedNode()))
-		canUp := v.propsSt.scroll > 0
-		canDown := v.propsSt.scroll+v.bottomRect.H < total
-		text = detailsHeaderText(title, v.bottomHeaderRect.W-2, canUp, canDown)
+		p := &v.propsPane
+		text = detailsHeaderText(title, v.bottomHeaderRect.W-2, p.CanUp(), p.CanDown(total, v.bottomRect.H))
 	}
 	core.DrawTextClipped(s, v.bottomHeaderRect.X+1, v.bottomHeaderRect.Y, v.bottomHeaderRect.W-2, hs, text)
-	switch v.bottomMode {
-	case bottomProperties:
-		drawProperties(s, v.bottomRect, v.selectedNode(), v.propsSt.scroll)
-	case bottomSummary:
-		v.drawSummary(s, v.bottomRect)
-	}
 }
 
 // cycleBottomMode advances the bottom section hidden → properties →

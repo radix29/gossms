@@ -48,35 +48,21 @@ func (v *XEventViewer) drawToolbar(s tcell.Screen) {
 // drawDetails paints the selected event below the splitter.
 func (v *XEventViewer) drawDetails(s tcell.Screen) {
 	r := v.detailRect
-	if r.W <= 0 || r.H <= 0 {
-		return
-	}
-	pal := theme.Active()
 	style := theme.StyleDefault()
-	dim := style.Foreground(pal.TextDim)
-	core.FillRect(s, r, ' ', style)
-
 	e, ok := v.selectedEvent()
 	if !ok {
-		core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, dim, "No event selected")
+		v.detail.DrawEmpty(s, r, style, "No event selected")
 		return
 	}
 	lines := v.detailLines(e, r.W-2)
-	for i := v.detailScroll; i < len(lines); i++ {
-		y := r.Y + i - v.detailScroll
-		if y >= r.Y+r.H {
-			break
-		}
-		st := style
+	dim := style.Foreground(theme.Active().TextDim)
+	v.detail.Draw(s, r, style, lines, func(i int) tcell.Style {
 		// Section headings ("Fields", "Actions") stand out from the rows.
 		if lines[i] == xeFieldsHeading || lines[i] == xeActionsHeading {
-			st = dim
+			return dim
 		}
-		core.DrawTextClipped(s, r.X+1, y, r.W-2, st, lines[i])
-	}
-	if len(lines)-v.detailScroll-r.H > 0 {
-		core.DrawTextRight(s, r.X, r.Y+r.H-1, r.W-1, dim, core.Truncate("▾ more (Alt+↓)", r.W-1))
-	}
+		return style
+	})
 }
 
 // detailLines is the details pane's text for e at width w, cached per

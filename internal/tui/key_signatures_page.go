@@ -38,7 +38,7 @@ type keySignatureEdit struct {
 	schema, module, typ string
 	counter             bool
 
-	pendingState
+	propsheet.PendingState
 }
 
 func (e *keySignatureEdit) key() string { return e.schema + "." + e.module }
@@ -155,7 +155,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 		loaded[i] = &keySignatureEdit{schema: x.Schema, module: x.Module, typ: x.ModuleType, counter: x.Counter}
 	}
 	edits := newPendingEdits("", loaded, nil, nil, nil)
-	visible := edits.visible
+	visible := edits.Visible
 	rowsFor := func() [][]string {
 		vis := visible()
 		rows := make([][]string, len(vis))
@@ -191,13 +191,13 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 			return
 		}
 		m := mods[modSelect.Selected()]
-		for _, x := range edits.all() {
+		for _, x := range edits.All() {
 			if x.schema != m.Schema || x.module != m.Name || x.counter {
 				continue
 			}
-			if x.removing {
+			if x.Removing {
 				// Undo the Remove rather than dropping and re-signing.
-				edits.restore(x)
+				edits.Restore(x)
 				hint.Clear()
 				resetGrid(grid, keySignatureColumns, rowsFor(), len(visible())-1)
 				return
@@ -206,7 +206,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 			return
 		}
 		hint.Clear()
-		edits.add(&keySignatureEdit{schema: m.Schema, module: m.Name, typ: m.Type})
+		edits.Add(&keySignatureEdit{schema: m.Schema, module: m.Name, typ: m.Type})
 		resetGrid(grid, keySignatureColumns, rowsFor(), len(visible())-1)
 	})
 	addBtn.SetEnabled(canSign)
@@ -218,15 +218,15 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 			hint.Set("Select a signature in the grid above to remove it.")
 			return
 		}
-		edits.remove(vis[i])
+		edits.Remove(vis[i])
 		hint.Clear()
 		resetGrid(grid, keySignatureColumns, rowsFor(), 0)
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 8)
-	gridRow.DirtyFn = edits.dirty
+	gridRow.DirtyFn = edits.Dirty
 	gridRow.RevertFn = func() {
-		edits.revert()
+		edits.Revert()
 		resetGrid(grid, keySignatureColumns, rowsFor(), 0)
 		hint.Clear()
 	}
@@ -255,8 +255,8 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 
 	apply := func(ctx context.Context) error {
 		signer := gosmo.Signer{Kind: s.kind, Name: s.name}
-		for _, e := range edits.all() {
-			if e.removing {
+		for _, e := range edits.All() {
+			if e.Removing {
 				kind := gosmo.PlainSignature
 				if e.counter {
 					kind = gosmo.CounterSignature
@@ -266,8 +266,8 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 				}
 			}
 		}
-		for _, e := range edits.all() {
-			if !e.isNew {
+		for _, e := range edits.All() {
+			if !e.IsNew {
 				continue
 			}
 			if byPassword && passField.Value() == "" {

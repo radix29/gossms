@@ -241,11 +241,7 @@ func TestLogViewerFilterIsAClipboardTarget(t *testing.T) {
 	if got := a.activeClipboardTarget(); got != clipboardTarget(lv.filter) {
 		t.Fatalf("target = %T, want the filter box", got)
 	}
-	a.beginBracketedPaste()
-	for _, r := range "error" {
-		a.paste.bracket.Key(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
-	}
-	a.endBracketedPaste()
+	bracketedPaste(a, "error")
 	if lv.filter.Value() != "error" {
 		t.Errorf("filter = %q after a terminal paste, want %q", lv.filter.Value(), "error")
 	}
@@ -268,7 +264,7 @@ func TestAPanelThatIsAClipboardHostIsAsked(t *testing.T) {
 }
 
 // A panel of several grids names the one with the keyboard, a different target
-// per grid. That is what lets pasteInto's identity check drop a paste aimed at
+// per grid. That is what lets clipboard.Dispatcher.Deliver's identity check drop a paste aimed at
 // one grid that arrives after focus moved to the other, with no
 // core.ClipboardTargetTokener; a panel answering with itself would need one.
 // The target being the grid itself also gives Ctrl+C there the results grid's

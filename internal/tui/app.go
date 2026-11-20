@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/browser"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/clipboard"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/controls/editor"
 	"github.com/radix29/tuikit/core"
@@ -147,18 +148,13 @@ type App struct {
 	// focus is which half of the window has the keyboard.
 	focus appFocus
 
-	// paste is the state of a paste still arriving (see appPaste).
-	paste appPaste
-
 	// lastButtons is the button state of the previous mouse event, which
 	// tells pointer motion (coalesced in Run) from a press or release.
 	lastButtons tcell.ButtonMask
 
-	// clipWriteMu runs writeClipboard's goroutines one at a time, and
-	// clipWriteSeq numbers them, so of two quick copies the later one is what
-	// the clipboard ends up holding. See writeClipboard.
-	clipWriteMu  sync.Mutex
-	clipWriteSeq atomic.Uint64
+	// clipDispatcher moves text between the widgets and the system clipboard;
+	// reach it through App.clip, which builds it.
+	clipDispatcher *clipboard.Dispatcher
 
 	// wake is the queue background goroutines hand results to the UI
 	// goroutine through (see postAndWake), and the gate ordering quit's
@@ -255,54 +251,35 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	a.drainPending()
 	a.modals.Sync()
 
-	switch e := ev.(type) {
-	case *tcell.EventResize:
-		a.screen.Sync()
-		a.layoutAll()
-	case *tcell.EventInterrupt:
-		// triggered after background goroutine posts result
-	case *tcell.EventKey:
-		// Between the two EventPaste markers every key is pasted content,
-		// not typing. Buffer it, or each pasted newline arrives as
-		// KeyEnter and IntelliSense's commit binding eats it, silently
-		// rewriting the pasted text.
-		if a.paste.bracket.Active() {
-			a.paste.bracket.Key(e)
-			// A buffered key changes nothing on screen, and a frame per
-			// key made a 10,001-line, 170 KB paste take ~6 minutes. The end
-			// marker draws the result. Only keys skip it: should the end
-			// marker be lost, every other event (resize, mouse, a
-			// background result) still draws, so the screen never freezes.
-			return false, skipFrame
+	// The clipboard's share first: a bracketed paste's markers and, between
+	// them, every key — pasted content, not typing, or each pasted newline
+	// arrives as KeyEnter and IntelliSense's commit binding eats it — and the
+	// terminal's OSC 52 reply to a Ctrl+V. A buffered key changes nothing on
+	// screen, and a frame per key made a 10,001-line, 170 KB paste take ~6
+	// minutes; only keys skip it, so a lost end marker never freezes the screen.
+	if consumed, skip := a.clip().HandleEvent(ev); skip {
+		return false, skipFrame
+	} else if !consumed {
+		switch e := ev.(type) {
+		case *tcell.EventResize:
+			a.screen.Sync()
+			a.layoutAll()
+		case *tcell.EventInterrupt:
+			// triggered after background goroutine posts result
+		case *tcell.EventKey:
+			if a.handleKey(e) {
+				return true, skipFrame
+			}
+		case *tcell.EventMouse:
+			a.handleMouse(e)
+			// A press, a release and every wheel notch change the button
+			// state; motion alone repeats it. Only motion is coalesced.
+			btns := e.Buttons()
+			if btns == a.lastButtons && btns&wheelButtons == 0 {
+				need = frameUnlessQueued
+			}
+			a.lastButtons = btns
 		}
-		if a.handleKey(e) {
-			return true, skipFrame
-		}
-	case *tcell.EventPaste:
-		// Terminal bracketed paste — the terminal's own Paste command,
-		// or a middle-click.
-		if e.Start() {
-			a.beginBracketedPaste()
-		} else {
-			a.endBracketedPaste()
-		}
-	case *tcell.EventMouse:
-		a.handleMouse(e)
-		// A press, a release and every wheel notch change the button
-		// state; motion alone repeats it. Only motion is coalesced.
-		btns := e.Buttons()
-		if btns == a.lastButtons && btns&wheelButtons == 0 {
-			need = frameUnlessQueued
-		}
-		a.lastButtons = btns
-	case *tcell.EventClipboard:
-		// Response to the GetClipboard() request made from Ctrl+V, which
-		// recorded what it was aimed at. Clearing it first also makes an
-		// unsolicited reply — the terminal answering a request this app
-		// never made — paste nothing anywhere.
-		target, token := a.paste.target, a.paste.token
-		a.paste.target, a.paste.token = nil, nil
-		a.pasteInto(target, token, string(e.Data()))
 	}
 
 	// Re-sync before drawing: the event just handled may have opened or

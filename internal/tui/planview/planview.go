@@ -63,12 +63,12 @@ type PlanView struct {
 	detailsPaneRect    core.Rect // whole right-of-splitter pane (header + content)
 	detailsHeaderRect  core.Rect
 	detailsContentRect core.Rect
-	detailsScroll      int
-	bottomMode         bottomMode // hidden / properties / summary — cycled by 'o'
-	bottomFocused      bool       // Tab-toggled; keyboard focus on the operator summary table rather than the tree — meaningful only in the Tree tab's bottomSummary mode (the Plan tab has no summary table)
+	detailsPane        core.LinePane // the details content's scroll
+	bottomMode         bottomMode    // hidden / properties / summary — cycled by 'o'
+	bottomFocused      bool          // Tab-toggled; keyboard focus on the operator summary table rather than the tree — meaningful only in the Tree tab's bottomSummary mode (the Plan tab has no summary table)
 	bottomHeaderRect   core.Rect
 	bottomRect         core.Rect
-	propsSt            propsState
+	propsPane          core.LinePane // the bottom Properties section's own scroll
 	summarySt          summaryState
 
 	// Plan tab (TabPlan) state — see graph.go, graph_layout.go. The detail strip
@@ -81,7 +81,7 @@ type PlanView struct {
 	graphCanvasRect      core.Rect
 	graphPropsHeaderRect core.Rect
 	graphPropsRect       core.Rect
-	graphPropsScroll     int
+	graphPropsPane       core.LinePane
 
 	// OnExpand, when set, shows a "[ Expand ]" button in the tab bar and is
 	// called on click (the host decides what it opens). Hidden while nil.
@@ -213,9 +213,9 @@ func (v *PlanView) selectFirstNode() {
 	v.rebuildTreeRows()
 	v.rebuildSummaryRows()
 	v.rebuildGraphLayout()
-	v.propsSt.scroll = 0
-	v.detailsScroll = 0
-	v.graphPropsScroll = 0
+	v.propsPane.Scroll = 0
+	v.detailsPane.Scroll = 0
+	v.graphPropsPane.Scroll = 0
 }
 
 // nodeByID returns the node with the given ID in root's subtree, or nil.
@@ -264,9 +264,9 @@ func (v *PlanView) selectNode(id int) {
 		return
 	}
 	v.selectedID = id
-	v.propsSt.scroll = 0
-	v.detailsScroll = 0
-	v.graphPropsScroll = 0
+	v.propsPane.Scroll = 0
+	v.detailsPane.Scroll = 0
+	v.graphPropsPane.Scroll = 0
 	v.ensureTreeRowVisible()
 	v.ensureTileVisible(id)
 }

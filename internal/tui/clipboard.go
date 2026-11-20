@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/clipboard"
 	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/core"
@@ -12,22 +13,38 @@ import (
 // controls.DataGrid and propsheet.PropertySheet satisfy it structurally.
 type clipboardTarget = core.ClipboardTarget
 
-// appPaste is the state of a paste still arriving, by either route.
-type appPaste struct {
-	// Bracketed paste: Active between an *tcell.EventPaste start and its matching
-	// end, during which every EventKey is pasted content (see Run).
-	bracket clipboard.PasteBuffer
-
-	// target is the widget a Ctrl+V was aimed at while the terminal's OSC 52
-	// clipboard reply is outstanding (the fallback when no native tool answered).
-	// The reply arrives as an *tcell.EventClipboard an unbounded time later;
-	// App.pasteInto says why the target is remembered rather than re-resolved.
-	target clipboardTarget
-
-	// token pins which field of target the Ctrl+V was aimed at, for a host that
-	// hands back itself rather than the field; see core.ClipboardTargetTokener and
-	// App.pasteInto.
-	token any
+// clip is the App's clipboard.Dispatcher, built on first use (on the UI
+// goroutine, as every caller is) so an App a test builds as a bare literal has
+// one too. It moves text between activeClipboardTarget and the system
+// clipboard: newest copy wins, OSC 52 fallback, a paste aimed once and dropped
+// if its target changed before the text arrived, bracketed paste as one edit
+// (see tuikit's clipboard.Dispatcher for the bugs each part names).
+func (a *App) clip() *clipboard.Dispatcher {
+	if a.clipDispatcher == nil {
+		a.clipDispatcher = &clipboard.Dispatcher{
+			Screen: func() tcell.Screen { return a.screen },
+			// The explicit nil: activeClipboardTarget's nil interface converts to a
+			// nil clipboard.Target, which Paste and Deliver test for.
+			Resolve: func() clipboard.Target {
+				if t := a.activeClipboardTarget(); t != nil {
+					return t
+				}
+				return nil
+			},
+			Token: func() any { return clipboardTargetToken(a.modals.Top()) },
+			Post:  a.postAndWake,
+			Go:    a.safego,
+			// Every Target comes from Resolve, so it is a clipboardTarget.
+			Pasted: func(t clipboard.Target) { a.notifyClipboardEdit(t.(clipboardTarget)) },
+			// OSC 52 has no acknowledgement, so the caller's "Copied to clipboard"
+			// may be false: VTE (xfce4-terminal, GNOME Terminal) ignores OSC 52
+			// writes. Overwrites the caller's status, which it set synchronously,
+			// before this ran.
+			Unconfirmed: func() { a.setStatus("Copied via terminal (may be unsupported)") },
+			NativeWrite: func(text string) bool { return clipboardWriter(text) },
+		}
+	}
+	return a.clipDispatcher
 }
 
 // activeClipboardTarget resolves which widget Copy/Cut/Paste acts on now: the
@@ -159,44 +176,14 @@ func (a *App) notifyClipboardEdit(target clipboardTarget) {
 	a.modals.ClipboardEdited(target)
 }
 
-// writeClipboard sends text to the clipboard off the UI thread: the native OS
-// clipboard (xclip/xsel/wl-copy/pbcopy, the Win32 API on Windows; see tuikit's
-// clipboard.Write) first, falling back to tcell's OSC 52 terminal clipboard
-// when no native tool handled it. The shell-out runs on a background goroutine
-// so a stalled tool can't freeze the event loop; the OSC 52 fallback returns to the UI thread, since SetClipboard
-// writes to the terminal.
-//
-// One write at a time, and only the newest: racing goroutines would let the
-// earlier copy finish last and win. Under clipWriteMu a write a later copy has
-// superseded is skipped, whichever goroutine gets the lock first, as is its OSC 52
-// fallback if a newer copy came in meanwhile.
-func (a *App) writeClipboard(text string) {
-	seq := a.clipWriteSeq.Add(1)
-	a.safego("writing to the clipboard", func() {
-		a.clipWriteMu.Lock()
-		defer a.clipWriteMu.Unlock()
-		if a.clipWriteSeq.Load() != seq {
-			return
-		}
-		if clipboardWriter(text) {
-			return
-		}
-		a.postAndWake(func() {
-			if a.clipWriteSeq.Load() == seq {
-				a.screen.SetClipboard([]byte(text))
-				// OSC 52 has no acknowledgement, so the caller's "Copied to
-				// clipboard" may be false: VTE (xfce4-terminal, GNOME Terminal)
-				// ignores OSC 52 writes. Overwrites the caller's status, which
-				// it set synchronously, before this ran.
-				if !clipboard.TerminalLikely(a.screen) {
-					a.setStatus("Copied via terminal (may be unsupported)")
-				}
-			}
-		})
-	})
-}
+// writeClipboard sends text to the clipboard: the native OS clipboard
+// (xclip/xsel/wl-copy/pbcopy, the Win32 API on Windows) off the UI thread,
+// falling back to OSC 52, the newest of several copies winning. See
+// clipboard.Dispatcher.Copy.
+func (a *App) writeClipboard(text string) { a.clip().Copy(text) }
 
-// clipboardWriter is clipboard.Write, swapped by tests.
+// clipboardWriter is clipboard.Write, swapped by tests (read at each write, so
+// a swap reaches a Dispatcher already built).
 var clipboardWriter = clipboard.Write
 
 // copyWithStatus is writeClipboard plus the status-line acknowledgement, for
@@ -207,32 +194,12 @@ func (a *App) copyWithStatus(text string) {
 	a.setStatus("Copied to clipboard")
 }
 
-// pasteFromClipboard runs Paste (Ctrl+V / Edit > Paste). The native OS
-// clipboard read runs on a background goroutine so a stalled tool can't freeze
-// the event loop, and the paste is applied on the UI thread. With no native
-// tool it requests the terminal clipboard, whose reply arrives later as an
-// *tcell.EventClipboard handled in Run().
-//
-// Both halves resolve the target once, now, and carry it: pasteInto drops the
-// text unless that widget is still the one the clipboard would act on.
-func (a *App) pasteFromClipboard() {
-	target := a.activeClipboardTarget()
-	if target == nil {
-		return
-	}
-	token := clipboardTargetToken(a.modals.Top())
-	a.safego("reading the clipboard", func() {
-		text, ok := clipboard.Read()
-		a.postAndWake(func() {
-			if ok {
-				a.pasteInto(target, token, text)
-				return
-			}
-			a.paste.target, a.paste.token = target, token
-			a.screen.GetClipboard()
-		})
-	})
-}
+// pasteFromClipboard runs Paste (Ctrl+V / Edit > Paste): the target is resolved
+// once, now, and the text dropped unless that widget (and, through
+// clipboardTargetToken, that field) is still the target when it arrives — a
+// paste aimed at a closed dialog's field would otherwise land in the query
+// editor behind it. See clipboard.Dispatcher.Paste and Deliver.
+func (a *App) pasteFromClipboard() { a.clip().Paste() }
 
 // clipboardTargetToken is the identity of the field a host has focus on, or nil
 // from a host that doesn't distinguish its fields. Only propsheet.PropertySheet
@@ -243,58 +210,6 @@ func clipboardTargetToken(top Dialog) any {
 		return t.ClipboardTargetToken()
 	}
 	return nil
-}
-
-// pasteInto applies text to the widget the paste was aimed at, and only that.
-//
-// Every clipboard read is asynchronous (a shell-out on a goroutine, or the
-// terminal's OSC 52 reply as a later event), so between Ctrl+V and the text
-// arriving the user can have closed the dialog it was meant for. Re-resolving
-// would land a paste aimed at a dialog field in the query editor behind it.
-// Dropping the paste is right: the text is still on the clipboard.
-//
-// token carries the same check one level deeper, for a host that answers with
-// itself: a PropertySheet is the active target whichever row has focus, so the
-// identity check can't see a move from one row to the next and a paste aimed at
-// Name would arrive in Description. See core.ClipboardTargetTokener.
-func (a *App) pasteInto(target clipboardTarget, token any, text string) {
-	if target == nil || a.activeClipboardTarget() != target {
-		return
-	}
-	if clipboardTargetToken(a.modals.Top()) != token {
-		return
-	}
-	target.Paste(clipboard.StripBOMs(text))
-	a.notifyClipboardEdit(target)
-}
-
-// ---------------------------------------------------------------------------
-// Terminal bracketed paste
-// ---------------------------------------------------------------------------
-
-// beginBracketedPaste starts collecting pasted content. tcell's EnablePaste
-// (see core.Init) only brackets the paste with EventPaste start/end markers;
-// the content still arrives as ordinary EventKeys, which Run() buffers in
-// paste.bracket (clipboard.PasteBuffer: its Key says which keys survive and
-// how a CR, LF or CRLF becomes one line break).
-func (a *App) beginBracketedPaste() {
-	a.paste.bracket.Begin()
-}
-
-// endBracketedPaste applies the whole buffered paste to the current target as
-// one edit. Going through clipboardTarget.Paste rather than replaying keys is
-// the point: replayed keys run the typing path, where a pasted newline arrives
-// as KeyEnter and an open IntelliSense popup commits its candidate, silently
-// rewriting the text. One Paste call is also one undo step.
-func (a *App) endBracketedPaste() {
-	text := a.paste.bracket.End() // BOMs already stripped
-	if text == "" {
-		return
-	}
-	if t := a.activeClipboardTarget(); t != nil {
-		t.Paste(text)
-		a.notifyClipboardEdit(t)
-	}
 }
 
 // selectAllInTarget runs Select All (Ctrl+A / Edit > Select All) on whichever

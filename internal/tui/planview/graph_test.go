@@ -298,8 +298,8 @@ func TestGraph_PropertiesWheelScrolls(t *testing.T) {
 	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelDown, tcell.ModNone)) {
 		t.Fatal("HandleMouse(WheelDown) over the Properties block returned false")
 	}
-	if v.graphPropsScroll != 1 {
-		t.Errorf("graphPropsScroll = %d after WheelDown, want 1", v.graphPropsScroll)
+	if v.graphPropsPane.Scroll != 1 {
+		t.Errorf("graphPropsPane.Scroll = %d after WheelDown, want 1", v.graphPropsPane.Scroll)
 	}
 }
 

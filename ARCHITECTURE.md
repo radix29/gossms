@@ -351,7 +351,7 @@ gossms/
 │       ├── dialog_common.go      # the goSSMS-specific part of the hand-rolled dialogs: the Backup/Restore progress button and keyboard, the discard-changes confirmation (the generic focus-ring helpers are tuikit's dialogs/focus_ring.go)
 │       ├── text_encoding.go      # decodeTextFile/encodeTextFile — internal/textenc's BOM-detected encoding plus the file's own line endings, so File > Save writes back what File > Open read
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
-│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields: target resolution, newest-copy-wins, OSC 52 fallback, bracketed paste (the OS clipboard and paste buffer are tuikit's clipboard package)
+│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields: target resolution (activeClipboardTarget) and the right-click menu; the traffic (newest-copy-wins, OSC 52 fallback, paste aimed once, bracketed paste) is tuikit's clipboard.Dispatcher, built by App.clip
 │       │
 │       │  ── Query panel & IntelliSense ──
 │       ├── query_panel.go        # QueryPanel state/layout, implements layout.Panel
@@ -504,7 +504,7 @@ gossms/
 │       ├── prop_apply.go         # PropDialog's write path: dirty-diff Apply and Script Changes, the commit-tracking step runner, commitRename, and applyPlan for a dialog whose pages' writes are ordered across pages
 │       ├── new_object_dialog.go  # newObjectDialog — the shell behind the New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── name_set.go           # nameSet/nameMap: name sets and maps keyed by gosmo.NameKey under the scope's collation (server, database or msdb), so they agree with gosmo.SameName
-│       ├── pending_edits.go      # pendingEdits: the master-detail pages' pending-edit list (rows as loaded and as edited; dirty, visible, revert, add/remove, swap); its Add duplicate checks under the scope's collation (pendingNameIndex); pendingNamesRefusal: their pre-Apply check of renames and of names a removal frees only on Apply
+│       ├── pending_edits.go      # newPendingEdits: the master-detail pages' pending-edit list (tuikit's propsheet.PendingEdits) comparing names under the scope's collation; pendingNamesRefusal (pendingRefusal over a list): their pre-Apply check of renames and of names a removal frees only on Apply
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm, redrawGrid/resetGrid, listAutoAlign)
 │       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles

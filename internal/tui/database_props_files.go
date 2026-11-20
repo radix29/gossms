@@ -44,11 +44,11 @@ const filestreamFileType = string(gosmo.FileStream)
 const noFilegroupItem = "(not applicable)"
 
 // fileEdit tracks one Files-page row's pending state: an existing file whose
-// logical name/size/growth/max size changed, a new file pending Add (isNew), or
+// logical name/size/growth/max size changed, a new file pending Add (IsNew), or
 // an existing file pending Remove.
 type fileEdit struct {
 	origName string // "" for a brand-new file
-	pendingState
+	propsheet.PendingState
 
 	name      string // current (possibly renamed) logical name
 	fileType  string // "ROWS" or "LOG"; fixed for an existing file, chosen for a new one
@@ -147,7 +147,7 @@ func (e *fileEdit) modify() gosmo.DatabaseFileChanges {
 // SHRINKFILE (DatabaseFileInfo.Shrink), as SSMS does, since MODIFY FILE refuses
 // a smaller SIZE (review plan M5).
 func (e *fileEdit) shrinks() bool {
-	return !e.isNew && !e.removing && e.sizeKB < e.origSizeKB
+	return !e.IsNew && !e.Removing && e.sizeKB < e.origSizeKB
 }
 
 // spec builds the CREATE-side description of a new file. Unlike modify, every
@@ -249,7 +249,7 @@ type databaseFilesPage struct {
 	sc     *db.ServerConn
 	dbName string
 
-	edits   *pendingEdits[*fileEdit]
+	edits   *propsheet.PendingEdits[*fileEdit]
 	fgNames []string
 	// fsGroup is which filegroups make a file put into them a FILESTREAM file.
 	// gosmo reports the filegroup's own type_desc; nothing about the file being
@@ -347,9 +347,9 @@ func (p *databaseFilesPage) form(owner string) *propsheet.Form {
 	removeBtn := widgets.NewButton("Remove", p.removeFile)
 
 	gridRow := propsheet.NewGridRow(p.grid, 10)
-	gridRow.DirtyFn = p.edits.dirty
+	gridRow.DirtyFn = p.edits.Dirty
 	gridRow.RevertFn = func() {
-		p.edits.revert()
+		p.edits.Revert()
 		resetGrid(p.grid, databaseFileColumns, p.rows(), 0)
 		p.syncFieldsFromSelection()
 	}
@@ -371,7 +371,7 @@ func (p *databaseFilesPage) form(owner string) *propsheet.Form {
 }
 
 func (p *databaseFilesPage) rows() [][]string {
-	vis := p.edits.visible()
+	vis := p.edits.Visible()
 	rows := make([][]string, len(vis))
 	for i, e := range vis {
 		rows[i] = []string{
@@ -385,7 +385,7 @@ func (p *databaseFilesPage) rows() [][]string {
 }
 
 func (p *databaseFilesPage) selected() *fileEdit {
-	vis := p.edits.visible()
+	vis := p.edits.Visible()
 	i := p.grid.SelectedRow()
 	if i < 0 || i >= len(vis) {
 		return nil
@@ -459,7 +459,7 @@ func (p *databaseFilesPage) commitCurrent() {
 	// type is outside the picker's two items, so the picker shows a stand-in and
 	// merely selecting the row would rewrite the file as ROWS. Same defect as
 	// noFilegroupItem, one field over.
-	if current.isNew {
+	if current.IsNew {
 		current.fileGroup = p.pickedFilegroup(p.typeSelect.Value())
 		current.fileType = p.effectiveType(p.typeSelect.Value(), current.fileGroup)
 		current.path = p.pathField.Value()
@@ -554,7 +554,7 @@ func (p *databaseFilesPage) addFile() {
 		p.hint.Set("Set File type to ROWS or LOG — this page adds data and log files only.")
 		return
 	}
-	if i := p.edits.index(name); i >= 0 {
+	if i := p.edits.Index(name); i >= 0 {
 		// Already present: say so and select it, rather than leave the button looking
 		// broken.
 		p.hint.Set("A file named " + name + " is already listed — its row is selected below.")
@@ -585,8 +585,8 @@ func (p *databaseFilesPage) addFile() {
 			e.maxSizeKB = n * 1024
 		}
 	}
-	p.edits.add(e)
-	resetGrid(p.grid, databaseFileColumns, p.rows(), len(p.edits.visible())-1)
+	p.edits.Add(e)
+	resetGrid(p.grid, databaseFileColumns, p.rows(), len(p.edits.Visible())-1)
 	p.syncFieldsFromSelection()
 }
 
@@ -598,7 +598,7 @@ func (p *databaseFilesPage) removeFile() {
 		return
 	}
 	p.hint.Clear()
-	p.edits.remove(e)
+	p.edits.Remove(e)
 	p.current = nil
 	resetGrid(p.grid, databaseFileColumns, p.rows(), 0)
 	p.syncFieldsFromSelection()
@@ -607,7 +607,7 @@ func (p *databaseFilesPage) removeFile() {
 // shrinkConfirm is the Apply confirmation when a lowered size means SHRINKFILE.
 func (p *databaseFilesPage) shrinkConfirm() string {
 	var names []string
-	for _, e := range p.edits.all() {
+	for _, e := range p.edits.All() {
 		if e.shrinks() {
 			names = append(names, e.name)
 		}
@@ -625,13 +625,13 @@ func (p *databaseFilesPage) apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, e := range p.edits.all() {
+	for _, e := range p.edits.All() {
 		switch {
-		case e.removing:
+		case e.Removing:
 			if err := d.FileRef(e.origName).Drop(ctx); err != nil {
 				return err
 			}
-		case e.isNew:
+		case e.IsNew:
 			if err := d.AddFile(ctx, e.spec()); err != nil {
 				return err
 			}

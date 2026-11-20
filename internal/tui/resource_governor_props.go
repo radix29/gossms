@@ -397,7 +397,7 @@ type rgIntEdit struct {
 	name   string
 	system bool // built in: never dropped
 	locked bool // the internal pool: no ALTER either
-	pendingState
+	propsheet.PendingState
 	orig []int
 	cur  []int
 
@@ -609,7 +609,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 			edits := newPendingEdits(spec.collation, loaded,
 				func(e *rgIntEdit) string { return e.name }, (*rgIntEdit).changed,
 				func(e *rgIntEdit) { e.cur, e.curAff = slices.Clone(e.orig), e.origAff })
-			visible := edits.visible
+			visible := edits.Visible
 			published := func() []string {
 				vis := visible()
 				out := make([]string, len(vis))
@@ -638,7 +638,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 				GridHeight: min(len(loaded)+4, 10),
 				Items:      visible,
 				Cells: func(e *rgIntEdit) []string {
-					row := []string{rgEditName(e.name, e.system, e.isNew)}
+					row := []string{rgEditName(e.name, e.system, e.IsNew)}
 					for _, v := range e.cur {
 						row = append(row, strconv.Itoa(v))
 					}
@@ -661,7 +661,7 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					if e == nil {
 						selectedRow.SetValue("")
 					} else {
-						selectedRow.SetValue(rgEditName(e.name, e.system, e.isNew))
+						selectedRow.SetValue(rgEditName(e.name, e.system, e.IsNew))
 					}
 					for i, row := range detail {
 						if e != nil {
@@ -672,23 +672,23 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					aff.show(e)
 				},
 				Add: func(name string) (string, bool) {
-					if edits.taken(name) {
+					if edits.Taken(name) {
 						return "A " + spec.noun + " named " + name + " is already listed.", false
 					}
 					def := spec.defaults()
 					auto := rgAffinity{auto: true}
-					edits.add(&rgIntEdit{name: name, orig: def, cur: slices.Clone(def), origAff: auto, curAff: auto})
+					edits.Add(&rgIntEdit{name: name, orig: def, cur: slices.Clone(def), origAff: auto, curAff: auto})
 					return "", true
 				},
 				Remove: func(e *rgIntEdit) (string, bool) {
 					if e.system {
 						return e.name + " is built in and cannot be removed.", false
 					}
-					edits.remove(e)
+					edits.Remove(e)
 					return "", true
 				},
-				Dirty:   edits.dirty,
-				Revert:  edits.revert,
+				Dirty:   edits.Dirty,
+				Revert:  edits.Revert,
 				Changed: func() { spec.names.publish(published()) },
 			})
 
@@ -713,19 +713,19 @@ func rgIntPage[O any](spec rgIntPageSpec[O]) propPage {
 					return err
 				}
 				def := spec.defaults()
-				for _, e := range edits.all() {
-					if !e.removing && !e.curAff.auto && len(e.curAff.ids) == 0 {
+				for _, e := range edits.All() {
+					if !e.Removing && !e.curAff.auto && len(e.curAff.ids) == 0 {
 						return fmt.Errorf("tick at least one %s for %s %s, or check Automatic %s affinity",
 							spec.affWord, spec.noun, e.name, spec.affWord)
 					}
 				}
-				for _, e := range edits.all() {
+				for _, e := range edits.All() {
 					name := e.name
 					switch {
-					case e.isNew:
+					case e.IsNew:
 						o := spec.options(e.cur, def, e.curAff, rgAffinity{auto: true})
 						plan.add(rgPhaseCreatePools, func(ctx context.Context) error { return spec.create(ctx, name, o) })
-					case e.removing:
+					case e.Removing:
 						plan.add(rgPhaseDropPools, func(ctx context.Context) error { return spec.drop(ctx, name) })
 					case e.changed():
 						o := spec.options(e.cur, e.orig, e.curAff, e.origAff)

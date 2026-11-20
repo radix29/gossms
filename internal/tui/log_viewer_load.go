@@ -46,7 +46,7 @@ func (lv *LogViewer) ShowLogs(logType gosmo.ErrorLogType, refs []logFileRef) {
 	// The selectors address exactly one family (Recycle and the single-file picker
 	// can only mean one): the selection's own, or what was on screen when mixed.
 	lv.logType = selectionFamily(lv.sel, logType)
-	lv.detailScroll = 0
+	lv.detail.Scroll = 0
 	lv.Load()
 }
 
@@ -135,7 +135,7 @@ func (lv *LogViewer) Load() {
 			}
 			lv.readErrs = readErrs
 			lv.entries = sortLogRowsDesc(rows)
-			lv.applyFilter() // resets detailScroll itself
+			lv.applyFilter() // resets detail.Scroll itself
 		})
 	})
 }

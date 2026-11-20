@@ -47,7 +47,7 @@ type mailAccountValues struct {
 type mailAccountEdit struct {
 	orig, cur         mailAccountValues
 	password, confirm string
-	pendingState
+	propsheet.PendingState
 }
 
 // changed reports an edit to an existing account, a password typed included.
@@ -78,7 +78,7 @@ func (e *mailAccountEdit) checkBasic() error {
 	case e.cur.user == "":
 		//lint:ignore ST1005 "Basic" is the Authentication field's option label
 		return errors.New("Basic authentication needs a user name")
-	case e.password == "" && !e.isNew && e.cur.user != e.orig.user:
+	case e.password == "" && !e.IsNew && e.cur.user != e.orig.user:
 		return errors.New("a changed user name needs the password typed again — the stored one cannot be read back")
 	case e.password == "":
 		//lint:ignore ST1005 "Basic" is the Authentication field's option label
@@ -101,11 +101,11 @@ func (e *mailAccountEdit) checkBasic() error {
 func (e *mailAccountEdit) credentialRefusal() string {
 	basic := gosmo.MailAuthBasic
 	switch {
-	case e.removing:
+	case e.Removing:
 		if e.orig.auth == basic {
 			return "deleting it needs ALTER ANY CREDENTIAL, or its credential is left behind"
 		}
-	case !e.isNew && e.orig.auth == basic:
+	case !e.IsNew && e.orig.auth == basic:
 		if e.changed() {
 			return "changing it needs ALTER ANY CREDENTIAL, or the server unlinks its password"
 		}
@@ -179,8 +179,8 @@ func mailPublishedAccounts(edits []*mailAccountEdit) []string {
 	var out []string
 	for _, e := range edits {
 		switch {
-		case e.removing:
-		case e.isNew:
+		case e.Removing:
+		case e.IsNew:
 			out = append(out, e.cur.name)
 		default:
 			out = append(out, e.orig.name)
@@ -212,12 +212,13 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				v := mailAccountValuesOf(a)
 				loaded[i] = &mailAccountEdit{orig: v, cur: v}
 			}
-			edits := newPendingEdits(msdbCollation(ctx, sc), loaded,
+			collation := msdbCollation(ctx, sc)
+			edits := newPendingEdits(collation, loaded,
 				func(e *mailAccountEdit) string { return e.cur.name }, (*mailAccountEdit).changed,
 				func(e *mailAccountEdit) { e.cur, e.password, e.confirm = e.orig, "", "" })
-			model.setAccounts(mailPublishedAccounts(edits.all()))
-			publish := func() { model.publishAccounts(mailPublishedAccounts(edits.all())) }
-			visible := edits.visible
+			model.setAccounts(mailPublishedAccounts(edits.All()))
+			publish := func() { model.publishAccounts(mailPublishedAccounts(edits.All())) }
+			visible := edits.Visible
 			headers := []string{"Name", "E-mail address", "SMTP server", "Port", "SSL", "Authentication"}
 
 			nameRow := propsheet.Text("Account name", "", 30)
@@ -300,38 +301,38 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				Items:      visible,
 				Cells: func(e *mailAccountEdit) []string {
 					v := e.cur
-					return []string{mailEditName(e.orig.name, v.name, e.isNew), v.email, v.server,
+					return []string{mailEditName(e.orig.name, v.name, e.IsNew), v.email, v.server,
 						strconv.Itoa(v.port), yesNo(v.ssl), mailAuthItems[v.auth]}
 				},
 				Show:   show,
 				Commit: commit,
 				Add: func(name string) (string, bool) {
-					if edits.listed(name) {
+					if edits.Listed(name) {
 						return "An account named " + name + " is already listed.", false
 					}
 					v := mailAccountValues{name: name, port: 25}
-					edits.add(&mailAccountEdit{orig: v, cur: v})
+					edits.Add(&mailAccountEdit{orig: v, cur: v})
 					return "Fill in the e-mail address and SMTP server of " + name + " below.", true
 				},
 				Remove: func(e *mailAccountEdit) (string, bool) {
-					if !credsAllowed && !e.isNew && e.orig.auth == gosmo.MailAuthBasic {
+					if !credsAllowed && !e.IsNew && e.orig.auth == gosmo.MailAuthBasic {
 						return "Deleting " + e.orig.name + " needs ALTER ANY CREDENTIAL (Basic authentication).", false
 					}
-					edits.remove(e)
-					if e.isNew {
+					edits.Remove(e)
+					if e.IsNew {
 						return "", true
 					}
 					// The server removes it from every profile without a
 					// word (W8), so this page says it instead.
 					return e.orig.name + " is deleted on Apply, and leaves every profile that uses it.", true
 				},
-				Dirty: edits.dirty,
+				Dirty: edits.Dirty,
 				// A new account's orig is its first values, not a stored row;
 				// refusal leaves it no stored name.
 				Validate: func() error {
-					return edits.refusal("account", func(e *mailAccountEdit) string { return e.orig.name })
+					return pendingRefusal(collation, edits, "account", func(e *mailAccountEdit) string { return e.orig.name })
 				},
-				Revert: edits.revert,
+				Revert: edits.Revert,
 				// The Profiles page hears of a new account's rename from a
 				// selection move as well.
 				Changed: publish,
@@ -341,7 +342,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 			// a rename of one is published as typed. An existing account is
 			// listed there by its stored name until Apply.
 			nameRow.SetOnChange(func(string) {
-				if cur := list.Current(); cur != nil && cur.isNew {
+				if cur := list.Current(); cur != nil && cur.IsNew {
 					list.Commit()
 					list.Redraw()
 					publish()
@@ -372,13 +373,13 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				if err != nil {
 					return err
 				}
-				for _, e := range edits.all() {
+				for _, e := range edits.All() {
 					if why := e.credentialRefusal(); !credsAllowed && why != "" {
 						return fmt.Errorf("account %s: %s", e.orig.name, why)
 					}
 					name := e.orig.name
 					switch {
-					case e.isNew:
+					case e.IsNew:
 						req, err := e.createRequest()
 						if err != nil {
 							return fmt.Errorf("account %s: %w", e.cur.name, err)
@@ -387,7 +388,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 							_, err := sc.Server.Mail().CreateAccount(ctx, req)
 							return err
 						})
-					case e.removing:
+					case e.Removing:
 						plan.add(mailPhaseDropAccounts, func(ctx context.Context) error {
 							return sc.Server.Mail().AccountRef(name).Drop(ctx)
 						})

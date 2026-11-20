@@ -1861,6 +1861,43 @@ it from the string 'NULL'.
   embedded by value (`InitMessage`), so a zero `UpdateDialog{}` in a test
   still takes `ShowResult`. The GitHub check, the sign-in wait, the clipboard
   target and Update's `lines`/`linkRow` (the Copy Link source) stay in gossms.
+- **Clipboard traffic is tuikit's `clipboard.Dispatcher`** (2026-11-20,
+  tuikit reuse round 5): newest-copy-wins writes, the OSC 52 fallback and its
+  hedge hook, a paste aimed once (target + `ClipboardTargetToken`) and dropped
+  if either changed before the text arrived, the OSC 52 reply route (pending
+  target cleared first), and bracketed paste as one `Paste` with keys skipping
+  the frame. It stays a leaf: `Post`, `Go`, `Resolve` and `Token` are
+  injected, so `tuikitLayers` is unchanged. Which widget is active
+  (`activeClipboardTarget`), the menus and the status wording stay in gossms;
+  `App.clip()` builds it on first use so a bare `&App{}` in a test has one.
+- **The plan's tree diagram and tree-with-guides list stay in `planview`**
+  (2026-11-20, tuikit reuse round 5, declined by the author): neither
+  `planview/graph_layout.go`+`graph.go` as a `controls.TreeDiagram` nor
+  `planview/tree.go`'s guides, per-row style and live column as
+  `controls.TreeView` options. One consumer each; do not re-raise.
+- **Details panes are tuikit's `core.LinePane`** (2026-11-20, tuikit reuse
+  round 5): the Log/XEvent viewers' details (`viewerPanel.detail`) and Plan
+  view's Operator Details, bottom Properties and Plan-tab strip share its
+  scroll clamp, inset draw, per-line style and "▾ more" hint. A draw + clamp
+  value like `core.Viewport`, not a control: keys, wheel and focus stay with
+  each host (see "LogViewer vs XEventViewer beyond `viewerPanel`"), as do
+  line building and the per-(item, width) caches. `Draw` now clamps a stale
+  `Scroll`, so a pane grown taller shows its last line at the bottom instead
+  of blank rows. The placeholder is `DrawEmpty`, a separate call, so a pane
+  too narrow to wrap its item stays blank rather than saying nothing is
+  selected; Plan view's "(no operator selected)" is now dim like the
+  viewers'. The `core.AlignKV` the plan floated was not added: Plan view's
+  one padding loop over `[]showplan.KV` would need two slices built for it.
+- **The master-detail pending-edit list is tuikit's `propsheet.PendingEdits`**
+  (2026-11-20, tuikit reuse round 5, taken by the author without waiting for
+  a ListEditor change): the rows as loaded and as edited, Add/Remove/Restore/
+  Swap, `Visible`, `Dirty`, `Revert`, and the `Index`/`Listed`/`Taken` name
+  checks; row types embed `propsheet.PendingState` (`IsNew`, `Removing`).
+  Name equality is injected (`same func(a, b string) bool`); gossms's
+  `newPendingEdits` wires it to `gosmo.SameName` under the scope's collation,
+  and New Database's filegroups pass a closure reading the General page's
+  collation at each Add. `pendingNamesRefusal` (via `pendingRefusal`) and its
+  English text stay in gossms: the Apply-order rules are SQL Server's.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,

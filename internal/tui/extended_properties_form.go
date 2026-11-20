@@ -20,7 +20,7 @@ type extPropEdit struct {
 	name      string
 	origValue string
 	value     string
-	pendingState
+	propsheet.PendingState
 }
 
 // pageExtendedProperties is the Extended Properties page as every Properties
@@ -70,7 +70,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 		func(e *extPropEdit) string { return e.name },
 		func(e *extPropEdit) bool { return e.value != e.origValue },
 		func(e *extPropEdit) { e.value = e.origValue })
-	visible := edits.visible
+	visible := edits.Visible
 	rowsFor := func() [][]string {
 		vis := visible()
 		rows := make([][]string, len(vis))
@@ -134,7 +134,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 			hint.Set("Type a property name first.")
 			return
 		}
-		if i := edits.index(name); i >= 0 {
+		if i := edits.Index(name); i >= 0 {
 			// Already present — say so and select it, rather than
 			// leaving the button looking broken.
 			hint.Set("A property named " + name + " is already listed — its row is selected below.")
@@ -143,7 +143,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 			return
 		}
 		hint.Clear()
-		edits.add(&extPropEdit{name: name, value: valueField.Value()})
+		edits.Add(&extPropEdit{name: name, value: valueField.Value()})
 		resetGrid(grid, extendedPropertyColumns, rowsFor(), len(visible())-1)
 		syncFieldsFromSelection()
 	})
@@ -154,16 +154,16 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 			return
 		}
 		hint.Clear()
-		edits.remove(e)
+		edits.Remove(e)
 		current = nil // its old value is void; don't let commitCurrent write back into it
 		resetGrid(grid, extendedPropertyColumns, rowsFor(), 0)
 		syncFieldsFromSelection()
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 12)
-	gridRow.DirtyFn = edits.dirty
+	gridRow.DirtyFn = edits.Dirty
 	gridRow.RevertFn = func() {
-		edits.revert()
+		edits.Revert()
 		resetGrid(grid, extendedPropertyColumns, rowsFor(), 0)
 	}
 
@@ -183,17 +183,17 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName, collation string, le
 			return err
 		}
 		level := level()
-		for _, e := range edits.all() {
+		for _, e := range edits.All() {
 			switch {
-			case e.removing:
+			case e.Removing:
 				if err := d.DropExtendedProperty(ctx, e.name, level); err != nil {
 					return err
 				}
-			case e.isNew:
+			case e.IsNew:
 				if err := d.AddExtendedProperty(ctx, e.name, e.value, level); err != nil {
 					return err
 				}
-			case edits.isChanged(e):
+			case edits.IsChanged(e):
 				if err := d.SetExtendedProperty(ctx, e.name, e.value, level); err != nil {
 					return err
 				}

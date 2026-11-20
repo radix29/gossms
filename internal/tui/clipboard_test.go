@@ -22,6 +22,17 @@ func newClipboardTestApp() *App {
 	return a
 }
 
+// bracketedPaste feeds text to a's clipboard as a terminal bracketed paste:
+// start marker, one key per rune, end marker.
+func bracketedPaste(a *App, text string) {
+	c := a.clip()
+	c.HandleEvent(tcell.NewEventPaste(true))
+	for _, r := range text {
+		c.HandleEvent(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+	}
+	c.HandleEvent(tcell.NewEventPaste(false))
+}
+
 // focusedQueryPanel builds a query panel whose execution left the results
 // pane on the Messages tab (setResult with an error selects it — see
 // TestMessagesErrorLinesColoredRed) and gives the panel focus, editor side.
@@ -85,7 +96,7 @@ func TestBracketedPasteAppliesAsOneEdit(t *testing.T) {
 	a := newClipboardTestApp()
 	qp := focusedQueryPanel(t, a)
 
-	a.beginBracketedPaste()
+	a.handleEvent(tcell.NewEventPaste(true))
 	for _, ev := range []*tcell.EventKey{
 		tcell.NewEventKey(tcell.KeyRune, "a", tcell.ModNone),
 		tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone),
@@ -93,14 +104,14 @@ func TestBracketedPasteAppliesAsOneEdit(t *testing.T) {
 		// A key a terminal shouldn't send mid-paste: dropped, not acted on.
 		tcell.NewEventKey(tcell.KeyF5, "", tcell.ModNone),
 	} {
-		a.paste.bracket.Key(ev)
+		a.handleEvent(ev)
 	}
-	a.endBracketedPaste()
+	a.handleEvent(tcell.NewEventPaste(false))
 
 	if got := qp.editor.Text(); got != "a\nb" {
 		t.Fatalf("editor text after bracketed paste = %q, want %q", got, "a\nb")
 	}
-	if a.paste.bracket.Active() {
+	if consumed, _ := a.clip().HandleEvent(tcell.NewEventKey(tcell.KeyRune, "c", tcell.ModNone)); consumed {
 		t.Fatal("still in paste mode after the end marker")
 	}
 	// One Paste call, so one undo step takes the whole paste back out.
@@ -142,7 +153,7 @@ func TestPasteIsDroppedWhenItsTargetIsNoLongerFocused(t *testing.T) {
 	// The read comes back after the user has closed the dialog.
 	a.connectDialog().Hide()
 	a.modals.Sync()
-	a.pasteInto(target, token, "ubusql2")
+	a.clip().Deliver(target, token, "ubusql2")
 
 	if got := a.connectDialog().fServer.Value(); got != "" {
 		t.Errorf("server field = %q, want it untouched — the dialog was closed", got)
@@ -161,7 +172,7 @@ func TestPasteIsDroppedWhenItsTargetIsNoLongerFocused(t *testing.T) {
 // what this pins.
 func TestPasteLandsOnlyInTheFieldItWasAimedAt(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
-	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), "ubus")
+	a.clip().Deliver(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), "ubus")
 
 	d := a.connectDialog()
 	if got := d.fServer.Value(); got != "ubus" {
@@ -174,7 +185,7 @@ func TestPasteLandsOnlyInTheFieldItWasAimedAt(t *testing.T) {
 	if target != clipboardTarget(d.fPassword) {
 		t.Fatalf("setup: target = %T, want the password field", target)
 	}
-	a.pasteInto(target, token, "hunter2")
+	a.clip().Deliver(target, token, "hunter2")
 
 	if d.fPassword.Value() != "hunter2" {
 		t.Fatalf("password field = %q, want the pasted text", d.fPassword.Value())
@@ -215,8 +226,8 @@ func TestQuickCopiesLeaveTheLastOnTheClipboard(t *testing.T) {
 	a.writeClipboard("B")
 	a.writeClipboard("C")
 	// Let B and C queue behind A. Fixed sleeps, not synctest: a goroutine
-	// parked on clipWriteMu (a sync.Mutex) is not durably blocked, so
-	// synctest.Wait would hang. Too short only weakens the test — B and C
+	// parked on the Dispatcher's write lock (a sync.Mutex) is not durably
+	// blocked, so synctest.Wait would hang. Too short only weakens the test — B and C
 	// arrive after A, and B is still superseded — it never fails it.
 	time.Sleep(20 * time.Millisecond)
 	close(release)
@@ -297,7 +308,7 @@ func TestCopyFromEmptyResultsGridLeavesClipboardAlone(t *testing.T) {
 
 	status := a.statusText
 	a.copySelection()
-	if n := a.clipWriteSeq.Load(); n != 0 {
+	if n := a.clip().Copies(); n != 0 {
 		t.Errorf("copySelection wrote the clipboard %d time(s) from a grid with no rows", n)
 	}
 	if a.statusText != status {
@@ -365,18 +376,14 @@ func TestPasteDropsBOMs(t *testing.T) {
 
 	a := newClipboardTestApp()
 	qp := focusedQueryPanel(t, a)
-	a.beginBracketedPaste()
-	for _, r := range in {
-		a.paste.bracket.Key(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
-	}
-	a.endBracketedPaste()
+	bracketedPaste(a, in)
 	if got := qp.editor.Text(); got != want {
 		t.Fatalf("editor text after bracketed paste = %q, want %q", got, want)
 	}
 
 	a = newClipboardTestApp()
 	qp = focusedQueryPanel(t, a)
-	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), in)
+	a.clip().Deliver(a.activeClipboardTarget(), clipboardTargetToken(a.modals.Top()), in)
 	if got := qp.editor.Text(); got != want {
 		t.Fatalf("editor text after clipboard paste = %q, want %q", got, want)
 	}

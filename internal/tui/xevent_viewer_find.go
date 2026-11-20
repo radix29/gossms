@@ -121,7 +121,7 @@ func (v *XEventViewer) selectEvent(e *xevent.Event) {
 		if i := slices.Index(v.shown, e); i >= 0 {
 			v.grid.SetSelectedCell(i, col)
 		}
-		v.detailScroll = 0
+		v.detail.Scroll = 0
 		return
 	}
 	opened := false
@@ -135,7 +135,7 @@ func (v *XEventViewer) selectEvent(e *xevent.Event) {
 		v.rebuildDisplay()
 	}
 	v.restoreSelection(xeAnchor{event: e.ID})
-	v.detailScroll = 0
+	v.detail.Scroll = 0
 }
 
 // -- Bookmarks -------------------------------------------------------------------

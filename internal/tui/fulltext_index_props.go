@@ -270,15 +270,15 @@ func pageFullTextIndexColumns(sc *db.ServerConn, dbName, schema, table string, f
 					"To change a column's language or type column, remove it and add it back.")...)
 			ref := i.Database().TableRef(i.Schema, i.Table).FullTextIndexRef()
 			return f, func(ctx context.Context) error {
-				for _, e := range ed.edits.all() {
-					if e.removing && !e.isNew {
+				for _, e := range ed.edits.All() {
+					if e.Removing && !e.IsNew {
 						if err := ref.DropColumn(ctx, e.spec.Name, gosmo.FullTextRepopulate); err != nil {
 							return err
 						}
 					}
 				}
-				for _, e := range ed.edits.all() {
-					if e.isNew {
+				for _, e := range ed.edits.All() {
+					if e.IsNew {
 						if err := ref.AddColumn(ctx, e.spec, gosmo.FullTextRepopulate); err != nil {
 							return err
 						}
@@ -297,7 +297,7 @@ func pageFullTextIndexColumns(sc *db.ServerConn, dbName, schema, table string, f
 type fullTextColEdit struct {
 	spec     gosmo.FullTextIndexColumnSpec
 	language string
-	pendingState
+	propsheet.PendingState
 }
 
 // fullTextColumnEditor is the column grid of Full-Text Index Properties and
@@ -306,7 +306,7 @@ type fullTextColEdit struct {
 // Loaded columns are only removed, never edited in place — ALTER FULLTEXT
 // INDEX has no form that changes one.
 type fullTextColumnEditor struct {
-	edits    *pendingEdits[*fullTextColEdit]
+	edits    *propsheet.PendingEdits[*fullTextColEdit]
 	eligible []string
 	// binary names the eligible columns holding documents (varbinary, image),
 	// which need a TYPE COLUMN.
@@ -359,7 +359,7 @@ func newFullTextColumnEditor(collation string, cols []*gosmo.Column, langs []gos
 }
 
 func (ed *fullTextColumnEditor) gridRows() [][]string {
-	vis := ed.edits.visible()
+	vis := ed.edits.Visible()
 	out := make([][]string, len(vis))
 	for k, e := range vis {
 		out[k] = []string{e.spec.Name, e.spec.TypeColumn, e.language, boolStr(e.spec.StatisticalSemantics)}
@@ -369,7 +369,7 @@ func (ed *fullTextColumnEditor) gridRows() [][]string {
 
 // specs is the columns the index will have: what a create sends.
 func (ed *fullTextColumnEditor) specs() []gosmo.FullTextIndexColumnSpec {
-	vis := ed.edits.visible()
+	vis := ed.edits.Visible()
 	out := make([]gosmo.FullTextIndexColumnSpec, len(vis))
 	for k, e := range vis {
 		out[k] = e.spec
@@ -400,11 +400,11 @@ func (ed *fullTextColumnEditor) rows(note string) []propsheet.Row {
 			hint.Set("This table has no column a full-text index can hold.")
 			return
 		}
-		for _, e := range ed.edits.all() {
+		for _, e := range ed.edits.All() {
 			if e.spec.Name != name {
 				continue
 			}
-			if e.removing {
+			if e.Removing {
 				hint.SetError(name + " is being removed — Apply that first, then add it back with its new settings.")
 				return
 			}
@@ -435,25 +435,25 @@ func (ed *fullTextColumnEditor) rows(note string) []propsheet.Row {
 			lang = "(default)"
 		}
 		hint.Clear()
-		ed.edits.add(&fullTextColEdit{spec: spec, language: lang})
-		redraw(len(ed.edits.visible()) - 1)
+		ed.edits.Add(&fullTextColEdit{spec: spec, language: lang})
+		redraw(len(ed.edits.Visible()) - 1)
 	})
 	removeBtn := widgets.NewButton("Remove", func() {
-		vis := ed.edits.visible()
+		vis := ed.edits.Visible()
 		i := grid.SelectedRow()
 		if i < 0 || i >= len(vis) {
 			hint.Set("Select a column in the grid to remove it.")
 			return
 		}
 		hint.Clear()
-		ed.edits.remove(vis[i])
+		ed.edits.Remove(vis[i])
 		redraw(max(0, i-1))
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 8)
-	gridRow.DirtyFn = ed.edits.dirty
+	gridRow.DirtyFn = ed.edits.Dirty
 	gridRow.RevertFn = func() {
-		ed.edits.revert()
+		ed.edits.Revert()
 		redraw(0)
 	}
 	rows := []propsheet.Row{

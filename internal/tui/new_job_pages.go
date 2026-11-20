@@ -75,7 +75,7 @@ func connectedLoginIndex(sc *db.ServerConn, names []string) int {
 // dropped (nothing to start yet).
 func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string, indentWidth int) (*propsheet.Form, propApply, func() int) {
 	edits := newJobStepEdits(pf.msdbCollation, nil)
-	visible := edits.visible
+	visible := edits.Visible
 	cols := []string{"Step", "Name", "Database"}
 	rowsFor := func() [][]string {
 		vis := visible()
@@ -124,17 +124,17 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 			return
 		}
 		hint.Clear()
-		edits.remove(e)
+		edits.Remove(e)
 		current = nil
 		resetGrid(grid, cols, rowsFor(), 0)
 		syncFieldsFromSelection()
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 10)
-	gridRow.DirtyFn = edits.dirty
-	gridRow.ValidateFn = func() error { return jobStepNamesRefusal(edits) }
+	gridRow.DirtyFn = edits.Dirty
+	gridRow.ValidateFn = func() error { return jobStepNamesRefusal(pf.msdbCollation, edits) }
 	gridRow.RevertFn = func() {
-		edits.revert()
+		edits.Revert()
 		resetGrid(grid, cols, rowsFor(), 0)
 		syncFieldsFromSelection()
 	}

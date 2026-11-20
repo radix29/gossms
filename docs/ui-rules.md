@@ -99,10 +99,11 @@ which owns them; the entries here say how goSSMS applies them.
   `TestNoPropertySheetLabelIsTruncated` still reads them) — its `Set()` clears
   every row not given, so a missed row can't keep describing the previous
   selection. A grid with Add
-  and Remove keeps its rows in `pendingEdits` (`pending_edits.go`): the row
-  type embeds `pendingState`, and the list owns dirty, visible, revert,
-  add/remove and the collation-aware name checks the pages each used to
-  rewrite. When the page also has a detail form and a name field to add by,
+  and Remove keeps its rows in tuikit's `propsheet.PendingEdits`, built by
+  `newPendingEdits` (`pending_edits.go`) to compare names under the scope's
+  collation: the row type embeds `propsheet.PendingState`, and the list owns
+  dirty, visible, revert, add/remove and the name checks the pages each used
+  to rewrite. When the page also has a detail form and a name field to add by,
   the UI half is tuikit's `propsheet.ListEditor` (selection, commit before
   the cursor moves, the Add/Remove/Revert flow and its hint) — Resource
   Governor pools and groups, Database Mail accounts and profiles.
@@ -231,8 +232,15 @@ which owns them; the entries here say how goSSMS applies them.
   **explicit** nil on a miss (a typed nil is not a nil interface).
   `TestEveryDialogWithTextEntryIsAClipboardHost` catches a missing host, not a
   reintroduced fall-through. A dialog reacting to edits implements
-  `core.ClipboardEditHandler` and checks the target it's handed. `App.pasteInto`
-  drops text unless its target is still current (reads are async).
+  `core.ClipboardEditHandler` and checks the target it's handed.
+- **Clipboard traffic goes through `App.clip()`** — tuikit's
+  `clipboard.Dispatcher`, wired to `activeClipboardTarget`,
+  `clipboardTargetToken`, `postAndWake` and `safego`. Never call
+  `clipboard.Write`/`Read` or `SetClipboard`/`GetClipboard` directly: the
+  dispatcher is what keeps the newest copy, drops a paste whose target changed
+  before the text arrived (reads are async), ignores an unsolicited OSC 52
+  reply, and applies a bracketed paste as one edit. `App.handleEvent` offers it
+  every event first.
 - **Every text field gets the right-click Cut/Copy/Paste menu through one route,
   never a per-field handler.** A dialog that is a `core.ClipboardHost` is also a
   `core.ClipboardFocuser`: `FocusClipboardTargetAt` focuses the field under the
@@ -253,8 +261,8 @@ which owns them; the entries here say how goSSMS applies them.
   PlanView, Query Store's focused grid, Detail Browser's grid only while its
   viewer is open). `activeClipboardTarget` asks the active panel, so
   Ctrl+C/X/V and a terminal paste reach it. A host answering a different
-  widget per focus needs no `ClipboardTargetTokener` — `pasteInto`'s identity
-  check sees the move; only a host answering with itself does. Return a grid
+  widget per focus needs no `ClipboardTargetTokener` — `Dispatcher.Deliver`'s
+  identity check sees the move; only a host answering with itself does. Return a grid
   through `gridClipboardTarget` (a typed-nil `*DataGrid` is a non-nil
   interface).
 - **`App.contextMenu` sits above the dialogs** — drawn after `modals.Draw`,

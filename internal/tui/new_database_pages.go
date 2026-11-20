@@ -160,7 +160,7 @@ func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func
 // plus an inline "optional first file" mini-form under the Add-filegroup fields.
 func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, collation func() string) (*propsheet.Form, propApply) {
 	type fgEdit struct {
-		pendingState
+		propsheet.PendingState
 		name         string
 		isDefault    bool
 		isReadOnly   bool
@@ -169,7 +169,11 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 		fileSizeKB   int64
 		fileGrowthKB int64
 	}
-	edits := newPendingEdits(collation(), nil, func(e *fgEdit) string { return e.name }, nil, nil)
+	// Names compare under the General page's collation as it says at each Add,
+	// not as it said when the page was built: newPendingEdits fixes one.
+	edits := propsheet.NewPendingEdits(nil,
+		func(a, b string) bool { return gosmo.SameName(collation(), a, b) },
+		func(e *fgEdit) string { return e.name }, nil, nil)
 
 	// Same Msg 41918 as the General page's file rows: an Azure edition takes no
 	// filegroup clause in CREATE DATABASE and nothing on this page is not one. The
@@ -184,9 +188,9 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	}
 
 	rowsFor := func() ([][]string, [][]bool) {
-		text := make([][]string, len(edits.all()))
-		values := make([][]bool, len(edits.all()))
-		for i, e := range edits.all() {
+		text := make([][]string, len(edits.All()))
+		values := make([][]bool, len(edits.All()))
+		for i, e := range edits.All() {
 			fileCount := "0"
 			if e.fileName != "" {
 				fileCount = "1"
@@ -198,7 +202,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	}
 	fgRow := propsheet.NewToggleGrid([]string{"Name", "Files", "Read-only", "Default"}, []int{2, 3}, 8)
 	syncToggles := func() {
-		rows := edits.all()
+		rows := edits.All()
 		for i, v := range fgRow.Values() {
 			if i < len(rows) {
 				rows[i].isReadOnly, rows[i].isDefault = v[0], v[1]
@@ -221,9 +225,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 			hint.Set("Type a filegroup name first.")
 			return
 		}
-		// The General page's collation, as it says now.
-		edits.collation = collation()
-		if i := edits.index(name); i >= 0 {
+		if i := edits.Index(name); i >= 0 {
 			// Already present: say so and select it rather than leave the button looking
 			// broken.
 			hint.Set("A filegroup named " + name + " is already listed.")
@@ -233,7 +235,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 		hint.Clear()
 		sizeMB, _ := fileSizeField.IntValue()
 		growthMB, _ := fileGrowthField.IntValue()
-		edits.add(&fgEdit{
+		edits.Add(&fgEdit{
 			name:         name,
 			fileName:     strings.TrimSpace(fileNameField.Value()),
 			filePath:     strings.TrimSpace(filePathField.Value()),
@@ -250,24 +252,24 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	})
 	removeBtn = widgets.NewButton("Remove", func() {
 		syncToggles()
-		rows := edits.all()
+		rows := edits.All()
 		row := fgRow.Grid.SelectedRow()
 		if row < 0 || row >= len(rows) {
 			hint.Set("Select a filegroup in the grid above to remove it.")
 			return
 		}
 		hint.Clear()
-		edits.remove(rows[row])
+		edits.Remove(rows[row])
 		text, values := rowsFor()
 		fgRow.SetRows(text, values)
 	})
 
 	fgRow.DirtyFn = func() bool {
 		syncToggles()
-		return edits.dirty()
+		return edits.Dirty()
 	}
 	fgRow.RevertFn = func() {
-		edits.revert()
+		edits.Revert()
 		text, values := rowsFor()
 		fgRow.SetRows(text, values)
 	}
@@ -275,7 +277,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	// Default are Msg 5050 — after the database exists (review plan M3).
 	fgRow.ValidateFn = func() error {
 		syncToggles()
-		for _, e := range edits.all() {
+		for _, e := range edits.All() {
 			if e.fileName == "" && (e.isReadOnly || e.isDefault) {
 				return emptyFilegroupToggleError(e.name)
 			}
@@ -301,11 +303,11 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName, 
 	f.SetCommit(syncToggles)
 
 	apply := func(ctx context.Context) error {
-		if !edits.dirty() {
+		if !edits.Dirty() {
 			return nil
 		}
 		d := sc.Server.DatabaseRef(dbName())
-		for _, e := range edits.all() {
+		for _, e := range edits.All() {
 			if err := d.AddFileGroup(ctx, e.name); err != nil {
 				return err
 			}
