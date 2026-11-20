@@ -30,17 +30,17 @@ func newSelectionTree(t *testing.T) *selectionTree {
 	st.dbs = &explorerNode{label: "Databases", data: nodeData{Type: NodeDatabases, conn: st.sc}}
 	st.security = &explorerNode{label: "Security", data: nodeData{Type: NodeSecurity, conn: st.sc}}
 	st.logins = &explorerNode{label: "Logins", data: nodeData{Type: NodeLogins, conn: st.sc}}
-	st.root.expanded = true
+	st.root.Expanded = true
 	a.explorer.SetChildren(st.root, []*explorerNode{st.dbs, st.security})
-	st.security.expanded = true
+	st.security.Expanded = true
 	a.explorer.SetChildren(st.security, []*explorerNode{st.logins})
-	st.logins.expanded = true
+	st.logins.Expanded = true
 	st.alice, st.bob, st.carol = testLogin(st.sc, "alice"), testLogin(st.sc, "bob"), testLogin(st.sc, "carol")
 	a.explorer.SetChildren(st.logins, []*explorerNode{st.alice, st.bob, st.carol})
 
 	orig := a.explorer.view.OnSelect
 	a.explorer.view.OnSelect = func(id controls.TreeNodeID) {
-		st.selects = append(st.selects, a.explorer.byID[id])
+		st.selects = append(st.selects, a.explorer.nodeByID(id))
 		orig(id)
 	}
 	return st
@@ -54,7 +54,7 @@ func testLogin(sc *db.ServerConn, name string) *explorerNode {
 // assertions see only what the rebuild under test fired.
 func (st *selectionTree) selectNode(t *testing.T, n *explorerNode) {
 	t.Helper()
-	st.a.explorer.view.SelectID(n.id)
+	st.a.explorer.view.SelectID(n.ID())
 	if got := st.a.explorer.Selected(); got != n {
 		t.Fatalf("setup: selected %v, want %q", got, n.label)
 	}
@@ -64,8 +64,8 @@ func (st *selectionTree) selectNode(t *testing.T, n *explorerNode) {
 // reload is what every Refresh does to a folder (ObjectExplorer.Reload): drop
 // its children, then install whatever the background fetch returned.
 func (st *selectionTree) reload(n *explorerNode, children ...*explorerNode) {
-	n.data.Loaded = false
-	st.a.explorer.dropChildren(n)
+	n.Loaded = false
+	st.a.explorer.tree.DropChildren(n)
 	st.a.explorer.SetChildren(n, children)
 }
 
@@ -82,7 +82,7 @@ func (st *selectionTree) screenLine() int {
 // Rename and Properties went to db2.
 func TestExplorerSelectionSurvivesLoadAboveIt(t *testing.T) {
 	st := newSelectionTree(t)
-	st.dbs.expanded = true // expanded, still showing "Loading..."
+	st.dbs.Expanded = true // expanded, still showing "Loading..."
 	st.a.explorer.rebuild()
 	st.selectNode(t, st.security)
 	line := st.screenLine()
@@ -108,7 +108,7 @@ func TestExplorerSelectionSurvivesLoadAboveIt(t *testing.T) {
 func TestExplorerSelectionUnchangedByLoadBelowIt(t *testing.T) {
 	st := newSelectionTree(t)
 	st.selectNode(t, st.dbs)
-	st.dbs.expanded = true
+	st.dbs.Expanded = true
 	st.a.explorer.rebuild()
 
 	st.a.explorer.SetChildren(st.dbs, []*explorerNode{
@@ -154,7 +154,7 @@ func TestExplorerSelectionFollowsRenamedObject(t *testing.T) {
 	check := func(t *testing.T, st *selectionTree) {
 		t.Helper()
 		got := st.a.explorer.Selected()
-		if got == nil || got.data.Name != "robert" || got.retired {
+		if got == nil || got.data.Name != "robert" || got.Retired() {
 			t.Fatalf("Selected() after the rename's reload = %v, want the renamed robert", got)
 		}
 		if n := len(st.selects); n == 0 || st.selects[n-1] != got {
@@ -176,8 +176,8 @@ func TestExplorerSelectionFollowsRenamedObject(t *testing.T) {
 		st := newSelectionTree(t)
 		st.selectNode(t, st.bob)
 		st.a.explorer.Follow(st.bob, renamedKey(st.bob.data, "robert"))
-		st.logins.data.Loaded = false
-		st.a.explorer.dropChildren(st.logins)
+		st.logins.Loaded = false
+		st.a.explorer.tree.DropChildren(st.logins)
 		st.a.explorer.rebuild()
 		if got := st.a.explorer.Selected(); got != st.logins {
 			t.Fatalf("setup: Selected() while loading = %v, want Logins", got)
@@ -199,8 +199,8 @@ func TestExplorerSelectionFollowsRenamedObject(t *testing.T) {
 		st := newSelectionTree(t)
 		st.selectNode(t, st.bob)
 		st.a.explorer.Follow(st.bob, renamedKey(st.bob.data, "robert"))
-		st.logins.data.Loaded = false
-		st.a.explorer.dropChildren(st.logins)
+		st.logins.Loaded = false
+		st.a.explorer.tree.DropChildren(st.logins)
 		st.a.explorer.rebuild() // parks on Logins
 		st.selectNode(t, st.dbs)
 		st.selectNode(t, st.logins)
@@ -333,21 +333,21 @@ func TestExplorerSelectionFallsBackToRecreatedAncestor(t *testing.T) {
 // row.
 func TestExplorerSelectionOnLoadingRowGoesToOwner(t *testing.T) {
 	st := newSelectionTree(t)
-	st.security.data.Loaded = false // Security mid-Refresh, showing "Loading..."
-	st.security.children = nil
+	st.security.Loaded = false // Security mid-Refresh, showing "Loading..."
+	st.security.Children = nil
 	st.a.explorer.rebuild()
 	st.selectNode(t, st.security)
 	st.a.explorer.view.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 	onLoadingRow := func() bool {
 		tn := st.a.explorer.view.SelectedNode()
-		row, ok := tn.Tag.(loadingRow)
-		return ok && row.owner == st.security
+		row, ok := tn.Tag.(controls.TreePlaceholder[*explorerNode])
+		return ok && row.Owner == st.security
 	}
 	if !onLoadingRow() {
 		t.Fatalf("setup: Down from a loading folder should land on its Loading row")
 	}
 
-	st.dbs.expanded = true // Databases' children arrive above it
+	st.dbs.Expanded = true // Databases' children arrive above it
 	st.a.explorer.SetChildren(st.dbs, []*explorerNode{
 		{label: "db1", data: nodeData{Type: NodeDatabase, Name: "db1"}},
 		{label: "db2", data: nodeData{Type: NodeDatabase, Name: "db2"}},
@@ -417,7 +417,13 @@ func TestLoadChildrenWithoutAConnectionShowsNotConnected(t *testing.T) {
 	node.data.conn = nil
 
 	a.loadChildren(node)
-	if len(node.children) != 1 || node.children[0].label != errNotConnected.Error() {
-		t.Fatalf("children = %v, want the one %q error node", node.children, errNotConnected)
+	if len(node.Children) != 1 || node.Children[0].label != errNotConnected.Error() {
+		t.Fatalf("children = %v, want the one %q error node", node.Children, errNotConnected)
 	}
+}
+
+// nodeByID is the node the tree answers id with, nil when none.
+func (oe *ObjectExplorer) nodeByID(id controls.TreeNodeID) *explorerNode {
+	n, _ := oe.tree.ByID(id)
+	return n
 }

@@ -97,8 +97,8 @@ func TestPropertiesApplyReloadsTheFolderListingTheObject(t *testing.T) {
 					w.conn = sc
 					want = want || w == d
 				}
-				if leaf.retired != want {
-					t.Errorf("folder %v %s.%s.%s reloaded = %v, want %v", d.Type, d.DBName, d.Schema, d.Name, leaf.retired, want)
+				if leaf.Retired() != want {
+					t.Errorf("folder %v %s.%s.%s reloaded = %v, want %v", d.Type, d.DBName, d.Schema, d.Name, leaf.Retired(), want)
 				}
 			}
 		})

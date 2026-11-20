@@ -299,7 +299,7 @@ func (db *DetailBrowser) Retitle(app *App, node *explorerNode) {
 // parentheses, as the tree root shows it.
 func detailTitle(app *App, node *explorerNode) string {
 	label := node.label
-	if node.parent == nil && node.data.Type == NodeServer && node.data.conn != nil {
+	if node.Parent == nil && node.data.Type == NodeServer && node.data.conn != nil {
 		if profile := app.profileOf(node.data.conn.Opts); profile != "" {
 			label = profile + " (" + label + ")"
 		}
@@ -349,7 +349,8 @@ func (db *DetailBrowser) InvalidateWhere(app *App, match func(*explorerNode) boo
 }
 
 // Forget drops every cached and pending entry for nodes that have left the tree
-// (ObjectExplorer.releaseRetired calls it for the nodes a Reload replaced), so
+// (the tree's OnRelease, set in NewObjectExplorer, calls it for the nodes a
+// Reload replaced), so
 // neither map holds them alive until the connection closes. Nothing is
 // refetched: a node on screen that is among them is about to be reselected away
 // from. Nil-safe.

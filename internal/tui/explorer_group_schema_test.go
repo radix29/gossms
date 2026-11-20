@@ -15,9 +15,9 @@ func groupTree(t *testing.T, a *App, ft NodeType, children ...*explorerNode) *ex
 	t.Helper()
 	sc, _ := newGConn(t)
 	root := a.explorer.AddRoot("server-one", sc)
-	folder := &explorerNode{label: nodeTypeName(ft), expanded: true, data: nodeData{Type: ft, DBName: "db1", conn: sc}}
+	folder := &explorerNode{label: nodeTypeName(ft), explorerItem: explorerItem{Expanded: true}, data: nodeData{Type: ft, DBName: "db1", conn: sc}}
 	a.explorer.SetChildren(root, []*explorerNode{folder})
-	root.expanded = true
+	root.Expanded = true
 	a.explorer.SetChildren(folder, children)
 	return folder
 }
@@ -33,13 +33,13 @@ func subFolder(nt NodeType) *explorerNode {
 // shape renders a folder's children as labels, a group's as "schema[a b]".
 func shape(n *explorerNode) []string {
 	var out []string
-	for _, c := range n.children {
+	for _, c := range n.Children {
 		if c.data.Type != NodeSchemaGroup {
 			out = append(out, c.label)
 			continue
 		}
 		s := c.label + "["
-		for i, gc := range c.children {
+		for i, gc := range c.Children {
 			if i > 0 {
 				s += " "
 			}
@@ -95,16 +95,16 @@ func TestApplyGroupingShapes(t *testing.T) {
 				if got := shape(folder); !slices.Equal(got, want) {
 					t.Errorf("groupBySchema=%v: children = %q, want %q", on, got, want)
 				}
-				for _, g := range folder.children {
+				for _, g := range folder.Children {
 					if g.data.Type != NodeSchemaGroup {
 						continue
 					}
-					if g.parent != folder || !g.data.Loaded || g.data.GroupOf != tt.ft || g.data.DBName != "db1" ||
-						g.data.conn != folder.data.conn || a.explorer.byID[g.id] != g {
+					if g.Parent != folder || !g.Loaded || g.data.GroupOf != tt.ft || g.data.DBName != "db1" ||
+						g.data.conn != folder.data.conn || a.explorer.nodeByID(g.ID()) != g {
 						t.Errorf("group %s: parent/Loaded/GroupOf/DBName/conn/byID not set up: %+v", g.label, g.data)
 					}
-					for _, c := range g.children {
-						if c.parent != g {
+					for _, c := range g.Children {
+						if c.Parent != g {
 							t.Errorf("%s's parent is not its group", c.label)
 						}
 					}
@@ -125,33 +125,33 @@ func TestGroupingToggleIsLossless(t *testing.T) {
 		obj(NodeTable, "sales", "Orders"), obj(NodeTable, "dbo", "A"), obj(NodeTable, "dbo", "B")}
 	folder := groupTree(t, a, NodeTables, loaded...)
 	orders := loaded[1]
-	orders.expanded = true
+	orders.Expanded = true
 	cols := &explorerNode{label: "Columns", data: nodeData{Type: NodeColumns, DBName: "db1", Schema: "sales", Name: "Orders"}}
 	oe.SetChildren(orders, []*explorerNode{cols})
 	ids := map[*explorerNode]int{}
 	for _, c := range loaded {
-		ids[c] = c.id
+		ids[c] = c.ID()
 	}
 
 	a.groupBySchema = true
 	oe.regroupAll()
-	sales := folder.children[2]
+	sales := folder.Children[2]
 	if sales.label != "sales" {
 		t.Fatalf("children = %q, want the sales group last", shape(folder))
 	}
-	sales.expanded = true
-	salesID := sales.id
+	sales.Expanded = true
+	salesID := sales.ID()
 	oe.regroupAll() // ON again: the live group is reused, not rebuilt
-	if folder.children[2] != sales || sales.retired {
+	if folder.Children[2] != sales || sales.Retired() {
 		t.Fatal("re-applying ON replaced a live group")
 	}
 
 	a.groupBySchema = false
 	oe.regroupAll()
-	if !slices.Equal(folder.children, loaded) {
-		t.Fatalf("OFF: children = %q, want the loaded list %q", shape(folder), shape(&explorerNode{children: loaded}))
+	if !slices.Equal(folder.Children, loaded) {
+		t.Fatalf("OFF: children = %q, want the loaded list %q", shape(folder), shape(&explorerNode{explorerItem: explorerItem{Children: loaded}}))
 	}
-	if !sales.retired || oe.byID[salesID] != nil {
+	if !sales.Retired() || oe.nodeByID(salesID) != nil {
 		t.Error("OFF: the sales group is still live or still in byID after the rebuild")
 	}
 
@@ -160,15 +160,15 @@ func TestGroupingToggleIsLossless(t *testing.T) {
 	if got, want := shape(folder), []string{"System Tables", "dbo[dbo.A dbo.B]", "sales[sales.Orders]"}; !slices.Equal(got, want) {
 		t.Fatalf("ON again: children = %q, want %q", got, want)
 	}
-	if g := folder.children[2]; !g.expanded || g == sales {
-		t.Errorf("ON again: sales group expanded = %v, reused retired node = %v; want a new, expanded group", g.expanded, g == sales)
+	if g := folder.Children[2]; !g.Expanded || g == sales {
+		t.Errorf("ON again: sales group expanded = %v, reused retired node = %v; want a new, expanded group", g.Expanded, g == sales)
 	}
 	for _, c := range loaded {
-		if c.id != ids[c] || oe.byID[c.id] != c || c.retired {
-			t.Errorf("%s: id %d → %d, byID kept = %v, retired = %v", c.label, ids[c], c.id, oe.byID[c.id] == c, c.retired)
+		if c.ID() != ids[c] || oe.nodeByID(c.ID()) != c || c.Retired() {
+			t.Errorf("%s: id %d → %d, byID kept = %v, retired = %v", c.label, ids[c], c.ID(), oe.nodeByID(c.ID()) == c, c.Retired())
 		}
 	}
-	if !orders.expanded || !orders.data.Loaded || len(orders.children) != 1 || orders.children[0] != cols {
+	if !orders.Expanded || !orders.Loaded || len(orders.Children) != 1 || orders.Children[0] != cols {
 		t.Error("the expanded table lost its loaded Columns subtree across the toggle")
 	}
 	if !slices.Equal(folder.flat, loaded) {
@@ -183,19 +183,19 @@ func TestGroupingSurvivesReload(t *testing.T) {
 	a := newTestApp()
 	a.groupBySchema = true
 	folder := groupTree(t, a, NodeViews, obj(NodeView, "dbo", "v1"), obj(NodeView, "app", "v2"))
-	folder.expanded = false            // so Reload starts no background load
-	folder.children[1].expanded = true // dbo
-	old := folder.children[1]
+	folder.Expanded = false            // so Reload starts no background load
+	folder.Children[1].Expanded = true // dbo
+	old := folder.Children[1]
 
 	a.explorer.Reload(folder)
-	if len(folder.flat) != 0 || len(folder.children) != 0 || !old.retired {
+	if len(folder.flat) != 0 || len(folder.Children) != 0 || !old.Retired() {
 		t.Fatal("Reload left the folder's flat list, children or groups in place")
 	}
 	a.explorer.SetChildren(folder, []*explorerNode{obj(NodeView, "dbo", "v1_renamed"), obj(NodeView, "app", "v2")})
 	if got, want := shape(folder), []string{"app[app.v2]", "dbo[dbo.v1_renamed]"}; !slices.Equal(got, want) {
 		t.Fatalf("children = %q, want %q", got, want)
 	}
-	if !folder.children[1].expanded || folder.children[0].expanded {
+	if !folder.Children[1].Expanded || folder.Children[0].Expanded {
 		t.Error("the reloaded groups did not keep which one was open")
 	}
 }
@@ -209,7 +209,7 @@ func TestGroupingLeavesOtherFamiliesFlat(t *testing.T) {
 		children := []*explorerNode{obj(NodeView, "sys", "b"), obj(NodeView, "dbo", "a")}
 		folder := groupTree(t, a, ft, children...)
 		a.explorer.regroupAll()
-		if !slices.Equal(folder.children, children) || folder.flat != nil {
+		if !slices.Equal(folder.Children, children) || folder.flat != nil {
 			t.Errorf("%s: children = %q, flat = %v; want the loaded list and no flat", nodeTypeName(ft), shape(folder), folder.flat)
 		}
 	}
@@ -229,9 +229,14 @@ func TestGroupingFilteredFolder(t *testing.T) {
 		t.Errorf("children = %q, want %q", got, want)
 	}
 	labels := map[string]bool{}
-	for _, tn := range a.explorer.flatten(nil, folder.parent, 0) {
-		labels[tn.Label] = true
+	var walk func(*explorerNode, int)
+	walk = func(n *explorerNode, depth int) {
+		labels[a.explorer.row(n, depth).Label] = true
+		for _, c := range n.Children {
+			walk(c, depth+1)
+		}
 	}
+	walk(folder.Parent, 0)
 	if !labels["Tables (filtered)"] || labels["dbo (filtered)"] || labels["sales (filtered)"] {
 		t.Errorf("tree labels %v: want the suffix on the folder only", labels)
 	}
@@ -243,9 +248,9 @@ func TestListingParent(t *testing.T) {
 	a := newTestApp()
 	a.groupBySchema = true
 	folder := groupTree(t, a, NodeTables, subFolder(NodeSystemTables), obj(NodeTable, "dbo", "A"))
-	sys, dbo := folder.children[0], folder.children[1]
-	tbl := dbo.children[0]
-	root := folder.parent
+	sys, dbo := folder.Children[0], folder.Children[1]
+	tbl := dbo.Children[0]
+	root := folder.Parent
 	for _, tc := range []struct {
 		name    string
 		n, want *explorerNode
@@ -292,12 +297,12 @@ func TestWriteUnderGroupReloadsFolder(t *testing.T) {
 			a := newTestApp()
 			a.groupBySchema = true
 			folder := groupTree(t, a, NodeTables, obj(NodeTable, "dbo", "A"), obj(NodeTable, "app", "B"))
-			folder.expanded = false // so Reload starts no background load
-			g := folder.children[1] // dbo
-			refresh(a, g, g.children[0])
-			if folder.data.Loaded || len(folder.children) != 0 || folder.flat != nil || !g.retired {
+			folder.Expanded = false // so Reload starts no background load
+			g := folder.Children[1] // dbo
+			refresh(a, g, g.Children[0])
+			if folder.Loaded || len(folder.Children) != 0 || folder.flat != nil || !g.Retired() {
 				t.Fatalf("the folder was not reloaded: Loaded=%v children=%q flat=%d group retired=%v",
-					folder.data.Loaded, shape(folder), len(folder.flat), g.retired)
+					folder.Loaded, shape(folder), len(folder.flat), g.Retired())
 			}
 		})
 	}
@@ -310,15 +315,15 @@ func TestMoveToSchemaRebuckets(t *testing.T) {
 	a := newTestApp()
 	a.groupBySchema = true
 	folder := groupTree(t, a, NodeViews, obj(NodeView, "dbo", "v1"), obj(NodeView, "app", "v2"))
-	folder.expanded = false
-	moved := folder.children[1].children[0] // dbo.v1
+	folder.Expanded = false
+	moved := folder.Children[1].Children[0] // dbo.v1
 	a.explorer.ReloadFolders(resolveConn(moved), sameNodeAs(moved.listingParent()))
 	a.explorer.SetChildren(folder, []*explorerNode{obj(NodeView, "app", "v1"), obj(NodeView, "app", "v2")})
 	if got, want := shape(folder), []string{"app[app.v1 app.v2]"}; !slices.Equal(got, want) {
 		t.Errorf("children = %q, want %q", got, want)
 	}
 	for _, g := range folder.groups {
-		if g.data.Schema == "dbo" && !g.retired {
+		if g.data.Schema == "dbo" && !g.Retired() {
 			t.Error("the emptied dbo group is still live")
 		}
 	}
@@ -331,26 +336,26 @@ func TestMoveToSchemaFollowsSelection(t *testing.T) {
 	a := newTestApp()
 	a.groupBySchema = true
 	folder := groupTree(t, a, NodeViews, obj(NodeView, "dbo", "v1"), obj(NodeView, "dbo", "v3"), obj(NodeView, "app", "v2"))
-	dbo := folder.children[1]
-	dbo.expanded = true
+	dbo := folder.Children[1]
+	dbo.Expanded = true
 	a.explorer.rebuild()
-	moved := dbo.children[0] // dbo.v1
-	a.explorer.view.SelectID(moved.id)
+	moved := dbo.Children[0] // dbo.v1
+	a.explorer.view.SelectID(moved.ID())
 
 	to := moved.data.key()
 	to.Schema = "app"
 	a.explorer.Follow(moved, to)
-	folder.data.Loaded = false
-	a.explorer.dropChildren(folder)
+	folder.Loaded = false
+	a.explorer.tree.DropChildren(folder)
 	a.explorer.SetChildren(folder, []*explorerNode{obj(NodeView, "app", "v1"), obj(NodeView, "dbo", "v3"), obj(NodeView, "app", "v2")})
 
 	got := a.explorer.Selected()
 	if got == nil || got.data.Schema != "app" || got.data.Name != "v1" {
 		t.Fatalf("Selected() = %v, want app.v1", got)
 	}
-	if g := got.parent; g.data.Type != NodeSchemaGroup || g.data.Schema != "app" || g.retired || !g.expanded {
+	if g := got.Parent; g.data.Type != NodeSchemaGroup || g.data.Schema != "app" || g.Retired() || !g.Expanded {
 		t.Errorf("app.v1's parent = %q (type %v, retired %v, expanded %v), want the open app group",
-			g.label, g.data.Type, g.retired, g.expanded)
+			g.label, g.data.Type, g.Retired(), g.Expanded)
 	}
 }
 
@@ -365,7 +370,7 @@ func TestGroupingToggleKeepsSelection(t *testing.T) {
 			if n, ok := tn.Tag.(*explorerNode); ok {
 				return n
 			}
-			return tn.Tag.(loadingRow).owner
+			return tn.Tag.(controls.TreePlaceholder[*explorerNode]).Owner
 		}
 		return nil
 	}
@@ -373,15 +378,15 @@ func TestGroupingToggleKeepsSelection(t *testing.T) {
 		a = newTestApp()
 		orders, users = obj(NodeTable, "sales", "Orders"), obj(NodeTable, "app", "Users")
 		folder = groupTree(t, a, NodeTables, subFolder(NodeSystemTables), orders, obj(NodeTable, "dbo", "A"), users)
-		orders.expanded = true
+		orders.Expanded = true
 		cols = &explorerNode{label: "Columns", data: nodeData{Type: NodeColumns, DBName: "db1", Schema: "sales", Name: "Orders"}}
 		a.explorer.SetChildren(orders, []*explorerNode{cols})
-		users.expanded = true // unloaded: shows a "Loading..." row
+		users.Expanded = true // unloaded: shows a "Loading..." row
 		a.explorer.rebuild()
 		return
 	}
 	group := func(folder *explorerNode, schema string) *explorerNode {
-		for _, c := range folder.children {
+		for _, c := range folder.Children {
 			if c.data.Type == NodeSchemaGroup && c.data.Schema == schema {
 				return c
 			}
@@ -395,9 +400,9 @@ func TestGroupingToggleKeepsSelection(t *testing.T) {
 		pick   func(orders, cols, users *explorerNode) (controls.TreeNodeID, *explorerNode)
 		opened string
 	}{
-		{"object", func(o, _, _ *explorerNode) (controls.TreeNodeID, *explorerNode) { return o.id, o }, "sales"},
-		{"node under an object", func(_, c, _ *explorerNode) (controls.TreeNodeID, *explorerNode) { return c.id, c }, "sales"},
-		{"Loading... row", func(_, _, u *explorerNode) (controls.TreeNodeID, *explorerNode) { return u.loadingID, u }, "app"},
+		{"object", func(o, _, _ *explorerNode) (controls.TreeNodeID, *explorerNode) { return o.ID(), o }, "sales"},
+		{"node under an object", func(_, c, _ *explorerNode) (controls.TreeNodeID, *explorerNode) { return c.ID(), c }, "sales"},
+		{"Loading... row", func(_, _, u *explorerNode) (controls.TreeNodeID, *explorerNode) { return u.PlaceholderID(), u }, "app"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, folder, orders, cols, users := setup(t)
@@ -405,9 +410,9 @@ func TestGroupingToggleKeepsSelection(t *testing.T) {
 			a.explorer.view.SelectID(id)
 			a.groupBySchema = true
 			a.explorer.regroupAll()
-			for _, g := range folder.children {
-				if g.data.Type == NodeSchemaGroup && g.expanded != (g.data.Schema == tc.opened) {
-					t.Errorf("group %s expanded = %v; want only %s open", g.label, g.expanded, tc.opened)
+			for _, g := range folder.Children {
+				if g.data.Type == NodeSchemaGroup && g.Expanded != (g.data.Schema == tc.opened) {
+					t.Errorf("group %s expanded = %v; want only %s open", g.label, g.Expanded, tc.opened)
 				}
 			}
 			if tn := a.explorer.view.SelectedNode(); tn == nil || tn.ID != id || selected(a) != want {
@@ -418,7 +423,7 @@ func TestGroupingToggleKeepsSelection(t *testing.T) {
 
 	t.Run("OFF keeps an object", func(t *testing.T) {
 		a, _, orders, _, _ := setup(t)
-		a.explorer.view.SelectID(orders.id)
+		a.explorer.view.SelectID(orders.ID())
 		a.groupBySchema = true
 		a.explorer.regroupAll()
 		a.groupBySchema = false
@@ -431,7 +436,7 @@ func TestGroupingToggleKeepsSelection(t *testing.T) {
 		a, folder, _, _, _ := setup(t)
 		a.groupBySchema = true
 		a.explorer.regroupAll()
-		a.explorer.view.SelectID(group(folder, "dbo").id)
+		a.explorer.view.SelectID(group(folder, "dbo").ID())
 		a.groupBySchema = false
 		a.explorer.regroupAll()
 		if selected(a) != folder {
@@ -508,7 +513,7 @@ func TestSchemaGroupDrag(t *testing.T) {
 	a := newDragTestApp(t, 0)
 	a.groupBySchema = true
 	root := a.explorer.Selected()
-	folder := &explorerNode{label: "Tables", expanded: true, data: nodeData{Type: NodeTables, DBName: "db1", conn: root.data.conn}}
+	folder := &explorerNode{label: "Tables", explorerItem: explorerItem{Expanded: true}, data: nodeData{Type: NodeTables, DBName: "db1", conn: root.data.conn}}
 	a.explorer.SetChildren(root, []*explorerNode{folder})
 	a.explorer.SetChildren(folder, []*explorerNode{obj(NodeTable, "sales", "t1")})
 	y := -1
@@ -538,11 +543,11 @@ func TestSchemaGroupDrag(t *testing.T) {
 func TestGroupBySchemaTitleButton(t *testing.T) {
 	a := newDragTestApp(t, 0)
 	root := a.explorer.Selected()
-	folder := &explorerNode{label: "Tables", expanded: true, data: nodeData{Type: NodeTables, DBName: "db1", conn: root.data.conn}}
+	folder := &explorerNode{label: "Tables", explorerItem: explorerItem{Expanded: true}, data: nodeData{Type: NodeTables, DBName: "db1", conn: root.data.conn}}
 	a.explorer.SetChildren(root, []*explorerNode{folder})
 	t1 := obj(NodeTable, "sales", "t1")
 	a.explorer.SetChildren(folder, []*explorerNode{t1})
-	a.explorer.view.SelectID(t1.id)
+	a.explorer.view.SelectID(t1.ID())
 
 	// The button sits just inside the top-right corner of the explorer pane.
 	bx, by := dragTestSplitX-1-3+1, 1
@@ -578,7 +583,7 @@ func TestGroupBySchemaTitleButton(t *testing.T) {
 func TestGroupingNestedFolder(t *testing.T) {
 	a := newTestApp()
 	sys := subFolder(NodeSystemTables)
-	sys.expanded = true
+	sys.Expanded = true
 	folder := groupTree(t, a, NodeTables, sys, obj(NodeTable, "dbo", "A"))
 	a.explorer.SetChildren(sys, []*explorerNode{
 		obj(NodeTable, "sys", "trace_xe_action_map"), obj(NodeTable, "INFORMATION_SCHEMA", "x"),

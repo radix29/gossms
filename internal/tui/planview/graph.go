@@ -420,22 +420,13 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 				return true
 			}
 		}
-		switch ev.Buttons() {
-		case tcell.WheelUp:
-			if v.graphPropsRect.Contains(mx, my) {
-				v.scrollGraphProps(-1)
-				return true
-			}
-		case tcell.WheelDown:
-			if v.graphPropsRect.Contains(mx, my) {
-				v.scrollGraphProps(1)
-				return true
-			}
-		case tcell.Button1:
-			if v.graphSplit.HandleMouse(ev) {
-				v.layoutGraphTab()
-				return true
-			}
+		if d, ok := core.LineWheel(ev, v.graphPropsRect); ok {
+			v.scrollGraphProps(d)
+			return true
+		}
+		if ev.Buttons() == tcell.Button1 && v.graphSplit.HandleMouse(ev) {
+			v.layoutGraphTab()
+			return true
 		}
 	}
 	// A latched scrollbar drag keeps the bar even once the pointer leaves

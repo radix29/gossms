@@ -613,7 +613,7 @@ func (d *PropDialog) staleDetails() {
 		return
 	}
 	d.app.detailBrowser.InvalidateWhere(d.app, func(n *explorerNode) bool {
-		return n == node || (node.parent != nil && n == node.parent) || n.parent == node
+		return n == node || (node.Parent != nil && n == node.Parent) || n.Parent == node
 	})
 }
 

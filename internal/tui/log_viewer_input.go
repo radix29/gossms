@@ -147,15 +147,9 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	// The wheel over the details pane scrolls it; over the grid it goes to the
 	// grid, below.
-	if lv.detailRect.Contains(mx, my) {
-		switch ev.Buttons() {
-		case tcell.WheelDown:
-			lv.scrollDetails(1)
-			return true
-		case tcell.WheelUp:
-			lv.scrollDetails(-1)
-			return true
-		}
+	if d, ok := core.LineWheel(ev, lv.detailRect); ok {
+		lv.scrollDetails(d)
+		return true
 	}
 	if lv.splitter.HandleMouse(ev) {
 		lv.layoutChildren()

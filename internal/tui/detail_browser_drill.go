@@ -42,7 +42,7 @@ func (a *App) drillIntoRow(db *DetailBrowser, row int) bool {
 // a field, never a child. nil when the row describes no child.
 func (db *DetailBrowser) drillMatch(row int) func(*explorerNode) bool {
 	parent := db.currentNode
-	if parent == nil || parent.retired {
+	if parent == nil || parent.Retired() {
 		return nil
 	}
 	cells := db.grid.Row(row)
@@ -79,13 +79,13 @@ func (db *DetailBrowser) drillMatch(row int) func(*explorerNode) bool {
 // matching leaves the selection on parent.
 func (oe *ObjectExplorer) DrillInto(parent *explorerNode, match func(*explorerNode) bool) {
 	oe.drill = nil
-	if parent.data.Loaded {
+	if parent.Loaded {
 		oe.selectDrillChild(parent, match)
 		return
 	}
 	oe.drill = &drillHint{parent: parent, match: match}
-	if !parent.expanded {
-		oe.handleExpand(parent.id)
+	if !parent.Expanded {
+		oe.tree.Expand(parent)
 	}
 	// Already expanded and not loaded: its load is in flight, and SetChildren
 	// finishes the drill when it lands.
@@ -106,10 +106,10 @@ func (oe *ObjectExplorer) selectDrillChild(parent *explorerNode, match func(*exp
 	if c == nil {
 		return
 	}
-	parent.expanded = true
-	c.parent.expanded = true // the schema group under a grouped folder
+	parent.Expanded = true
+	c.Parent.Expanded = true // the schema group under a grouped folder
 	oe.rebuild()
-	oe.view.SelectID(c.id)
+	oe.tree.Select(c)
 }
 
 // drillChild is the first of parent's children match picks, looking inside
@@ -117,16 +117,16 @@ func (oe *ObjectExplorer) selectDrillChild(parent *explorerNode, match func(*exp
 // children. A group is itself a candidate, for the schema rows a grouped
 // folder's Details lists.
 func drillChild(parent *explorerNode, match func(*explorerNode) bool) *explorerNode {
-	for _, c := range parent.children {
-		if c.retired {
+	for _, c := range parent.Children {
+		if c.Retired() {
 			continue
 		}
 		if match(c) {
 			return c
 		}
 		if c.data.Type == NodeSchemaGroup {
-			for _, gc := range c.children {
-				if !gc.retired && match(gc) {
+			for _, gc := range c.Children {
+				if !gc.Retired() && match(gc) {
 					return gc
 				}
 			}

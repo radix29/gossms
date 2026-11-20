@@ -18,7 +18,6 @@ func newLatchTestApp() *App {
 	a.toolbar = controls.NewToolbar()
 	a.contextMenu = &controls.ContextMenu{}
 	installDialog(a, dialogs.NewAlertDialog())
-	a.modals = dialogs.Stack{}
 	a.modals.Register(a.alertDialog())
 	a.explorerSplit = newVerticalSplitter()
 	a.explorerSplit.SetBounds(0, 1, 100, 28)

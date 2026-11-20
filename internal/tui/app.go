@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,11 +47,11 @@ type App struct {
 	// on release (handleMouse, routeRelease, dropExplorerNode).
 	drag core.Drag[*explorerNode]
 
-	// mouseButtonDown tracks whether Button1 is held, wherever the gesture
-	// started. The per-widget mouseDragging latches only catch a resend staying
-	// inside one widget; this lets handleMouse tell a drag that started
-	// elsewhere and drifted across the status row from a fresh press there.
-	mouseButtonDown bool
+	// buttonPress tracks whether Button1 is held, wherever the gesture
+	// started. The per-widget latches only catch a resend staying inside one
+	// widget; this lets handleMouse tell a drag that started elsewhere and
+	// drifted across the status row from a fresh press there.
+	buttonPress core.PressLatch
 
 	// gestureOwner is the region that claimed the Button1 press currently held —
 	// the App-level counterpart of
@@ -63,10 +62,10 @@ type App struct {
 	// panes. Released on ButtonNone.
 	gestureOwner core.Gesture[appGestureOwner]
 
-	// gestureOverlay is the modal layer as it stood when the current gesture
-	// began, so handleMouse can tell a dialog, context menu or menu dropdown
-	// has opened or closed since.
-	gestureOverlay overlayStack
+	// gestureOverlay holds the modal layer as it stood when the current
+	// gesture began (overlaySnapshot), so handleMouse can drop held Button1
+	// once a dialog, context menu or menu dropdown has opened or closed since.
+	gestureOverlay core.OverlayGuard[overlayStack]
 
 	menuBar       *controls.MenuBar
 	toolbar       *controls.Toolbar
@@ -106,9 +105,6 @@ type App struct {
 	// not, and logStatus feeds it from loader goroutines, so unlike every other
 	// dialog (app_dialogs.go) it is built eagerly in buildUI.
 	statusHistoryDialog *StatusHistoryDialog
-
-	// dialogSlots holds each dialog built so far, by type (dialogOf).
-	dialogSlots map[reflect.Type]Dialog
 
 	// modals holds every dialog built so far, registered by dialogOf, and the
 	// live z-order of the open ones (see dialog_stack.go).

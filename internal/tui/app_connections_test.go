@@ -133,7 +133,7 @@ func TestExplorerRootShowsSavedProfile(t *testing.T) {
 			if got := a.queryPanelProfile(NewQueryPanel(a, "q2"), panelConn); got != "" {
 				t.Errorf("another panel's connection profile = %q, want none", got)
 			}
-			child := &explorerNode{label: "Databases", parent: root}
+			child := &explorerNode{label: "Databases", explorerItem: explorerItem{Parent: root}}
 			if got := FormatNodePath(child); got != fullLabel+" > Databases" {
 				t.Errorf("child status = %q, want full connection breadcrumb", got)
 			}
@@ -196,11 +196,11 @@ func TestDisconnectKeepsOtherPanelsBound(t *testing.T) {
 	if len(a.connections) != 1 || a.connections[0] != sc2 {
 		t.Fatalf("connections after disconnect = %v, want [sc2]", a.connections)
 	}
-	if got := len(a.explorer.roots); got != 1 {
+	if got := len(a.explorer.tree.Roots()); got != 1 {
 		t.Fatalf("explorer roots after disconnect = %d, want 1", got)
 	}
-	if a.explorer.roots[0].data.conn != sc2 {
-		t.Errorf("remaining root bound to %+v, want sc2", a.explorer.roots[0].data.conn)
+	if a.explorer.tree.Roots()[0].data.conn != sc2 {
+		t.Errorf("remaining root bound to %+v, want sc2", a.explorer.tree.Roots()[0].data.conn)
 	}
 	if !a.isConnected(qp2.conn) {
 		t.Errorf("panel bound to sc2 reports disconnected")
@@ -235,9 +235,9 @@ func TestDisconnectActiveUsesSelectedRoot(t *testing.T) {
 func TestResolveConn(t *testing.T) {
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")
-	root := a.explorer.roots[0]
+	root := a.explorer.tree.Roots()[0]
 
-	child := &explorerNode{label: "Databases", data: nodeData{Type: NodeDatabases}, parent: root}
+	child := &explorerNode{label: "Databases", data: nodeData{Type: NodeDatabases}, explorerItem: explorerItem{Parent: root}}
 	if got := resolveConn(child); got != sc {
 		t.Errorf("resolveConn(child without conn) = %+v, want sc", got)
 	}

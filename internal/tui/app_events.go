@@ -234,22 +234,16 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 
 	// freshPress is true only for the Button1 event starting a gesture, not
 	// tcell's resends while held.
-	freshPress := ev.Buttons() == tcell.Button1 && !a.mouseButtonDown
-	switch ev.Buttons() {
-	case tcell.Button1:
-		a.mouseButtonDown = true
-	case tcell.ButtonNone:
-		a.mouseButtonDown = false
+	if a.buttonPress.Release(ev) {
 		a.gestureOwner.Release()
 	}
+	freshPress := a.buttonPress.Fresh(ev)
 
 	// An overlay that opened or closed mid-press must not get that button:
 	// ModalDialog.ButtonClicked and ContextMenu.HandleMouse treat the first Button1
 	// they see as a fresh press, so a resend could activate a button on a dialog a
 	// menu action just opened. Releases still pass so latches reset.
-	if freshPress {
-		a.gestureOverlay = a.overlaySnapshot()
-	} else if ev.Buttons() == tcell.Button1 && a.overlaySnapshot() != a.gestureOverlay {
+	if a.gestureOverlay.Drop(ev, freshPress, a.overlaySnapshot) {
 		return
 	}
 
@@ -264,7 +258,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	// closes it: any press outside. A right-click that closed it falls through
 	// (core.MouseHandler), so it opens the next menu where it landed instead of
 	// needing a second right-click.
-	if a.contextMenu.OverlayActive() && (a.contextMenu.HandleMouse(ev) || a.contextMenu.OverlayActive()) {
+	if core.RouteOverlay(a.contextMenu, ev) {
 		return
 	}
 	// A fresh right-click on a dialog's text field opens its Cut/Copy/Paste menu
@@ -277,14 +271,14 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	if a.modals.HandleMouse(ev) {
 		return
 	}
-	if a.menuBar.OverlayActive() && (a.menuBar.HandleMouse(ev) || a.menuBar.OverlayActive()) {
+	if core.RouteOverlay(a.menuBar, ev) {
 		return
 	}
 	// Then the active panel's overlay (a grid's cell menu or Show Value popup,
 	// the editor's completion list, the tab drop-down), by the same rule: routed
 	// by position, a right-click on Object Explorer opened the tree's menu
 	// beside the grid's still-open one (layout.OverlayPanel).
-	if a.panels.OverlayActive() && (a.panels.HandleMouse(ev) || a.panels.OverlayActive()) {
+	if core.RouteOverlay(a.panels, ev) {
 		return
 	}
 
@@ -390,12 +384,12 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	// ignored the first click after a Delete confirmation.
 	//
 	// An open context menu is above the dialogs and takes the event first; the
-	// dialogs then get an off-screen release, which resets their latches without
-	// lighting hover under the menu.
+	// dialogs then get a release nowhere (core.ReleaseNowhere), which resets
+	// their latches without lighting hover under the menu.
 	modalEv := ev
 	if a.contextMenu.OverlayActive() {
 		a.contextMenu.HandleMouse(ev)
-		modalEv = tcell.NewEventMouse(-1, -1, tcell.ButtonNone, ev.Modifiers())
+		modalEv = core.ReleaseNowhere(ev)
 	}
 	a.modals.HandleMouse(modalEv)
 
@@ -410,10 +404,10 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	// Under a dialog or context menu the layer beneath only resets its latches.
 	// Pointer motion arrives as ButtonNone too, so the real position would light
 	// up the menu bar, toolbar and panels behind the overlay as the pointer
-	// crosses them; a release nowhere resets the latches and clears any hover.
+	// crosses them; core.ReleaseNowhere resets the latches and clears any hover.
 	base := ev
 	if a.modals.Top() != nil || a.contextMenu.OverlayActive() {
-		base = tcell.NewEventMouse(-1, -1, tcell.ButtonNone, ev.Modifiers())
+		base = core.ReleaseNowhere(ev)
 	}
 	a.menuBar.HandleMouse(base)
 	a.toolbar.HandleMouse(base)
@@ -439,8 +433,9 @@ func (a *App) routeGesture(ev *tcell.EventMouse, region appGestureOwner) {
 }
 
 // overlayStack is the modal layers open at one instant: top dialog (or nil),
-// context menu, menu-bar dropdown and the active panel's overlay. Compared by
-// value to detect changes mid-gesture.
+// context menu, menu-bar dropdown and the active panel's overlay — the
+// snapshot App.gestureOverlay compares by value to detect a change
+// mid-gesture.
 type overlayStack struct {
 	dialog      Dialog
 	contextMenu bool

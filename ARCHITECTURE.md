@@ -311,7 +311,7 @@ gossms/
 │       ├── tree_node.go          # NodeType enum, nodeData
 │       ├── tree_node_kinds.go    # nodeKinds: one row per NodeType — folder/leaf/expandable, display name, Emoji and Symbols glyphs — behind isContainerNode, hasChildren, nodeTypeName
 │       ├── tree_node_icons.go    # style-aware icon lookup (Emoji/Symbols/Portable/None): nodeIcon and its state substitutions (offline database, stopped session, publication kind)
-│       ├── object_explorer.go    # owns the SQL Server tree model; drives controls.TreeView
+│       ├── object_explorer.go    # explorerNode (SQL Server data + loaders) over controls.TreeModel, which drives controls.TreeView
 │       ├── explorer_loaders.go   # childLoader and nodeMenus registries (NodeType → fetch func, NodeType → menu builder) + shared loader helpers
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
 │       ├── explorer_database_security.go # loaders and menus: a database's Security folder — Users, Roles (Database/Application), Schemas, Audit Specifications, Scoped Credentials, keys and certificates, Security Policies, Always Encrypted Keys
@@ -690,7 +690,8 @@ state.
 Add an accessor to `app_dialogs.go` (`func (a *App) xDialog() *XDialog {
 return dialogOf(a, NewXDialog) }`) and list it in `everyDialog`
 (`app_dialogs_test.go`; `TestEveryDialogAccessorIsInEveryDialog` checks).
-`dialogOf` builds the dialog on first use and registers it;
+`dialogOf` builds the dialog on first use and registers it (tuikit's
+`dialogs.Lazy`);
 `a.modals.Sync` (a `dialogs.Stack`) pushes it on top when its `Show()` flips
 it visible and routes it all input until it closes; draw order and key/mouse
 routing follow. For the widget, follow the `ModalDialog`
@@ -734,8 +735,8 @@ every open dialog, `dialogs.FieldGesture`, `Show()` clearing latches, and one
 gestures (`~/go/tuikit`). Read it first.
 This section is how goSSMS's routers follow it.
 
-`App.handleMouse` keeps a gesture-wide flag (`App.mouseButtonDown`, set and
-cleared from the raw event before positional branching) to tell a fresh press
+`App.handleMouse` keeps a gesture-wide `core.PressLatch` (`App.buttonPress`,
+set and cleared from the raw event before positional branching) to tell a fresh press
 from a continuation, and records the claiming region in `App.gestureOwner`
 (`app_events.go`). Every other router holds its own `core.Gesture[Z]` as
 `dragZone`: `propsheet.PropertySheet` (inside tuikit), and `QueryPanel`,
@@ -744,8 +745,9 @@ from a continuation, and records the claiming region in `App.gestureOwner`
 `ActivityMonitor`, `DetailBrowser` and `AGDashboard` read `Owner()` instead of
 `Route`, because their grids take the wheel mid-gesture.
 
-`App` also snapshots the modal layer per gesture
-(`gestureOverlay`/`overlaySnapshot`) and drops held `Button1` across a change:
+`App` also snapshots the modal layer per gesture (`gestureOverlay`, a
+`core.OverlayGuard` over `overlaySnapshot`) and drops held `Button1` across a
+change:
 otherwise clicking a context-menu item that opens a dialog and twitching before
 release fires whatever dialog button is under the pointer.
 

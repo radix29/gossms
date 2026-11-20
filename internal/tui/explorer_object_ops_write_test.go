@@ -31,8 +31,8 @@ func opTestNode(sc *db.ServerConn, typ NodeType, schema, name, table string) *ex
 	n := opNode(typ, schema, name, table)
 	n.data.DBName = "appdb"
 	n.data.conn = sc
-	n.parent = parent
-	parent.children = []*explorerNode{n}
+	n.Parent = parent
+	parent.Children = []*explorerNode{n}
 	return n
 }
 

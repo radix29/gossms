@@ -514,31 +514,25 @@ func (v *PlanView) handleTreeTabKey(ev *tcell.EventKey) bool {
 // splitter, and forwards to the summary grid while it's shown.
 func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
+	if d, ok := core.LineWheel(ev, v.detailsPaneRect); ok {
+		v.scrollDetails(d)
+		return true
+	}
+	if v.bottomMode == bottomProperties {
+		if d, ok := core.LineWheel(ev, v.bottomRect); ok {
+			v.scrollBottomProps(d)
+			return true
+		}
+	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
 		if v.treePaneRect.Contains(mx, my) && v.treeSt.scroll > 0 {
 			v.treeSt.scroll--
 			return true
 		}
-		if v.detailsPaneRect.Contains(mx, my) {
-			v.scrollDetails(-1)
-			return true
-		}
-		if v.bottomMode == bottomProperties && v.bottomRect.Contains(mx, my) {
-			v.scrollBottomProps(-1)
-			return true
-		}
 	case tcell.WheelDown:
 		if v.treePaneRect.Contains(mx, my) && v.treeSt.scroll < len(v.treeSt.rows)-v.treePaneRect.H {
 			v.treeSt.scroll++
-			return true
-		}
-		if v.detailsPaneRect.Contains(mx, my) {
-			v.scrollDetails(1)
-			return true
-		}
-		if v.bottomMode == bottomProperties && v.bottomRect.Contains(mx, my) {
-			v.scrollBottomProps(1)
 			return true
 		}
 	case tcell.ButtonNone:

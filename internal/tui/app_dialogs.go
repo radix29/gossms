@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"reflect"
-
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/gosmo"
@@ -14,13 +12,10 @@ import (
 // ---------------------------------------------------------------------------
 
 // dialogOf returns a's one dialog of type T, building it with mk and
-// registering it in a.modals on first use. Every dialog App owns is reached
-// through one of the accessor methods below, so a dialog is never built for a
-// session that does not open it, and none can be built without being
-// registered: a shown but unregistered dialog is never drawn and never gets
-// input (dialogs.Stack.Register). Registering on first use is safe for z-order
-// because Stack.Sync stacks dialogs that open together by when they were
-// shown, not by registration order.
+// registering it in a.modals on first use (dialogs.Lazy, which carries the
+// rule: a shown but unregistered dialog is never drawn and never gets input).
+// Every dialog App owns is reached through one of the accessor methods below,
+// so a dialog is never built for a session that does not open it.
 //
 // One slot per type: two accessors may not return the same type (they would
 // share one dialog). TestEveryDialogAccessorIsInEveryDialog checks that.
@@ -30,40 +25,24 @@ import (
 // exception, fed from loader goroutines through logStatus, so it is an
 // ordinary App field built in buildUI.
 func dialogOf[T Dialog](a *App, mk func(*App) T) T {
-	key := reflect.TypeFor[T]()
-	if d, ok := a.dialogSlots[key]; ok {
-		return d.(T)
-	}
-	d := mk(a)
-	if a.dialogSlots == nil {
-		a.dialogSlots = make(map[reflect.Type]Dialog)
-	}
-	a.dialogSlots[key] = d
-	a.modals.Register(d)
-	return d
+	return dialogs.Lazy(&a.modals, func() T { return mk(a) })
 }
 
 // setScreen makes s the screen the UI draws on and every dialog centres on and
 // sizes against: a.modals hands it to each dialog as dialogOf registers it, and
-// to those already registered now. Dialog constructors take no screen.
-// Dialogs a test installs without registering (installDialog) get it too.
+// to those already registered now — and to any a test installed without
+// registering (installDialog). Dialog constructors take no screen.
 func (a *App) setScreen(s tcell.Screen) {
 	a.screen = s
 	a.wake.SetScreen(s)
 	a.modals.SetScreen(s)
-	for _, d := range a.dialogSlots {
-		if u, ok := d.(interface{ SetScreen(tcell.Screen) }); ok {
-			u.SetScreen(s)
-		}
-	}
 }
 
 // builtDialog returns a's dialog of type T if one has been built, for code
 // that only asks about an open dialog (is Key Diagnostics recording?) and must
 // not build one to get the answer.
 func builtDialog[T Dialog](a *App) (T, bool) {
-	d, ok := a.dialogSlots[reflect.TypeFor[T]()].(T)
-	return d, ok
+	return dialogs.Built[T](&a.modals)
 }
 
 // appless adapts a constructor that takes nothing (tuikit's own dialogs) to

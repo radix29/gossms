@@ -128,7 +128,6 @@ func newConnectDialogApp(t *testing.T) (*App, *QueryPanel) {
 	t.Helper()
 	a := newClipboardTestApp()
 	qp := focusedQueryPanel(t, a)
-	a.modals = dialogs.Stack{}
 	a.modals.Register(a.connectDialog())
 	a.connectDialog().Show()
 	a.modals.Sync()

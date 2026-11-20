@@ -25,7 +25,7 @@ func newReloadTree(t *testing.T) *selectionTree {
 func (st *selectionTree) freshLogins() []*explorerNode {
 	out := []*explorerNode{testLogin(st.sc, "alice"), testLogin(st.sc, "bob"), testLogin(st.sc, "carol")}
 	for _, l := range out {
-		l.children = []*explorerNode{testLogin(st.sc, l.label+"-child")}
+		l.Children = []*explorerNode{testLogin(st.sc, l.label+"-child")}
 	}
 	return out
 }
@@ -35,7 +35,7 @@ func (st *selectionTree) freshLogins() []*explorerNode {
 func (st *selectionTree) installFresh(n *explorerNode, children []*explorerNode) {
 	grand := make(map[*explorerNode][]*explorerNode, len(children))
 	for _, c := range children {
-		grand[c], c.children = c.children, nil
+		grand[c], c.Children = c.Children, nil
 	}
 	st.a.explorer.SetChildren(n, children)
 	for _, c := range children {
@@ -50,22 +50,22 @@ func (st *selectionTree) installFresh(n *explorerNode, children []*explorerNode)
 func TestReloadReleasesReplacedSubtree(t *testing.T) {
 	st := newReloadTree(t)
 	oe, dbr := st.a.explorer, st.a.detailBrowser
-	st.logins.expanded = false // no background load: the test lands it by hand
-	for _, n := range []*explorerNode{st.logins, st.alice, st.bob, st.carol, st.bob.children[0]} {
+	st.logins.Expanded = false // no background load: the test lands it by hand
+	for _, n := range []*explorerNode{st.logins, st.alice, st.bob, st.carol, st.bob.Children[0]} {
 		dbr.cache[n] = &detailResult{cols: []string{"Name"}, rows: [][]string{{n.label}}}
 	}
-	dbr.run.pending[st.carol.children[0]] = 7 // a fetch still in flight
-	baseByID, baseCache := len(oe.byID), len(dbr.cache)
-	old := []*explorerNode{st.alice, st.bob, st.carol, st.alice.children[0], st.bob.children[0], st.carol.children[0]}
+	dbr.run.pending[st.carol.Children[0]] = 7 // a fetch still in flight
+	baseByID, baseCache := oe.tree.Len(), len(dbr.cache)
+	old := []*explorerNode{st.alice, st.bob, st.carol, st.alice.Children[0], st.bob.Children[0], st.carol.Children[0]}
 
 	oe.Reload(st.logins)
 	st.installFresh(st.logins, st.freshLogins())
 
-	if got := len(oe.byID); got != baseByID {
+	if got := oe.tree.Len(); got != baseByID {
 		t.Errorf("len(byID) after a Refresh = %d, want %d — the replaced nodes are still registered", got, baseByID)
 	}
 	for _, n := range old {
-		if oe.byID[n.id] == n {
+		if oe.nodeByID(n.ID()) == n {
 			t.Errorf("replaced node %q is still in byID", n.label)
 		}
 		if _, ok := dbr.cache[n]; ok {
@@ -80,7 +80,7 @@ func TestReloadReleasesReplacedSubtree(t *testing.T) {
 	if got, want := len(dbr.cache), baseCache-5; got != want {
 		t.Errorf("len(cache) after a Refresh = %d, want %d", got, want)
 	}
-	if oe.byID[st.logins.id] != st.logins {
+	if oe.nodeByID(st.logins.ID()) != st.logins {
 		t.Error("the refreshed folder itself left byID")
 	}
 }
@@ -91,9 +91,9 @@ func TestReloadReleasesReplacedSubtree(t *testing.T) {
 func TestReloadCancelsReplacedNodesLoad(t *testing.T) {
 	st := newReloadTree(t)
 	oe := st.a.explorer
-	st.logins.expanded = false
+	st.logins.Expanded = false
 	ctx, seq := st.bob.load.BeginTimeout(context.Background(), time.Minute)
-	grandCtx, _ := st.bob.children[0].load.BeginTimeout(context.Background(), time.Minute)
+	grandCtx, _ := st.bob.Children[0].load.BeginTimeout(context.Background(), time.Minute)
 
 	oe.Reload(st.logins)
 
@@ -108,9 +108,9 @@ func TestReloadCancelsReplacedNodesLoad(t *testing.T) {
 	}
 
 	// A result that arrives anyway is refused rather than registered.
-	before := len(oe.byID)
+	before := oe.tree.Len()
 	oe.SetChildren(st.bob, []*explorerNode{testLogin(st.sc, "orphan")})
-	if got := len(oe.byID); got != before {
+	if got := oe.tree.Len(); got != before {
 		t.Errorf("SetChildren on a replaced node registered %d nodes", got-before)
 	}
 }
@@ -121,7 +121,7 @@ func TestReloadCancelsReplacedNodesLoad(t *testing.T) {
 func TestReloadKeepsStaleRowsUsableUntilRebuild(t *testing.T) {
 	st := newReloadTree(t)
 	st.selectNode(t, st.bob)
-	st.logins.expanded = false // stale rows stay drawn: nothing rebuilds
+	st.logins.Expanded = false // stale rows stay drawn: nothing rebuilds
 
 	st.a.explorer.Reload(st.logins)
 
@@ -137,18 +137,18 @@ func TestReloadKeepsStaleRowsUsableUntilRebuild(t *testing.T) {
 func TestPostWriteRefreshReleasesTheOldSubtree(t *testing.T) {
 	st := newReloadTree(t)
 	oe := st.a.explorer
-	st.logins.expanded = false // no background load: nothing to land
-	old := []*explorerNode{st.alice, st.bob, st.carol, st.alice.children[0]}
+	st.logins.Expanded = false // no background load: nothing to land
+	old := []*explorerNode{st.alice, st.bob, st.carol, st.alice.Children[0]}
 
 	oe.ReloadFolders(st.sc, folderOf("", NodeLogins))
 	oe.rebuild()
 
-	if st.logins.data.Loaded || st.logins.children != nil {
+	if st.logins.Loaded || st.logins.Children != nil {
 		t.Error("the Logins folder was not reloaded")
 	}
 	for _, n := range old {
-		if !n.retired || oe.byID[n.id] == n {
-			t.Errorf("replaced node %q was not released (retired=%v)", n.label, n.retired)
+		if !n.Retired() || oe.nodeByID(n.ID()) == n {
+			t.Errorf("replaced node %q was not released (retired=%v)", n.label, n.Retired())
 		}
 	}
 }
@@ -160,19 +160,19 @@ func TestPostWriteRefreshFindsTheReplacementFolder(t *testing.T) {
 	st := newReloadTree(t)
 	oe := st.a.explorer
 	opened := st.logins // what a New Login dialog was opened from
-	st.security.expanded = false
+	st.security.Expanded = false
 
 	oe.Reload(st.security) // the user refreshes Security while the dialog is open
 	fresh := &explorerNode{label: "Logins", data: nodeData{Type: NodeLogins, conn: st.sc}}
 	oe.SetChildren(st.security, []*explorerNode{fresh})
-	fresh.data.Loaded = true
-	if !opened.retired {
+	fresh.Loaded = true
+	if !opened.Retired() {
 		t.Fatal("fixture: the Refresh did not retire the folder the dialog holds")
 	}
 
 	oe.ReloadFolders(st.sc, sameNodeAs(opened))
 
-	if fresh.data.Loaded {
+	if fresh.Loaded {
 		t.Error("the create's refresh missed the folder that replaced the one the dialog was opened from")
 	}
 }
@@ -261,7 +261,7 @@ func menuRefresh(t *testing.T, a *App, node *explorerNode) {
 func TestServerRefreshRereadsCapabilities(t *testing.T) {
 	for name, refresh := range map[string]func(t *testing.T, a *App, root *explorerNode){
 		"F5": func(t *testing.T, a *App, root *explorerNode) {
-			a.explorer.view.SelectID(root.id)
+			a.explorer.view.SelectID(root.ID())
 			a.explorer.RefreshSelected()
 		},
 		"context menu": func(t *testing.T, a *App, root *explorerNode) { menuRefresh(t, a, root) },

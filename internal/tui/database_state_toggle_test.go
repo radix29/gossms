@@ -58,7 +58,7 @@ func recoverTree(t *testing.T, a *App, sc *db.ServerConn) (dbs, sys, appdb, mast
 	a.explorer.SetChildren(dbs, []*explorerNode{sys, appdb})
 	a.explorer.SetChildren(sys, []*explorerNode{master})
 	for _, n := range []*explorerNode{root, dbs, sys} {
-		n.data.Loaded = true
+		n.Loaded = true
 	}
 	return dbs, sys, appdb, master
 }
@@ -87,8 +87,8 @@ func TestRestoreWithRecoveryRecoversAndReloadsTheFolder(t *testing.T) {
 	if slices.ContainsFunc(inst.Statements(), func(s string) bool { return s == "ALTER DATABASE [appdb] SET ONLINE" }) {
 		t.Error("Restore With Recovery sent SET ONLINE, which a restoring database refuses")
 	}
-	if dbs.data.Loaded || !appdb.retired {
-		t.Errorf("the Databases folder was not re-read (Loaded=%v, node retired=%v)", dbs.data.Loaded, appdb.retired)
+	if dbs.Loaded || !appdb.Retired() {
+		t.Errorf("the Databases folder was not re-read (Loaded=%v, node retired=%v)", dbs.Loaded, appdb.Retired())
 	}
 	if appdb.data.DBState != "RESTORING" {
 		t.Errorf("the old node's state was hand-written to %q", appdb.data.DBState)
@@ -112,10 +112,10 @@ func TestStateToggleOnASystemDatabaseReloadsSystemDatabases(t *testing.T) {
 	if want := "ALTER DATABASE [master] SET OFFLINE WITH ROLLBACK IMMEDIATE"; !slices.Contains(inst.Statements(), want) {
 		t.Fatalf("statements = %q, want %q", inst.Statements(), want)
 	}
-	if sys.data.Loaded || !master.retired {
-		t.Errorf("System Databases was not re-read (Loaded=%v, master retired=%v)", sys.data.Loaded, master.retired)
+	if sys.Loaded || !master.Retired() {
+		t.Errorf("System Databases was not re-read (Loaded=%v, master retired=%v)", sys.Loaded, master.Retired())
 	}
-	if !dbs.data.Loaded {
+	if !dbs.Loaded {
 		t.Error("the Databases folder was reloaded for a system database, collapsing System Databases")
 	}
 }

@@ -19,8 +19,8 @@ import (
 // rgLeaf is a pool, group or external pool leaf under a folder, on sc.
 func rgLeaf(sc *db.ServerConn, typ NodeType, name string, system bool) *explorerNode {
 	parent := &explorerNode{label: "folder", data: nodeData{conn: sc}}
-	n := &explorerNode{label: name, parent: parent, data: nodeData{Type: typ, Name: name, IsSystem: system, conn: sc}}
-	parent.children = []*explorerNode{n}
+	n := &explorerNode{label: name, explorerItem: explorerItem{Parent: parent}, data: nodeData{Type: typ, Name: name, IsSystem: system, conn: sc}}
+	parent.Children = []*explorerNode{n}
 	return n
 }
 

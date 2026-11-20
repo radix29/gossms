@@ -44,7 +44,6 @@ func newDragTestApp(t *testing.T, childCount int) *App {
 	a.toolbar = controls.NewToolbar()
 	a.contextMenu = &controls.ContextMenu{}
 	installDialog(a, dialogs.NewAlertDialog())
-	a.modals = dialogs.Stack{}
 	a.modals.Register(a.alertDialog())
 	a.setScreen(&eventQScreen{
 		Screen: tuikittest.NewScreen(dragTestScreenW, dragTestScreenH),
@@ -75,7 +74,7 @@ func newDragTestApp(t *testing.T, childCount int) *App {
 			data:  nodeData{Type: NodeColumn, Schema: "dbo", Name: "col", conn: sc},
 		}
 	}
-	root.expanded = true
+	root.Expanded = true
 	a.explorer.SetChildren(root, kids)
 	return a
 }

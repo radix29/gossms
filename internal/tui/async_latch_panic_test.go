@@ -39,18 +39,18 @@ func TestExplorerExpandShowsAnErrorWhenItsLoaderPanics(t *testing.T) {
 	panicLoader(t, node.data.Type)
 
 	a.loadChildren(node)
-	drainUntil(t, a, func() bool { return node.data.Loaded },
+	drainUntil(t, a, func() bool { return node.Loaded },
 		"the panicking expand to release the node")
 
 	// Loaded is the latch: while it is false the tree draws a "Loading..."
 	// child under the node, forever.
-	if len(node.children) != 1 {
-		t.Fatalf("node has %d children after a panicking load, want 1 error node", len(node.children))
+	if len(node.Children) != 1 {
+		t.Fatalf("node has %d children after a panicking load, want 1 error node", len(node.Children))
 	}
-	if got := node.children[0].data.Type; got != NodeError {
+	if got := node.Children[0].data.Type; got != NodeError {
 		t.Errorf("child node type = %v, want NodeError", got)
 	}
-	if got := node.children[0].label; got != errChildFetchPanicked.Error() {
+	if got := node.Children[0].label; got != errChildFetchPanicked.Error() {
 		t.Errorf("child label = %q, want %q", got, errChildFetchPanicked.Error())
 	}
 }
@@ -76,8 +76,8 @@ func TestExplorerExpandPanicDoesNotClobberANewerLoad(t *testing.T) {
 
 	a.childFetchPanicked(node, stale)
 
-	if len(node.children) != 1 || node.children[0].label != "from the newer load" {
-		t.Fatalf("a stale fetch's panic repair overwrote the newer load's children: %+v", node.children)
+	if len(node.Children) != 1 || node.Children[0].label != "from the newer load" {
+		t.Fatalf("a stale fetch's panic repair overwrote the newer load's children: %+v", node.Children)
 	}
 }
 

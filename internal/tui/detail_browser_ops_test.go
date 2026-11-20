@@ -374,7 +374,7 @@ func TestTheDetailPaneDeleteRefreshesTheFolder(t *testing.T) {
 	// In the tree, as the pane's node always is: the refresh finds the folder
 	// by what it is, under sc's root.
 	a.explorer.SetChildren(root, []*explorerNode{folder})
-	folder.data.Loaded = true
+	folder.Loaded = true
 	pane.cache[folder] = &detailResult{cols: []string{"Name"}, rows: [][]string{{"stale"}}}
 	selectPaneRows(pane, 0, 0)
 
@@ -383,7 +383,7 @@ func TestTheDetailPaneDeleteRefreshesTheFolder(t *testing.T) {
 	answerConfirm(t, a, false)
 	waitAndDrain(t, a)
 
-	if folder.data.Loaded {
+	if folder.Loaded {
 		t.Error("the folder still claims to be loaded after a delete from the pane")
 	}
 	if _, ok := pane.cache[folder]; ok {
