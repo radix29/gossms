@@ -9,6 +9,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/core"
 )
 
 // agent_reports.go builds the SQL-only administration folder's reports (see
@@ -102,7 +103,7 @@ func failedJobRunsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]
 		if j.LastRunOutcome != gosmo.JobOutcomeFailed {
 			continue
 		}
-		rows = append(rows, []string{j.Name, j.Category, dashIfZero(j.LastRunDate), formatHMS(j.LastRunDuration)})
+		rows = append(rows, []string{j.Name, j.Category, dashIfZero(j.LastRunDate), core.FormatClock(j.LastRunDuration)})
 	}
 	return []string{"Job Name", "Category", "Last Run", "Duration"}, rows, nil
 }

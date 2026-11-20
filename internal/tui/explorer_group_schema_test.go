@@ -522,10 +522,10 @@ func TestSchemaGroupDrag(t *testing.T) {
 		t.Fatal("no schema group row in the explorer pane")
 	}
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.Button1, tcell.ModNone))
-	if a.drag.node == nil || a.drag.node.data.Type != NodeSchemaGroup {
-		t.Fatalf("press on a schema group row armed %+v, want the group", a.drag.node)
+	if draggedNode(a) == nil || draggedNode(a).data.Type != NodeSchemaGroup {
+		t.Fatalf("press on a schema group row armed %+v, want the group", draggedNode(a))
 	}
-	if got := explorerDragText(a.drag.node); got != "[sales]" {
+	if got := explorerDragText(draggedNode(a)); got != "[sales]" {
 		t.Errorf("armed group drops %q, want [sales]", got)
 	}
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.ButtonNone, tcell.ModNone))
@@ -550,8 +550,8 @@ func TestGroupBySchemaTitleButton(t *testing.T) {
 		t.Helper()
 		a.handleMouse(tcell.NewEventMouse(bx, by, tcell.Button1, tcell.ModNone))
 		a.handleMouse(tcell.NewEventMouse(bx, by, tcell.Button1, tcell.ModNone)) // a resend of the hold
-		if a.drag.node != nil {
-			t.Fatalf("%s: a press on the button armed a drag of %q", step, a.drag.node.label)
+		if draggedNode(a) != nil {
+			t.Fatalf("%s: a press on the button armed a drag of %q", step, draggedNode(a).label)
 		}
 		a.handleMouse(tcell.NewEventMouse(bx, by, tcell.ButtonNone, tcell.ModNone))
 		if a.groupBySchema != wantOn {

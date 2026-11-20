@@ -226,8 +226,8 @@ func instanceLimitRows(g *gosmo.InstanceResourceGovernance, j *gosmo.OSJobObject
 		add("Low memory signal at", formatMB(float64(j.LowMemSignalThresholdMB)))
 		add("Peak job memory used", formatMB(float64(j.PeakJobMemoryUsedMB)))
 		add("Peak process memory used", formatMB(float64(j.PeakProcessMemoryUsedMB)))
-		add("Job CPU time (user)", formatHMS(instanceFileTime(j.TotalUserTime)))
-		add("Job CPU time (kernel)", formatHMS(instanceFileTime(j.TotalKernelTime)))
+		add("Job CPU time (user)", core.FormatClock(instanceFileTime(j.TotalUserTime)))
+		add("Job CPU time (kernel)", core.FormatClock(instanceFileTime(j.TotalKernelTime)))
 		add("Job IO reads", core.FormatThousands(j.ReadOperationCount))
 		add("Job IO writes", core.FormatThousands(j.WriteOperationCount))
 	}

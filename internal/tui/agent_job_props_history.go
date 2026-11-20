@@ -5,6 +5,7 @@ import (
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/propsheet"
 	"github.com/radix29/tuikit/widgets"
 )
@@ -32,7 +33,7 @@ func pageJobHistory(d *PropDialog, sc *db.ServerConn, jobName *string) propPage 
 				}
 				runs = append(runs, &jobHistoryRun{
 					date: formatSQLDate(h.RunDate), outcome: formatJobOutcome(h.Outcome),
-					duration: formatHMS(h.Duration), message: h.Message,
+					duration: core.FormatClock(h.Duration), message: h.Message,
 				})
 			}
 

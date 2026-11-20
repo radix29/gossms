@@ -39,9 +39,10 @@ func progressBar(w, pct int) string {
 	return progressScreenRows(s, 0, 0, 1)[0]
 }
 
-// The Backup and Restore progress views share drawTaskProgress; each keeps its
-// own header rows and wording, and the bar, times and message land on the
-// rows they always did — Backup's one "Progress:" label row lower.
+// The Backup and Restore progress views share dialogs.DrawTaskProgress; each
+// keeps its own header rows and wording (taskProgressMessage), and the bar,
+// times and message land on the rows they always did — Backup's one
+// "Progress:" label row lower.
 func TestBackupProgressView(t *testing.T) {
 	a := newTestApp()
 	a.setScreen(tuikittest.NewScreen(100, 40))

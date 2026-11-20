@@ -2027,6 +2027,41 @@ it from the string 'NULL'.
   not-bold. Author's call as recommended: Restore adopts the bold look, as
   round 1 did for `DrawSectionBar`. Connect's `drawSection` (the title set
   into the rule, one row) is a different shape and stays.
+- **The Backup/Restore progress view is tuikit's `dialogs.DrawTaskProgress`,
+  and the clock format `core.FormatClock`** (2026-11-20, tuikit reuse round
+  12, item 2). `DrawTaskProgress(s, inner, bottom, t, TaskProgressView)` draws
+  the header rows, the bar, Elapsed/Remaining from `loop.Task.Times`, and the
+  message wrapped over every row down to `bottom`; with no task, only the
+  header. `FormatClock` is `formatHMS` (truncating `HH:MM:SS`, negative as
+  zero, hours unclamped); its every gossms caller switched and
+  `TestFormatHMS` moved to tuikit as `TestFormatClock`. One change from the
+  plan's sketch: the wording hook is `Message func(*loop.Task) (msg string,
+  isErr bool)`, called for every state, not a `Final` for the finished ones
+  only, so "Starting backup..." is the host's too; nil means
+  `dialogs.TaskMessage`, whose words (and the labels) are `dialogs.Strings`
+  entries. gossms keeps the wording (`taskProgressMessage`, with
+  `taskRepairNote`), `runProgressButton` and `wrapMessage`;
+  `TestBackupProgressView`/`TestRestoreProgressView` stay. tuikit's own
+  `ProgressDialog` keeps its m:ss `formatElapsed`.
+- **The Object Explorer drag is tuikit's `core.Drag[P]`** (2026-11-20,
+  tuikit reuse round 12, item 3; taken by the author with one consumer).
+  `Arm`, `Motion`, `Route` (a held Button1 is motion, any other button
+  cancels), `Release` (the payload only if the drag started), `Cancel`,
+  `Armed`/`Active`/`Payload`/`Pos` and `DrawGhost`; `Threshold`, zero meaning
+  `DefaultDragThreshold` (2). `App.drag` is a `core.Drag[*explorerNode]`;
+  `explorerDrag`, `dragThreshold` and `dragPastThreshold` went, and
+  `dropExplorerNode` takes the released node. gossms keeps what drags
+  (`isDraggableNode`), the text (`explorerDragText`), the drop target and its
+  messages, the "no drop if a modal opened mid-drag" check, arming from
+  `NodeAt` on a fresh press, and where `handleMouse` routes the drag.
+  The generic rows (threshold, either axis, cancel, ghost flip) are tuikit's
+  `drag_test.go`; `explorer_drag_arming_test.go` stays.
+- **tuikit comments no longer cite gossms's `redrawGrid`** (2026-11-20,
+  tuikit reuse round 12, item 4). `controls/datagrid_columns.go`
+  (`restoreOverrideWidths`) and `propsheet/togglegrid.go`
+  (`renderPreservingView`) named it as if it were tuikit API; both now point
+  at `DataGrid.SetDataPreservingView`. The other goSSMS mentions in tuikit
+  are history in "why" comments and stay.
 - **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
   `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
   is read at draw time, so labels are fixed and a flip needs no

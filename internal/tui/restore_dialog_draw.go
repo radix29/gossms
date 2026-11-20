@@ -196,13 +196,12 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 
 // drawProgress renders the progress view from the running/finished task.
 func (d *RestoreDialog) drawProgress(s tcell.Screen) {
-	drawTaskProgress(s, d.InnerRect(), d.ButtonRowY()-1, taskProgressView{
-		header: []string{
+	dialogs.DrawTaskProgress(s, d.InnerRect(), d.ButtonRowY()-1, d.task, dialogs.TaskProgressView{
+		Header: []string{
 			"Database : " + d.taskTarget,
 			"Source   : " + d.taskSource,
 		},
-		verb: "Restore",
-		task: d.task,
+		Message: taskProgressMessage("Restore"),
 	})
 	if d.task == nil {
 		return

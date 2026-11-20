@@ -171,7 +171,7 @@ func (p *QueryPanel) statusDetailText() string {
 		return p.resultsNotice
 	}
 	if p.executing {
-		text := formatHMS(time.Since(p.execStart)) + " | Executing..."
+		text := core.FormatClock(time.Since(p.execStart)) + " | Executing..."
 		// Only for a run that scans rows: an estimated plan leaves p.progress nil, where
 		// a "0 rows" that never moves would be noise.
 		if p.progress != nil {
@@ -188,7 +188,7 @@ func (p *QueryPanel) statusDetailText() string {
 		}
 		return ""
 	}
-	elapsed := formatHMS(p.result.Elapsed)
+	elapsed := core.FormatClock(p.result.Elapsed)
 	switch {
 	case p.onMessagesTab():
 		return fmt.Sprintf("%s | %d message(s)", elapsed, len(p.result.Messages))

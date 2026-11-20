@@ -43,9 +43,10 @@ type App struct {
 	// another panel is the active tab.
 	detailBrowser *DetailBrowser
 
-	// drag is the Object Explorer node drag toward the query editor (see
-	// explorerDrag).
-	drag explorerDrag
+	// drag is the Object Explorer node drag toward the query editor: armed by a
+	// Button1 press over a draggable node, started past the threshold, dropped
+	// on release (handleMouse, routeRelease, dropExplorerNode).
+	drag core.Drag[*explorerNode]
 
 	// mouseButtonDown tracks whether Button1 is held, wherever the gesture
 	// started. The per-widget mouseDragging latches only catch a resend staying

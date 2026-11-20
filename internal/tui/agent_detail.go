@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/core"
 )
 
 // agent_detail.go builds Object Explorer Details grids for SQL Server Agent
@@ -235,7 +236,7 @@ func agentJobHistoryDetail(ctx context.Context, sc *db.ServerConn) ([]string, []
 	rows := make([][]string, 0, len(history))
 	for _, h := range history {
 		rows = append(rows, []string{
-			h.JobName, formatSQLDate(h.RunDate), formatJobOutcome(h.Outcome), formatHMS(h.Duration), h.Message,
+			h.JobName, formatSQLDate(h.RunDate), formatJobOutcome(h.Outcome), core.FormatClock(h.Duration), h.Message,
 		})
 	}
 	return []string{"Job Name", "Run Date", "Outcome", "Duration", "Message"}, rows, nil
