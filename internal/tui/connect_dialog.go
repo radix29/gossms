@@ -127,13 +127,13 @@ type ConnectDialog struct {
 	extraPropsLabelY int
 	connStrLabelY    int
 
-	tab       connectTab
+	tab connectTab
+	// focusIdx == len(focusable) is the button row, the stop after the last
+	// field (dialogs.RingStep, ButtonRowKey); every field is blurred while it
+	// holds focus.
 	focusIdx  int
 	focusable []focusable
 	btnFocus  int // an index into the button row; see connectBtnDelete
-	// onButtons is set while the button row holds focus (the stop past either
-	// end of the Tab ring). Every field is blurred; focusIdx keeps the last.
-	onButtons bool
 
 	// connecting is set from Connect until the attempt resolves: the dialog
 	// stays open, every control but Cancel is inert, a spinner runs.
@@ -236,8 +236,9 @@ func (d *ConnectDialog) Relayout() { d.applySize() }
 // rebuildFocusable rebuilds the focus ring for the current pane mode and
 // tab; a hidden tab's controls must not be reachable by Tab (the Custom
 // Properties editor is in both rings). Focus stays on the same widget if it
-// survives, else the first entry.
+// survives, else the first entry, and on the button row if it was there.
 func (d *ConnectDialog) rebuildFocusable() {
+	onButtons := d.focusable != nil && d.onButtons()
 	prev := d.focusedWidget()
 	var list []focusable
 	if d.twoPane {
@@ -252,18 +253,19 @@ func (d *ConnectDialog) rebuildFocusable() {
 			d.fHostCert, d.fExtraProps)
 	}
 	d.focusable = list
-	i := max(dialogs.IndexOfFocusable(list, prev), 0)
-	d.focusIdx = i
-	if d.onButtons {
+	if onButtons {
 		// A resize switching the pane mode is no reason to leave the buttons.
-		dialogs.SetFocusIn(list, -1, i)
+		d.setFocus(len(list))
 		return
 	}
-	d.setFocus(i)
+	d.setFocus(max(dialogs.IndexOfFocusable(list, prev), 0))
 }
 
-// focusedWidget is the ring entry that has focus, or nil before the first
-// rebuild.
+// onButtons reports whether the button row has focus.
+func (d *ConnectDialog) onButtons() bool { return d.focusIdx == len(d.focusable) }
+
+// focusedWidget is the ring entry that has focus, or nil on the button row and
+// before the first rebuild.
 func (d *ConnectDialog) focusedWidget() focusable {
 	if d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
 		return nil
@@ -304,38 +306,19 @@ func (d *ConnectDialog) applyAuthFields() {
 	d.fClientID.SetEnabled(f.Client)
 	// The dropdown is only in the ring on the properties tab; on the other one
 	// nothing focusable can be disabled, so there is nothing to move off.
-	if i := dialogs.IndexOfFocusable(d.focusable, d.ddAuth); i >= 0 && !d.onButtons && !dialogs.FocusableEnabled(d.focusedWidget()) {
+	if i := dialogs.IndexOfFocusable(d.focusable, d.ddAuth); i >= 0 && !d.onButtons() && !dialogs.FocusableEnabled(d.focusedWidget()) {
 		d.setFocus(i)
 	}
 }
 
-// stepFocus moves focus dir (+1 or -1) along the ring, past any disabled
-// field; past either end is the button row.
-func (d *ConnectDialog) stepFocus(dir int) {
-	for i := d.focusIdx + dir; i >= 0 && i < len(d.focusable); i += dir {
-		if dialogs.FocusableEnabled(d.focusable[i]) {
-			d.setFocus(i)
-			return
-		}
+// moveFocus steps the ring by dir, past any disabled field
+// (dialogs.RingStep). Leaving the button row resets it to Connect, the button
+// Enter presses from a field.
+func (d *ConnectDialog) moveFocus(dir int) {
+	d.setFocus(dialogs.RingStep(d.focusable, d.focusIdx, dir))
+	if !d.onButtons() {
+		d.btnFocus = connectBtnConnect
 	}
-	d.onButtons = true
-	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
-	// Leaving a field is a blur, the point the preview refreshes at — see
-	// setFocus.
-	d.refreshConnStrPreview()
-}
-
-// leaveButtons is Tab (+1) or Backtab (-1) off the button row, onto the first
-// or last enabled field. The highlight goes back to Connect, which is what
-// Enter in a field fires.
-func (d *ConnectDialog) leaveButtons(dir int) {
-	d.onButtons = false
-	d.btnFocus = connectBtnConnect
-	d.focusIdx = -1 // stepFocus starts one past this, at the first field
-	if dir < 0 {
-		d.focusIdx = len(d.focusable)
-	}
-	d.stepFocus(dir)
 }
 
 // setEncryptMode selects m in ddEncrypt. "" (an entry built in memory, never
@@ -520,9 +503,9 @@ func (d *ConnectDialog) ShowForPeer(opts config.Connection, then func()) {
 	d.forPeer, d.peerThen = true, then
 }
 
+// setFocus focuses focusable[i], or the button row at len(focusable).
 func (d *ConnectDialog) setFocus(i int) {
-	d.onButtons = false
-	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
+	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, i)
 	// Every focus change blurs the old field: the preview refreshes once a
 	// field is left, not per keystroke.
 	d.refreshConnStrPreview()
@@ -739,8 +722,5 @@ func (d *ConnectDialog) FocusClipboardTargetAt(x, y int) bool {
 // FocusedClipboardTarget implements core.ClipboardHost: whichever text field or
 // editor has focus. A dropdown, checkbox, list or button answers nil.
 func (d *ConnectDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.onButtons {
-		return nil
-	}
 	return dialogs.FocusedClipboardTarget(d.focusable, d.focusIdx)
 }

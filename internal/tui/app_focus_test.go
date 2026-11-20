@@ -1,6 +1,11 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/tuikit/tuikittest"
+)
 
 // Ctrl+Tab (App.cycleFocus) steps Explorer → editor → results → Explorer when
 // the panel has results.
@@ -239,3 +244,43 @@ func TestQueryPanelFocusHelpers(t *testing.T) {
 		}
 	}
 }
+
+// A frame drawn after focus leaves the query editor, or with a dialog open over
+// it, shows no terminal cursor.
+// The editor shows it while it draws active and nothing hid it afterwards, so
+// it stayed at the abandoned caret on every later frame (Ctrl+Tab to the
+// Explorer; Connect's Custom Properties after Tab). App.draw hides it first.
+func TestCursorHiddenOnceTheEditorLosesFocus(t *testing.T) {
+	a := &App{cfg: &config.Config{}}
+	scr := tuikittest.NewScreen(110, 40)
+	a.setScreen(presentingScreen{scr})
+	a.buildUI()
+	a.layoutAll()
+	a.newQueryPanel()
+
+	a.draw()
+	if _, _, visible := scr.Cursor(); !visible {
+		t.Fatal("setup: the focused query editor drew no cursor")
+	}
+	a.focusExplorer()
+	a.draw()
+	if x, y, visible := scr.Cursor(); visible {
+		t.Errorf("cursor still shown at %d,%d with the Explorer focused", x, y)
+	}
+
+	// A modal dialog over the still-focused editor has the keyboard: the
+	// editor's caret must not blink inside it.
+	a.focusPanels()
+	a.helpDialog().Show()
+	a.modals.Sync()
+	a.draw()
+	if x, y, visible := scr.Cursor(); visible {
+		t.Errorf("cursor shown at %d,%d under the open Help dialog", x, y)
+	}
+}
+
+// presentingScreen lets App.draw run against a tuikittest.Screen, which draws
+// but has no terminal to present to (Show).
+type presentingScreen struct{ *tuikittest.Screen }
+
+func (presentingScreen) Show() {}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/widgets"
 )
@@ -38,57 +39,22 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 		return true
 	}
 
-	if d.onButtons {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(restoreFormButtons), nil, d.doFormButton, d.Hide, d.leaveButtons)
+	if d.onButtons() {
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(restoreFormButtons), nil, d.doFormButton, d.Hide, d.moveFocus)
 	}
-
-	openDD := d.openDropDown()
-	switch ev.Key() {
-	case tcell.KeyTab:
-		d.stepFocus(+1)
-		return true
-	case tcell.KeyBacktab:
-		d.stepFocus(-1)
-		return true
-	case tcell.KeyEscape:
-		if openDD != nil {
-			openDD.HandleKey(ev)
-			return true
-		}
-		d.Hide()
-		return true
-	case tcell.KeyEnter:
-		if openDD != nil {
-			openDD.HandleKey(ev)
-			d.syncSourceState()
-			return true
-		}
-		if b, ok := d.focusable[d.focusIdx].(*widgets.Button); ok {
-			return b.HandleKey(ev)
-		}
-		d.doFormButton()
-		return true
-	}
-
-	if h, ok := d.focusable[d.focusIdx].(interface {
-		HandleKey(*tcell.EventKey) bool
-	}); ok {
-		consumed := h.HandleKey(ev)
-		d.syncSourceState()
-		return consumed
-	}
+	// The focused widget gets the key first (an open list its arrows, Enter and
+	// Escape; a checkbox Enter; Browse Enter); what it declines is the ring's.
+	// Any of them can change the source, the plan or the recovery option, so
+	// syncSourceState follows every key; it does nothing outside the form.
+	dialogs.FieldRingKey(ev, d.focused(), d.doFormButton, d.Hide, d.moveFocus)
+	d.syncSourceState()
 	return true
 }
 
 // openDropDown returns whichever history dropdown is currently open, if any.
 func (d *RestoreDialog) openDropDown() *widgets.DropDown {
-	if d.ddHistDB.OverlayActive() {
-		return d.ddHistDB
-	}
-	if d.ddHistSet.OverlayActive() {
-		return d.ddHistSet
-	}
-	return nil
+	dd, _ := core.OpenOverlay(d.ddHistDB, d.ddHistSet)
+	return dd
 }
 
 // HandleMouse routes mouse events.
@@ -153,7 +119,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	if dialogs.ForwardReleaseToFocusedField(ev, d.focusable[d.focusIdx]) {
+	if dialogs.ForwardReleaseToFocusedField(ev, d.focused()) {
 		return true
 	}
 	if ev.Buttons() != tcell.Button1 {

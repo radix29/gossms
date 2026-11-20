@@ -186,12 +186,8 @@ func (d *OptionsDialog) dropDowns() []*widgets.DropDown {
 
 // openDropDown is the dropdown whose list is open, or nil.
 func (d *OptionsDialog) openDropDown() *widgets.DropDown {
-	for _, dd := range d.dropDowns() {
-		if dd.OverlayActive() {
-			return dd
-		}
-	}
-	return nil
+	dd, _ := core.OpenOverlay(d.dropDowns()...)
+	return dd
 }
 
 // HandleKey processes keyboard events: the focus ring (dialogs.FieldRingKey

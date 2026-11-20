@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // replication_monitor_panel_input.go is Replication Monitor's keyboard and
@@ -45,12 +46,9 @@ func (p *ReplicationMonitorPanel) HandleKey(ev *tcell.EventKey) bool {
 
 // overlayGrid is the grid with a value popup or cell menu open, if any.
 func (p *ReplicationMonitorPanel) overlayGrid() *controls.DataGrid {
-	for _, g := range p.grids() {
-		if g.OverlayActive() {
-			return g
-		}
-	}
-	return nil
+	grids := p.grids()
+	g, _ := core.OpenOverlay(grids[:]...)
+	return g
 }
 
 // OverlayActive implements layout.OverlayPanel.

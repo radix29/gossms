@@ -525,6 +525,12 @@ func (a *App) draw() {
 	s := a.screen
 	w, h := s.Size()
 	s.Clear()
+	// Clear leaves the terminal cursor where it was. An Editor shows it while
+	// it draws active and nothing else ever hides it, so without this the
+	// cursor stayed at the caret of an editor focus had left (the query
+	// editor after Ctrl+Tab, Connect's Custom Properties after Tab) on every
+	// later frame. Whatever is active this frame shows it again below.
+	s.HideCursor()
 
 	a.menuBar.Draw(s)
 	a.toolbar.Draw(s)
@@ -557,7 +563,12 @@ func (a *App) draw() {
 	a.drawDragGhost(s, w)
 
 	// Modal dialogs, drawn bottom-to-top so a nested dialog paints over its
-	// parent.
+	// parent. An open one has the keyboard, so the query editor beneath it,
+	// still drawn active, must not leave its cursor blinking inside the
+	// dialog; an editor in the dialog shows it again.
+	if a.modals.Top() != nil {
+		s.HideCursor()
+	}
 	a.modals.Draw(s)
 
 	// The context menu tops everything: it can open over a dialog's field.

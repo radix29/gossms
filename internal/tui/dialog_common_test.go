@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/tuikittest"
 )
 
@@ -70,11 +71,11 @@ func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
 	b := withScreen(NewBackupDialog(a), a.screen)
 	a.setScreen(nil)
 	b.show(&db.ServerConn{}, "testdb")
-	for range b.focusable {
-		key(b, tcell.KeyTab)
-	}
-	if !b.onButtons || b.btnFocus != 0 {
-		t.Fatalf("Backup: Tab past the last field: onButtons=%v btnFocus=%d", b.onButtons, b.btnFocus)
+	// Backtab from the first field: Tab past the last one would count the
+	// greyed controls RingStep passes over.
+	key(b, tcell.KeyBacktab)
+	if !b.onButtons() || b.btnFocus != 0 {
+		t.Fatalf("Backup: Backtab from the first field: onButtons=%v btnFocus=%d", b.onButtons(), b.btnFocus)
 	}
 	key(b, tcell.KeyRight)
 	key(b, tcell.KeyRight)
@@ -82,8 +83,8 @@ func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
 		t.Errorf("Backup: Right twice reached button %d, want Validate (2)", b.btnFocus)
 	}
 	key(b, tcell.KeyBacktab)
-	if b.onButtons || b.focusIdx != len(b.focusable)-1 || b.btnFocus != 0 {
-		t.Errorf("Backup: Backtab off the row: onButtons=%v focusIdx=%d btnFocus=%d", b.onButtons, b.focusIdx, b.btnFocus)
+	if want := dialogs.RingStep(b.focusable, len(b.focusable), -1); b.focusIdx != want || b.btnFocus != 0 {
+		t.Errorf("Backup: Backtab off the row: focusIdx=%d (want the last enabled field, %d) btnFocus=%d", b.focusIdx, want, b.btnFocus)
 	}
 	key(b, tcell.KeyTab)
 	key(b, tcell.KeyRight)
@@ -100,7 +101,7 @@ func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
 	a.setScreen(nil)
 	r.show(&db.ServerConn{}, "testdb")
 	key(r, tcell.KeyBacktab)
-	if !r.onButtons {
+	if !r.onButtons() {
 		t.Fatal("Restore: Backtab from the first field did not reach the button row")
 	}
 	if r.FocusedClipboardTarget() != nil {
@@ -108,17 +109,17 @@ func TestBackupAndRestoreTabReachTheButtonRow(t *testing.T) {
 	}
 	// Files needs an analysed backup to open on; this is where it lands.
 	r.enterFilesMode()
-	if r.onButtons {
-		t.Fatal("Restore: the Files view opened with focus still on a button row")
+	if r.onFilesButtons() {
+		t.Fatal("Restore: the Files view opened with focus on its button row")
 	}
 	// The Files view's own row, then Back to the form, into its fields.
 	key(r, tcell.KeyBacktab)
-	if !r.onButtons {
+	if !r.onFilesButtons() {
 		t.Fatal("Restore Files: Backtab from the first field did not reach the button row")
 	}
 	key(r, tcell.KeyRight) // Back
 	key(r, tcell.KeyEnter)
-	if r.mode != restoreModeForm || r.onButtons {
-		t.Errorf("Restore: Back from the Files row: mode=%d onButtons=%v", r.mode, r.onButtons)
+	if r.mode != restoreModeForm || r.onButtons() {
+		t.Errorf("Restore: Back from the Files row: mode=%d onButtons=%v", r.mode, r.onButtons())
 	}
 }

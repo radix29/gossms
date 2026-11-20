@@ -198,8 +198,8 @@ func TestConnectTabReachesTheButtonRow(t *testing.T) {
 		t.Fatal("setup: the dialog did not open on History")
 	}
 	key(tcell.KeyBacktab)
-	if !d.onButtons || d.btnFocus != connectBtnConnect {
-		t.Fatalf("Backtab from History: onButtons=%v btnFocus=%d, want the row on Connect", d.onButtons, d.btnFocus)
+	if !d.onButtons() || d.btnFocus != connectBtnConnect {
+		t.Fatalf("Backtab from History: onButtons=%v btnFocus=%d, want the row on Connect", d.onButtons(), d.btnFocus)
 	}
 	if d.FocusedClipboardTarget() != nil {
 		t.Error("a field still answers Copy/Paste while the buttons have focus")
@@ -229,13 +229,13 @@ func TestConnectTabReachesTheButtonRow(t *testing.T) {
 	// Tab off the row lands on the ring's first stop, with Connect — what Enter
 	// in a field fires — highlighted again.
 	key(tcell.KeyTab)
-	if d.onButtons || d.focusedWidget() != d.history || d.btnFocus != connectBtnConnect {
-		t.Errorf("Tab off the row: onButtons=%v focused=%T btnFocus=%d", d.onButtons, d.focusedWidget(), d.btnFocus)
+	if d.onButtons() || d.focusedWidget() != d.history || d.btnFocus != connectBtnConnect {
+		t.Errorf("Tab off the row: onButtons=%v focused=%T btnFocus=%d", d.onButtons(), d.focusedWidget(), d.btnFocus)
 	}
 
 	// F1 no longer moves the highlight.
 	key(tcell.KeyF1)
-	if d.btnFocus != connectBtnConnect || d.onButtons {
+	if d.btnFocus != connectBtnConnect || d.onButtons() {
 		t.Errorf("F1 moved the button focus to %d", d.btnFocus)
 	}
 }
@@ -248,8 +248,8 @@ func TestConnectButtonRowSkipsGatedButtons(t *testing.T) {
 		t.Fatal("setup: Delete is live with nothing to delete")
 	}
 	d.setFocus(0)
-	d.stepFocus(-1) // back past the first stop is the row
-	if !d.onButtons {
+	d.moveFocus(-1) // back past the first stop is the row
+	if !d.onButtons() {
 		t.Fatal("Backtab from the first stop did not reach the button row")
 	}
 	d.btnFocus = connectBtnNew

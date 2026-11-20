@@ -42,7 +42,9 @@ func TestConnectProfileNamesTheSelectedConnection(t *testing.T) {
 	}
 	typeProfileName(pd, "dev")
 	// F4 opens the list, as in the Connect dialog; Enter there picks the item
-	// rather than pressing OK, and the next Enter is OK.
+	// rather than pressing OK. Enter on the closed dropdown opens it again (the
+	// widget gets Enter first: dialogs.FieldRingKey), so OK is pressed from the
+	// name field.
 	pd.HandleKey(key(tcell.KeyTab))
 	pd.HandleKey(key(tcell.KeyF4))
 	for range 3 {
@@ -52,6 +54,12 @@ func TestConnectProfileNamesTheSelectedConnection(t *testing.T) {
 	if !pd.Visible() || pd.allow() != config.AllowRead {
 		t.Fatalf("Enter on the open list: visible %v, allow %q", pd.Visible(), pd.allow())
 	}
+	pd.HandleKey(key(tcell.KeyEnter))
+	if !pd.Visible() || !pd.ddAllow.OverlayActive() {
+		t.Fatalf("Enter on the closed dropdown: visible %v, list open %v", pd.Visible(), pd.ddAllow.OverlayActive())
+	}
+	pd.HandleKey(key(tcell.KeyEscape))
+	pd.HandleKey(key(tcell.KeyBacktab))
 	pd.HandleKey(key(tcell.KeyEnter))
 	if pd.Visible() {
 		t.Fatalf("OK left the dialog open: %q", pd.status)
@@ -147,8 +155,8 @@ func TestProfileDialogButtonRowByKeyboard(t *testing.T) {
 	typeProfileName(pd, "x")
 	pd.HandleKey(key(tcell.KeyTab))
 	pd.HandleKey(key(tcell.KeyTab))
-	if !pd.onButtons || pd.btnFocus != 0 {
-		t.Fatalf("two Tabs: onButtons %v btn %d, want OK", pd.onButtons, pd.btnFocus)
+	if !pd.onButtons() || pd.btnFocus != 0 {
+		t.Fatalf("two Tabs: onButtons %v btn %d, want OK", pd.onButtons(), pd.btnFocus)
 	}
 	pd.HandleKey(key(tcell.KeyRight))
 	pd.HandleKey(key(tcell.KeyEnter)) // Cancel

@@ -1827,6 +1827,24 @@ it from the string 'NULL'.
   longer blurs its target on the way to focusing it — `DropDown.Focus(false)`
   closes the list, so a mouse click could never open Profile's Allowed
   Operations list.
+- **Enter in a hand-rolled dialog goes to the focused widget first**
+  (2026-11-20, tuikit reuse round 4): Profile, Connect, Back Up and Restore
+  moved onto `dialogs.FieldRingKey`/`ButtonRowKey`/`RingStep`, as Options and
+  Filter already were. So Enter toggles a checkbox, opens a closed dropdown
+  and adds a line in an editor (Connect's Custom Properties and preview); only
+  what the widget declines presses the default button. "Enter always presses
+  the default button" was declined: two Enter rules in one app, and Back Up's
+  Verify checkbox started the backup. Typing a password and pressing Enter
+  still connects (an `InputField` declines Enter). Settled with it: Tab skips
+  greyed controls everywhere (Back Up's Browse on a URL destination; Restore's
+  Files view now greys Default Location with the folder fields and keeps all
+  four in its ring instead of rebuilding a shorter one), and Up/Down move
+  focus once the widget declines them. Escape on an open Authentication list
+  now re-applies the auth fields: the list's moved selection survives Escape,
+  and the old path skipped `applyAuthFields`. Mouse routing is unchanged.
+  `core.OpenOverlay` (tuikit) replaced the per-host "which child has its
+  overlay open" loops in these dialogs, Options, Replication Monitor and the
+  AG dashboard; Connect's mouse keeps its own ordering of its two dropdowns.
 - **A buttons-only dialog's keyboard is tuikit's `dialogs.ButtonsKey`**
   (2026-11-20, tuikit reuse round 3): Check for Updates, Device Code and the
   Back Up/Restore progress views. It wraps (through `StepButtonWrap`;

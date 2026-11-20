@@ -122,7 +122,7 @@ func (d *RestoreDialog) showFileLocations() {
 	d.loadBackupInfo(restoreModeFiles)
 }
 
-// enterFilesMode switches to the Files view with its own focus cycle.
+// enterFilesMode switches to the Files view with its own focus ring.
 func (d *RestoreDialog) enterFilesMode() {
 	d.mode = restoreModeFiles
 	d.btnFocus = 0
@@ -131,34 +131,47 @@ func (d *RestoreDialog) enterFilesMode() {
 	d.setFilesFocus(0)
 }
 
-// filesFocusCycle is the view's Tab order. The folder fields take part only while
-// relocFolder is selected; they are disabled otherwise, and a disabled field that
-// can still be focused is a hole the cursor vanishes into.
-func (d *RestoreDialog) filesFocusCycle() []focusable {
-	if d.rbReloc.Selected() != relocFolder {
-		return []focusable{d.rbReloc}
-	}
+// filesFocusable is the view's Tab order. The folder fields and Default
+// Location are disabled unless relocFolder is selected, and dialogs.RingStep
+// passes over them then: a disabled field that can still be focused is a hole
+// the cursor vanishes into.
+func (d *RestoreDialog) filesFocusable() []focusable {
 	return []focusable{d.rbReloc, d.fDataDir, d.fLogDir, d.btnDefLoc}
 }
 
+// setFilesFocus focuses filesFocusable()[i], or the view's button row at
+// len(filesFocusable()).
 func (d *RestoreDialog) setFilesFocus(i int) {
-	d.onButtons = false
-	for _, f := range []focusable{d.rbReloc, d.fDataDir, d.fLogDir, d.btnDefLoc} {
-		f.Focus(false)
-	}
-	cycle := d.filesFocusCycle()
-	n := len(cycle)
-	d.filesFocus = ((i % n) + n) % n
-	cycle[d.filesFocus].Focus(true)
+	d.filesFocus = dialogs.SetFocusIn(d.filesFocusable(), i, i)
 }
 
-// syncRelocState follows a change of relocation mode: the folder fields are only
-// editable when the restore is actually going to use them.
+// onFilesButtons reports whether the Files view's button row has focus.
+func (d *RestoreDialog) onFilesButtons() bool {
+	return d.filesFocus == len(d.filesFocusable())
+}
+
+// moveFilesFocus steps the view's ring by dir. Leaving the button row resets
+// it to Restore, the button Enter presses from a field.
+func (d *RestoreDialog) moveFilesFocus(dir int) {
+	d.setFilesFocus(dialogs.RingStep(d.filesFocusable(), d.filesFocus, dir))
+	if !d.onFilesButtons() {
+		d.btnFocus = 0
+	}
+}
+
+// syncRelocState follows a change of relocation mode: the folder fields, and
+// the button that fills them, are only usable when the restore is actually
+// going to use them.
 func (d *RestoreDialog) syncRelocState() {
 	on := d.rbReloc.Selected() == relocFolder
 	d.fDataDir.SetEnabled(on)
 	d.fLogDir.SetEnabled(on)
-	d.setFilesFocus(d.filesFocus)
+	d.btnDefLoc.SetEnabled(on)
+	// Focus on a control just greyed would sit on one that refuses every key;
+	// the radio that greyed it is where it goes back to.
+	if fs := d.filesFocusable(); d.filesFocus < len(fs) && !dialogs.FocusableEnabled(fs[d.filesFocus]) {
+		d.setFilesFocus(0)
+	}
 }
 
 // plannedPaths maps each logical file name to the physical path the current
@@ -262,43 +275,14 @@ func (d *RestoreDialog) drawFiles(s tcell.Screen) {
 	d.DrawButtons(s, restoreFilesButtons, d.btnFocus)
 }
 
-// handleFilesKey routes keys in the Files view.
+// handleFilesKey routes keys in the Files view: the form's ring, with Escape
+// going back to the form rather than closing the dialog.
 func (d *RestoreDialog) handleFilesKey(ev *tcell.EventKey) bool {
-	if d.onButtons {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(restoreFilesButtons), nil, d.doFilesButton, d.backToForm, d.leaveButtons)
+	if d.onFilesButtons() {
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(restoreFilesButtons), nil, d.doFilesButton, d.backToForm, d.moveFilesFocus)
 	}
-	cycle := d.filesFocusCycle()
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		d.backToForm()
-		return true
-	case tcell.KeyTab, tcell.KeyBacktab:
-		// Past either end of the cycle is the button row, as in the form.
-		dir := 1
-		if ev.Key() == tcell.KeyBacktab {
-			dir = -1
-		}
-		if i := d.filesFocus + dir; i >= 0 && i < len(cycle) {
-			d.setFilesFocus(i)
-			return true
-		}
-		d.onButtons = true
-		cycle[d.filesFocus].Focus(false)
-		return true
-	case tcell.KeyEnter:
-		if b, ok := cycle[d.filesFocus].(*widgets.Button); ok {
-			return b.HandleKey(ev)
-		}
-		d.doFilesButton()
-		return true
-	}
-	if h, ok := cycle[d.filesFocus].(interface {
-		HandleKey(*tcell.EventKey) bool
-	}); ok {
-		consumed := h.HandleKey(ev)
-		d.syncRelocState()
-		return consumed
-	}
+	dialogs.FieldRingKey(ev, d.filesFocusable()[d.filesFocus], d.doFilesButton, d.backToForm, d.moveFilesFocus)
+	d.syncRelocState()
 	return true
 }
 
@@ -339,10 +323,7 @@ func (d *RestoreDialog) handleFilesMouse(ev *tcell.EventMouse) bool {
 }
 
 func (d *RestoreDialog) focusFilesTo(w focusable) {
-	for i, f := range d.filesFocusCycle() {
-		if f == w {
-			d.setFilesFocus(i)
-			return
-		}
+	if i := dialogs.IndexOfFocusable(d.filesFocusable(), w); i >= 0 {
+		d.setFilesFocus(i)
 	}
 }

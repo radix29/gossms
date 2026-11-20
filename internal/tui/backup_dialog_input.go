@@ -18,44 +18,15 @@ func (d *BackupDialog) HandleKey(ev *tcell.EventKey) bool {
 		return dialogs.ButtonsKey(ev, &d.btnFocus, len(d.progressButtons()), nil, d.doProgressButton, d.Hide)
 	}
 
-	if d.onButtons {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(backupFormButtons), nil, d.doFormButton, d.Hide, d.leaveButtons)
+	if d.onButtons() {
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(backupFormButtons), nil, d.doFormButton, d.Hide, d.moveFocus)
 	}
-
-	switch ev.Key() {
-	case tcell.KeyTab:
-		d.stepFocus(+1)
-		return true
-	case tcell.KeyBacktab:
-		d.stepFocus(-1)
-		return true
-	case tcell.KeyEscape:
-		if dd := d.openDropDown(); dd != nil {
-			dd.HandleKey(ev)
-			return true
-		}
-		d.Hide()
-		return true
-	case tcell.KeyEnter:
-		if dd := d.openDropDown(); dd != nil {
-			dd.HandleKey(ev)
-			d.syncAutoDest()
-			return true
-		}
-		if b, ok := d.focusable[d.focusIdx].(*widgets.Button); ok {
-			return b.HandleKey(ev)
-		}
-		d.doFormButton()
-		return true
-	}
-
-	if h, ok := d.focusable[d.focusIdx].(interface {
-		HandleKey(*tcell.EventKey) bool
-	}); ok {
-		consumed := h.HandleKey(ev)
-		d.syncAutoDest()
-		return consumed
-	}
+	// The focused widget gets the key first (an open list its arrows, Enter and
+	// Escape; a checkbox Enter; Browse Enter); what it declines is the ring's.
+	// A pick or a type change can retarget the destination, so syncAutoDest
+	// follows every key — it does nothing once Enter has started the backup.
+	dialogs.FieldRingKey(ev, d.focused(), d.doFormButton, d.Hide, d.moveFocus)
+	d.syncAutoDest()
 	return true
 }
 
@@ -109,7 +80,7 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 
 	// Always forward a release to a focused input so a text-selection drag
 	// terminates cleanly, and drop anything that is not a left press.
-	if dialogs.ForwardReleaseToFocusedField(ev, d.focusable[d.focusIdx]) {
+	if dialogs.ForwardReleaseToFocusedField(ev, d.focused()) {
 		return true
 	}
 	if ev.Buttons() != tcell.Button1 {

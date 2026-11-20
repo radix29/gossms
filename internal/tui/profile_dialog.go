@@ -28,8 +28,8 @@ var profileButtons = []string{"OK", "Cancel"}
 // through it — the Connect dialog's Profile... button, on the History row
 // selected. An empty name turns the entry back into a plain recent connection.
 //
-// The focus ring is the name, then the dropdown; past either end is the button
-// row (docs/ui-rules.md § Dialogs).
+// The focus ring is the name, then the dropdown, then the button row
+// (docs/ui-rules.md § Dialogs).
 type ProfileDialog struct {
 	dialogs.ModalDialog
 
@@ -37,9 +37,12 @@ type ProfileDialog struct {
 	fName   *widgets.InputField
 	ddAllow *widgets.DropDown
 
+	// focusIdx == len(focusable) is the button row, one Tab stop crossed
+	// with the arrows (dialogs.RingStep, ButtonRowKey). btnFocus is the
+	// button the row would press: OK while focus is in a field, so Enter
+	// from one accepts.
 	focusIdx  int
 	focusable []focusable
-	onButtons bool
 	btnFocus  int
 	status    string
 
@@ -81,36 +84,27 @@ func (d *ProfileDialog) ShowProfile(conn config.Connection, onAccept func(string
 	d.setFocus(0)
 }
 
+// setFocus focuses focusable[i], or the button row at len(focusable).
 func (d *ProfileDialog) setFocus(i int) {
-	d.onButtons = false
-	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, d.focusIdx)
+	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, i)
 }
 
+// onButtons reports whether the button row has focus.
+func (d *ProfileDialog) onButtons() bool { return d.focusIdx == len(d.focusable) }
+
 func (d *ProfileDialog) focused() focusable {
-	if d.onButtons || d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
+	if d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
 		return nil
 	}
 	return d.focusable[d.focusIdx]
 }
 
-// step moves focus dir along the ring; past either end is the button row.
-func (d *ProfileDialog) step(dir int) {
-	if i := d.focusIdx + dir; i >= 0 && i < len(d.focusable) {
-		d.setFocus(i)
-		return
-	}
-	d.onButtons = true
-	dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
-}
-
-// leaveButtons is Tab/Backtab off the button row, back onto the first or last
-// field; the highlight returns to OK, which Enter in a field fires.
-func (d *ProfileDialog) leaveButtons(dir int) {
-	d.btnFocus = 0
-	if dir > 0 {
-		d.setFocus(0)
-	} else {
-		d.setFocus(len(d.focusable) - 1)
+// moveFocus steps the ring by dir. Leaving the button row resets it to OK, the
+// button Enter presses from a field.
+func (d *ProfileDialog) moveFocus(dir int) {
+	d.setFocus(dialogs.RingStep(d.focusable, d.focusIdx, dir))
+	if !d.onButtons() {
+		d.btnFocus = 0
 	}
 }
 
@@ -167,75 +161,39 @@ func (d *ProfileDialog) Draw(s tcell.Screen) {
 
 	d.DrawSeparator(s)
 	active := -1
-	if d.onButtons {
+	if d.onButtons() {
 		active = d.btnFocus
 	}
 	d.DrawButtons(s, profileButtons, active)
 	d.ddAllow.DrawOverlay(s)
 }
 
-// HandleKey routes keyboard events. Enter in a field is OK, except on an open
-// dropdown, where it picks the item.
+// HandleKey is the focus ring (dialogs.FieldRingKey on a field, ButtonRowKey
+// on the button row): the focused widget gets every key first, so an open
+// dropdown takes Escape and the arrows, and a closed one opens on Enter; Enter
+// anywhere else is OK. Editing the name clears a refusal shown from the last OK.
 func (d *ProfileDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	if d.onButtons {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(profileButtons), nil, d.doButton, d.Hide, d.leaveButtons)
+	if d.onButtons() {
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(profileButtons), nil, d.doButton, d.Hide, d.moveFocus)
 	}
-	if d.ddAllow.OverlayActive() {
-		if ev.Key() == tcell.KeyEscape {
-			// Close the list, not the dialog.
-			d.ddAllow.HandleKey(ev)
-			return true
-		}
-		d.ddAllow.HandleKey(ev)
-		return true
-	}
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		d.Hide()
-		return true
-	case tcell.KeyTab:
-		d.step(+1)
-		return true
-	case tcell.KeyBacktab:
-		d.step(-1)
-		return true
-	case tcell.KeyEnter:
-		d.btnFocus = 0
-		d.accept()
-		return true
-	}
-	switch w := d.focused().(type) {
-	case *widgets.InputField:
+	name := d.fName.Value()
+	dialogs.FieldRingKey(ev, d.focused(), d.doButton, d.Hide, d.moveFocus)
+	if d.fName.Value() != name {
 		d.status = ""
-		return w.HandleKey(ev)
-	case *widgets.DropDown:
-		return w.HandleKey(ev)
 	}
 	return true
 }
 
-// HandleMouse is dialogs.RingMouse over the focus ring; the button row is its
-// stop len(d.focusable), which this dialog records as onButtons.
+// HandleMouse is dialogs.RingMouse over the focus ring.
 func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	focus := d.focusIdx
-	if d.onButtons {
-		focus = len(d.focusable)
-	}
-	return dialogs.RingMouse(ev, &d.ModalDialog, &d.drag, d.focusable, focus, profileButtons,
-		func(i int) {
-			if i == len(d.focusable) {
-				d.onButtons = true
-				dialogs.SetFocusIn(d.focusable, -1, d.focusIdx)
-				return
-			}
-			d.setFocus(i)
-		},
+	return dialogs.RingMouse(ev, &d.ModalDialog, &d.drag, d.focusable, d.focusIdx, profileButtons,
+		d.setFocus,
 		func(btn int) {
 			d.btnFocus = btn
 			d.doButton()

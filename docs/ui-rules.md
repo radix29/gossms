@@ -181,9 +181,15 @@ which owns them; the entries here say how goSSMS applies them.
   focused widget gets every key first (an open dropdown's list, a radio box's
   arrows, a checkbox's Enter); what it declines moves focus (Up/Down too) or
   fires the default button. Use `dialogs.FieldRingKey` + `ButtonRowKey` with
-  `dialogs.RingStep` (Find/Replace, Log Search, Filter, Options) rather than a
-  per-dialog switch: four of them had drifted into four semantics, one of which
-  trapped Tab on OK/Cancel.
+  `dialogs.RingStep` (Find/Replace, Log Search, Filter, Options, Profile,
+  Connect, Back Up, Restore's form and Files view) rather than a per-dialog
+  switch: eight of them had drifted into two models and more semantics, one of
+  which trapped Tab on OK/Cancel and another Tabbed onto greyed controls. The
+  button row is `focusIdx == len(focusable)`, not a flag: re-applying focus
+  after a rebuild is `setFocus(focusIdx)`, and a rebuild that changes the
+  ring's length moves a row index with it. An `editor.Editor` in the ring is
+  the one key the dialog takes first: Tab/Backtab, which it would indent with
+  (`propsheet.EditorRow`'s rule); Enter still goes to it.
 - **Its mouse is `dialogs.RingMouse`**, the whole `HandleMouse` over the same
   ring (Find/Replace, Log Search, Filter, Options, Profile). It fixes the order
   of § Mouse's calls — `TrackPress`, the release to every latch, an open

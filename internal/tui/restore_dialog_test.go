@@ -128,8 +128,8 @@ func TestAnalyzeAndSelectionAgreeOnTheFirstSet(t *testing.T) {
 }
 
 // filesDialog builds just enough of a RestoreDialog for the Files view's
-// focus cycle — the four widgets it rotates through, with the folder fields
-// enabled to match relocFolder.
+// focus ring — its four widgets, with the folder fields enabled to match
+// relocFolder.
 func filesDialog() *RestoreDialog {
 	d := &RestoreDialog{}
 	d.rbReloc = widgets.NewRadioBox("File Locations:", []string{"auto", "original", "folder"})
@@ -141,44 +141,40 @@ func filesDialog() *RestoreDialog {
 	return d
 }
 
-// TestFilesFocusSurvivesTheCycleShrinking pins that leaving relocFolder while
-// focus sits past the end of the shorter cycle lands back on the radio. The
-// cycle goes 4 entries to 1 the moment the folder fields are disabled, and
-// handleFilesKey indexes it with filesFocus unguarded — a stale 3 is an
-// out-of-range panic on the next keystroke, not a cosmetic wrong highlight.
-func TestFilesFocusSurvivesTheCycleShrinking(t *testing.T) {
+// TestFilesFocusLeavesAControlGreyedUnderIt pins that leaving relocFolder
+// while focus sits on Default Location lands back on the radio: the folder
+// fields and the button grey out the moment the mode changes, and focus left
+// on one would sit on a control that refuses every key.
+func TestFilesFocusLeavesAControlGreyedUnderIt(t *testing.T) {
 	d := filesDialog()
 	d.setFilesFocus(3)
 	if got := d.filesFocus; got != 3 {
-		t.Fatalf("setFilesFocus(3) = %d, want 3 — the folder cycle should have four entries", got)
+		t.Fatalf("setFilesFocus(3) = %d, want 3", got)
 	}
 
 	d.rbReloc.SetSelected(relocOriginal)
 	d.syncRelocState()
 
-	cycle := d.filesFocusCycle()
-	if len(cycle) != 1 {
-		t.Fatalf("cycle has %d entries outside relocFolder, want 1", len(cycle))
-	}
-	if d.filesFocus >= len(cycle) {
-		t.Fatalf("filesFocus = %d, out of range for a %d-entry cycle", d.filesFocus, len(cycle))
-	}
-	if cycle[d.filesFocus] != focusable(d.rbReloc) {
-		t.Errorf("focus landed on %T, want the radio — it is the only thing left to focus", cycle[d.filesFocus])
+	if d.filesFocus != 0 || !d.rbReloc.Focused() {
+		t.Errorf("filesFocus = %d, want the radio (0)", d.filesFocus)
 	}
 }
 
-// Tab has nowhere to go when the radio is the whole cycle, and must stay on
-// it rather than wrapping to an index the shorter cycle doesn't have.
-func TestFilesTabStaysPutOnASingleEntryCycle(t *testing.T) {
+// Outside relocFolder Tab passes over the greyed folder fields and Default
+// Location (dialogs.RingStep): the radio and the button row are the only stops.
+func TestFilesTabSkipsTheGreyedFolderControls(t *testing.T) {
 	d := filesDialog()
 	d.rbReloc.SetSelected(relocAuto)
 	d.syncRelocState()
-	for i := range 3 {
-		d.handleFilesKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-		if d.filesFocus != 0 {
-			t.Fatalf("Tab %d: filesFocus = %d, want 0", i+1, d.filesFocus)
-		}
+	d.setFilesFocus(0)
+	tab := tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone)
+	d.handleFilesKey(tab)
+	if !d.onFilesButtons() {
+		t.Fatalf("Tab from the radio: filesFocus = %d, want the button row (%d)", d.filesFocus, len(d.filesFocusable()))
+	}
+	d.handleFilesKey(tab)
+	if d.filesFocus != 0 {
+		t.Fatalf("Tab off the button row: filesFocus = %d, want the radio (0)", d.filesFocus)
 	}
 }
 

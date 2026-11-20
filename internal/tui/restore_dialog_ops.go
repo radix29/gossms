@@ -40,7 +40,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 			}
 			d.ddHistDB = dd
 			d.rebuildFocusable()
-			d.refocus()
+			d.setFocus(d.focusIdx)
 			d.prevHistDB = d.ddHistDB.Value()
 			d.loadHistory(d.prevHistDB)
 			d.autoFillTarget(d.prevHistDB)
@@ -87,7 +87,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 			}
 			d.ddHistSet = widgets.NewDropDown("Backup Set: ", labels, histSetWidth)
 			d.rebuildFocusable()
-			d.refocus()
+			d.setFocus(d.focusIdx)
 			if len(hist) == 0 && deviceless > 0 {
 				// Form mode wraps the status to two lines; keep it inside them.
 				d.setStatusMsg(fmt.Sprintf("No restorable backups for %s — its %d are automated (no device); "+
