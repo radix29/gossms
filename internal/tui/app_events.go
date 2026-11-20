@@ -288,20 +288,12 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 
-	// Object Explorer -> editor drag-and-drop: once drag.node is armed it takes
-	// every event ahead of the menu row, status row and splitter, or a drag
-	// crossing them pops a menu or Status History. Every Button1 event is swallowed
-	// so the drag stays on its node. The drop happens on release, in routeRelease.
-	if a.drag.node != nil {
-		if ev.Buttons() == tcell.Button1 {
-			// Swallow motion while a drop is pending.
-			a.drag.x, a.drag.y = mx, my
-			if !a.drag.active && a.dragPastThreshold(mx, my) {
-				a.drag.active = true
-			}
-		} else {
-			a.drag.node, a.drag.active = nil, false
-		}
+	// Object Explorer -> editor drag-and-drop: once armed, the drag takes every
+	// event ahead of the menu row, status row and splitter, or a drag crossing
+	// them pops a menu or Status History. Every Button1 event is swallowed so the
+	// drag stays on its node; any other button disarms it. The drop happens on
+	// release, in routeRelease.
+	if a.drag.Route(ev) {
 		return
 	}
 
@@ -353,9 +345,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		// the scrollbar drag.
 		if freshPress {
 			if n := a.explorer.NodeAt(mx, my); n != nil && isDraggableNode(n.data.Type) {
-				a.drag.node, a.drag.active = n, false
-				a.drag.x, a.drag.y = mx, my
-				a.drag.startX, a.drag.startY = mx, my
+				a.drag.Arm(n, mx, my)
 			}
 		}
 		return
@@ -410,14 +400,11 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	a.modals.HandleMouse(modalEv)
 
 	// Complete a pending Object Explorer drop only if the drag started (moved past
-	// dragThreshold) and nothing modal opened mid-drag. drag.node is disarmed
-	// either way; armed, it swallows all later mouse events.
-	if a.drag.node != nil {
-		if a.drag.active && a.modals.Top() == nil {
-			mx, my := ev.Position()
-			a.dropExplorerNode(mx, my)
-		}
-		a.drag.node, a.drag.active = nil, false
+	// the threshold) and nothing modal opened mid-drag. Release disarms it either
+	// way; armed, it swallows all later mouse events.
+	if n, started := a.drag.Release(); started && a.modals.Top() == nil {
+		mx, my := ev.Position()
+		a.dropExplorerNode(n, mx, my)
 	}
 
 	// Under a dialog or context menu the layer beneath only resets its latches.

@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/core"
 )
 
 // detail_browser_programmability.go is the Detail Browser's view of the
@@ -313,7 +314,7 @@ func programmabilityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 		}
 		for _, f := range files {
 			rows = append(rows, []string{"File " + strconv.Itoa(f.FileID),
-				f.Name + " (" + formatBytes(f.ContentLength) + ")"})
+				f.Name + " (" + core.FormatBytes(f.ContentLength) + ")"})
 		}
 		return propertyValueColumns, rows, nil
 

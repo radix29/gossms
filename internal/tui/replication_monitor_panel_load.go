@@ -236,7 +236,7 @@ func rmSeconds(v *int) string {
 	if v == nil {
 		return ""
 	}
-	return formatHMS(time.Duration(*v) * time.Second)
+	return core.FormatClock(time.Duration(*v) * time.Second)
 }
 
 // -- the agent grid -------------------------------------------------------------
@@ -273,10 +273,10 @@ func (r rmAgentRow) cells() []string {
 		c[1] = a.Status.String()
 		c[3] = a.LastAction
 		c[4] = formatSQLDate(a.LastStart)
-		c[5] = formatHMS(time.Duration(a.Duration) * time.Second)
+		c[5] = core.FormatClock(time.Duration(a.Duration) * time.Second)
 		c[6] = rmDelivered(a.Kind, a.DeliveredCommands, a.Downloaded, a.Uploaded)
 		if a.LatencyMs != nil {
-			c[7] = formatHMS(time.Duration(*a.LatencyMs) * time.Millisecond)
+			c[7] = core.FormatClock(time.Duration(*a.LatencyMs) * time.Millisecond)
 		}
 		c[10] = a.Name
 	} else {
@@ -316,7 +316,7 @@ func (r rmSessionRow) cells(kind gosmo.ReplAgentKind) []string {
 		s.Status.String(),
 		formatSQLDate(s.Start),
 		formatSQLDate(s.End),
-		formatHMS(time.Duration(s.Duration) * time.Second),
+		core.FormatClock(time.Duration(s.Duration) * time.Second),
 		s.LastAction,
 		strconv.Itoa(s.Actions),
 		rmDelivered(kind, s.DeliveredCommands, s.Downloaded, s.Uploaded),
@@ -324,7 +324,7 @@ func (r rmSessionRow) cells(kind gosmo.ReplAgentKind) []string {
 		"",
 	}
 	if s.LatencyMs != nil {
-		c[7] = formatHMS(time.Duration(*s.LatencyMs) * time.Millisecond)
+		c[7] = core.FormatClock(time.Duration(*s.LatencyMs) * time.Millisecond)
 	}
 	if s.ErrorID != 0 {
 		c[8] = "Yes"

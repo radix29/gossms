@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tui/sqledit"
+	"github.com/radix29/tuikit/core"
 )
 
 // HandleKey routes keys to result tab switching (Ctrl+PgUp/PgDn), F5 execute, or
@@ -50,8 +51,9 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	// family) sends a bare LF (0x0A), which tcell decodes as KeyCtrlJ since plain
 	// Enter is CR (0x0D). KeyCtrlJ isn't KeyEnter, so handling only the first made
 	// the key do nothing on an ordinary terminal, while Menu > Query > Execute at
-	// Cursor kept working.
-	if isCtrlEnter(ev) {
+	// Cursor kept working. core.IsCtrlEnter accepts both; nothing here binds
+	// Ctrl+J, so its LF reading costs nothing.
+	if core.IsCtrlEnter(ev) {
 		sqledit.SelectStatementAtCursor(p.editor)
 		return true
 	}
@@ -226,18 +228,6 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	return p.resultsShown && p.resultsHandleMouse(ev)
-}
-
-// isCtrlEnter reports whether ev is Ctrl+Enter in either encoding a terminal can
-// deliver. A modern keyboard protocol (kitty, xterm's modifyOtherKeys) reports
-// Enter with ModCtrl; everything else sends a bare LF, 0x0A, which tcell decodes
-// as KeyCtrlJ (plain Enter being CR, 0x0D). Nothing else binds Ctrl+J, so
-// accepting it costs nothing. See HandleKey.
-func isCtrlEnter(ev *tcell.EventKey) bool {
-	if ev.Key() == tcell.KeyCtrlJ {
-		return true
-	}
-	return ev.Key() == tcell.KeyEnter && ev.Modifiers()&tcell.ModCtrl != 0
 }
 
 // resultsHandleMouse dispatches to whichever of the four widgets sharing the

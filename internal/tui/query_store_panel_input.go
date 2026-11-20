@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // query_store_panel_input.go holds the Query Store panel's keyboard and mouse
@@ -22,7 +23,7 @@ func (p *QueryStorePanel) HandleKey(ev *tcell.EventKey) bool {
 	// F5 is the Refresh cell's action through the same gate as the click path: a key
 	// must not do what a dimmed button refuses.
 	if ev.Key() == tcell.KeyF5 {
-		p.runSel(qsToolRefresh)
+		p.sel.RunCell(qsToolRefresh)
 		return true
 	}
 	// Query Wait Statistics' two levels: Enter on a category row opens its queries,
@@ -168,28 +169,17 @@ func (p *QueryStorePanel) HandleMouse(ev *tcell.EventMouse) bool {
 // handleToolbarPress runs the toolbar cell under the pointer, and reports whether
 // the press belonged to a toolbar row at all. The action runs on the press, so
 // tcell's repeats while the button stays down must not reach it again
-// (qsZoneToolbar swallows them in routeDrag). runSel/runAct apply the gate
-// drawToolRow dims on, so a dimmed cell is inert, not merely grey.
+// (qsZoneToolbar swallows them in routeDrag). Press runs a cell through the
+// row's gate, which drawToolRow dims on, so a dimmed cell is inert, not merely
+// grey.
 func (p *QueryStorePanel) handleToolbarPress(mx, my int) bool {
-	switch {
-	case p.selRect.H == 1 && my == p.selRect.Y:
-		if p.sel.More.Rect.Contains(mx, my) {
-			p.showOverflowMenu(&p.sel, p.selDisabled, p.selReason, p.runSel)
+	for _, t := range []struct {
+		r   core.Rect
+		row *controls.ToolRow
+	}{{p.selRect, &p.sel}, {p.actRect, &p.acts}} {
+		if t.row.Press(t.r, mx, my, p.app.contextMenu, p.rect) {
 			return true
 		}
-		if i := p.sel.CellAt(mx, my); i >= 0 {
-			p.runSel(i)
-		}
-		return true
-	case p.actRect.H == 1 && my == p.actRect.Y:
-		if p.acts.More.Rect.Contains(mx, my) {
-			p.showOverflowMenu(&p.acts, p.actDisabled, p.actReason, p.runAct)
-			return true
-		}
-		if i := p.acts.CellAt(mx, my); i >= 0 {
-			p.runAct(i)
-		}
-		return true
 	}
 	return false
 }

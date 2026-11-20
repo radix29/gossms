@@ -95,7 +95,7 @@ func waitAndDrain(t *testing.T, a *App) {
 	for range 200 {
 		if a.wake.Pending() > 0 {
 			a.drainPending()
-			if !a.progressBusy {
+			if !a.progressDialog().Running() {
 				return
 			}
 			continue

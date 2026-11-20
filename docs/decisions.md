@@ -1912,6 +1912,156 @@ it from the string 'NULL'.
   `Report`. `App.recoverPanic` went: its one caller was the old `fanOut`.
   Driven in the binary with a forced panic in a Detail Browser backfill
   (row repaired to N/A, rest filled) and a Log File Viewer read.
+- **A spinner's redraw clock is tuikit's `loop.Runner.Tick`** (2026-11-20,
+  tuikit reuse round 9, item 1). `widgets.Spinner`, `dialogs.ProgressDialog`
+  and `propsheet.ApplyingSpinner` each told the host to supply the clock and
+  gave it nothing to do it with; the trap (a clock outliving a panicking
+  worker unless `done` is closed in a `defer` inside it) is `GoRepair`'s bug
+  class. `Tick` takes a `tick func()` rather than a `*Poster`, so `Runner`
+  stays stateless and uncoupled from `Poster`. `animateUntil` stays as a
+  one-line delegate, its five call sites unchanged.
+- **A progress job's lifecycle is tuikit's `dialogs.ProgressDialog.Run`**
+  (2026-11-20, tuikit reuse round 9, item 2; shape (a)). The busy refusal
+  (running the caller's repair), the showing sequence that drops a late
+  report, the release on finish *and* panic, and `cancelled = err != nil &&
+  Cancelling()` were ~40 lines every host re-derived, the last easy to get
+  wrong (a completed write reported "cancelled"). This adds the layering edge
+  `dialogs → loop` (`loop` imports no tuikit, so no cycle); `Run` takes the
+  host's `Runner` and `Poster` as arguments, not injected func fields (shape
+  (b): three fields for one helper). `Run` owns the context's cancel and
+  posts its panic repair through the `Poster` whatever `Runner.Post` is, and
+  ticks at the new `widgets.Spinner.Interval` (a zero `Period` would panic the
+  ticker). `runWithProgress` keeps the gossms part — the context's parent and
+  `serverWriteTimeout`, the refusal's status text — and its 28 call sites are
+  unchanged; `App.progressBusy`/`progressSeq` went (`Running()` replaces the
+  former). `animateUntil` is down to four callers.
+- **Ctrl+Enter's two encodings are tuikit's `core.IsCtrlEnter`**
+  (2026-11-20, tuikit reuse round 9, item 3). `KeyEnter`+`ModCtrl` under
+  kitty/modifyOtherKeys, a bare LF (`KeyCtrlJ`) everywhere else: terminal
+  encoding knowledge of `NormalizeKey`'s kind, which a tuikit host binding
+  only the first would find dead on most terminals. Not folded into
+  `NormalizeKey`, which would break hosts that bind Ctrl+J. Its one gossms
+  caller is Execute Current Statement (`query_panel_input.go`).
+- **Byte sizes render through tuikit's `core.FormatBytes`** (2026-11-20,
+  tuikit reuse round 10, item 1). gossms's own `formatBytes`
+  (`backup_common.go`) was a stale copy that picked the unit before rounding,
+  so 1 MiB − 1 read "1024.0 KB"; tuikit's reads "1.0 MB". Same format
+  otherwise, so `parseDetailNumber`'s byte-unit sort is unaffected. Its
+  `TestFormatBytes` went: every row is in `~/go/tuikit/core/strutil_test.go`.
+- **A tool-row press is tuikit's `controls.ToolRow.Press`** (2026-11-20,
+  tuikit reuse round 10, item 2). The six hosts (Activity Monitor, Picture
+  panel, XEvent viewer, Log Viewer, Query Store's two rows, Replication
+  Monitor) each hand-rolled "More → `OverflowMenu`, cell → `RunCell`, gap →
+  swallow" in their own order; `Press` owns the order (More first) and
+  reports whether the press fell on the row, so the host arms its gesture
+  zone either way. Arming stays with the host (`core.Gesture[Z]` is
+  host-typed); the Log Viewer still tests its filter field first. `Press`
+  takes the host's `app.contextMenu` eagerly, so a test panel built without
+  an `App` needs a zero one (`newTestLogViewer`).
+- **Canvas scroll keys are tuikit's `core.Viewport.ScrollKey`, and End keeps
+  the column** (2026-11-20, tuikit reuse round 10, item 3). The Activity
+  Monitor and the Picture panel each mapped arrows, PgUp/PgDn, Home and End
+  by hand, and disagreed on End: the Activity Monitor went to the far corner
+  (MaxX, MaxY), the Picture panel to the last row in the same column. The
+  author chose the column-keeping End (SSMS text views), so the Activity
+  Monitor's End changed. Steps stay per host (`hScrollStep` 4, the picture's
+  2); a page is View less one row, at least one (the Activity Monitor's
+  `pageStep` 10 fallback for an unknown height went). The Activity Monitor
+  returns `moved` so a key at a boundary falls through, through `panned` so a
+  scroll still drops the pinned tooltip; the Picture panel claims a bound key
+  either way, as before. **The grab-and-drag pan stayed in the Picture
+  panel** (`dragFrom`): one consumer, so no `Viewport.StartPan`/`PanTo`.
+- **A filter box over a grid is tuikit's `propsheet.FilterIndex`, matching
+  with `core.MatchesAny`** (2026-11-20, tuikit reuse round 10, item 4; the
+  plan called it weak, the author took it). The five hand-rolled pairs in
+  `server_permissions_matrix.go` (principals and permissions in
+  `buildPermissionsMatrix`, the single grid in
+  `pagePrincipalServerPermissions`) and `securables_matrix.go` (securables,
+  permissions) each kept a `visible` slice, rebuilt it on every edit and
+  indexed it raw; they now map grid rows through `At` (bounds-checked) and
+  build their filter boxes with `FilterRow` (a view control, never dirty).
+  The empty-result trap stays the host's, in `onFilter`: clearing the detail
+  grid needs the page's own selection state, so `FilterIndex` names it in
+  its doc comment rather than owning it. gossms's `matchesFilter` and its
+  test went (`core.TestMatchesAny` has every row). A list that changes
+  under the filter (Add growing the securables, a new selection's edits) is
+  re-fed with `SetItems`, which keeps the typed term.
+- **A pre-rendered text cell is read for sorting and alignment by tuikit**
+  (2026-11-20, tuikit reuse round 11, item 1; reverses rounds 1–6, which kept
+  it because it parsed gossms's own format — round 10 made that format
+  tuikit's `core.FormatBytes`). `core.ParseFormattedNumber` is the inverse of
+  `FormatBytes`/`FormatThousands` (byte units scaled to bytes), pinned by a
+  round-trip test so the pair can't drift; `controls.NewTextCellKey`,
+  `CompareTextCells` and `ClassifyTextCell` replace `detailSortKey`,
+  `compareDetailSortKeys` and `listCellClass`. Author's calls as recommended:
+  the placeholder set is fixed (`""`, `…`, `...`, `N/A`, `-`, `—`), not
+  host-injected; no stable-permutation helper (`sortedRows` also permutes the
+  row objects). The zero `TextCellKey` is a blank, so a row too short for the
+  column needs no special key. `TestParseDetailNumber` and
+  `TestDetailSortScalesByteUnits` moved to tuikit; `listAutoAlign`'s
+  Property/Value exemption stays gossms's. `query_panel_sort.go` is
+  untouched (it compares by declared SQL type).
+- **The background task registry is tuikit's `loop.Tasks`** (2026-11-20,
+  tuikit reuse round 11, item 2). It carries the rule
+  `dialogs.ProgressDialog.Run` carries for a modal run: a task is
+  `Cancelled` only if it failed after a Cancel asked for while it ran, never
+  when it panicked. `Start`/`Progress`/`Done`/`Finish`/`Running`/`All`
+  replace `startTask`/`postProgress`/`postTaskDone`/`markTaskDone`/
+  `runningTaskCount`/`a.tasks`; `Task.Times` replaces `taskTimes`;
+  `pruneFinishedTasks` is `Keep` (50). Author's calls as recommended: a panic
+  finishes a task with the exported sentinel `loop.ErrTaskPanicked`, and
+  `Task` keeps exported fields documented as UI-goroutine-only. One change
+  from the plan's sketch: the registry takes `Post func(func())`, the hook
+  `loop.Runner` takes, not a `*Poster`. gossms keeps `type Task = loop.Task`,
+  the wording (`taskStatusText`, `taskRepairNote` reading
+  `*gosmo.RepairError`, `taskFinished` as `OnFinish` with
+  `withPermissionAdvice`), `TasksDialog`, `drawTaskProgress` and
+  `runProgressButton`; `wireTasks` connects the registry in `NewApp` and
+  `newTestApp`. The generic rows of `tasks_test.go` and `TestTaskTimes` moved
+  to tuikit; `TestTaskStatusText` stays.
+- **A section heading (a bold title over a rule) is tuikit's
+  `dialogs.DrawSectionHeading`** (2026-11-20, tuikit reuse round 11, item 3).
+  It returns the first free row under the rule and clips the title to the
+  width. propsheet's `SectionRow.Draw` and page title use it, and so do
+  Restore's "Files Included" and "Files in the backup", which had drifted to
+  not-bold. Author's call as recommended: Restore adopts the bold look, as
+  round 1 did for `DrawSectionBar`. Connect's `drawSection` (the title set
+  into the rule, one row) is a different shape and stays.
+- **The Backup/Restore progress view is tuikit's `dialogs.DrawTaskProgress`,
+  and the clock format `core.FormatClock`** (2026-11-20, tuikit reuse round
+  12, item 2). `DrawTaskProgress(s, inner, bottom, t, TaskProgressView)` draws
+  the header rows, the bar, Elapsed/Remaining from `loop.Task.Times`, and the
+  message wrapped over every row down to `bottom`; with no task, only the
+  header. `FormatClock` is `formatHMS` (truncating `HH:MM:SS`, negative as
+  zero, hours unclamped); its every gossms caller switched and
+  `TestFormatHMS` moved to tuikit as `TestFormatClock`. One change from the
+  plan's sketch: the wording hook is `Message func(*loop.Task) (msg string,
+  isErr bool)`, called for every state, not a `Final` for the finished ones
+  only, so "Starting backup..." is the host's too; nil means
+  `dialogs.TaskMessage`, whose words (and the labels) are `dialogs.Strings`
+  entries. gossms keeps the wording (`taskProgressMessage`, with
+  `taskRepairNote`), `runProgressButton` and `wrapMessage`;
+  `TestBackupProgressView`/`TestRestoreProgressView` stay. tuikit's own
+  `ProgressDialog` keeps its m:ss `formatElapsed`.
+- **The Object Explorer drag is tuikit's `core.Drag[P]`** (2026-11-20,
+  tuikit reuse round 12, item 3; taken by the author with one consumer).
+  `Arm`, `Motion`, `Route` (a held Button1 is motion, any other button
+  cancels), `Release` (the payload only if the drag started), `Cancel`,
+  `Armed`/`Active`/`Payload`/`Pos` and `DrawGhost`; `Threshold`, zero meaning
+  `DefaultDragThreshold` (2). `App.drag` is a `core.Drag[*explorerNode]`;
+  `explorerDrag`, `dragThreshold` and `dragPastThreshold` went, and
+  `dropExplorerNode` takes the released node. gossms keeps what drags
+  (`isDraggableNode`), the text (`explorerDragText`), the drop target and its
+  messages, the "no drop if a modal opened mid-drag" check, arming from
+  `NodeAt` on a fresh press, and where `handleMouse` routes the drag.
+  The generic rows (threshold, either axis, cancel, ghost flip) are tuikit's
+  `drag_test.go`; `explorer_drag_arming_test.go` stays.
+- **tuikit comments no longer cite gossms's `redrawGrid`** (2026-11-20,
+  tuikit reuse round 12, item 4). `controls/datagrid_columns.go`
+  (`restoreOverrideWidths`) and `propsheet/togglegrid.go`
+  (`renderPreservingView`) named it as if it were tuikit API; both now point
+  at `DataGrid.SetDataPreservingView`. The other goSSMS mentions in tuikit
+  are history in "why" comments and stay.
 - **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
   `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
   is read at draw time, so labels are fixed and a flip needs no
@@ -1948,6 +2098,18 @@ it from the string 'NULL'.
   Backup/Restore call sites use; inlining it would scatter the reason over
   three sites for no gain. The same round dropped `restore_dialog_plan.go`'s
   `plural`, a copy of `app.go` `pluralSuffix`.
+- **A tool row's gate is set once on `controls.ToolRow`** (2026-11-20,
+  tuikit reuse round 8, item 2): `Disabled`/`Reason`/`Status` fields, read by
+  `Run`, `OverflowItems` and `Draw` wherever they are passed nil, plus
+  `RunCell(i)` and `OverflowMenu(menu, fallback)`. The per-panel
+  `runTool`/`showOverflowMenu` (and Query Store's `runSel`/`runAct`) went;
+  the predicates themselves stay per-panel policy. Taken alone rather than
+  folded into a later `ToolRow` change, at the author's request. Query Store
+  sets `ReasonOnly`: its reasons are whole sentences and its selector labels
+  carry a value, so "Metric: Duration: Query Store records…" would replace
+  the reason-alone status it always showed. Plan Compare's pickers take only
+  `Disabled` (the draw and `runPicker` had separate copies of the predicate);
+  their refusal keeps its own "Plan A has only the one statement" text.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,

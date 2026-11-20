@@ -21,6 +21,7 @@ func (pp *PicturePanel) buildTools() {
 		{Action: pp.toggleMode},
 		{Label: "Save As...", Action: func() { pp.app.savePicturePanel(pp, true) }},
 	}
+	pp.tools.Disabled, pp.tools.Reason, pp.tools.Status = pp.toolDisabled, pp.toolReason, pp.app.setStatus
 	pp.refreshToolLabels()
 }
 
@@ -49,54 +50,30 @@ func (pp *PicturePanel) toolReason(i int) string {
 	return "no picture decoded"
 }
 
-// runTool invokes toolbar cell i through the gate the draw dims on.
-func (pp *PicturePanel) runTool(i int) {
-	pp.tools.Run(i, pp.toolDisabled, pp.toolReason, pp.app.setStatus)
-}
-
-// showOverflowMenu pops the cells the row was too narrow for.
-func (pp *PicturePanel) showOverflowMenu() {
-	x, y := pp.tools.MenuAnchor(-1, pp.rect)
-	pp.app.contextMenu.Show(x, y, pp.tools.OverflowItems(pp.toolDisabled, pp.toolReason, pp.runTool))
-}
-
 // HandleKey: + / - zoom, 0 or f fits, 1 shows actual size, m switches mode,
 // arrows / PgUp / PgDn / Home / End pan a zoomed picture.
 func (pp *PicturePanel) HandleKey(ev *tcell.EventKey) bool {
-	area := pp.artArea()
+	// The scroll keys are claimed even when nothing moves (the view keeps
+	// them, as it always has).
+	if bound, _ := pp.viewport().ScrollKey(ev, 2); bound {
+		return true
+	}
 	switch ev.Key() {
-	case tcell.KeyUp:
-		pp.scrollBy(0, -1)
-	case tcell.KeyDown:
-		pp.scrollBy(0, 1)
-	case tcell.KeyLeft:
-		pp.scrollBy(-2, 0)
-	case tcell.KeyRight:
-		pp.scrollBy(2, 0)
-	case tcell.KeyPgUp:
-		pp.scrollBy(0, -max(area.H-1, 1))
-	case tcell.KeyPgDn:
-		pp.scrollBy(0, max(area.H-1, 1))
-	case tcell.KeyHome:
-		pp.viewport().ScrollTo(0, 0)
-	case tcell.KeyEnd:
-		vp := pp.viewport()
-		vp.ScrollTo(vp.X, vp.MaxY())
 	case tcell.KeyRune:
 		if ev.Modifiers()&(tcell.ModCtrl|tcell.ModAlt) != 0 {
 			return false
 		}
 		switch ev.Str() {
 		case "+", "=":
-			pp.runTool(picToolZoomIn)
+			pp.tools.RunCell(picToolZoomIn)
 		case "-", "_":
-			pp.runTool(picToolZoomOut)
+			pp.tools.RunCell(picToolZoomOut)
 		case "0", "f", "F":
-			pp.runTool(picToolFit)
+			pp.tools.RunCell(picToolFit)
 		case "1":
-			pp.runTool(picToolActual)
+			pp.tools.RunCell(picToolActual)
 		case "m", "M":
-			pp.runTool(picToolMode)
+			pp.tools.RunCell(picToolMode)
 		default:
 			return false
 		}
@@ -131,14 +108,9 @@ func (pp *PicturePanel) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() != tcell.Button1 {
 		return false
 	}
-	if pp.toolRect.Contains(mx, my) {
+	// The action runs on the press; pzToolbar swallows the repeats.
+	if pp.tools.Press(pp.toolRect, mx, my, pp.app.contextMenu, pp.rect) {
 		pp.dragZone.Arm(ev, pzToolbar)
-		// The action runs on the press; pzToolbar swallows the repeats.
-		if i := pp.tools.CellAt(mx, my); i >= 0 {
-			pp.runTool(i)
-		} else if pp.tools.More.Rect.Contains(mx, my) {
-			pp.showOverflowMenu()
-		}
 		return true
 	}
 	// The bars are drawn only while zoomed (picture_panel_draw.go).

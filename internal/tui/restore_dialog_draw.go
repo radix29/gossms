@@ -6,6 +6,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/theme"
 )
 
@@ -148,9 +149,9 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 		return
 	}
 
-	size := formatBytes(h.BackupSize)
+	size := core.FormatBytes(h.BackupSize)
 	if h.Compressed && h.CompressedSize > 0 {
-		size += "  (compressed: " + formatBytes(h.CompressedSize) + ")"
+		size += "  (compressed: " + core.FormatBytes(h.CompressedSize) + ")"
 	}
 	lines := []string{
 		"Database      : " + h.DatabaseName,
@@ -172,11 +173,7 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 	}
 	row += 2
 
-	core.DrawText(s, lx, row, labelStyle, "Files Included")
-	row++
-	sep := theme.StyleDialogLine()
-	core.DrawHLine(s, lx, row, w, sep)
-	row++
+	row = dialogs.DrawSectionHeading(s, lx, row, w, "Files Included")
 	maxFiles := d.ButtonRowY() - 2 - row
 	for i, f := range d.files {
 		if i >= maxFiles-1 && len(d.files) > maxFiles {
@@ -189,7 +186,7 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 			group = "LOG"
 		}
 		core.DrawTextClipped(s, lx, row, w, labelStyle,
-			core.PadRight(f.LogicalName, 28)+" "+core.PadRight(group, 12)+" "+core.PadLeft(formatBytes(f.Size), 10))
+			core.PadRight(f.LogicalName, 28)+" "+core.PadRight(group, 12)+" "+core.PadLeft(core.FormatBytes(f.Size), 10))
 		row++
 	}
 
@@ -199,13 +196,12 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 
 // drawProgress renders the progress view from the running/finished task.
 func (d *RestoreDialog) drawProgress(s tcell.Screen) {
-	drawTaskProgress(s, d.InnerRect(), d.ButtonRowY()-1, taskProgressView{
-		header: []string{
+	dialogs.DrawTaskProgress(s, d.InnerRect(), d.ButtonRowY()-1, d.task, dialogs.TaskProgressView{
+		Header: []string{
 			"Database : " + d.taskTarget,
 			"Source   : " + d.taskSource,
 		},
-		verb: "Restore",
-		task: d.task,
+		Message: taskProgressMessage("Restore"),
 	})
 	if d.task == nil {
 		return

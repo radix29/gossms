@@ -9,6 +9,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/loop"
 )
 
 // fulltext_index_ops.go is what the table menu's Full-Text index cascade does:
@@ -150,16 +151,16 @@ const fullTextFollowReadRetries = 3
 func (a *App) watchFullTextPopulation(sc *db.ServerConn, dbName, schema, table string, before time.Time, label string, maybe bool) {
 	label = label + " — " + gosmo.QualifiedName(schema, table)
 	follow := func(task *Task, ctx context.Context, tbl *gosmo.Table) {
-		a.safegoRepair("following a full-text population", func() { a.markTaskDone(task, errTaskPanicked) }, func() {
+		a.safegoRepair("following a full-text population", func() { a.tasks.Finish(task, loop.ErrTaskPanicked) }, func() {
 			a.followFullTextPopulation(ctx, task, tbl.FullName(), tbl.FullTextIndex, before)
 		})
 	}
 	if !maybe {
-		task, ctx := a.startTask(sc.Server.Context(), label)
-		a.safegoRepair("following a full-text population", func() { a.markTaskDone(task, errTaskPanicked) }, func() {
+		task, ctx := a.tasks.Start(sc.Server.Context(), label)
+		a.safegoRepair("following a full-text population", func() { a.tasks.Finish(task, loop.ErrTaskPanicked) }, func() {
 			tbl, err := findTable(ctx, sc, dbName, schema, table)
 			if err != nil {
-				a.postTaskDone(task, err)
+				a.tasks.Done(task, err)
 				return
 			}
 			a.followFullTextPopulation(ctx, task, tbl.FullName(), tbl.FullTextIndex, before)
@@ -178,7 +179,7 @@ func (a *App) watchFullTextPopulation(sc *db.ServerConn, dbName, schema, table s
 			return
 		}
 		a.postAndWake(func() {
-			task, ctx := a.startTask(sc.Server.Context(), label)
+			task, ctx := a.tasks.Start(sc.Server.Context(), label)
 			follow(task, ctx, tbl)
 		})
 	})
@@ -206,7 +207,7 @@ func (a *App) followFullTextPopulation(ctx context.Context, task *Task, name str
 		}
 		if err != nil {
 			if failed++; dropped || failed > fullTextFollowReadRetries {
-				a.postTaskDone(task, err)
+				a.tasks.Done(task, err)
 				return
 			}
 			select {
@@ -221,7 +222,7 @@ func (a *App) followFullTextPopulation(ctx context.Context, task *Task, name str
 			a.postAndWake(func() { a.endFullTextFollow(task, nil, msg) })
 			return
 		}
-		a.postProgress(task, -1, msg)
+		a.tasks.Progress(task, -1, msg)
 		select {
 		case <-ctx.Done():
 		case <-ticker.C:
@@ -230,10 +231,10 @@ func (a *App) followFullTextPopulation(ctx context.Context, task *Task, name str
 }
 
 // endFullTextFollow finishes the task on the UI goroutine. summary replaces
-// markTaskDone's bare "completed" with the counters; a Cancel says the
+// taskFinished's bare "completed" with the counters; a Cancel says the
 // population itself goes on.
 func (a *App) endFullTextFollow(task *Task, err error, summary string) {
-	a.markTaskDone(task, err)
+	a.tasks.Finish(task, err)
 	switch {
 	case task.Cancelled:
 		a.setStatus("Stopped following " + task.Label + " — the population itself goes on")

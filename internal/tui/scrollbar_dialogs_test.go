@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strconv"
 	"testing"
 
@@ -53,7 +54,7 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
 	a.setScreen(tuikittest.NewScreen(80, 30))
 	for i := range 20 {
-		a.tasks = append(a.tasks, &Task{Label: "Task " + strconv.Itoa(i)})
+		a.tasks.Start(context.Background(), "Task "+strconv.Itoa(i))
 	}
 
 	d := withScreen(NewTasksDialog(a), a.screen)
@@ -61,8 +62,8 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 
 	inner := d.InnerRect()
 	dataH := d.ButtonRowY() - inner.Y - 1
-	if len(a.tasks) <= dataH {
-		t.Fatalf("test needs more tasks than dataH (%d) to exercise scrolling, got %d", dataH, len(a.tasks))
+	if len(a.tasks.All()) <= dataH {
+		t.Fatalf("test needs more tasks than dataH (%d) to exercise scrolling, got %d", dataH, len(a.tasks.All()))
 	}
 	selBefore := d.Selected()
 

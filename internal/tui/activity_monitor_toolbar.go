@@ -104,18 +104,6 @@ func (am *ActivityMonitor) prefixVisible() bool {
 	return am.tools.PrefixShown(am.toolRect)
 }
 
-// runTool invokes cell i's action or explains why not — the single gate for
-// clicks and the overflow menu (ToolRow.Run, reading the cells' own fields).
-func (am *ActivityMonitor) runTool(i int) {
-	am.tools.Run(i, nil, nil, am.app.setStatus)
-}
-
-// showOverflowMenu pops the hidden controls under "More ▾".
-func (am *ActivityMonitor) showOverflowMenu() {
-	x, y := am.tools.MenuAnchor(-1, am.rect)
-	am.app.contextMenu.Show(x, y, am.tools.OverflowItems(nil, nil, am.runTool))
-}
-
 // resolution names what one plotted column covers. Follows drawInterval, not
 // the feed rate: TempDB and Instance columns differ from the activity rate. The
 // toolbar selector shows the poll rate.

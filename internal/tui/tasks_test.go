@@ -1,107 +1,16 @@
 package tui
 
 import (
-	"context"
 	"errors"
 	"testing"
 )
 
-// TestStartTaskAssignsIncrementingIDs pins the registry bookkeeping that
-// every other part of tasks.go depends on: each startTask call registers
-// the task and hands out a strictly increasing ID.
-func TestStartTaskAssignsIncrementingIDs(t *testing.T) {
-	a := newTestApp()
+// The registry's rules (IDs, Cancel, the running count, the history cap) are
+// tuikit's loop.Tasks and tested there (loop/tasks_test.go); what is gossms's
+// is the wording.
 
-	t1, ctx1 := a.startTask(context.Background(), "Backup")
-	t2, _ := a.startTask(context.Background(), "Rebuild")
-
-	if t1.ID == t2.ID {
-		t.Fatalf("both tasks got ID %d, want distinct IDs", t1.ID)
-	}
-	if len(a.tasks) != 2 || a.tasks[0] != t1 || a.tasks[1] != t2 {
-		t.Fatalf("a.tasks = %v, want [t1, t2]", a.tasks)
-	}
-	if ctx1.Err() != nil {
-		t.Errorf("fresh task's context already done: %v", ctx1.Err())
-	}
-}
-
-// TestTaskCancelStopsItsContext confirms Cancel actually cancels the
-// context startTask handed back — the mechanism a real consumer (Backup,
-// Rebuild) checks via ctx.Err() to stop its work early.
-func TestTaskCancelStopsItsContext(t *testing.T) {
-	a := newTestApp()
-	task, ctx := a.startTask(context.Background(), "Backup")
-
-	task.Cancel()
-	if ctx.Err() != context.Canceled {
-		t.Errorf("ctx.Err() after Cancel = %v, want context.Canceled", ctx.Err())
-	}
-
-	// Cancelling twice, or cancelling after the task is already marked
-	// done, must not panic — the Tasks dialog calls this unconditionally.
-	task.Cancel()
-	task.Done = true
-	task.Cancel()
-}
-
-// TestTaskCancelOnNilCancelIsNoop covers a Task built without going through
-// startTask (e.g. a zero-value Task{}, which the Tasks dialog's tests might
-// construct directly) — Cancel must not panic just because there's no
-// context to cancel.
-func TestTaskCancelOnNilCancelIsNoop(t *testing.T) {
-	task := &Task{Label: "no context"}
-	task.Cancel()
-}
-
-// TestRunningTaskCount confirms finished tasks don't count as running.
-func TestRunningTaskCount(t *testing.T) {
-	a := newTestApp()
-	t1, _ := a.startTask(context.Background(), "Backup")
-	_, _ = a.startTask(context.Background(), "Rebuild")
-
-	if got := a.runningTaskCount(); got != 2 {
-		t.Fatalf("runningTaskCount = %d, want 2", got)
-	}
-	t1.Done = true
-	if got := a.runningTaskCount(); got != 1 {
-		t.Errorf("runningTaskCount after finishing one = %d, want 1", got)
-	}
-}
-
-// TestPruneFinishedTasksKeepsRunningAndCapsHistory confirms
-// pruneFinishedTasks never evicts a running task even when it's the
-// oldest, and only trims finished tasks once the registry exceeds
-// maxTaskHistory.
-func TestPruneFinishedTasksKeepsRunningAndCapsHistory(t *testing.T) {
-	a := newTestApp()
-
-	// One running task registered first — must survive pruning no matter
-	// how many finished tasks pile up after it.
-	oldestRunning, _ := a.startTask(context.Background(), "still running")
-
-	for range maxTaskHistory + 10 {
-		task, _ := a.startTask(context.Background(), "finished")
-		task.Done = true
-	}
-
-	if len(a.tasks) > maxTaskHistory+1 {
-		t.Fatalf("len(a.tasks) = %d, want at most %d (history cap + the running task)", len(a.tasks), maxTaskHistory+1)
-	}
-	found := false
-	for _, task := range a.tasks {
-		if task == oldestRunning {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("oldest running task was pruned, want it kept regardless of age")
-	}
-}
-
-// TestTaskStatusText pins the three status-line shapes the Tasks dialog and
-// status bar render: indeterminate running, percentage running, and both
-// finished outcomes.
+// TestTaskStatusText pins the status-line shapes the Tasks dialog renders:
+// indeterminate running, percentage running, and both finished outcomes.
 func TestTaskStatusText(t *testing.T) {
 	cases := []struct {
 		name string
@@ -116,8 +25,8 @@ func TestTaskStatusText(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := c.task.statusText(); got != c.want {
-				t.Errorf("statusText() = %q, want %q", got, c.want)
+			if got := taskStatusText(&c.task); got != c.want {
+				t.Errorf("taskStatusText = %q, want %q", got, c.want)
 			}
 		})
 	}

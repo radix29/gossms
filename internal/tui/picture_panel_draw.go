@@ -29,7 +29,7 @@ func (pp *PicturePanel) drawToolbar(s tcell.Screen) {
 	}
 	pp.refreshToolLabels()
 	next := pp.tools.Layout(pp.toolRect, "")
-	pp.tools.Draw(s, pp.toolRect, pp.toolDisabled, false)
+	pp.tools.Draw(s, pp.toolRect, nil, false)
 	if w := pp.toolRect.Right() - next; w > 0 {
 		core.DrawTextClipped(s, next, pp.toolRect.Y, w, theme.StyleMenuBar(), pp.infoText())
 	}
@@ -43,7 +43,7 @@ func (pp *PicturePanel) infoText() string {
 	b := pp.flat.Bounds()
 	parts := []string{
 		fmt.Sprintf("%s %d×%d", strings.ToUpper(pp.format), b.Dx(), b.Dy()),
-		formatBytes(int64(len(pp.data))),
+		core.FormatBytes(int64(len(pp.data))),
 	}
 	zoom := fmt.Sprintf("%d%%", pp.zoomPercent())
 	if !pp.zoomed() {

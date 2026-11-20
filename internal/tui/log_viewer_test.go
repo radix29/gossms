@@ -20,10 +20,12 @@ import (
 func newTestLogViewer() *LogViewer {
 	lv := &LogViewer{
 		viewerPanel: viewerPanel{grid: controls.NewDataGrid(), splitter: newHorizontalSplitter("")},
-		logType:     gosmo.ErrorLogSQLServer,
-		sel:         []logFileRef{{Type: gosmo.ErrorLogSQLServer, Num: 0}},
-		files:       make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
-		filter:      widgets.NewInputField(logFilterLabel, logFilterWidth, false),
+		// Non-nil because a toolbar press hands Press app.contextMenu.
+		app:     &App{},
+		logType: gosmo.ErrorLogSQLServer,
+		sel:     []logFileRef{{Type: gosmo.ErrorLogSQLServer, Num: 0}},
+		files:   make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
+		filter:  widgets.NewInputField(logFilterLabel, logFilterWidth, false),
 	}
 	lv.buildTools()
 	return lv
@@ -491,7 +493,7 @@ func TestTheLogViewerOverflowMenuKeepsTheGate(t *testing.T) {
 		t.Fatal("Recycle still fits at 60 columns, so this proves nothing")
 	}
 
-	lv.showOverflowMenu()
+	lv.tools.OverflowMenu(lv.app.contextMenu, lv.rect)
 	var found bool
 	for _, it := range a.contextMenu.Items() {
 		if !strings.Contains(it.Label, "Recycle") {

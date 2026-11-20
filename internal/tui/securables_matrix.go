@@ -9,6 +9,7 @@ import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/propsheet"
 	"github.com/radix29/tuikit/widgets"
 )
@@ -213,8 +214,8 @@ const noSecurableCandidates = "(no matches)"
 type securableEntryKey struct{ secKey, permission string }
 
 // securablesMatrix is one Securables page's state, shared by the three grids, the
-// Add picker and the apply. The grids' row indices address the visible* slices,
-// which the filters rebuild; the full lists stay in securables and the edit maps.
+// Add picker and the apply. The top two grids' row indices address the *View
+// filter indexes; the full lists stay in securables and the edit maps.
 type securablesMatrix struct {
 	d          pageActionRunner
 	database   *gosmo.Database
@@ -234,16 +235,15 @@ type securablesMatrix struct {
 	// looked at is absent.
 	colEdits map[string]*columnEdit
 
-	// visibleSecurables is the filtered view the top grid's row indices address;
+	// securableView is the filtered view the top grid's row indices address;
 	// securables stays the full list.
-	securableFilter   string
-	visibleSecurables []securable
-	securableGrid     *controls.DataGrid
+	securableView *propsheet.FilterIndex[securable]
+	securableGrid *controls.DataGrid
 
-	permGrid     *controls.DataGrid
-	permFilter   string
-	visiblePerms []*securableEdit
-	permSection  *propsheet.SectionRow
+	// permView is the middle grid's filtered view of selectedEdits.
+	permGrid    *controls.DataGrid
+	permView    *propsheet.FilterIndex[*securableEdit]
+	permSection *propsheet.SectionRow
 
 	colSection    *propsheet.SectionRow
 	colPermSelect *propsheet.SelectRow
@@ -258,7 +258,7 @@ type securablesMatrix struct {
 
 	selected int
 	// selectedSec is the securable the middle grid is showing, held by value
-	// rather than as an index into visibleSecurables, which the filter rebuilds
+	// rather than as an index into securableView, which the filter rebuilds
 	// underneath it.
 	selectedSec   securable
 	selectedEdits []*securableEdit
@@ -297,6 +297,12 @@ func buildSecurablesMatrix(
 		editsBySecurable: make(map[string][]*securableEdit),
 		colEdits:         make(map[string]*columnEdit),
 		selected:         -1,
+		securableView: propsheet.NewFilterIndex(func(s securable, term string) bool {
+			return core.MatchesAny(term, s.label(), string(s.Type))
+		}),
+		permView: propsheet.NewFilterIndex(func(e *securableEdit, term string) bool {
+			return core.MatchesAny(term, e.permission)
+		}),
 	}
 	for _, e := range entries {
 		k := securable{Type: e.SecurableType, Schema: e.Schema, Name: e.Name}
@@ -334,9 +340,13 @@ func buildSecurablesMatrix(
 	p.securableGrid.OnSelectRow = p.loadSecurable
 	p.loadSecurable(0)
 
-	propsheet.BindCellToggle(p.permGrid, permissionStateColumns, 1, func() int { return len(p.visiblePerms) },
-		func(row int) { p.visiblePerms[row].current = nextPermState(p.visiblePerms[row].current) },
-		func() [][]string { return p.permRowsFor(p.selectedEdits) })
+	propsheet.BindCellToggle(p.permGrid, permissionStateColumns, 1, p.permView.Len,
+		func(row int) {
+			if e, ok := p.permView.At(row); ok {
+				e.current = nextPermState(e.current)
+			}
+		},
+		p.permRows)
 
 	loadColsBtn := widgets.NewButton("Load Columns", p.loadColumns)
 
@@ -354,21 +364,15 @@ func buildSecurablesMatrix(
 		p.runSearch()
 	})
 
-	securableFilterRow := propsheet.Text("Filter securables", "", 28)
-	securableFilterRow.SetDirtyTracked(false)
-	securableFilterRow.SetOnChange(func(term string) {
-		p.securableFilter = term
+	securableFilterRow := p.securableView.FilterRow("Filter securables", 28, func() {
 		p.selected = -1
 		resetGrid(p.securableGrid, securableListColumns, p.securableRows(), 0)
 		p.loadSecurable(0)
 	})
 
-	permFilterRow := propsheet.Text("Filter permissions", "", 28)
-	permFilterRow.SetDirtyTracked(false)
-	permFilterRow.SetOnChange(func(term string) {
-		p.permFilter = term
+	permFilterRow := p.permView.FilterRow("Filter permissions", 28, func() {
 		if p.selectedEdits != nil {
-			resetGrid(p.permGrid, permissionStateColumns, p.permRowsFor(p.selectedEdits), 0)
+			resetGrid(p.permGrid, permissionStateColumns, p.permRows(), 0)
 		}
 	})
 
@@ -419,36 +423,18 @@ func (p *securablesMatrix) editsFor(s securable) []*securableEdit {
 	return edits
 }
 
-// securableRows rebuilds visibleSecurables from the filter and returns the top
-// grid's rows.
+// securableRows rebuilds securableView from securables (Add grows it) and
+// returns the top grid's rows.
 func (p *securablesMatrix) securableRows() [][]string {
-	p.visibleSecurables = p.visibleSecurables[:0]
-	for _, s := range p.securables {
-		if matchesFilter(p.securableFilter, s.label(), string(s.Type)) {
-			p.visibleSecurables = append(p.visibleSecurables, s)
-		}
-	}
-	rows := make([][]string, len(p.visibleSecurables))
-	for i, s := range p.visibleSecurables {
-		rows[i] = []string{s.label(), string(s.Type)}
-	}
-	return rows
+	p.securableView.SetItems(p.securables)
+	return p.securableView.Rows(func(s securable) []string { return []string{s.label(), string(s.Type)} })
 }
 
-// permRowsFor rebuilds visiblePerms from edits and the filter and returns the
-// middle grid's rows.
-func (p *securablesMatrix) permRowsFor(edits []*securableEdit) [][]string {
-	p.visiblePerms = p.visiblePerms[:0]
-	for _, e := range edits {
-		if matchesFilter(p.permFilter, e.permission) {
-			p.visiblePerms = append(p.visiblePerms, e)
-		}
-	}
-	rows := make([][]string, len(p.visiblePerms))
-	for i, e := range p.visiblePerms {
-		rows[i] = []string{e.permission, displayPermState(e.current)}
-	}
-	return rows
+// permRows returns the middle grid's rows: selectedEdits through the filter.
+func (p *securablesMatrix) permRows() [][]string {
+	return p.permView.Rows(func(e *securableEdit) []string {
+		return []string{e.permission, displayPermState(e.current)}
+	})
 }
 
 func (p *securablesMatrix) colRows() [][]string {
@@ -467,7 +453,7 @@ func (p *securablesMatrix) clearSelection() {
 	p.selected = -1
 	p.selectedSec = securable{}
 	p.selectedEdits = nil
-	p.visiblePerms = p.visiblePerms[:0]
+	p.permView.SetItems(nil)
 	resetGrid(p.permGrid, permissionStateColumns, nil, 0)
 	p.loadedCols = nil
 	resetGrid(p.colGrid, securableColumnColumns, nil, 0)
@@ -478,7 +464,8 @@ func (p *securablesMatrix) clearSelection() {
 
 // loadSecurable points the lower grids at the top grid's row.
 func (p *securablesMatrix) loadSecurable(row int) {
-	if row < 0 || row >= len(p.visibleSecurables) {
+	sec, ok := p.securableView.At(row)
+	if !ok {
 		p.clearSelection()
 		return
 	}
@@ -486,9 +473,10 @@ func (p *securablesMatrix) loadSecurable(row int) {
 		return
 	}
 	p.selected = row
-	p.selectedSec = p.visibleSecurables[row]
-	p.selectedEdits = p.editsFor(p.selectedSec)
-	resetGrid(p.permGrid, permissionStateColumns, p.permRowsFor(p.selectedEdits), 0)
+	p.selectedSec = sec
+	p.selectedEdits = p.editsFor(sec)
+	p.permView.SetItems(p.selectedEdits)
+	resetGrid(p.permGrid, permissionStateColumns, p.permRows(), 0)
 	p.permSection.SetTitle("Permissions for " + p.selectedSec.label())
 	if p.selectedSec.hasColumns() {
 		// The column permissions offered are the securable's own: a
@@ -555,7 +543,7 @@ func (p *securablesMatrix) loadColumns() {
 // the top grid's own filter does.
 func (p *securablesMatrix) setCandidates(found []securable, term string) {
 	p.available = p.available[:0]
-	if dbSec := (securable{Type: gosmo.SecurableDatabase}); matchesFilter(term, dbSec.label(), string(dbSec.Type)) {
+	if dbSec := (securable{Type: gosmo.SecurableDatabase}); core.MatchesAny(term, dbSec.label(), string(dbSec.Type)) {
 		p.available = append(p.available, dbSec)
 	}
 	truncated := len(found) > securableSearchLimit
@@ -598,7 +586,7 @@ func (p *securablesMatrix) addSelected() {
 		p.securables = append(p.securables, s)
 	}
 	rows := p.securableRows()
-	row := slices.IndexFunc(p.visibleSecurables, func(e securable) bool { return e.key() == s.key() })
+	row := slices.IndexFunc(p.securableView.Visible(), func(e securable) bool { return e.key() == s.key() })
 	if row < 0 {
 		// Present, but the filter box is hiding it — selecting row 0 would
 		// point the grids at a different securable.
@@ -666,7 +654,7 @@ func (p *securablesMatrix) revertAll() {
 		e.current = e.orig
 	}
 	if p.selectedEdits != nil {
-		resetGrid(p.permGrid, permissionStateColumns, p.permRowsFor(p.selectedEdits), 0)
+		resetGrid(p.permGrid, permissionStateColumns, p.permRows(), 0)
 	}
 	resetGrid(p.colGrid, securableColumnColumns, p.colRows(), 0)
 }

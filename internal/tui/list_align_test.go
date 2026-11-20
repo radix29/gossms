@@ -17,21 +17,9 @@ func drawPane(db *DetailBrowser) *tuikittest.Screen {
 	return s
 }
 
-// listCellClass reads the Details pane's rendered figures as numbers
-// (separators, units, percentages), its placeholders as blank and names,
-// versions and dates as text; listAutoAlign exempts a Property/Value record.
-func TestListCellClassReadsRenderedNumbers(t *testing.T) {
-	for cell, want := range map[string]controls.CellClass{
-		"1,200": controls.CellNumber, "9 MB": controls.CellNumber, "4.0 KB": controls.CellNumber,
-		"45%": controls.CellNumber, "-7": controls.CellNumber,
-		"…": controls.CellBlank, "N/A": controls.CellBlank, "": controls.CellBlank, "-": controls.CellBlank,
-		"dbo.a": controls.CellText, "16.0.4135.4": controls.CellText, "2026-11-19": controls.CellText,
-		"14:00:01": controls.CellText, "True": controls.CellText,
-	} {
-		if got := listCellClass(cell); got != want {
-			t.Errorf("listCellClass(%q) = %v, want %v", cell, got, want)
-		}
-	}
+// listAutoAlign exempts a Property/Value record and gives a list
+// tuikit's text-cell classifier (its cases are tuikit's TestClassifyTextCell).
+func TestListAutoAlignExemptsPropertyValue(t *testing.T) {
 	if listAutoAlign([]string{"Property", "Value"}) != nil {
 		t.Error("a Property/Value grid should get no classifier")
 	}

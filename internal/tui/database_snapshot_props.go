@@ -77,7 +77,7 @@ func pageDatabaseSnapshotFiles(sc *db.ServerConn, name string) propPage {
 			rows := make([][]string, 0, len(files))
 			for _, fl := range files {
 				rows = append(rows, []string{
-					fl.Name, string(fl.Type), snapshotFileSizeOnDisk(fl), formatBytes(fl.SizeKB * 1024), fl.PhysicalName,
+					fl.Name, string(fl.Type), snapshotFileSizeOnDisk(fl), core.FormatBytes(fl.SizeKB * 1024), fl.PhysicalName,
 				})
 			}
 			grid := controls.NewDataGrid()

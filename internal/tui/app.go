@@ -43,9 +43,10 @@ type App struct {
 	// another panel is the active tab.
 	detailBrowser *DetailBrowser
 
-	// drag is the Object Explorer node drag toward the query editor (see
-	// explorerDrag).
-	drag explorerDrag
+	// drag is the Object Explorer node drag toward the query editor: armed by a
+	// Button1 press over a draggable node, started past the threshold, dropped
+	// on release (handleMouse, routeRelease, dropExplorerNode).
+	drag core.Drag[*explorerNode]
 
 	// mouseButtonDown tracks whether Button1 is held, wherever the gesture
 	// started. The per-widget mouseDragging latches only catch a resend staying
@@ -113,16 +114,9 @@ type App struct {
 	// live z-order of the open ones (see dialog_stack.go).
 	modals dialogs.Stack
 
-	// tasks is the background task registry (see tasks.go); taskSeq is its
-	// monotonic ID counter.
-	tasks   []*Task
-	taskSeq int
-
-	// progressBusy is set while a runWithProgress job holds the progress
-	// dialog; progressSeq numbers the jobs, so a late progressReport cannot
-	// rewrite a later job's dialog. UI goroutine only.
-	progressBusy bool
-	progressSeq  int
+	// tasks is the background task registry (see tasks.go), wired by
+	// wireTasks.
+	tasks loop.Tasks
 
 	connections []*db.ServerConn
 	cfg         *config.Config
@@ -175,6 +169,7 @@ func NewApp() *App {
 		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  F9 Connect  |  Ctrl+Q Quit",
 		cfg:        config.Load(),
 	})
+	a.wireTasks()
 	// Editors built where the config is out of reach (the read-only
 	// property-sheet T-SQL rows) pick the width up from this default; the ones
 	// that can reach it call SetIndentWidth as well, so a live change from
@@ -324,21 +319,11 @@ func (a *App) wakeEventLoop() { a.wake.Wake() }
 
 // animateUntil wakes the event loop every period until done closes — the
 // redraw clock for a widgets.Spinner, which is drawn from elapsed time and has
-// nothing else to repaint it while the work it stands for is quiet. The
-// caller closes done, deferred inside the worker so a panic stops it too.
+// nothing else to repaint it while the work it stands for is quiet
+// (loop.Runner.Tick). The caller closes done, deferred inside the worker so a
+// panic stops it too.
 func (a *App) animateUntil(what string, period time.Duration, done <-chan struct{}) {
-	a.safego(what, func() {
-		ticker := time.NewTicker(period)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				a.wakeEventLoop()
-			}
-		}
-	})
+	a.runner().Tick(what, period, done, a.wakeEventLoop)
 }
 
 // buildUI creates all UI components from tuikit building blocks.
@@ -450,12 +435,12 @@ func (a *App) draw() {
 	if n := len(a.connections); n > 0 {
 		connInfo = fmt.Sprintf("  |  %d server%s connected", n, pluralSuffix(n))
 	}
-	if n := a.runningTaskCount(); n > 0 {
+	if n := a.tasks.Running(); n > 0 {
 		connInfo += fmt.Sprintf("  |  %d task%s running", n, pluralSuffix(n))
 	}
 	// DrawTextLine, not DrawTextClipped: a status can carry an error joined
 	// from several (a write's, then the failed repair after it — see
-	// Task.repairNote), and DrawTextClipped drops the line break, running the
+	// taskRepairNote), and DrawTextClipped drops the line break, running the
 	// second message into the first without a space.
 	core.DrawTextLine(s, 1, h-statusH, w-2, statusStyle, a.statusText+connInfo)
 

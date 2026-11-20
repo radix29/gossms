@@ -3,18 +3,15 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/theme"
-	"github.com/radix29/tuikit/widgets"
 )
 
 // backup_common.go holds the small helpers the Backup and Restore dialogs
 // (backup_dialog.go, restore_dialog.go) share: server-side path handling,
-// the progress view (its bar is widgets.DrawProgressBar), and display formatting for backup metadata.
+// the progress view's wording (the view is dialogs.DrawTaskProgress), and
+// display formatting for backup metadata.
 
 // wrapMessage lays text out over at most maxLines lines of w columns,
 // clipping the last one with "…" when even that isn't enough.
@@ -28,116 +25,23 @@ func wrapMessage(text string, w, maxLines int) []string {
 	return core.WrapTextLimit(text, w, maxLines)
 }
 
-// formatHMS renders a duration as "HH:MM:SS". The app's only duration
-// renderer: the backup/restore progress screens, the query panel's elapsed
-// time, and every SQL Agent run duration go through it, so a job that took
-// an hour and two minutes reads the same everywhere.
-//
-// Seconds truncate rather than round, which is what a running clock needs —
-// the query panel's live timer must never show a second that hasn't elapsed.
-func formatHMS(d time.Duration) string {
-	if d < 0 {
-		d = 0
+// taskProgressMessage is the Backup and Restore progress views' wording
+// (dialogs.TaskProgressView.Message): the operation's name in it, and a
+// cancel keeps taskRepairNote.
+func taskProgressMessage(verb string) func(*Task) (string, bool) {
+	return func(t *Task) (string, bool) {
+		switch {
+		case t.Done && t.Cancelled:
+			return verb + " cancelled." + taskRepairNote(t), true
+		case t.Done && t.Err != nil:
+			return "Failed: " + t.Err.Error(), true
+		case t.Done:
+			return verb + " completed successfully.", false
+		case t.Message == "":
+			return "Starting " + strings.ToLower(verb) + "...", false
+		}
+		return t.Message, false
 	}
-	sec := int(d.Seconds())
-	return fmt.Sprintf("%02d:%02d:%02d", sec/3600, (sec/60)%60, sec%60)
-}
-
-// formatBytes renders a byte count with a binary unit, e.g. "5.8 GB".
-func formatBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
-}
-
-// taskProgressView is what the Backup and Restore progress views differ in:
-// their header rows, whether a "Progress:" label sits above the bar, and the
-// operation's name in the final message.
-type taskProgressView struct {
-	header        []string // "Database : x", …, one row each from inner.Y+1
-	progressLabel bool     // Backup's "Progress:" row, a blank row above the bar
-	verb          string   // "Backup" / "Restore"
-	task          *Task
-}
-
-// drawTaskProgress draws a progress view into inner, stopping above bottom
-// (the separator row): the header rows, then — once there is a task — the bar,
-// elapsed and remaining times, and the task's message wrapped over every row
-// left.
-func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgressView) {
-	labelStyle := theme.StyleDialog()
-	lx := inner.X + 1
-	w := inner.W - 2
-
-	for i, h := range v.header {
-		core.DrawTextClipped(s, lx, inner.Y+1+i, w, labelStyle, h)
-	}
-	t := v.task
-	if t == nil {
-		return
-	}
-	y := inner.Y + len(v.header) + 2
-	if v.progressLabel {
-		core.DrawText(s, lx, y, labelStyle, "Progress:")
-		y += 2
-	}
-	pct := t.Progress
-	if t.Done && t.Err == nil {
-		pct = 100
-	}
-	widgets.DrawProgressBar(s, lx, y, w, pct, labelStyle)
-
-	elapsed, remaining, haveRemaining := taskTimes(t)
-	core.DrawText(s, lx, y+2, labelStyle, "Elapsed  : "+formatHMS(elapsed))
-	rem := "--:--:--"
-	if haveRemaining {
-		rem = formatHMS(remaining)
-	}
-	core.DrawText(s, lx, y+3, labelStyle, "Remaining: "+rem)
-
-	msg := t.Message
-	msgStyle := labelStyle
-	switch {
-	case t.Done && t.Cancelled:
-		msg = v.verb + " cancelled." + t.repairNote()
-		msgStyle = theme.StyleDialogError()
-	case t.Done && t.Err != nil:
-		msg = "Failed: " + t.Err.Error()
-		msgStyle = theme.StyleDialogError()
-	case t.Done:
-		msg = v.verb + " completed successfully."
-	case msg == "":
-		msg = "Starting " + strings.ToLower(v.verb) + "..."
-	}
-	// Last, and given every remaining row down to the separator: a failed
-	// backup or restore reports SQL Server's own message, which is far longer
-	// than one line and is the only thing on this screen the user still needs.
-	msgY := y + 5
-	for i, ln := range wrapMessage(msg, w, bottom-msgY) {
-		core.DrawTextClipped(s, lx, msgY+i, w, msgStyle, ln)
-	}
-}
-
-// taskTimes computes a task's elapsed time and, while it's still running
-// with a known percentage, a linear estimate of the time remaining.
-func taskTimes(t *Task) (elapsed, remaining time.Duration, haveRemaining bool) {
-	end := time.Now()
-	if t.Done {
-		end = t.Finished
-	}
-	elapsed = end.Sub(t.Started)
-	if !t.Done && t.Progress > 0 && t.Progress < 100 {
-		remaining = elapsed * time.Duration(100-t.Progress) / time.Duration(t.Progress)
-		haveRemaining = true
-	}
-	return elapsed, remaining, haveRemaining
 }
 
 // backupTypeLabel names a gosmo.BackupAction the way the Backup/Restore

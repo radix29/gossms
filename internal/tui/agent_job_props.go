@@ -6,6 +6,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
+	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/propsheet"
 )
 
@@ -86,7 +87,7 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 				propsheet.Static("Status", formatJobState(j.CurrentState)),
 				propsheet.Static("Last outcome", formatJobOutcome(j.LastRunOutcome)),
 				propsheet.Static("Last run", dashIfZero(j.LastRunDate)),
-				propsheet.Static("Last duration", formatHMS(j.LastRunDuration)),
+				propsheet.Static("Last duration", core.FormatClock(j.LastRunDuration)),
 				propsheet.Static("Next run", dashIfZero(j.NextRunDate)),
 				propsheet.Section("SQL-only backing objects"),
 				propsheet.Note("msdb.dbo.sysjobs, syscategories, sysjobactivity, sysjobhistory"),

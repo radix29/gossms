@@ -121,7 +121,7 @@ func TestPlotHistoryIsWithheldOnARowThatIsNotAQuery(t *testing.T) {
 	}
 	// Pressing it changes nothing: the gate the label is dimmed on is the gate
 	// the press goes through.
-	p.runAct(qsActPlot)
+	p.acts.RunCell(qsActPlot)
 	if p.seriesMode {
 		t.Fatal("Plot History turned the mode on from a row with no query")
 	}
@@ -165,7 +165,7 @@ func TestPlotHistoryReadsTheSelectedQuery(t *testing.T) {
 		t.Fatal("the panel opened on the history rather than the report chart")
 	}
 
-	p.runAct(qsActPlot)
+	p.acts.RunCell(qsActPlot)
 	if !p.seriesMode {
 		t.Fatalf("Plot History was refused on the first row: %s", p.actReason(qsActPlot))
 	}

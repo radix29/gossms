@@ -39,10 +39,10 @@ func TestGenerateScriptsReportsAFailedRead(t *testing.T) {
 	if d.Visible() {
 		t.Error("Script left the dialog open")
 	}
-	if len(a.tasks) != 1 || a.tasks[0].Label != "Generate Scripts: appdb" {
-		t.Fatalf("tasks = %v, want one Generate Scripts: appdb", a.tasks)
+	if len(a.tasks.All()) != 1 || a.tasks.All()[0].Label != "Generate Scripts: appdb" {
+		t.Fatalf("tasks = %v, want one Generate Scripts: appdb", a.tasks.All())
 	}
-	task := a.tasks[0]
+	task := a.tasks.All()[0]
 	drainUntil(t, a, func() bool { return task.Done }, "the task to finish")
 	if task.Err == nil || !strings.Contains(task.Err.Error(), "schema read refused") || task.Cancelled {
 		t.Errorf("task = done %v, err %v, cancelled %v; want failed on the schema read", task.Done, task.Err, task.Cancelled)
@@ -67,7 +67,7 @@ func TestGenerateScriptsCancelStopsTheRun(t *testing.T) {
 	d := NewGenerateScriptsDialog(a)
 	d.show(sc, "appdb")
 	d.script()
-	task := a.tasks[0]
+	task := a.tasks.All()[0]
 	drainUntil(t, a, func() bool { return len(readContexts(inst, schemas)) == 1 }, "the schema read to reach the server")
 	ctx := readContexts(inst, schemas)[0]
 	if _, ok := ctx.Deadline(); ok {

@@ -130,14 +130,9 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 		v.dragZone.Arm(ev, xZoneSplitter)
 		return true
 	}
-	if v.toolRect.H == 1 && my == v.toolRect.Y && ev.Buttons() == tcell.Button1 {
-		// The action runs on the press; xZoneToolbar swallows the repeats.
+	// The action runs on the press; xZoneToolbar swallows the repeats.
+	if ev.Buttons() == tcell.Button1 && v.tools.Press(v.toolRect, mx, my, v.app.contextMenu, v.rect) {
 		v.dragZone.Arm(ev, xZoneToolbar)
-		if i := v.tools.CellAt(mx, my); i >= 0 {
-			v.runTool(i)
-		} else if v.tools.More.Rect.Contains(mx, my) {
-			v.showOverflowMenu()
-		}
 		return true
 	}
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {

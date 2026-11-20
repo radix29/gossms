@@ -202,34 +202,6 @@ func TestDetailBrowserReselectKeepsTheNodesSort(t *testing.T) {
 	}
 }
 
-func TestParseDetailNumber(t *testing.T) {
-	for in, want := range map[string]bool{
-		"1,234": true, "12 MB": true, "-3": true, "45%": true, "0.5": true,
-		"dbo.t": false, "Inf": false, "NaN": false, "16.0.4135.4": false,
-		"2026-01-02 10:00:00": false, "0x1p3": false, "ONLINE": false,
-	} {
-		if _, ok := parseDetailNumber(in); ok != want {
-			t.Errorf("parseDetailNumber(%q) ok = %v, want %v", in, ok, want)
-		}
-	}
-}
-
-// formatBytes picks its unit per cell, so a Size column mixes units: the sort
-// has to compare bytes, not mantissas.
-func TestDetailSortScalesByteUnits(t *testing.T) {
-	cells := []string{"3.0 GB", "1.2 MB", "4.0 KB", "512 B", "1023 B"}
-	slices.SortFunc(cells, func(a, b string) int {
-		return compareDetailSortKeys(newDetailSortKey(a), newDetailSortKey(b), false)
-	})
-	if want := []string{"512 B", "1023 B", "4.0 KB", "1.2 MB", "3.0 GB"}; !slices.Equal(cells, want) {
-		t.Errorf("sorted = %v, want %v", cells, want)
-	}
-	// Non-byte units are stripped, not scaled.
-	if n, _ := parseDetailNumber("250 ms"); n != 250 {
-		t.Errorf(`parseDetailNumber("250 ms") = %v, want 250`, n)
-	}
-}
-
 // A Refresh of the node on screen keeps the cursor on the object it was on,
 // wherever the reload puts that object's row (a row added above it, a sorted
 // column's figures changed), and on its column. It went back to row 0 of the

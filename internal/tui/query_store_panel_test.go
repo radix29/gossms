@@ -225,7 +225,7 @@ func TestForcePlanWritesTheSelectedPlan(t *testing.T) {
 		t.Fatalf("selected plan = %d, want the second plan 42", got)
 	}
 
-	p.runAct(qsActForce)
+	p.acts.RunCell(qsActForce)
 	if !a.confirmDialog().Visible() {
 		t.Fatal("Force Plan ran without asking — it changes what a live database does on every execution")
 	}
@@ -658,7 +658,7 @@ func TestTheFilterSelectorsAreWithheldWhereTheQueryIgnoresThem(t *testing.T) {
 				t.Errorf("%s on %q is dimmed with no reason", c.name, title)
 			}
 			p.setStatus("")
-			p.runAct(c.cell)
+			p.acts.RunCell(c.cell)
 			if p.grid.Status() == "" {
 				t.Errorf("clicking the dimmed %s on %q did nothing at all", c.name, title)
 			}
@@ -828,7 +828,7 @@ func TestTrackingAQueryPutsItInTheTrackedView(t *testing.T) {
 	if got := p.acts.Cells[qsActTrack].Label; got != "Track Query" {
 		t.Errorf("the action reads %q over an untracked query", got)
 	}
-	p.runAct(qsActTrack)
+	p.acts.RunCell(qsActTrack)
 	if !tq.IsTracked(p.conn.Opts.Server, "appdb", 12) {
 		t.Fatal("the query was not tracked")
 	}
@@ -856,7 +856,7 @@ func TestTrackingAQueryPutsItInTheTrackedView(t *testing.T) {
 	p.ShowReport("Top Resource Consuming Queries")
 	drainUntil(t, a, func() bool { return !p.busy }, "the report to load")
 	p.grid.SetSelectedCell(1, 0)
-	p.runAct(qsActTrack)
+	p.acts.RunCell(qsActTrack)
 	if tq.IsTracked(p.conn.Opts.Server, "appdb", 12) {
 		t.Error("the query is still tracked after a second press")
 	}
@@ -979,7 +979,7 @@ func TestComparePlansTakesTwoPressesAndOpensAPanel(t *testing.T) {
 
 	before := a.panels.Count()
 	p.plansGrid.SetSelectedCell(0, 0)
-	p.runAct(qsActCompare)
+	p.acts.RunCell(qsActCompare)
 	if p.cmpPlanID != 41 {
 		t.Fatalf("the first press marked plan %d, want 41", p.cmpPlanID)
 	}
@@ -993,7 +993,7 @@ func TestComparePlansTakesTwoPressesAndOpensAPanel(t *testing.T) {
 	}
 
 	p.plansGrid.SetSelectedCell(1, 0)
-	p.runAct(qsActCompare)
+	p.acts.RunCell(qsActCompare)
 	if a.panels.Count() != before+1 {
 		t.Fatalf("panel count %d after the second press, want %d", a.panels.Count(), before+1)
 	}
@@ -1028,8 +1028,8 @@ func TestComparePlansUnmarksOnASecondPressOnTheSamePlan(t *testing.T) {
 	drainUntil(t, a, func() bool { return len(p.plans) == 1 }, "the plans to load")
 
 	before := a.panels.Count()
-	p.runAct(qsActCompare)
-	p.runAct(qsActCompare)
+	p.acts.RunCell(qsActCompare)
+	p.acts.RunCell(qsActCompare)
 	if p.cmpPlanID != 0 {
 		t.Errorf("plan %d is still marked after a second press on it", p.cmpPlanID)
 	}
@@ -1058,9 +1058,9 @@ func TestComparePlansRefusesAPlanOfAnotherQuery(t *testing.T) {
 
 	before := a.panels.Count()
 	p.plansGrid.SetSelectedCell(0, 0)
-	p.runAct(qsActCompare)
+	p.acts.RunCell(qsActCompare)
 	p.plansGrid.SetSelectedCell(1, 0)
-	p.runAct(qsActCompare)
+	p.acts.RunCell(qsActCompare)
 
 	if a.panels.Count() != before {
 		t.Error("two plans of different queries were compared")
@@ -1091,7 +1091,7 @@ func TestComparePlansIsWithheldWithoutPlanXML(t *testing.T) {
 	if got := p.actReason(qsActCompare); !strings.Contains(got, "no plan XML") {
 		t.Errorf("reason = %q, want it to say the XML is missing", got)
 	}
-	p.runAct(qsActCompare)
+	p.acts.RunCell(qsActCompare)
 	if p.cmpPlanID != 0 {
 		t.Error("the dimmed action still marked a plan")
 	}
@@ -1119,7 +1119,7 @@ func TestATrackedQueryThatIsGoneCanStillBeUntracked(t *testing.T) {
 	if p.actDisabled(qsActTrack) {
 		t.Fatalf("Untrack is withheld on the missing query's row: %s", p.actReason(qsActTrack))
 	}
-	p.runAct(qsActTrack)
+	p.acts.RunCell(qsActTrack)
 	if tq.IsTracked(p.conn.Opts.Server, "appdb", 99) {
 		t.Error("the missing query is still tracked")
 	}
@@ -1526,7 +1526,7 @@ func TestTheSelectorsAreWithheldWhereTheQueryIgnoresThem(t *testing.T) {
 		}
 		// And pressing it says so rather than silently doing nothing.
 		p.setStatus("")
-		p.runSel(tc.cell)
+		p.sel.RunCell(tc.cell)
 		if p.grid.Status() != reason {
 			t.Errorf("%s cell %d pressed: status %q, want %q", tc.report, tc.cell, p.grid.Status(), reason)
 		}
@@ -1539,7 +1539,7 @@ func TestAWithheldSelectorStillOpensWhereItApplies(t *testing.T) {
 	a := newTestApp()
 	p := NewQueryStorePanel(a, nil, "appdb", "Top Resource Consuming Queries")
 	for _, cell := range []int{qsToolMetric, qsToolTop, qsToolStatistic, qsToolWindow, qsToolReport} {
-		p.runSel(cell)
+		p.sel.RunCell(cell)
 		if !a.contextMenu.OverlayActive() {
 			t.Errorf("selector cell %d opened no menu on a report that honours it", cell)
 		}
@@ -1645,7 +1645,7 @@ func TestAChosenStatisticSurvivesAReportChange(t *testing.T) {
 	p := NewQueryStorePanel(a, nil, "appdb", "Regressed Queries")
 
 	// Pick Max through the menu, the way the toolbar does.
-	p.runSel(qsToolStatistic)
+	p.sel.RunCell(qsToolStatistic)
 	chooseMenuItem(t, a, string(gosmo.QSStatMax))
 	if p.stat != gosmo.QSStatMax {
 		t.Fatalf("the menu set %q, want Max", p.stat)
@@ -1971,7 +1971,7 @@ func TestTheTrackButtonStalesTheTreesTrackedLeaf(t *testing.T) {
 	p.Load()
 	drainUntil(t, a, func() bool { return !p.busy }, "the report to load")
 	p.grid.SetSelectedCell(0, 0)
-	p.runAct(qsActTrack)
+	p.acts.RunCell(qsActTrack)
 
 	if _, ok := a.detailBrowser.cache[leaf]; ok {
 		t.Error("Track Query left the tree's Tracked Queries leaf holding the set from before the pin")

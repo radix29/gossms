@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"strings"
 
 	"github.com/radix29/gosmo"
 )
@@ -119,20 +118,4 @@ func serverPermApply(srv *gosmo.Server) permApplyFn {
 		return srv.ApplyPermission(ctx, verb, gosmo.Securable{Class: gosmo.SecurableServer},
 			gosmo.ServerPermission(permission), principal, opts)
 	}
-}
-
-// matchesFilter reports whether any of fields contains term, case-insensitively.
-// An empty term matches everything, so a filter box starts out showing the whole
-// list.
-func matchesFilter(term string, fields ...string) bool {
-	term = strings.TrimSpace(strings.ToLower(term))
-	if term == "" {
-		return true
-	}
-	for _, f := range fields {
-		if strings.Contains(strings.ToLower(f), term) {
-			return true
-		}
-	}
-	return false
 }

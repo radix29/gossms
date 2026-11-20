@@ -5,37 +5,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gosmo"
-	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
 )
-
-// dragThreshold is how far, in cells along either axis, the held pointer must
-// move from the press before an armed Object Explorer drag starts. Below it
-// the press stays a click: no ghost, and the release drops nothing.
-const dragThreshold = 2
-
-// explorerDrag is the Object Explorer node being dragged toward the query
-// editor. node is armed by a Button1 press over a draggable node and cleared on
-// release; x/y track the cursor so draw can render a ghost of the dragged
-// object's text. See handleMouse/dropExplorerNode.
-//
-// Arming is not starting: active stays false until the held pointer moves
-// dragThreshold cells from startX/startY. Until then there is no ghost and the
-// release drops nothing, so a press held still on a node is a click, not a
-// drag.
-type explorerDrag struct {
-	node           *explorerNode
-	x, y           int
-	startX, startY int
-	active         bool
-}
-
-// dragPastThreshold reports whether (mx, my) is dragThreshold cells or more
-// from where the armed drag's press landed.
-func (a *App) dragPastThreshold(mx, my int) bool {
-	dx, dy := mx-a.drag.startX, my-a.drag.startY
-	return max(dx, -dx, dy, -dy) >= dragThreshold
-}
 
 // isDraggableNode reports whether t is a concrete SQL Server object that can
 // be dragged from Object Explorer into a query editor — every node except
@@ -90,18 +61,14 @@ func explorerDragText(n *explorerNode) string {
 	}
 }
 
-// dropExplorerNode finishes a drag armed by a Button1 press over a
-// draggable Object Explorer node (see handleMouse in app_events.go): if the
-// release lands inside the active query panel's editor, insert the node's
+// dropExplorerNode finishes a started drag of n, armed by a Button1 press
+// over a draggable Object Explorer node (see handleMouse in app_events.go): if
+// the release lands inside the active query panel's editor, insert the node's
 // quoted identifier at that screen position. A release back over Object
 // Explorer itself is treated as a cancelled drag (silent, like releasing a
 // mouse button without moving); a release anywhere else that isn't a valid
 // drop target gets a status message explaining why nothing happened.
-func (a *App) dropExplorerNode(mx, my int) {
-	n := a.drag.node
-	if n == nil {
-		return
-	}
+func (a *App) dropExplorerNode(n *explorerNode, mx, my int) {
 	if mx < a.explorerSplit.FirstRect().Right() {
 		return
 	}
@@ -125,15 +92,7 @@ func (a *App) dropExplorerNode(mx, my int) {
 // mouse cursor while a drag is in progress, so it looks like the object's
 // text is being picked up and carried toward the drop target.
 func (a *App) drawDragGhost(s tcell.Screen, screenW int) {
-	if a.drag.node == nil || !a.drag.active {
-		return
-	}
-	text := explorerDragText(a.drag.node)
-	x := a.drag.x + 1
-	if x >= screenW {
-		x = max(0, a.drag.x-core.DisplayWidth(text))
-	}
-	if maxW := screenW - x; maxW > 0 {
-		core.DrawTextClipped(s, x, a.drag.y, maxW, theme.StyleSelected(), text)
+	if n, ok := a.drag.Payload(); ok && a.drag.Active() {
+		a.drag.DrawGhost(s, explorerDragText(n), theme.StyleSelected(), screenW)
 	}
 }

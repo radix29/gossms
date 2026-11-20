@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"testing"
@@ -40,12 +41,12 @@ func TestTasksDialogLastRowAboveButtons(t *testing.T) {
 	scr := tuikittest.NewScreen(80, 30)
 	a.setScreen(scr)
 	for i := range 20 {
-		a.tasks = append(a.tasks, &Task{Label: "Task " + strconv.Itoa(i)})
+		a.tasks.Start(context.Background(), "Task "+strconv.Itoa(i))
 	}
 
 	d := withScreen(NewTasksDialog(a), a.screen)
 	d.Show()
-	for range len(a.tasks) {
+	for range len(a.tasks.All()) {
 		d.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
 	}
 	d.Draw(scr)

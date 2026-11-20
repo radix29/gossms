@@ -185,7 +185,7 @@ func governedRate(bps int64) string {
 	if bps <= 0 {
 		return unsetItem
 	}
-	return formatBytes(bps) + "/sec"
+	return core.FormatBytes(bps) + "/sec"
 }
 
 // governedTime renders the governor's own last-updated stamp, which is zero

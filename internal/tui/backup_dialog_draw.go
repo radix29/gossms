@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/theme"
 )
 
@@ -90,15 +91,14 @@ func (d *BackupDialog) drawStatus(s tcell.Screen) {
 
 // drawProgress renders the progress view from the running/finished task.
 func (d *BackupDialog) drawProgress(s tcell.Screen) {
-	drawTaskProgress(s, d.InnerRect(), d.ButtonRowY()-1, taskProgressView{
-		header: []string{
+	dialogs.DrawTaskProgress(s, d.InnerRect(), d.ButtonRowY()-1, d.task, dialogs.TaskProgressView{
+		Header: []string{
 			"Database : " + d.taskDB,
 			"Type     : " + d.taskType,
 			"Target   : " + d.taskDest,
 		},
-		progressLabel: true,
-		verb:          "Backup",
-		task:          d.task,
+		ProgressLabel: true,
+		Message:       taskProgressMessage("Backup"),
 	})
 	if d.task == nil {
 		return

@@ -19,7 +19,7 @@ func (p *ReplicationMonitorPanel) HandleKey(ev *tcell.EventKey) bool {
 	}
 	switch ev.Key() {
 	case tcell.KeyF5:
-		p.runTool(rmToolRefresh)
+		p.tools.RunCell(rmToolRefresh)
 		return true
 	case tcell.KeyTab:
 		if p.focus < rmFocusCount-1 {
@@ -93,12 +93,7 @@ func (p *ReplicationMonitorPanel) HandleMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 	}
-	if ev.Buttons() == tcell.Button1 && p.toolRect.H == 1 && my == p.toolRect.Y {
-		if p.tools.More.Rect.Contains(mx, my) {
-			p.popMenuAt(-1, p.tools.OverflowItems(p.toolDisabled, p.toolReason, p.runTool))
-		} else if i := p.tools.CellAt(mx, my); i >= 0 {
-			p.runTool(i)
-		}
+	if ev.Buttons() == tcell.Button1 && p.tools.Press(p.toolRect, mx, my, p.app.contextMenu, p.rect) {
 		p.dragZone.Arm(ev, rmZoneToolbar)
 		return true
 	}

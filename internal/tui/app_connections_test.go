@@ -16,6 +16,7 @@ import (
 // event loop.
 func newTestApp() *App {
 	a := &App{cfg: &config.Config{}}
+	a.wireTasks()
 	a.explorer = NewObjectExplorer(a)
 	a.panels = layout.NewPanelManager()
 	installDialog(a, dialogs.NewConfirmDialog())

@@ -159,11 +159,12 @@ race. Background work has one shape:
   (`connectForQueryPanel`, `connectForActivityMonitor`, `amProcTab.activate`),
   so disconnect cancels a reconnect in flight. The Connect dialog's first dial
   is the one exception (no `ServerConn` yet; `connect_dialog.go` says so). For
-  cancellable user-visible work use `App.startTask(parent, label)`: a `*Task`
-  plus derived context, listed in Background Tasks with a Cancel button.
+  cancellable user-visible work use `App.tasks.Start(parent, label)` (tuikit's
+  `loop.Tasks`): a `*Task` plus derived context, listed in Background Tasks
+  with a Cancel button.
 - **Work** off-thread, touching nothing the UI owns.
 - **Report** with **`App.postAndWake(fn)`** — `fn` runs on the UI goroutine.
-  `postProgress`/`postTaskDone` wrap it.
+  `App.tasks.Progress`/`Done` wrap it.
 - **Start** with **`App.safego(what, fn)`**.
   An unrecovered background panic kills the process before `screen.Fini()`
   restores the terminal — trace and unsaved query text lost. go-mssqldb
@@ -303,7 +304,7 @@ gossms/
 │       ├── app_query_actions.go  # what the toolbar and Query menu do to the active query panel: execute/cancel, estimated + actual plan, reconnect, results mode, save its text
 │       ├── app_show_panels.go    # opens the non-query panels: Object Explorer Details, query list, Activity Monitor, Log Viewer, Query Store — reusing one already open for the same target
 │       ├── app_show_properties.go # one entry point per Properties and per New dialog, taking the connection and the names its page needs
-│       ├── progress_job.go       # progressJob + App.runWithProgress: one long write run behind dialogs.ProgressDialog, from the answered confirmation until the server comes back; reveal delay, cancellation, and the reasons an uninterruptible job greys Cancel
+│       ├── progress_job.go       # progressJob + App.runWithProgress: one long write run behind dialogs.ProgressDialog (its Run holds the lifecycle; the context's parent, timeout and refusal text stay here), from the answered confirmation until the server comes back; reveal delay, cancellation, and the reasons an uninterruptible job greys Cancel
 │       ├── dialog_stack.go       # Dialog (= dialogs.Dialog); App.modals, a tuikit dialogs.Stack, hosts every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help), context-gated via each MenuItem's Enabled predicate, + About dialog
 │       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row, same Enabled-predicate gating
@@ -341,7 +342,7 @@ gossms/
 │       ├── generate_scripts_dialog.go   # database node's "Generate Scripts...": script-only sheet (permissions, query window or file) over scripting.DatabaseObjects — every user object in dependency order, run as a Background Task (progress, Cancel, no timeout), opened or saved, never executed
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
-│       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
+│       ├── tasks.go              # background tasks: Task = loop.Task, wireTasks (App.tasks = tuikit loop.Tasks), the status/Tasks-dialog wording
 │       ├── latest.go              # `latest`, an alias of tuikit's loop.Latest (the latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result) — see § Latest-only loads
 │       ├── safego.go             # App.safego/safegoRepair and fanOut (the one bounded worker pool), delegates over tuikit's loop.Runner, plus reportPanic, its Report callback (log + status bar); every background goroutine runs under one (bar FlushSaves' exit-time waiter)
 │       ├── prop_page_gate.go    # withRequires/withRequiresOn: attaches a gate.Right set to a propPage, the one tie between the gate package and the Properties dialogs
@@ -831,8 +832,8 @@ to its Cancel button, a task counted as running forever). Use
 **`App.safegoRepair(what, repair, fn)`**: `safego` plus `repair` queued on the
 UI goroutine only when `fn` panics, before the panic is reported (so the panic
 is the status bar's last word). `repair` already runs on the UI goroutine —
-call the UI directly, no second `postAndWake` (`App.markTaskDone` is
-`postTaskDone`'s body split out for this).
+call the UI directly, no second `postAndWake` (`App.tasks.Finish(t,
+loop.ErrTaskPanicked)`, not `Done`, for a task).
 
 A resource the same panic would leak — a `CancelFunc`, a channel a ticker
 selects on — is released by `defer` *inside* `fn`, not by `repair`.

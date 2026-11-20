@@ -483,7 +483,7 @@ func TestActivityMonitorProcTabInstallRefusalNamesTheRightOnlyWhenDenied(t *test
 			t.Fatal("no Install in master cell")
 		}
 		am.app.setStatus("")
-		am.runTool(i)
+		am.tools.RunCell(i)
 	}
 
 	install()

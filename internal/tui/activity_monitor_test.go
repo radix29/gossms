@@ -191,11 +191,19 @@ func TestActivityMonitorScrollingReportsWhatItDid(t *testing.T) {
 	if !amKey(am, tcell.KeyDown) {
 		t.Error("scrolling down inside a canvas taller than the viewport did nothing")
 	}
-	if !amKey(am, tcell.KeyEnd) {
-		t.Error("End didn't move the viewport to the far corner")
+	if !amKey(am, tcell.KeyRight) {
+		t.Error("scrolling right inside a canvas wider than the viewport did nothing")
 	}
-	if amKey(am, tcell.KeyDown) || amKey(am, tcell.KeyRight) {
-		t.Error("scrolling past the far corner claimed the key")
+	x := am.vp[amTabHistory].X
+	if !amKey(am, tcell.KeyEnd) {
+		t.Error("End didn't move the viewport to the bottom")
+	}
+	if vp := am.vp[amTabHistory]; vp.X != x || vp.Y != am.viewport().MaxY() {
+		t.Errorf("End went to %d,%d, want the bottom row with the column kept (%d,%d)",
+			vp.X, vp.Y, x, am.viewport().MaxY())
+	}
+	if amKey(am, tcell.KeyDown) || amKey(am, tcell.KeyPgDn) {
+		t.Error("scrolling past the bottom claimed the key")
 	}
 	if !amKey(am, tcell.KeyHome) {
 		t.Error("Home didn't return the viewport to the top-left")
@@ -203,10 +211,10 @@ func TestActivityMonitorScrollingReportsWhatItDid(t *testing.T) {
 
 	// Procedure tabs have no canvas; scrolling keys go to the grid.
 	am.setTab(amTabSessions)
-	if maxX, maxY := am.scrollLimits(); maxX != 0 || maxY != 0 {
-		t.Errorf("the Sessions tab reported scroll limits %d,%d, want 0,0", maxX, maxY)
+	if vp := am.viewport(); vp.MaxX() != 0 || vp.MaxY() != 0 {
+		t.Errorf("the Sessions tab reported scroll limits %d,%d, want 0,0", vp.MaxX(), vp.MaxY())
 	}
-	if am.scrollBy(0, 1) {
+	if am.viewport().ScrollBy(0, 1) {
 		t.Error("the panel scrolled a tab that has no canvas")
 	}
 }
@@ -233,7 +241,7 @@ func TestActivityMonitorScrollIsPerTab(t *testing.T) {
 func TestActivityMonitorScrollMovesTheViewport(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	before := amRender(am, 100, 30)
-	am.scrollTo(0, 20)
+	am.viewport().ScrollTo(0, 20)
 	after := amRender(am, 100, 30)
 
 	if before[5] == after[5] {
@@ -414,8 +422,8 @@ func TestActivityMonitorScrollDismissesTheTooltip(t *testing.T) {
 	}
 }
 
-// Scrollbar drags dismiss the tooltip too; they're the one scroll path not
-// through scrollBy.
+// Scrollbar drags dismiss the tooltip too; they reach panned by their own
+// path, not through ScrollKey or Wheel.
 func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	amWithSamples(am, 30)
@@ -759,7 +767,7 @@ func TestActivityMonitorTempDBScrollsAndPinsATooltip(t *testing.T) {
 	if !amKey(am, tcell.KeyDown) || am.vp[amTabTempDB].Y == 0 {
 		t.Fatal("the TempDB tab did not scroll")
 	}
-	am.scrollTo(0, 0)
+	am.panned(am.viewport().ScrollTo(0, 0))
 	amRender(am, 160, 45)
 
 	if len(am.hits) == 0 {
@@ -977,7 +985,7 @@ func TestTheActivityMonitorOverflowMenuMarksTheRateInForce(t *testing.T) {
 	if len(am.tools.Hidden) == 0 {
 		t.Fatal("nothing overflowed at 30 columns, so this proves nothing")
 	}
-	am.showOverflowMenu()
+	am.tools.OverflowMenu(am.app.contextMenu, am.rect)
 
 	var found bool
 	for _, it := range am.app.contextMenu.Items() {

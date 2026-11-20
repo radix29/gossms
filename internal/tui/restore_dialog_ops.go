@@ -9,6 +9,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/loop"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -448,7 +449,7 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 	req.verify = d.cbVerify.Checked()
 
 	app, sc := d.app, d.sc
-	task, ctx := app.startTask(sc.Server.Context(), "Restore "+target)
+	task, ctx := app.tasks.Start(sc.Server.Context(), "Restore "+target)
 	d.task = task
 	d.taskTarget = target
 	d.taskSource = sourceLabel(src.devices)
@@ -460,7 +461,7 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 	d.SetTitle("Restore Database - Progress")
 
 	// safegoRepair for the same reason as startBackup's.
-	app.safegoRepair("the restore", func() { app.markTaskDone(task, errTaskPanicked) }, func() {
+	app.safegoRepair("the restore", func() { app.tasks.Finish(task, loop.ErrTaskPanicked) }, func() {
 		var err error
 		if req.plan != nil {
 			err = runRestorePlan(ctx, app, sc.Server, task, req)
@@ -470,7 +471,7 @@ func (d *RestoreDialog) beginRestore(src restoreSource, target string) {
 		if err == nil {
 			app.postAndWake(func() { app.reloadDatabasesFolder(sc) })
 		}
-		app.postTaskDone(task, err)
+		app.tasks.Done(task, err)
 	})
 }
 
@@ -531,13 +532,13 @@ func (d *RestoreDialog) restoreRequest(src restoreSource, target string) restore
 // and default directories came from the second server while the RESTORE ran on
 // the first, giving MOVE clauses naming the wrong server's folders.
 func runRestore(ctx context.Context, app *App, srv *gosmo.Server, task *Task, req restoreRequest) error {
-	app.postProgress(task, -1, "Reading backup metadata...")
+	app.tasks.Progress(task, -1, "Reading backup metadata...")
 	h, err := restoreSet(ctx, srv, req)
 	if err != nil {
 		return err
 	}
 	if req.verify {
-		app.postProgress(task, -1, "Verifying backup...")
+		app.tasks.Progress(task, -1, "Verifying backup...")
 		// The set being restored, not VERIFYONLY's default of set 1: on a file
 		// appended to, that is the oldest backup, so a damaged chosen set passed and a
 		// damaged set 1 failed a good restore. CHECKSUM only where the set has them:
@@ -553,8 +554,8 @@ func runRestore(ctx context.Context, app *App, srv *gosmo.Server, task *Task, re
 		return err
 	}
 
-	app.postProgress(task, -1, "Restoring...")
-	ropts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
+	app.tasks.Progress(task, -1, "Restoring...")
+	ropts.Progress = func(pct int, msg string) { app.tasks.Progress(task, pct, msg) }
 	return srv.Restore(ctx, ropts)
 }
 

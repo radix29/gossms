@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/tuikit/loop"
 )
 
 // browseDest opens the shared file dialog to pick the destination path.
@@ -139,7 +140,7 @@ func (d *BackupDialog) checkDestThen(dest gosmo.BackupTarget, run func()) {
 func (d *BackupDialog) runBackup(opts gosmo.BackupOptions, verify bool) {
 	dest := opts.Devices[0]
 
-	task, ctx := d.app.startTask(d.sc.Server.Context(), "Backup "+opts.Database)
+	task, ctx := d.app.tasks.Start(d.sc.Server.Context(), "Backup "+opts.Database)
 	d.task = task
 	d.taskDB = opts.Database
 	d.taskType = backupTypeLabel(opts.Action)
@@ -149,19 +150,19 @@ func (d *BackupDialog) runBackup(opts gosmo.BackupOptions, verify bool) {
 	d.SetTitle("Backup Database - Progress")
 
 	app, srv := d.app, d.sc.Server
-	// safegoRepair: the Task is latched running above, and only postTaskDone
-	// finishes it. A panic past that leaves a task pruneFinishedTasks never
+	// safegoRepair: the Task is latched running above, and only tasks.Done
+	// finishes it. A panic past that leaves a task the history cap never
 	// evicts, so the status bar counts it as in flight for the rest of the
 	// session and the dialog sits in the progress view with a dead Cancel.
-	app.safegoRepair("the backup", func() { app.markTaskDone(task, errTaskPanicked) }, func() {
-		opts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
+	app.safegoRepair("the backup", func() { app.tasks.Finish(task, loop.ErrTaskPanicked) }, func() {
+		opts.Progress = func(pct int, msg string) { app.tasks.Progress(task, pct, msg) }
 		err := srv.Backup(ctx, opts)
 		if err == nil && verify {
-			app.postProgress(task, -1, "Verifying backup...")
+			app.tasks.Progress(task, -1, "Verifying backup...")
 			// Init is always set, so the file holds this one backup: set 1.
 			err = srv.VerifyBackup(ctx, gosmo.VerifyOptions{Checksum: opts.Checksum}, dest)
 		}
-		app.postTaskDone(task, err)
+		app.tasks.Done(task, err)
 	})
 }
 

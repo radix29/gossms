@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // progressRevealDelay is how long the progress dialog holds back before it
@@ -39,81 +40,35 @@ type progressJob struct {
 	uninterruptible string
 
 	// repair, when set, runs on the UI goroutine if the work panics, after the dialog
-	// has been released: for a caller that latched a busy flag of its own before
-	// starting the job (safegoRepair).
+	// has been released, or if the job is refused: for a caller that latched a busy
+	// flag of its own before starting the job (dialogs.ProgressJob.Repair).
 	repair func()
 }
 
 // progressReport replaces the dialog's message from the work goroutine (the
 // object a batch has reached). Safe from any goroutine.
-type progressReport func(message string)
+type progressReport = dialogs.ProgressReport
 
 // runWithProgress runs work on a background goroutine behind the progress dialog,
 // then hands its error to done on the UI goroutine once the dialog has closed.
-//
-// The dialog is modal and stays up until work returns: Cancel cancels work's
-// context and leaves the dialog saying so, because only the returned error says
-// how far the operation got. done's cancelled is true when the user pressed
-// Cancel and work failed; a run that finished before the cancel reached the
-// server reports its success, since that is what happened.
-//
-// The context, the spinner's clock and the dialog are all released by this
-// function whatever work does, a panic included.
+// The lifecycle — Cancel leaving the dialog up until work returns, done's
+// cancelled true only when Cancel was pressed *and* work failed, the release on
+// a panic, a late report dropped, the spinner's clock — is
+// dialogs.ProgressDialog.Run. What stays here is the context's parent and
+// timeout, and the refusal's status text.
 func (a *App) runWithProgress(job progressJob, work func(ctx context.Context, report progressReport) error, done func(err error, cancelled bool)) {
-	if a.progressBusy {
-		// Unreachable from the keyboard (the dialog takes every key while a job runs),
-		// so this is a job started from a callback, and running it unseen behind another
-		// job's dialog is the one thing not to do.
-		a.setStatus("Another operation is still running — try again when it finishes")
-		// The caller latched its own busy flag before asking, and only done or repair
-		// releases it; neither runs now, so the refusal has to.
-		if job.repair != nil {
-			job.repair()
-		}
-		return
-	}
 	timeout := job.timeout
 	if timeout == 0 {
 		timeout = serverWriteTimeout
 	}
 	ctx, stop := context.WithTimeout(job.sc.Server.Context(), timeout)
-
-	a.progressBusy = true
-	a.progressSeq++
-	seq := a.progressSeq
-	dlg := a.progressDialog()
-	if job.uninterruptible != "" {
-		dlg.ShowUninterruptible(job.title, job.message, job.uninterruptible)
-	} else {
-		dlg.ShowProgress(job.title, job.message, stop)
+	if !a.progressDialog().Run(ctx, stop, a.runner(), &a.wake, dialogs.ProgressJob{
+		Title: job.title, Message: job.message, What: job.what,
+		Uninterruptible: job.uninterruptible, Repair: job.repair,
+	}, work, done) {
+		// Unreachable from the keyboard (the dialog takes every key while a job runs),
+		// so this is a job started from a callback, and running it unseen behind another
+		// job's dialog is the one thing not to do. Run has already run job.repair.
+		a.setStatus("Another operation is still running — try again when it finishes")
 	}
-	report := func(message string) {
-		a.postAndWake(func() {
-			if a.progressSeq == seq && a.progressBusy {
-				dlg.SetMessage(message)
-			}
-		})
-	}
-	release := func() {
-		a.progressBusy = false
-		dlg.Hide()
-	}
-
-	finished := make(chan struct{})
-	a.animateUntil("animating the progress dialog", dlg.Spinner.Period, finished)
-	a.safegoRepair(job.what, func() {
-		release()
-		if job.repair != nil {
-			job.repair()
-		}
-	}, func() {
-		defer close(finished)
-		defer stop()
-		err := work(ctx, report)
-		a.postAndWake(func() {
-			cancelled := err != nil && dlg.Cancelling()
-			release()
-			done(err, cancelled)
-		})
-	})
 }

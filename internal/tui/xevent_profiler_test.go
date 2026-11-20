@@ -132,7 +132,7 @@ func TestClosingTheProfilersViewerAsksToStopDefaultingToNo(t *testing.T) {
 		t.Fatal("no question on closing the Profiler's viewer")
 	}
 	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if a.progressBusy { // a Yes would be stopping the session now
+	if a.progressDialog().Running() { // a Yes would be stopping the session now
 		waitAndDrain(t, a)
 	}
 	if a.panelHosted(v) || len(inst.Statements()) != 0 {
@@ -279,7 +279,7 @@ func TestWatchingASessionWithNoTargetOffersToAddOne(t *testing.T) {
 	v := NewXEventViewer(a, sc, "zz_bare", "", true)
 	a.panels.AddPanel(v)
 	v.feed.running = true
-	task, _ := a.startTask(context.Background(), "watch")
+	task, _ := a.tasks.Start(context.Background(), "watch")
 	_, seq := v.feed.run.Begin(context.Background())
 	v.feedEnded(seq, task, errXENoTarget)
 	answerConfirm(t, a, false)
@@ -293,7 +293,7 @@ func TestWatchingASessionWithNoTargetOffersToAddOne(t *testing.T) {
 	sc.ProbeCapabilities(sc.Server.Context())
 	v = NewXEventViewer(a, sc, "zz_bare", "", true)
 	a.panels.AddPanel(v)
-	task, _ = a.startTask(context.Background(), "watch")
+	task, _ = a.tasks.Start(context.Background(), "watch")
 	_, seq = v.feed.run.Begin(context.Background())
 	v.feedEnded(seq, task, errXENoTarget)
 	if a.confirmDialog().Visible() || len(inst.Statements()) != 0 {

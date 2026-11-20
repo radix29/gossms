@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/tuikittest"
 )
@@ -92,6 +93,12 @@ func draggableChildRow(t *testing.T, a *App) int {
 	return 0
 }
 
+// draggedNode is the node a.drag carries, nil when none is armed.
+func draggedNode(a *App) *explorerNode {
+	n, _ := a.drag.Payload()
+	return n
+}
+
 // selectDraggableChild leaves the selection on a draggable node — the
 // precondition for the bug, since arming used to read Selected() rather than
 // what the press actually landed on.
@@ -100,7 +107,7 @@ func selectDraggableChild(t *testing.T, a *App) {
 	y := draggableChildRow(t, a)
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.Button1, tcell.ModNone))
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.ButtonNone, tcell.ModNone))
-	a.drag.node = nil // that press legitimately armed one; clear it for the real assertion
+	a.drag.Cancel() // that press legitimately armed one; clear it for the real assertion
 	if n := a.explorer.Selected(); n == nil || !isDraggableNode(n.data.Type) {
 		t.Fatalf("setup: selection is not a draggable node, got %+v", n)
 	}
@@ -109,7 +116,7 @@ func selectDraggableChild(t *testing.T, a *App) {
 // A press on the tree's vertical scrollbar must not arm a node drag. It used
 // to: arming was conditioned only on the press landing somewhere in the
 // explorer pane and on Selected() being draggable. Because handleMouse's
-// drag.node branch swallows every later event, that killed the scrollbar drag
+// armed-drag branch swallows every later event, that killed the scrollbar drag
 // outright — the thumb jumped to the press and then never followed the mouse.
 func TestScrollbarPressDoesNotArmNodeDrag(t *testing.T) {
 	a := newDragTestApp(t, 60) // far more rows than the pane's height
@@ -117,8 +124,8 @@ func TestScrollbarPressDoesNotArmNodeDrag(t *testing.T) {
 
 	sbX := dragTestSplitX - 1 // tree rect.Right()-1, where DrawScrollbar paints
 	a.handleMouse(tcell.NewEventMouse(sbX, 10, tcell.Button1, tcell.ModNone))
-	if a.drag.node != nil {
-		t.Errorf("press on the explorer scrollbar armed a node drag (%q)", a.drag.node.label)
+	if draggedNode(a) != nil {
+		t.Errorf("press on the explorer scrollbar armed a node drag (%q)", draggedNode(a).label)
 	}
 	a.handleMouse(tcell.NewEventMouse(sbX, 10, tcell.ButtonNone, tcell.ModNone))
 }
@@ -131,8 +138,8 @@ func TestBlankAreaPressDoesNotArmNodeDrag(t *testing.T) {
 	selectDraggableChild(t, a)
 
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, 20, tcell.Button1, tcell.ModNone))
-	if a.drag.node != nil {
-		t.Errorf("press on blank space below the tree armed a drag of %q", a.drag.node.label)
+	if draggedNode(a) != nil {
+		t.Errorf("press on blank space below the tree armed a drag of %q", draggedNode(a).label)
 	}
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, 20, tcell.ButtonNone, tcell.ModNone))
 }
@@ -144,17 +151,17 @@ func TestNodeRowPressArmsNodeDrag(t *testing.T) {
 	y := draggableChildRow(t, a)
 
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.Button1, tcell.ModNone))
-	if a.drag.node == nil {
+	if draggedNode(a) == nil {
 		t.Fatal("press on a draggable node row did not arm a drag")
 	}
-	if a.drag.node.data.Type != NodeColumn {
-		t.Errorf("armed a drag of %v, want the column node under the cursor", a.drag.node.data.Type)
+	if draggedNode(a).data.Type != NodeColumn {
+		t.Errorf("armed a drag of %v, want the column node under the cursor", draggedNode(a).data.Type)
 	}
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.ButtonNone, tcell.ModNone))
 }
 
 // Arming is not starting: a press held still, or nudged less than
-// dragThreshold cells, must not start the drag (no ghost, nothing dropped).
+// the drag threshold, must not start the drag (no ghost, nothing dropped).
 // It used to start on the press itself, so every held click on a node showed
 // the ghost. Moving past the threshold starts it.
 func TestNodeDragStartsOnlyPastThreshold(t *testing.T) {
@@ -163,20 +170,20 @@ func TestNodeDragStartsOnlyPastThreshold(t *testing.T) {
 
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.Button1, tcell.ModNone))
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.Button1, tcell.ModNone)) // held still
-	a.handleMouse(tcell.NewEventMouse(dragTestLabelX+dragThreshold-1, y, tcell.Button1, tcell.ModNone))
-	if a.drag.node == nil {
+	a.handleMouse(tcell.NewEventMouse(dragTestLabelX+core.DefaultDragThreshold-1, y, tcell.Button1, tcell.ModNone))
+	if draggedNode(a) == nil {
 		t.Fatal("press on a draggable node row did not arm a drag")
 	}
-	if a.drag.active {
-		t.Fatal("drag started before the pointer moved dragThreshold cells")
+	if a.drag.Active() {
+		t.Fatal("drag started before the pointer moved the drag threshold")
 	}
 
-	a.handleMouse(tcell.NewEventMouse(dragTestLabelX+dragThreshold, y, tcell.Button1, tcell.ModNone))
-	if !a.drag.active {
-		t.Error("drag did not start after the pointer moved dragThreshold cells")
+	a.handleMouse(tcell.NewEventMouse(dragTestLabelX+core.DefaultDragThreshold, y, tcell.Button1, tcell.ModNone))
+	if !a.drag.Active() {
+		t.Error("drag did not start after the pointer moved the drag threshold")
 	}
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.ButtonNone, tcell.ModNone))
-	if a.drag.node != nil || a.drag.active {
+	if draggedNode(a) != nil || a.drag.Active() {
 		t.Error("release left the drag armed or active")
 	}
 }

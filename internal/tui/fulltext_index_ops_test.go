@@ -241,9 +241,9 @@ func TestFullTextStartFollowsThePopulationToItsEnd(t *testing.T) {
 	crawl.crawlStart, crawl.completed = ftCrawl0.Add(time.Hour), false
 	crawl.status, crawl.items = int64(gosmo.FullTextTableFullPopulation), 12
 	setFTState(inst, crawl)
-	drainUntil(t, a, func() bool { return len(a.tasks) == 1 && a.tasks[0].Message != "" }, "the follow's first progress")
+	drainUntil(t, a, func() bool { return len(a.tasks.All()) == 1 && a.tasks.All()[0].Message != "" }, "the follow's first progress")
 	assertOneStatementIn(t, inst, "appdb", "ALTER FULLTEXT INDEX ON [dbo].[Notes] START FULL POPULATION")
-	task := a.tasks[0]
+	task := a.tasks.All()[0]
 	if task.Label != "Full population — [dbo].[Notes]" {
 		t.Errorf("label = %q", task.Label)
 	}
@@ -276,8 +276,8 @@ func TestFullTextEnableListsNoTaskWhenNothingPopulates(t *testing.T) {
 		// returns once its goroutine has exited, so a post it made is queued.
 		synctest.Wait()
 		a.drainPending()
-		if len(a.tasks) != 0 {
-			t.Errorf("tasks = %d, want none", len(a.tasks))
+		if len(a.tasks.All()) != 0 {
+			t.Errorf("tasks = %d, want none", len(a.tasks.All()))
 		}
 	})
 }
@@ -306,7 +306,7 @@ func TestFullTextFollowRetriesAFailedRead(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			a := ftTestApp()
-			task, ctx := a.startTask(context.Background(), "Full population — [dbo].[Notes]")
+			task, ctx := a.tasks.Start(context.Background(), "Full population — [dbo].[Notes]")
 			var reads atomic.Int64
 			read := func(context.Context) (*gosmo.FullTextIndex, error) {
 				if reads.Add(1) <= int64(tc.fails) {
