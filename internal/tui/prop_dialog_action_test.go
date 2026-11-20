@@ -134,6 +134,39 @@ func TestPageActionLatchClearsWhenTheActionPanics(t *testing.T) {
 	}
 }
 
+// A single-flight action whose showing ended before it returned releases its
+// latch but does not run onDone: the rows it would fill belong to the closed
+// showing. Properties used to run onDone regardless while the create dialogs
+// dropped it; both go through goPageActionOnce now.
+func TestPageActionOnceDropsAResultForAClosedShowing(t *testing.T) {
+	for _, name := range []string{"PropDialog", "newObjectDialog"} {
+		t.Run(name, func(t *testing.T) {
+			a := &App{}
+			first := context.Background()
+			pd := &PropDialog{app: a, ctx: first}
+			nd := &newObjectDialog[testPrefetch]{}
+			nd.app, nd.ctx = a, first
+			run := pd.runPageActionOnce
+			reshow := func() { pd.ctx = t.Context() }
+			if name == "newObjectDialog" {
+				run = nd.runPageActionOnce
+				reshow = func() { nd.ctx = t.Context() }
+			}
+
+			var busy bool
+			release := make(chan struct{})
+			doneRan := false
+			run(&busy, func(context.Context) error { <-release; return nil }, func(error) { doneRan = true })
+			reshow()
+			close(release)
+			drainUntil(t, a, func() bool { return !busy }, "the latch to clear")
+			if doneRan {
+				t.Error("onDone ran for a showing that had ended")
+			}
+		})
+	}
+}
+
 // TestPropertiesOnAClosedConnectionNeverBuildsItsPages covers the guard that
 // used to be copied into all twenty-three Properties entry points and now
 // lives in PropDialog.show.

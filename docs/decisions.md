@@ -1912,6 +1912,42 @@ it from the string 'NULL'.
   `Report`. `App.recoverPanic` went: its one caller was the old `fanOut`.
   Driven in the binary with a forced panic in a Detail Browser backfill
   (row repaired to N/A, rest filled) and a Log File Viewer read.
+- **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
+  `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
+  is read at draw time, so labels are fixed and a flip needs no
+  `SetMenus`/`SetButtons` rebuild (`OnBeforeOpen`'s rebuild stays for other
+  dynamic labels). Author's calls: the menu mark is a light `✓`-or-blank
+  column (`controls.MenuTick`), not the checklist's `☑`/`☐` — a toggle reads
+  as a desktop menu check, not a checklist row; any toggle in a box reserves
+  the column for every row, so labels align and the width is the same in
+  both states. The toolbar shows "on" by bold `StyleMenuSelected` only
+  (`Act.Plan`, `Live`, `Meta`), dropping the old `[ON--]`/`[-OFF]` text:
+  checked in Dark, Light, mc and mc - retro, where it is a ground swap, not
+  a hue, so it survives the monochrome skins. Accepted cost: hovering an off
+  button looks like an on one but for the bold; the tooltip and status bar
+  name the state.
+- **A single-flight page button's latch is tuikit's `loop.Runner.GoOnce`**
+  (2026-11-20, tuikit reuse round 7, item 2). Taken although its only callers
+  are gossms's two `runPageActionOnce`s: the rule it carries (a panic must
+  release the busy flag, or the button refuses every later click) is the bug
+  class `GoRepair` moved for, and belongs in tuikit's docs beside it. `fn`
+  returns its UI callback rather than taking a separate `done`, so a result
+  passes by closure, not a shared variable. Context, timeout and the stale
+  check stay in gossms (`goPageActionOnce`, shared by `PropDialog` and
+  `newObjectDialog`). The two copies had diverged; both now drop a result
+  whose showing has closed or reopened, as the create dialogs did — every
+  Properties `onDone` writes only its own page's rows, which a reopen builds
+  afresh. Driven live: Effective Permissions' Show clicked three times fast
+  (one run), closed mid-flight and reopened (page empty, Show works); New
+  Database Role's Securables search typed fast (coalesced), closed mid-search
+  and reopened.
+- **`backup_common.go` `wrapMessage` stays an alias of `core.WrapTextLimit`**
+  (2026-11-20, tuikit reuse round 7, item 3). Its comment is the reason
+  server errors wrap (a one-line restore failure clipped right before the
+  cause), and `backup_common_test.go` pins that behaviour by the name the
+  Backup/Restore call sites use; inlining it would scatter the reason over
+  three sites for no gain. The same round dropped `restore_dialog_plan.go`'s
+  `plural`, a copy of `app.go` `pluralSuffix`.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,

@@ -37,8 +37,7 @@ func (a *App) actualPlanAvailable() bool {
 }
 
 // toggleActualExecutionPlan flips whether Execute captures the actual
-// (post-run) execution plan alongside a query's results, rebuilding the toolbar
-// and Query menu to match. Turning it off turns Live Query Statistics off too,
+// (post-run) execution plan alongside a query's results. Turning it off turns Live Query Statistics off too,
 // which needs the capture (see App.liveStatsEnabled).
 func (a *App) toggleActualExecutionPlan() {
 	if !a.actualPlanAvailable() {
@@ -51,7 +50,6 @@ func (a *App) toggleActualExecutionPlan() {
 		a.liveStatsEnabled = false
 		status += " (Live Query Statistics: off)"
 	}
-	a.rebuildQueryToggles()
 	a.setStatus(status)
 }
 
@@ -70,16 +68,7 @@ func (a *App) toggleLiveQueryStatistics() {
 		a.actualPlanEnabled = true
 		status += " (Actual Execution Plan: on)"
 	}
-	a.rebuildQueryToggles()
 	a.setStatus(status)
-}
-
-// rebuildQueryToggles rebuilds the toolbar and Query menu after a toggle, whose
-// ON/OFF state both carry in their labels.
-func (a *App) rebuildQueryToggles() {
-	a.toolbar.SetButtons(a.buildToolbar())
-	a.menuBar.SetMenus(a.buildMenus())
-	a.layoutAll()
 }
 
 // toggleStateWord is a toggle's state word for the status bar.
@@ -101,7 +90,6 @@ func (a *App) toggleWordWrap() {
 			qp.editor.SetWrapMode(a.wordWrap)
 		}
 	}
-	a.menuBar.SetMenus(a.buildMenus())
 	state := "off"
 	if a.wordWrap {
 		state = "on"
@@ -114,9 +102,6 @@ func (a *App) toggleWordWrap() {
 // next execution; results on screen are not re-rendered.
 func (a *App) toggleOutputColumnMeta() {
 	a.metaEnabled = !a.metaEnabled
-	a.toolbar.SetButtons(a.buildToolbar())
-	a.menuBar.SetMenus(a.buildMenus())
-	a.layoutAll()
 	state := "off"
 	if a.metaEnabled {
 		state = "on"

@@ -89,7 +89,8 @@ func (a *App) buildMenus() []controls.Menu {
 			{Divider: true},
 			a.formatDocumentMenuItem(),
 			{Divider: true},
-			{Label: wordWrapMenuLabel(a.wordWrap), Shortcut: "Alt+Z", Action: func() { a.toggleWordWrap() }},
+			{Label: "Word Wrap", Shortcut: "Alt+Z", Action: func() { a.toggleWordWrap() },
+				Checked: func() bool { return a.wordWrap }},
 		}},
 		{Label: "View", Items: []controls.MenuItem{
 			{Label: "Object Explorer", Action: func() { a.focusExplorer() }},
@@ -99,7 +100,8 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Prev Panel", Shortcut: "Ctrl+Shift+Left", Action: func() { a.prevPanel() },
 				Enabled: func() bool { return a.panels.Count() > 1 }},
 			{Divider: true},
-			{Label: groupBySchemaMenuLabel(a.groupBySchema), Shortcut: "Alt+G", Action: func() { a.toggleGroupBySchema() }},
+			{Label: "Group by Schema", Shortcut: "Alt+G", Action: func() { a.toggleGroupBySchema() },
+				Checked: func() bool { return a.groupBySchema }},
 			{Divider: true},
 			{Label: "Refresh", Shortcut: "F5", Action: func() { a.refreshSelected() },
 				Enabled: func() bool { return a.explorer.Selected() != nil }},
@@ -125,11 +127,12 @@ func (a *App) buildMenus() []controls.Menu {
 			{Divider: true},
 			{Label: "Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
-			{Label: actualExecutionPlanMenuLabel(a.actualPlanEnabled), Action: func() { a.toggleActualExecutionPlan() },
-				Enabled: a.actualPlanAvailable},
-			{Label: liveQueryStatisticsMenuLabel(a.liveStatsEnabled), Action: func() { a.toggleLiveQueryStatistics() },
-				Enabled: a.actualPlanAvailable},
-			{Label: outputColumnMetaMenuLabel(a.metaEnabled), Action: func() { a.toggleOutputColumnMeta() }},
+			{Label: "Actual Execution Plan", Action: func() { a.toggleActualExecutionPlan() },
+				Checked: func() bool { return a.actualPlanEnabled }, Enabled: a.actualPlanAvailable},
+			{Label: "Live Query Statistics", Action: func() { a.toggleLiveQueryStatistics() },
+				Checked: func() bool { return a.liveStatsEnabled }, Enabled: a.actualPlanAvailable},
+			{Label: "Output Column Metadata", Action: func() { a.toggleOutputColumnMeta() },
+				Checked: func() bool { return a.metaEnabled }},
 			{Divider: true},
 			{Label: "Compare Showplan...", Action: func() { a.compareShowplan() },
 				Enabled: func() bool { return a.activePlan() != nil }, Note: "no execution plan"},
@@ -174,52 +177,6 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "About goSSMS", Action: func() { a.showAbout() }},
 		}},
 	}
-}
-
-// actualExecutionPlanMenuLabel mirrors actualPlanToggleIcon's state text for
-// the Query menu item. MenuItem has no "checked" visual, so state is folded
-// into the label (the always-visible toolbar button is the primary indicator).
-func actualExecutionPlanMenuLabel(on bool) string {
-	if on {
-		return "Actual Execution Plan (ON)"
-	}
-	return "Actual Execution Plan (OFF)"
-}
-
-// liveQueryStatisticsMenuLabel folds the "Include Live Query Statistics"
-// toggle state into its Query menu label, as actualExecutionPlanMenuLabel does.
-func liveQueryStatisticsMenuLabel(on bool) string {
-	if on {
-		return "Live Query Statistics (ON)"
-	}
-	return "Live Query Statistics (OFF)"
-}
-
-// outputColumnMetaMenuLabel folds the "Show Output Column Metadata" state into
-// its Query menu label, as actualExecutionPlanMenuLabel does.
-func outputColumnMetaMenuLabel(on bool) string {
-	if on {
-		return "Output Column Metadata (ON)"
-	}
-	return "Output Column Metadata (OFF)"
-}
-
-// wordWrapMenuLabel folds Edit > Word Wrap's state into its label, for the
-// same reason as actualExecutionPlanMenuLabel.
-func wordWrapMenuLabel(on bool) string {
-	if on {
-		return "Word Wrap (ON)"
-	}
-	return "Word Wrap (OFF)"
-}
-
-// groupBySchemaMenuLabel folds View > Group by Schema's state into its label,
-// for the same reason as actualExecutionPlanMenuLabel.
-func groupBySchemaMenuLabel(on bool) string {
-	if on {
-		return "Group by Schema (ON)"
-	}
-	return "Group by Schema (OFF)"
 }
 
 // editorAction runs fn against the active query panel's editor, if any. For

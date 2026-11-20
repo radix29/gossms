@@ -461,5 +461,7 @@ which owns them; the entries here say how goSSMS applies them.
 - **An operation that latches UI state before starting uses
   `App.safegoRepair`**, not `safego` — a panic skips the posted release and the
   latch lives forever (inert Log Viewer toolbar, Activity Monitor tab stuck at
-  "Running...", dead page button). Test like
+  "Running...", dead page button). A single-flight busy flag goes through
+  `loop.Runner.GoOnce`, which owns the release (a dialog page button:
+  `runPageActionOnce`). Test like
   `TestPageActionLatchClearsWhenTheActionPanics`.

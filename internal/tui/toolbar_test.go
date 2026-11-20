@@ -6,19 +6,6 @@ import (
 	"github.com/radix29/tuikit/controls"
 )
 
-// TestMetaToggleIconStates checks the "Show Output Column Metadata" toggle's
-// ON/OFF text is distinct and equal-width — equal width so toggling it never
-// shifts the toolbar's other buttons (same rule as actualPlanToggleIcon).
-func TestMetaToggleIconStates(t *testing.T) {
-	off, on := metaToggleIcon(false), metaToggleIcon(true)
-	if off != "Meta[-OFF]" || on != "Meta[ON--]" {
-		t.Errorf("metaToggleIcon = %q (off) / %q (on)", off, on)
-	}
-	if len(off) != len(on) {
-		t.Errorf("metaToggleIcon widths differ: off=%q (%d), on=%q (%d)", off, len(off), on, len(on))
-	}
-}
-
 // TestBuildToolbarHasMetaAfterActualPlan pins the toolbar's order and each
 // button's label: Est.Plan, Act.Plan, Live, Meta in a row (SSMS's order for
 // the plan buttons), and the plan buttons keep their compact, space-free text.
@@ -33,7 +20,7 @@ func TestBuildToolbarHasMetaAfterActualPlan(t *testing.T) {
 		}
 		return -1
 	}
-	est, act, live, meta := idx("Est.Plan"), idx(actualPlanToggleIcon(false)), idx(liveStatsToggleIcon(false)), idx(metaToggleIcon(false))
+	est, act, live, meta := idx("Est.Plan"), idx("Act.Plan"), idx("Live"), idx("Meta")
 	if est < 0 || act < 0 || live < 0 || meta < 0 {
 		t.Fatalf("toolbar missing a button: Est.Plan=%d Act.Plan=%d Live=%d Meta=%d", est, act, live, meta)
 	}
@@ -52,23 +39,18 @@ func TestBuildToolbarHasMetaAfterActualPlan(t *testing.T) {
 
 // TestQueryMenuOutputColumnMetaItem pins the Query menu's metadata toggle:
 // it sits in the same group as Actual Execution Plan and Live Query
-// Statistics (no divider between them), carries its state in its label, and flips that label when toggled
-// — the menu is rebuilt on toggle, so a stale label would be the symptom.
+// Statistics (no divider between them) and is a Checked toggle.
 func TestQueryMenuOutputColumnMetaItem(t *testing.T) {
-	if outputColumnMetaMenuLabel(false) == outputColumnMetaMenuLabel(true) {
-		t.Fatalf("outputColumnMetaMenuLabel is the same in both states: %q", outputColumnMetaMenuLabel(false))
-	}
-
 	a := newTestApp()
 	items := queryMenuItems(t, a.buildMenus())
 	act, live, meta := -1, -1, -1
 	for i, it := range items {
 		switch it.Label {
-		case actualExecutionPlanMenuLabel(a.actualPlanEnabled):
+		case "Actual Execution Plan":
 			act = i
-		case liveQueryStatisticsMenuLabel(a.liveStatsEnabled):
+		case "Live Query Statistics":
 			live = i
-		case outputColumnMetaMenuLabel(a.metaEnabled):
+		case "Output Column Metadata":
 			meta = i
 		}
 	}
@@ -78,19 +60,55 @@ func TestQueryMenuOutputColumnMetaItem(t *testing.T) {
 	if live != act+1 || meta != live+1 {
 		t.Errorf("Actual Execution Plan at %d, Live Query Statistics at %d, Output Column Metadata at %d; want consecutive, same group", act, live, meta)
 	}
-	if items[meta].Divider {
-		t.Error("the Output Column Metadata item is a divider")
-	}
-
 	if items[meta].Action == nil {
 		t.Fatal("the Output Column Metadata item has no action — it would silently do nothing")
 	}
-	// toggleOutputColumnMeta needs a live screen (layoutAll), so drive the
-	// state directly and rebuild: what this pins is that the label is derived
-	// from metaEnabled at build time, not captured once at startup.
-	a.metaEnabled = true
-	if findMenuItem(queryMenuItems(t, a.buildMenus()), outputColumnMetaMenuLabel(true)) == nil {
-		t.Errorf("with metaEnabled set, the Query menu has no %q item — the label did not follow the state", outputColumnMetaMenuLabel(true))
+}
+
+// TestQueryTogglesFollowStateWithoutRebuild: the five menu toggles and three
+// toolbar toggles read their state at draw time (MenuItem.Checked,
+// ToolbarButton.On), so a menu and toolbar built once show every flip. They
+// used to fold ON/OFF into the label and needed a rebuild after each toggle;
+// a toggle that forgot it showed a stale state.
+func TestQueryTogglesFollowStateWithoutRebuild(t *testing.T) {
+	a := newTestApp()
+	menus, buttons := a.buildMenus(), a.buildToolbar()
+	type toggle struct {
+		menu, label, icon string
+		set               func(bool)
+	}
+	toggles := []toggle{
+		{"Edit", "Word Wrap", "", func(on bool) { a.wordWrap = on }},
+		{"View", "Group by Schema", "", func(on bool) { a.groupBySchema = on }},
+		{"Query", "Actual Execution Plan", "Act.Plan", func(on bool) { a.actualPlanEnabled = on }},
+		{"Query", "Live Query Statistics", "Live", func(on bool) { a.liveStatsEnabled = on }},
+		{"Query", "Output Column Metadata", "Meta", func(on bool) { a.metaEnabled = on }},
+	}
+	for _, tg := range toggles {
+		item := findMenuItem(findMenu(t, menus, tg.menu).Items, tg.label)
+		if item == nil || item.Checked == nil {
+			t.Fatalf("%s > %s is not a Checked toggle", tg.menu, tg.label)
+		}
+		var button *controls.ToolbarButton
+		if tg.icon != "" {
+			for i := range buttons {
+				if buttons[i].Icon == tg.icon {
+					button = &buttons[i]
+				}
+			}
+			if button == nil || button.On == nil {
+				t.Fatalf("toolbar %q is not an On toggle", tg.icon)
+			}
+		}
+		for _, on := range []bool{true, false} {
+			tg.set(on)
+			if item.Checked() != on {
+				t.Errorf("%s: Checked()=%v after setting %v", tg.label, !on, on)
+			}
+			if button != nil && button.On() != on {
+				t.Errorf("%s: On()=%v after setting %v", tg.icon, !on, on)
+			}
+		}
 	}
 }
 

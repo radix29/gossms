@@ -840,6 +840,12 @@ selects on — is released by `defer` *inside* `fn`, not by `repair`.
 on entry, else the elapsed-time redraw (`App.animateUntil`) wakes the loop
 every second forever.
 
+When the latch is a plain busy flag guarding a single-flight button, let
+tuikit's **`loop.Runner.GoOnce`** own it instead (`a.runner().GoOnce`): it
+sets the flag, and releases it in the posted result callback or, on a panic,
+in the repair. A dialog's page buttons reach it through `goPageActionOnce`
+(`prop_dialog.go`), which also drops a result for a showing since closed.
+
 Test like `TestPageActionLatchClearsWhenTheActionPanics`: panic the action,
 then assert the *next* one still runs — a flag check passes on a dead latch.
 
