@@ -84,7 +84,7 @@ func roleGeneralPage(roleName *string,
 
 			rows := []propsheet.Row{propsheet.Section("Role information")}
 			var nameRow *propsheet.TextRow
-			var ownerRow *propsheet.SelectRow
+			var ownerRow *propsheet.PreservingSelectRow
 			if r.builtin {
 				rows = append(rows,
 					propsheet.Static("Role name", r.name),
@@ -92,7 +92,7 @@ func roleGeneralPage(roleName *string,
 				)
 			} else {
 				nameRow = propsheet.Text("Role name", r.name, 24)
-				ownerRow = selectPreserving("Owner", r.ownerNames, r.owner, unknownOwnerItem)
+				ownerRow = propsheet.SelectPreserving("Owner", r.ownerNames, r.owner, unknownOwnerItem)
 				ownerRow.SetFitItems(true) // principal names run long; see buildMembershipForm
 				rows = append(rows, nameRow, ownerRow)
 			}
@@ -124,7 +124,7 @@ func roleGeneralPage(roleName *string,
 					if err != nil {
 						return err
 					}
-					if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
+					if owner, ok := ownerRow.ChangedTo(); ok {
 						if err := role.SetOwner(ctx, owner); err != nil {
 							return err
 						}

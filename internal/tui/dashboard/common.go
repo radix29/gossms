@@ -1,8 +1,6 @@
 package dashboard
 
 import (
-	"slices"
-
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/charts"
 	"github.com/radix29/tuikit/core"
@@ -25,7 +23,7 @@ const (
 // History's bodies are taller because each of their panels carries a time
 // axis and a legend under the plot.
 const (
-	sectionBarH     = 1
+	sectionBarH     = charts.SectionBarHeight
 	historyBodyH    = 14
 	historySectionH = sectionBarH + historyBodyH
 	sampleBodyH     = 11
@@ -85,48 +83,15 @@ func drawHeader(s tcell.Screen, r core.Rect, h Header) {
 	}
 }
 
-// drawSectionBar draws a section's title strip, with any KPI readouts
-// right-aligned along it.
-func drawSectionBar(s tcell.Screen, r core.Rect, title string, kpis []charts.KPI) {
-	if r.W <= 0 || r.H <= 0 {
-		return
-	}
-	pal := theme.Active()
-	style := theme.StyleChartSection()
-	core.FillRect(s, r, ' ', style)
-	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, style, title)
-
-	right := r.Right()
-	for _, k := range slices.Backward(kpis) {
-		w := k.Width()
-		if right-w <= r.X+core.DisplayWidth(title)+2 {
-			return
-		}
-		k.LabelBg = pal.ChartSectionBg
-		k.Draw(s, core.Rect{X: right - w, Y: r.Y, W: w, H: 1})
-		right -= w + 1
-	}
-}
-
 // splitColumns divides r into n equal-width columns separated by a gutter.
 // A rect too narrow for n usable columns returns r whole as one panel: fewer
 // readable panels beat n unreadable slivers.
 func splitColumns(r core.Rect, n int) []core.Rect {
-	if n <= 1 || r.W < n*minPanelW {
+	cols := core.SplitColumns(r, n, panelGutter, minPanelW)
+	if len(cols) < n {
 		return []core.Rect{r}
 	}
-	each := (r.W - (n-1)*panelGutter) / n
-	out := make([]core.Rect, 0, n)
-	x := r.X
-	for i := range n {
-		w := each
-		if i == n-1 {
-			w = r.Right() - x // the last panel absorbs the rounding
-		}
-		out = append(out, core.Rect{X: x, Y: r.Y, W: w, H: r.H})
-		x += w + panelGutter
-	}
-	return out
+	return cols
 }
 
 // minPanelW is the narrowest a side-by-side chart panel may get before the
@@ -147,11 +112,11 @@ func kpi(label, value string) charts.KPI {
 // zero-sized plot or a chart with no series is dropped: a hit over nothing
 // would pin a tooltip with no numbers.
 //
-// snapshot marks a current-sample chart (see ChartHit.Snapshot). timeRow is the
-// time-scale row, zero for a chart that draws none.
-func addHit(hits *[]ChartHit, title string, plot, timeRow core.Rect, series []charts.Series, snapshot bool) {
+// snapshot marks a current-sample chart (see charts.PlotHit.Snapshot). timeRow
+// is the time-scale row, zero for a chart that draws none.
+func addHit(hits *[]charts.PlotHit, title string, plot, timeRow core.Rect, series []charts.Series, snapshot bool) {
 	if hits == nil || plot.W <= 0 || plot.H <= 0 || len(series) == 0 {
 		return
 	}
-	*hits = append(*hits, ChartHit{Title: title, Plot: plot, TimeRow: timeRow, Series: series, Snapshot: snapshot})
+	*hits = append(*hits, charts.PlotHit{Title: title, Plot: plot, TimeRow: timeRow, Series: series, Snapshot: snapshot})
 }

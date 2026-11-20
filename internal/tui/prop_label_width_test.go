@@ -23,15 +23,15 @@ import (
 // ellipsis. Check, Radio, Section, Note and Hint are deliberately absent —
 // their text is drawn on its own line at full width and is not constrained.
 var labelArg = map[string]int{
-	"propsheet.Text":     0,
-	"propsheet.Password": 0,
-	"propsheet.Int":      0,
-	"propsheet.Select":   0,
-	"propsheet.Static":   0,
+	"propsheet.Text":             0,
+	"propsheet.Password":         0,
+	"propsheet.Int":              0,
+	"propsheet.Select":           0,
+	"propsheet.Static":           0,
+	"propsheet.SelectPreserving": 0,
 	// Application-level wrappers that pass a label straight through.
-	"selectPreserving": 0,
-	"dbOptSelectRow":   2,
-	"dbOptBoolRow":     2,
+	"dbOptSelectRow": 2,
+	"dbOptBoolRow":   2,
 }
 
 // TestNoPropertySheetLabelIsTruncated is a ratchet, not a style check.

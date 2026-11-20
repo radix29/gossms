@@ -80,13 +80,13 @@ type LimitRow struct {
 // DrawInstance renders the Instance dashboard into r, top to bottom: CPU,
 // storage, IO, limits. The returned hits describe where each chart plotted, in
 // r's coordinates — see DrawHistory.
-func DrawInstance(s tcell.Screen, r core.Rect, v InstanceView) []ChartHit {
+func DrawInstance(s tcell.Screen, r core.Rect, v InstanceView) []charts.PlotHit {
 	if r.W <= 0 || r.H <= 0 {
 		return nil
 	}
 	drawHeader(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: instanceHeaderH}, v.Header)
 
-	hits := make([]ChartHit, 0, 4)
+	hits := make([]charts.PlotHit, 0, 4)
 	y := r.Y + instanceHeaderH
 	y = instanceCPU(s, r, y, v, &hits)
 	y = instanceStorage(s, r, y, v, &hits)
@@ -95,7 +95,7 @@ func DrawInstance(s tcell.Screen, r core.Rect, v InstanceView) []ChartHit {
 	return hits
 }
 
-func instanceCPU(s tcell.Screen, r core.Rect, y int, v InstanceView, hits *[]ChartHit) int {
+func instanceCPU(s tcell.Screen, r core.Rect, y int, v InstanceView, hits *[]charts.PlotHit) int {
 	// The shape rides on the CPU section's bar, not a strip of its own: SKU,
 	// generation and cores are what the CPU percentage is read against, and three
 	// static things don't earn a line on a scrolling canvas.
@@ -109,7 +109,7 @@ func instanceCPU(s tcell.Screen, r core.Rect, y int, v InstanceView, hits *[]Cha
 	return next
 }
 
-func instanceStorage(s tcell.Screen, r core.Rect, y int, v InstanceView, hits *[]ChartHit) int {
+func instanceStorage(s tcell.Screen, r core.Rect, y int, v InstanceView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, instanceBodyH, "INSTANCE STORAGE", v.StorageKPIs)
 	drawChart(s, body, "STORAGE USED (MB) AGAINST THE RESERVED QUOTA", charts.HistoryChart{
 		Series:    v.Storage,
@@ -120,7 +120,7 @@ func instanceStorage(s tcell.Screen, r core.Rect, y int, v InstanceView, hits *[
 	return next
 }
 
-func instanceIO(s tcell.Screen, r core.Rect, y int, v InstanceView, hits *[]ChartHit) int {
+func instanceIO(s tcell.Screen, r core.Rect, y int, v InstanceView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, instanceBodyH, "INSTANCE IO", v.IOKPIs)
 	cols := splitColumns(body, 2)
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/tuikit/charts"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
 )
@@ -75,15 +76,13 @@ func (d *AGDashboard) Draw(s tcell.Screen) {
 	d.bottomGrid.DrawOverlay(s)
 }
 
-// drawSectionBar draws a section title strip, matching the Activity Monitor.
+// drawSectionBar draws a section title strip, the one the Activity Monitor
+// draws.
 func (d *AGDashboard) drawSectionBar(s tcell.Screen, y int, title string) {
 	if y < d.rect.Y || y >= d.rect.Bottom() {
 		return
 	}
-	pal := theme.Active()
-	style := tcell.StyleDefault.Background(pal.ChartSectionBg).Foreground(pal.Text)
-	core.FillRect(s, core.Rect{X: d.rect.X, Y: y, W: d.rect.W, H: 1}, ' ', style)
-	core.DrawTextClipped(s, d.rect.X+1, y, d.rect.W-2, style.Bold(true), title)
+	charts.DrawSectionBar(s, core.Rect{X: d.rect.X, Y: y, W: d.rect.W, H: charts.SectionBarHeight}, title, nil)
 }
 
 func (d *AGDashboard) drawHeader(s tcell.Screen) {

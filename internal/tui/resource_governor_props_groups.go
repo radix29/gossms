@@ -320,7 +320,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				}
 				v := e.cur
 				selectedRow.SetValue(rgEditName(e.name, e.system, e.isNew))
-				items, i := preservingItems(rgImportanceItems, v.importance)
+				items, i := propsheet.PreservingItems(rgImportanceItems, v.importance)
 				importanceRow.SetItems(items)
 				importanceRow.SetSelected(i)
 				grantRow.SetValue(grantPercentText(v.grant))
@@ -328,10 +328,10 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				timeoutRow.SetValue(strconv.Itoa(v.timeoutSec))
 				dopRow.SetValue(strconv.Itoa(v.maxDOP))
 				requestsRow.SetValue(strconv.Itoa(v.maxRequests))
-				items, i = preservingItems(movable, v.pool)
+				items, i = propsheet.PreservingItems(movable, v.pool)
 				moveRow.SetItems(items)
 				moveRow.SetSelected(i)
-				items, i = preservingItems(externalNames, v.external)
+				items, i = propsheet.PreservingItems(externalNames, v.external)
 				externalRow.SetItems(items)
 				externalRow.SetSelected(i)
 				tempdbPctRow.SetValue(v.tempdbPercent)

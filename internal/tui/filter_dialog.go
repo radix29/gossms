@@ -38,9 +38,13 @@ type FilterDialog struct {
 	serverName string
 	dbName     string
 
-	// focusIdx walks each row's operator dropdown then its value field, then the
-	// buttons — the one-cycle arrangement tuikit's dialogs.FindReplaceDialog uses.
+	// focusIdx walks each row's operator dropdown then its value field, then
+	// the button row at widgetCount(), one Tab stop crossed with the arrows
+	// (dialogs.RingStep, ButtonRowKey). btnFocus is the button the row would
+	// press: OK while focus is in the rows, so Enter from a value field applies
+	// the filter.
 	focusIdx int
+	btnFocus int
 
 	// drag is the text-selection gesture a click in a row's value field starts
 	// — see dialogs.FieldGesture for the ordering its three calls depend on.
@@ -139,7 +143,7 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 	}
 	d.seedFrom(node.data.Filter)
 
-	d.focusIdx = 0
+	d.focusIdx, d.btnFocus = 0, filterButtonsOK
 	d.syncFocus()
 	d.Show()
 }
@@ -211,20 +215,20 @@ func (d *FilterDialog) heightFor(rows int) int {
 
 func (d *FilterDialog) buttons() []string { return []string{"Clear Filter", "OK", "Cancel"} }
 
-// btnFocus is the index of the focused button, or OK's while focus is in the
-// rows, so Enter from a value field applies the filter.
-func (d *FilterDialog) btnFocus() int {
-	if i := d.focusIdx - d.widgetCount(); i >= 0 {
-		return i
-	}
-	return filterButtonsOK
-}
-
 // widgetCount is the number of Tab stops before the buttons: an operator
 // dropdown and a value field per row.
 func (d *FilterDialog) widgetCount() int { return len(d.rows) * 2 }
 
-func (d *FilterDialog) focusCount() int { return d.widgetCount() + len(d.buttons()) }
+func (d *FilterDialog) onButtons() bool { return d.focusIdx == d.widgetCount() }
+
+// fields is the ring's widgets in Tab order, widgetAt over every row.
+func (d *FilterDialog) fields() []focusable {
+	out := make([]focusable, d.widgetCount())
+	for i := range out {
+		out[i] = d.widgetAt(i)
+	}
+	return out
+}
 
 // widgetAt maps a focus index onto its widget: even indexes are operator
 // dropdowns, odd ones value fields. nil once the index is past the rows.
@@ -374,7 +378,7 @@ func (d *FilterDialog) Draw(s tcell.Screen) {
 	core.DrawTextClipped(s, lx, d.messageY, inner.W-2, msgStyle, d.message)
 
 	d.DrawSeparator(s)
-	d.DrawButtons(s, d.buttons(), d.btnFocus())
+	d.DrawButtons(s, d.buttons(), d.btnFocus)
 
 	// Last, over everything else — an open list belongs on top of the rows and
 	// buttons below it.
@@ -406,41 +410,22 @@ func (d *FilterDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	// An open dropdown list gets first refusal: Up/Down/Enter/Escape belong to
-	// it, not to the dialog's focus cycling.
-	if dd := d.openDropDown(); dd != nil && dd.HandleKey(ev) {
-		return true
+	// An open dropdown list is the focused widget (DropDown.Focus(false) closes
+	// it), so FieldRingKey's widget-first order hands it Up/Down/Enter/Escape.
+	press := func() { d.pressButton(d.btnFocus) }
+	if d.onButtons() {
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(d.buttons()), nil, press, d.Hide, d.moveFocus)
 	}
-	switch ev.Key() {
-	case tcell.KeyTab:
-		d.moveFocus(1)
-		return true
-	case tcell.KeyBacktab:
-		d.moveFocus(-1)
-		return true
-	case tcell.KeyEscape:
-		d.Hide()
-		return true
-	}
-	if w, ok := d.widgetAt(d.focusIdx).(interface {
-		HandleKey(*tcell.EventKey) bool
-	}); ok && w.HandleKey(ev) {
-		return true
-	}
-	switch ev.Key() {
-	case tcell.KeyEnter:
-		d.pressButton(d.btnFocus())
-	case tcell.KeyDown:
-		d.moveFocus(1)
-	case tcell.KeyUp:
-		d.moveFocus(-1)
-	}
-	return true
+	return dialogs.FieldRingKey(ev, d.widgetAt(d.focusIdx), press, d.Hide, d.moveFocus)
 }
 
+// moveFocus steps the ring by dir. Leaving the button row resets it to OK, the
+// button Enter presses from a field.
 func (d *FilterDialog) moveFocus(dir int) {
-	n := d.focusCount()
-	d.focusIdx = (d.focusIdx + dir + n) % n
+	d.focusIdx = dialogs.RingStep(d.fields(), d.focusIdx, dir)
+	if !d.onButtons() {
+		d.btnFocus = filterButtonsOK
+	}
 	d.syncFocus()
 }
 
@@ -484,7 +469,7 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 
 	if i := d.ButtonClicked(ev, d.buttons()); i >= 0 {
-		d.focusIdx = d.widgetCount() + i
+		d.focusIdx, d.btnFocus = d.widgetCount(), i
 		d.syncFocus()
 		d.pressButton(i)
 		return true

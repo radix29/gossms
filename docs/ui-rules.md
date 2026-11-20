@@ -176,6 +176,14 @@ which owns them; the entries here say how goSSMS applies them.
   its ring and hands keys to tuikit's `dialogs.ButtonRowKey` while it is there (Connect, Back Up,
   Restore). F1 is Help; it once cycled these rows, and was the only way to
   reach Restore's OK from the keyboard.
+- **A hand-rolled dialog's ring is `propsheet.Form`'s.** The row is one stop
+  (Left/Right inside it, Up/Down leaving it), Tab/Backtab wrap at both ends, and on a field the
+  focused widget gets every key first (an open dropdown's list, a radio box's
+  arrows, a checkbox's Enter); what it declines moves focus (Up/Down too) or
+  fires the default button. Use `dialogs.FieldRingKey` + `ButtonRowKey` with
+  `dialogs.RingStep` (Find/Replace, Log Search, Filter, Options) rather than a
+  per-dialog switch: four of them had drifted into four semantics, one of which
+  trapped Tab on OK/Cancel.
 - **A dialog-level scrollbar uses `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a too-small terminal content
   is clipped to `InnerRect` (`dialogs.Stack.Draw`'s `core.ClipScreen`, narrowed by

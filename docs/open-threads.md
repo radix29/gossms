@@ -146,6 +146,15 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
 
+## Tests: what is left
+
+- **`TestSessionPropertiesApplyReloadsTheSessionsTargets/Apply` is flaky**
+  (2026-11-20, `internal/tui`): one full `go test ./...` run failed with
+  "gosmotest: no rule answers the query" for the `sys.dm_os_volume_stats`
+  disk-space query, which the test's fake has no rule for; `-count=5` on the
+  test alone and `-count=3` on the package passed. Likely a background load
+  outliving the previous test and hitting this test's fake. Not chased.
+
 ## Fix order
 
 Outstanding work by priority. Each item points to where

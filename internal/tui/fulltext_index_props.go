@@ -114,10 +114,10 @@ func pageFullTextIndexGeneral(sc *db.ServerConn, dbName string, find func(contex
 			if err != nil {
 				return nil, nil, err
 			}
-			tracking := selectPreserving("Change tracking", fullTextChangeTrackingItems, string(i.ChangeTracking), unknownOwnerItem)
-			stoplist := selectPreserving("Stoplist", stoplists, fullTextStoplistText(i), unknownOwnerItem)
+			tracking := propsheet.SelectPreserving("Change tracking", fullTextChangeTrackingItems, string(i.ChangeTracking), unknownOwnerItem)
+			stoplist := propsheet.SelectPreserving("Stoplist", stoplists, fullTextStoplistText(i), unknownOwnerItem)
 			stoplist.SetFitItems(true)
-			list := selectPreserving("Search property list", lists, orDefault(i.SearchPropertyList, propertyListNone), unknownOwnerItem)
+			list := propsheet.SelectPreserving("Search property list", lists, orDefault(i.SearchPropertyList, propertyListNone), unknownOwnerItem)
 			list.SetFitItems(true)
 			// Asked only of a change: the loaded choice is the server's own.
 			stoplist.SetValidate(func(v string) error {
@@ -188,18 +188,18 @@ func pageFullTextIndexGeneral(sc *db.ServerConn, dbName string, find func(contex
 
 			ref := i.Database().TableRef(i.Schema, i.Table).FullTextIndexRef()
 			return f, func(ctx context.Context) error {
-				if v, ok := changedTo(tracking, unknownOwnerItem); ok {
+				if v, ok := tracking.ChangedTo(); ok {
 					if err := ref.SetChangeTracking(ctx, gosmo.FullTextChangeTracking(v)); err != nil {
 						return err
 					}
 				}
-				if v, ok := changedTo(stoplist, unknownOwnerItem); ok {
+				if v, ok := stoplist.ChangedTo(); ok {
 					kind, name := fullTextStoplistChoice(v)
 					if err := ref.SetStoplist(ctx, kind, name); err != nil {
 						return err
 					}
 				}
-				if v, ok := changedTo(list, unknownOwnerItem); ok {
+				if v, ok := list.ChangedTo(); ok {
 					if v == propertyListNone {
 						v = ""
 					}

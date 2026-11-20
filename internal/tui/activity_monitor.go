@@ -162,7 +162,7 @@ type ActivityMonitor struct {
 
 	// hits records where each History chart's plot landed, in canvas
 	// coordinates, on the last draw.
-	hits []dashboard.ChartHit
+	hits []charts.PlotHit
 
 	// canvas is the last rendered dashboard and canvasKey its inputs. Draw runs
 	// every event and a full render costs milliseconds, while views change only per
@@ -279,7 +279,7 @@ type amCanvasKey struct {
 // It pins the sample (chart and time), not the screen spot; its position is
 // re-derived each draw, since new samples push history columns left.
 type amTooltip struct {
-	chart string // ChartHit.Title of the chart the pin lives on
+	chart string // charts.PlotHit.Title of the chart the pin lives on
 	time  string // the pinned bucket's clock time — its identity and caption
 	rows  []charts.ReadoutRow
 

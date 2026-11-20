@@ -27,13 +27,13 @@ const (
 // DrawTempDB renders the TempDB dashboard into r, top to bottom: space,
 // activity, objects, files, session usage. The returned hits describe where
 // each chart plotted, in r's coordinates — see DrawHistory.
-func DrawTempDB(s tcell.Screen, r core.Rect, v TempDBView) []ChartHit {
+func DrawTempDB(s tcell.Screen, r core.Rect, v TempDBView) []charts.PlotHit {
 	if r.W <= 0 || r.H <= 0 {
 		return nil
 	}
 	drawHeader(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: tempdbHeaderH}, v.Header)
 
-	hits := make([]ChartHit, 0, 6)
+	hits := make([]charts.PlotHit, 0, 6)
 	y := r.Y + tempdbHeaderH
 	y = tempdbSpace(s, r, y, v, &hits)
 	y = tempdbActivity(s, r, y, v, &hits)
@@ -43,7 +43,7 @@ func DrawTempDB(s tcell.Screen, r core.Rect, v TempDBView) []ChartHit {
 	return hits
 }
 
-func tempdbSpace(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]ChartHit) int {
+func tempdbSpace(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, tempdbBodyH, "TEMPDB SPACE", v.SpaceKPIs)
 	// Stacked with Free a band: full height is the size tempdb has grown to,
 	// so a filling file and an already-grown one look different.
@@ -56,7 +56,7 @@ func tempdbSpace(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]Chart
 	return next
 }
 
-func tempdbActivity(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]ChartHit) int {
+func tempdbActivity(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, tempdbBodyH, "TEMPDB ACTIVITY", v.ActivityKPIs)
 	cols := splitColumns(body, 3)
 
@@ -85,7 +85,7 @@ func tempdbActivity(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]Ch
 	return next
 }
 
-func tempdbObjects(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]ChartHit) int {
+func tempdbObjects(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, tempdbBodyH, "TEMPDB OBJECTS", v.ObjectKPIs)
 	cols := splitColumns(body, 2)
 

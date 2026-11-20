@@ -74,7 +74,7 @@ func pageApplicationRoleGeneral(sc *db.ServerConn, dbName string, roleName *stri
 			}
 
 			nameRow := propsheet.Text("Role name", r.Name, 24)
-			schemaRow := selectPreserving("Default schema", schemaNames, r.DefaultSchema, unsetItem)
+			schemaRow := propsheet.SelectPreserving("Default schema", schemaNames, r.DefaultSchema, unsetItem)
 			passwordRow := propsheet.Password("Password", 20)
 			confirmRow := propsheet.Password("Confirm password", 20)
 			// On passwordRow, not confirmRow, for Login Properties' reason: Form.Validate
@@ -107,7 +107,7 @@ func pageApplicationRoleGeneral(sc *db.ServerConn, dbName string, roleName *stri
 			apply := func(ctx context.Context) error {
 				// Every write addresses the role by name, so the handle is enough.
 				role := sc.Server.DatabaseRef(dbName).ApplicationRoleRef(*roleName)
-				if schema, ok := changedTo(schemaRow, unsetItem); ok {
+				if schema, ok := schemaRow.ChangedTo(); ok {
 					if err := role.SetDefaultSchema(ctx, schema); err != nil {
 						return err
 					}

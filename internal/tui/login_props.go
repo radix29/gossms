@@ -61,7 +61,7 @@ func findLogin(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Logi
 
 // noneItem is the stand-in for a mapping the server reports as absent (a login
 // with no credential, a user with no login, an alert or operator in no
-// category). Passed to selectPreserving as its unset value, so a mapping naming
+// category). Passed to propsheet.SelectPreserving as its unset value, so a mapping naming
 // something the list doesn't carry shows that name.
 const noneItem = "(None)"
 
@@ -166,10 +166,10 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			mustChangeRow.SetValidate(policyValidate)
 			unlockRow.SetValidate(policyValidate)
 
-			defaultDBRow := selectPreserving("Default database", dbNames, l.DefaultDatabase, unsetItem)
-			defaultLangRow := selectPreserving("Default language", langNames, det.DefaultLanguage, unsetItem)
+			defaultDBRow := propsheet.SelectPreserving("Default database", dbNames, l.DefaultDatabase, unsetItem)
+			defaultLangRow := propsheet.SelectPreserving("Default language", langNames, det.DefaultLanguage, unsetItem)
 			origCredential := det.CredentialName
-			credentialRow := selectPreserving("Map to credential", credItems, origCredential, noneItem)
+			credentialRow := propsheet.SelectPreserving("Map to credential", credItems, origCredential, noneItem)
 			if !isSQLLogin {
 				// Only a SQL login can hold a credential: ALTER LOGIN ... ADD CREDENTIAL on any
 				// other kind is Msg 15080 at Apply.
@@ -237,12 +237,12 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 						return err
 					}
 				}
-				if db, ok := changedTo(defaultDBRow, unsetItem); ok {
+				if db, ok := defaultDBRow.ChangedTo(); ok {
 					if err := l.SetDefaultDatabase(ctx, db); err != nil {
 						return err
 					}
 				}
-				if lang, ok := changedTo(defaultLangRow, unsetItem); ok {
+				if lang, ok := defaultLangRow.ChangedTo(); ok {
 					if err := l.SetDefaultLanguage(ctx, lang); err != nil {
 						return err
 					}
@@ -253,7 +253,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 							return err
 						}
 					}
-					if v := preservedValue(credentialRow, noneItem); v != "" {
+					if v := credentialRow.PreservedValue(); v != "" {
 						if err := l.MapCredential(ctx, v); err != nil {
 							return err
 						}

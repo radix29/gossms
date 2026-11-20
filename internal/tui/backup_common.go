@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -10,11 +9,12 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // backup_common.go holds the small helpers the Backup and Restore dialogs
 // (backup_dialog.go, restore_dialog.go) share: server-side path handling,
-// the progress view and its bar, and display formatting for backup metadata.
+// the progress view (its bar is widgets.DrawProgressBar), and display formatting for backup metadata.
 
 // wrapMessage lays text out over at most maxLines lines of w columns,
 // clipping the last one with "…" when even that isn't enough.
@@ -57,29 +57,6 @@ func formatBytes(n int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-// drawProgressBar renders a solid/shaded bar with a trailing percentage.
-// pct < 0 draws an empty bar with no percentage (indeterminate).
-func drawProgressBar(s tcell.Screen, x, y, w, pct int, st tcell.Style) {
-	barW := w - 5 // room for " 100%"
-	if barW < 1 {
-		return
-	}
-	filled := 0
-	if pct > 0 {
-		filled = min(barW, barW*pct/100)
-	}
-	for i := range barW {
-		ch := '░'
-		if i < filled {
-			ch = '█'
-		}
-		core.PutRune(s, x+i, y, ch, st)
-	}
-	if pct >= 0 {
-		core.DrawText(s, x+barW+1, y, st, strconv.Itoa(pct)+"%")
-	}
-}
-
 // taskProgressView is what the Backup and Restore progress views differ in:
 // their header rows, whether a "Progress:" label sits above the bar, and the
 // operation's name in the final message.
@@ -116,7 +93,7 @@ func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgres
 	if t.Done && t.Err == nil {
 		pct = 100
 	}
-	drawProgressBar(s, lx, y, w, pct, labelStyle)
+	widgets.DrawProgressBar(s, lx, y, w, pct, labelStyle)
 
 	elapsed, remaining, haveRemaining := taskTimes(t)
 	core.DrawText(s, lx, y+2, labelStyle, "Elapsed  : "+formatHMS(elapsed))

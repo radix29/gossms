@@ -286,11 +286,11 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 	grid.SetData(headers, rowsFor())
 	grid.SetCellCursor(true)
 
-	modeRow := propsheet.Select("Availability mode", agAvailabilityModeItems, 0)
-	failoverRow := propsheet.Select("Failover mode", agFailoverModeItems, 0)
-	seedingRow := propsheet.Select("Seeding mode", agSeedingModeItems, 0)
-	primaryRoleRow := propsheet.Select("Connections in primary role", agPrimaryRoleItems, 0)
-	secondaryRoleRow := propsheet.Select("Readable secondary", agSecondaryRoleItems, 0)
+	modeRow := agSelect("Availability mode", agAvailabilityModeItems)
+	failoverRow := agSelect("Failover mode", agFailoverModeItems)
+	seedingRow := agSelect("Seeding mode", agSeedingModeItems)
+	primaryRoleRow := agSelect("Connections in primary role", agPrimaryRoleItems)
+	secondaryRoleRow := agSelect("Readable secondary", agSecondaryRoleItems)
 	timeoutRow := propsheet.Int("Session timeout", 10, 5, 3600, "s")
 	addNameRow := propsheet.Text("Instance to add", "", 30)
 
@@ -315,11 +315,11 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 			return
 		}
 		r := d.replicas[current]
-		agSetSelect(modeRow, agAvailabilityModeItems, r.availabilityMode)
-		agSetSelect(failoverRow, agFailoverModeItems, r.failoverMode)
-		agSetSelect(seedingRow, agSeedingModeItems, r.seedingMode)
-		agSetSelect(primaryRoleRow, agPrimaryRoleItems, r.primaryRole)
-		agSetSelect(secondaryRoleRow, agSecondaryRoleItems, r.secondaryRole)
+		modeRow.SetChoices(agAvailabilityModeItems, r.availabilityMode)
+		failoverRow.SetChoices(agFailoverModeItems, r.failoverMode)
+		seedingRow.SetChoices(agSeedingModeItems, r.seedingMode)
+		primaryRoleRow.SetChoices(agPrimaryRoleItems, r.primaryRole)
+		secondaryRoleRow.SetChoices(agSecondaryRoleItems, r.secondaryRole)
 		timeoutRow.SetValue(strconv.Itoa(r.sessionTimeout))
 	}
 	reload := propsheet.BindGridDetail(grid, headers, rowsFor, commit, sync)

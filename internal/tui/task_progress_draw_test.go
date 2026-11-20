@@ -10,6 +10,7 @@ import (
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/tuikittest"
+	"github.com/radix29/tuikit/widgets"
 )
 
 // progressScreenRows renders rows [from, to) of s as text, trailing blanks
@@ -31,10 +32,10 @@ func doneTask(err error) *Task {
 		Finished: start.Add(time.Hour + 2*time.Minute + 3*time.Second)}
 }
 
-// progressBar is drawProgressBar's text at width w and pct.
+// progressBar is widgets.DrawProgressBar's text at width w and pct.
 func progressBar(w, pct int) string {
 	s := tuikittest.NewScreen(w+10, 1)
-	drawProgressBar(s, 0, 0, w, pct, tcell.StyleDefault)
+	widgets.DrawProgressBar(s, 0, 0, w, pct, tcell.StyleDefault)
 	return progressScreenRows(s, 0, 0, 1)[0]
 }
 

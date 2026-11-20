@@ -189,24 +189,30 @@ func TestFilterDialogSeedsFromExistingFilter(t *testing.T) {
 	}
 }
 
-// Tab must reach every widget and every button and come back round — a
-// dialog whose cycle strands focus can only be escaped with the mouse.
+// Tab must reach every widget and the button row and come back round — a
+// dialog whose cycle strands focus can only be escaped with the mouse. The
+// row is one stop: Right walks it, and leaving it resets OK as the default.
 func TestFilterDialogTabCyclesEveryStop(t *testing.T) {
 	_, d, _ := showTestFilterDialog(t)
-	want := len(d.rows)*2 + len(d.buttons())
-	if got := d.focusCount(); got != want {
-		t.Fatalf("focusCount() = %d, want %d", got, want)
-	}
+	want := len(d.rows)*2 + 1
+	key := func(k tcell.Key) { d.HandleKey(tcell.NewEventKey(k, "", tcell.ModNone)) }
 	seen := make(map[int]bool)
 	for range want {
 		seen[d.focusIdx] = true
-		d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+		if d.onButtons() {
+			key(tcell.KeyRight) // onto Cancel; Tab off must reset it
+		}
+		key(tcell.KeyTab)
 	}
 	if len(seen) != want {
 		t.Errorf("Tab visited %d of %d stops", len(seen), want)
 	}
-	if d.focusIdx != 0 {
-		t.Errorf("focus after a full cycle = %d, want 0", d.focusIdx)
+	if d.focusIdx != 0 || d.btnFocus != filterButtonsOK {
+		t.Errorf("after a full cycle focusIdx=%d btnFocus=%d, want 0 and OK", d.focusIdx, d.btnFocus)
+	}
+	key(tcell.KeyBacktab)
+	if !d.onButtons() {
+		t.Errorf("Backtab from the first stop = %d, want the button row", d.focusIdx)
 	}
 }
 

@@ -13,13 +13,13 @@ import (
 // r is normally a canvas of SampleCanvasW × SampleCanvasH. The returned hits
 // are the panels a click resolves against: the memory composition bar, whose
 // segments the legend has no room to give values for.
-func DrawSample(s tcell.Screen, r core.Rect, v SampleView) []ChartHit {
+func DrawSample(s tcell.Screen, r core.Rect, v SampleView) []charts.PlotHit {
 	if r.W <= 0 || r.H <= 0 {
 		return nil
 	}
 	drawHeader(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: sampleHeaderH}, v.Header)
 
-	hits := make([]ChartHit, 0, 1)
+	hits := make([]charts.PlotHit, 0, 1)
 	y := r.Y + sampleHeaderH
 	y = sampleActivity(s, r, y, v)
 	y = sampleWaits(s, r, y, v)
@@ -96,7 +96,7 @@ func loadFactorWidth(cores, bodyW int) int {
 	return w
 }
 
-func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView, hits *[]ChartHit) int {
+func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, sampleBodyH, "SQL SERVER MEMORY", []charts.KPI{
 		kpi("Page Life Expectancy", v.PageLifeExpectancy),
 		kpi("Memory Grants Pending", v.MemoryGrantsPending),

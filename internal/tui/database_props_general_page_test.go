@@ -20,9 +20,9 @@ import (
 // the way to SIMPLE breaks the log backup chain — the change that quietly
 // costs point-in-time recovery until the next full backup.
 //
-// The Owner row is also one of the selectPreserving dropdowns: an owner the
+// The Owner row is also one of the propsheet.SelectPreserving dropdowns: an owner the
 // login list does not contain is shown as a stand-in, and the write is gated
-// on changedTo so the stand-in itself can never be sent as a principal name.
+// on ChangedTo so the stand-in itself can never be sent as a principal name.
 
 const genDatabase = "appdb"
 
@@ -101,7 +101,7 @@ func TestDatabaseGeneralRecoveryModelWritesTheKeyword(t *testing.T) {
 // matching login — a Windows principal removed from AD, an msdb restored from
 // another instance — must not be reported as one of the logins that *is*
 // listed, and above all must not be written back. The stand-in is what the row
-// shows instead, and changedTo is what keeps it out of the statement.
+// shows instead, and ChangedTo is what keeps it out of the statement.
 func TestDatabaseGeneralKeepsAnOwnerTheLoginListDoesNotHave(t *testing.T) {
 	inst, apply, form := loadDatabaseGeneral(t, "OLDDOMAIN\\dba")
 
