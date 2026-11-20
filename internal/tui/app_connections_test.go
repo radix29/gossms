@@ -21,7 +21,7 @@ func newTestApp() *App {
 	installDialog(a, dialogs.NewConfirmDialog())
 	installDialog(a, dialogs.NewTypedConfirmDialog())
 	// handleKey and handleMouse query it, as App.buildUI guarantees it exists.
-	installDialog(a, NewKeyDiagnosticsDialog(a))
+	installDialog(a, newAppKeyDiagDialog(a))
 	installDialog(a, dialogs.NewPromptDialog())
 	// Every confirmed write uses it (runWithProgress).
 	installDialog(a, dialogs.NewProgressDialog())

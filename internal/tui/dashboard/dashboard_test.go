@@ -349,7 +349,7 @@ func TestDrawHistoryReportsChartHits(t *testing.T) {
 
 // The rightmost column of a plot is the newest bucket, and a column left of
 // the data reports no bucket at all.
-func TestChartHitBucketMapsColumnsToSamples(t *testing.T) {
+func TestDrawHistoryHitBucketMapsColumnsToSamples(t *testing.T) {
 	c := core.NewBuffer(HistoryCanvasW, HistoryCanvasH)
 	hits := DrawHistory(c, c.Rect(), fullHistory())
 	h := hits[0]

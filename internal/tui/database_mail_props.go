@@ -315,7 +315,7 @@ func pageMailParameters(sc *db.ServerConn) propPage {
 			prohibited := propsheet.Text("Prohibited extensions", cfg.ProhibitedExtensions, 40)
 			lifetime := propsheet.Int("Exe minimum lifetime", int64(cfg.DatabaseMailExeMinimumLifeTime), 0, maxInt, "sec")
 			encoding := propsheet.Text("Default attachment encoding", cfg.DefaultAttachmentEncoding, 16)
-			items, level := preservingItems(mailLoggingItems, cfg.LoggingLevel.String())
+			items, level := propsheet.PreservingItems(mailLoggingItems, cfg.LoggingLevel.String())
 			logging := propsheet.Select("Logging level", items, level)
 
 			rows := []propsheet.Row{

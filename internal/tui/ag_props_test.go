@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	gosmo "github.com/radix29/gosmo"
-	"github.com/radix29/tuikit/propsheet"
 )
 
 // The routing-list parser turns typed text into T-SQL structure; a name it
@@ -121,29 +120,29 @@ func TestFailureConditionIndexClamps(t *testing.T) {
 func TestAGSelectKeepsUnknownServerValues(t *testing.T) {
 	// SeedingMode is empty before 2016; showing and applying "AUTOMATIC" would
 	// write an unchosen setting.
-	row := propsheet.Select("Seeding mode", agSeedingModeItems, 0)
-	agSetSelect(row, agSeedingModeItems, "")
+	row := agSelect("Seeding mode", agSeedingModeItems)
+	row.SetChoices(agSeedingModeItems, "")
 	if row.Value() != agUnknownItem {
 		t.Errorf("empty server value shows as %q, want %q", row.Value(), agUnknownItem)
 	}
-	if got := agSelectValue(row); got != "" {
-		t.Errorf("agSelectValue on the stand-in = %q, want \"\" so it reads as unchanged", got)
+	if got := row.PreservedValue(); got != "" {
+		t.Errorf("PreservedValue on the stand-in = %q, want \"\" so it reads as unchanged", got)
 	}
 	if row.Dirty() {
 		t.Error("a row showing the unknown stand-in reports dirty, so Apply would write it")
 	}
 
 	// An unknown value is shown verbatim.
-	agSetSelect(row, agSeedingModeItems, "SOMETHING_NEW")
+	row.SetChoices(agSeedingModeItems, "SOMETHING_NEW")
 	if row.Value() != "SOMETHING_NEW" {
 		t.Errorf("unknown keyword shows as %q, want it verbatim", row.Value())
 	}
-	if got := agSelectValue(row); got != "SOMETHING_NEW" {
-		t.Errorf("agSelectValue = %q, want it round-tripped", got)
+	if got := row.PreservedValue(); got != "SOMETHING_NEW" {
+		t.Errorf("PreservedValue = %q, want it round-tripped", got)
 	}
 
 	// A known value selects normally.
-	agSetSelect(row, agSeedingModeItems, "MANUAL")
+	row.SetChoices(agSeedingModeItems, "MANUAL")
 	if row.Value() != "MANUAL" {
 		t.Errorf("known value shows as %q, want MANUAL", row.Value())
 	}
@@ -168,9 +167,9 @@ func TestFailoverModeDropdownIsGatedByClusterType(t *testing.T) {
 	}
 
 	external, _ := agFailoverModesFor("EXTERNAL")
-	row := propsheet.Select("Failover mode", external, 0)
+	row := agSelect("Failover mode", external)
 
-	agSetSelect(row, external, "AUTOMATIC")
+	row.SetChoices(external, "AUTOMATIC")
 	if row.Value() != "AUTOMATIC" {
 		t.Errorf("a replica already set to AUTOMATIC under EXTERNAL shows as %q, want it verbatim", row.Value())
 	}
@@ -182,7 +181,7 @@ func TestFailoverModeDropdownIsGatedByClusterType(t *testing.T) {
 	}
 
 	// An already-legal replica sees only the legal choice.
-	agSetSelect(row, external, "EXTERNAL")
+	row.SetChoices(external, "EXTERNAL")
 	if got := row.Items(); !slices.Equal(got, []string{"EXTERNAL"}) {
 		t.Errorf("items %v, want only EXTERNAL — Msg 47101 rejects the rest", got)
 	}

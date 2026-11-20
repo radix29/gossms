@@ -82,21 +82,14 @@ var (
 
 // agUnknownItem stands for a setting the server version doesn't report
 // (SeedingMode before 2016); indexOf's 0 would show "AUTOMATIC" as fact.
-// agSelectValue maps it to "", so it reads as unchanged.
+// PreservedValue maps it to "", so it reads as unchanged.
 const agUnknownItem = "(unknown)"
 
-// agSetSelect points an existing row at value, widening the items for an
-// unknown keyword so the dropdown never misreports the server. The repoint form
-// of selectPreserving; they share preservingItems.
-func agSetSelect(row *propsheet.SelectRow, base []string, value string) {
-	items, i := preservingItems(base, orDefault(value, agUnknownItem))
-	row.SetItems(items)
-	row.SetSelected(i)
-}
-
-// agSelectValue reads row as a value to write, undoing agSetSelect's stand-in.
-func agSelectValue(row *propsheet.SelectRow) string {
-	return preservedValue(row, agUnknownItem)
+// agSelect builds a replica-detail dropdown over base, first item selected
+// until SetChoices points it at a replica's stored value, widening the items
+// for an unknown keyword so the dropdown never misreports the server.
+func agSelect(label string, base []string) *propsheet.PreservingSelectRow {
+	return propsheet.SelectPreserving(label, base, base[0], agUnknownItem)
 }
 
 // agFailureConditionItems describe FAILURE_CONDITION_LEVEL 1-5 in order (level
@@ -231,15 +224,15 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 
 			// Failover mode is constrained by cluster type: EXTERNAL accepts
 			// only EXTERNAL, NONE only MANUAL (else Msg 47101). Narrowing the
-			// dropdown is the gate; agSetSelect re-widens it for an
+			// dropdown is the gate; SetChoices re-widens it for an
 			// already-illegal stored value so it can be seen and fixed.
 			failoverModeItems, clusterWhy := agFailoverModesFor(string(ag.ClusterType))
 
-			modeRow := propsheet.Select("Availability mode", agAvailabilityModeItems, 0)
-			failoverRow := propsheet.Select("Failover mode", failoverModeItems, 0)
-			primaryRoleRow := propsheet.Select("Connections in primary role", agPrimaryRoleItems, 0)
-			secondaryRoleRow := propsheet.Select("Readable secondary", agSecondaryRoleItems, 0)
-			seedingRow := propsheet.Select("Seeding mode", agSeedingModeItems, 0)
+			modeRow := agSelect("Availability mode", agAvailabilityModeItems)
+			failoverRow := agSelect("Failover mode", failoverModeItems)
+			primaryRoleRow := agSelect("Connections in primary role", agPrimaryRoleItems)
+			secondaryRoleRow := agSelect("Readable secondary", agSecondaryRoleItems)
+			seedingRow := agSelect("Seeding mode", agSeedingModeItems)
 			timeoutRow := propsheet.Int("Session timeout", 10, 5, 3600, "s")
 
 			selected := func() *agReplicaEdit {
@@ -256,11 +249,11 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 				if current == nil {
 					return
 				}
-				current.availabilityMode = agSelectValue(modeRow)
-				current.failoverMode = agSelectValue(failoverRow)
-				current.primaryRole = agSelectValue(primaryRoleRow)
-				current.secondaryRole = agSelectValue(secondaryRoleRow)
-				current.seedingMode = agSelectValue(seedingRow)
+				current.availabilityMode = modeRow.PreservedValue()
+				current.failoverMode = failoverRow.PreservedValue()
+				current.primaryRole = primaryRoleRow.PreservedValue()
+				current.secondaryRole = secondaryRoleRow.PreservedValue()
+				current.seedingMode = seedingRow.PreservedValue()
 				if n, err := timeoutRow.IntValue(); err == nil {
 					current.sessionTimeout = int(n)
 				}
@@ -270,14 +263,14 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 				if current == nil {
 					return
 				}
-				agSetSelect(modeRow, agAvailabilityModeItems, current.availabilityMode)
-				agSetSelect(failoverRow, failoverModeItems, current.failoverMode)
-				agSetSelect(primaryRoleRow, agPrimaryRoleItems, current.primaryRole)
-				agSetSelect(secondaryRoleRow, agSecondaryRoleItems, current.secondaryRole)
-				agSetSelect(seedingRow, agSeedingModeItems, current.seedingMode)
+				modeRow.SetChoices(agAvailabilityModeItems, current.availabilityMode)
+				failoverRow.SetChoices(failoverModeItems, current.failoverMode)
+				primaryRoleRow.SetChoices(agPrimaryRoleItems, current.primaryRole)
+				secondaryRoleRow.SetChoices(agSecondaryRoleItems, current.secondaryRole)
+				seedingRow.SetChoices(agSeedingModeItems, current.seedingMode)
 				timeoutRow.SetValue(strconv.Itoa(current.sessionTimeout))
 			}
-			reload := wireGridEditor(grid, replicaHeaders, replicaRows, commitCurrent, syncFromSelection)
+			reload := propsheet.BindGridDetail(grid, replicaHeaders, replicaRows, commitCurrent, syncFromSelection)
 
 			gridRow := propsheet.NewGridRow(grid, 9)
 			gridRow.DirtyFn = func() bool {

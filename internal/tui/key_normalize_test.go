@@ -12,7 +12,7 @@ import (
 func newKeyTestApp(t testing.TB) *App {
 	t.Helper()
 	a := newTestApp()
-	installDialog(a, NewKeyDiagnosticsDialog(a))
+	installDialog(a, newAppKeyDiagDialog(a))
 	installDialog(a, NewConnectDialog(a))
 	installDialog(a, dialogs.NewFileDialog())
 	installDialog(a, NewHelpDialog(a))

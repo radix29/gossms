@@ -40,7 +40,7 @@ func agentPropPages(sc *db.ServerConn) []propPage {
 // pageAgentAlertSystem is the mail profile Agent sends notifications through:
 // whether it sends at all, and which Database Mail profile. The list is
 // msdb's profiles; a login that may not read them (Msg 229) still sees the
-// configured one, which selectPreserving keeps whether listed or not — a
+// configured one, which propsheet.SelectPreserving keeps whether listed or not — a
 // profile deleted since is still what Agent tries, and shows so.
 func pageAgentAlertSystem(sc *db.ServerConn) propPage {
 	return propPage{
@@ -69,7 +69,7 @@ func pageAgentAlertSystem(sc *db.ServerConn) propPage {
 			}
 
 			enabled := propsheet.Check("Enable mail profile", mail.Enabled)
-			profile := selectPreserving("Mail profile", append([]string{noneItem}, names...), mail.Profile, noneItem)
+			profile := propsheet.SelectPreserving("Mail profile", append([]string{noneItem}, names...), mail.Profile, noneItem)
 			rows := []propsheet.Row{
 				propsheet.Section("Mail session"),
 				enabled,
@@ -85,7 +85,7 @@ func pageAgentAlertSystem(sc *db.ServerConn) propPage {
 				if !enabled.Dirty() && !profile.Dirty() {
 					return nil
 				}
-				name := preservedValue(profile, noneItem)
+				name := profile.PreservedValue()
 				if enabled.Checked() && name == "" {
 					return errors.New("choose a mail profile to enable, or uncheck Enable mail profile")
 				}

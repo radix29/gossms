@@ -212,53 +212,59 @@ func optionsFocusName(d *OptionsDialog) string {
 	return "?"
 }
 
-// The keyboard walk through the Options dialog, recorded from the per-zone
-// switch the focus slice replaced: after each key, what has focus, whether
-// the dialog consumed the key, and whether Copy/Paste has a target. Pins the
-// quirks as well as the order — Backtab does not wrap off the first control,
-// the radio box swallows the keys it does not use while the fields and the
-// closed dropdowns pass them on, Down moves the radio selection before it
-// moves focus, and Up from either button returns to the checkbox.
+// The keyboard walk through the Options dialog: after each key, what has
+// focus, whether the dialog consumed the key, and whether Copy/Paste has a
+// target. Pins the shared ring (dialogs.FieldRingKey, ButtonRowKey): Tab and
+// Backtab wrap through the button row as one stop, Right/Left walk the row,
+// Up/Down leave it as Backtab/Tab do, and leaving it resets OK; the focused
+// control gets Up/Down first (the radio box moves its selection, an open
+// dropdown its list) and Up/Down move focus when it declines, Escape on an
+// open list closes the list only, and every key is consumed.
 func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	a := newTestApp()
 	a.setScreen(tuikittest.NewScreen(100, 40))
 	d := withScreen(NewOptionsDialog(a), a.screen)
 	d.Show()
-	keys := []struct {
+	type key struct {
 		n string
 		k tcell.Key
-	}{
-		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
-		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
-		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
-		{"Right", tcell.KeyRight}, {"Left", tcell.KeyLeft}, {"Left", tcell.KeyLeft},
-		{"Tab", tcell.KeyTab}, {"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab},
-		{"Backtab", tcell.KeyBacktab}, {"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab},
-		{"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab}, {"Backtab", tcell.KeyBacktab}, {"Backtab", tcell.KeyBacktab},
-		{"Down", tcell.KeyDown}, {"Up", tcell.KeyUp}, {"Down", tcell.KeyDown}, {"Down", tcell.KeyDown},
-		{"Down", tcell.KeyDown}, {"Down", tcell.KeyDown}, {"Down", tcell.KeyDown}, {"F5", tcell.KeyF5}, {"Down", tcell.KeyDown},
-		{"F5", tcell.KeyF5}, {"Up", tcell.KeyUp}, {"Up", tcell.KeyUp}, {"F5", tcell.KeyF5}, {"Up", tcell.KeyUp},
-		{"F5", tcell.KeyF5}, {"Up", tcell.KeyUp}, {"Up", tcell.KeyUp}, {"Up", tcell.KeyUp},
-		{"F5", tcell.KeyF5}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"F5", tcell.KeyF5},
+	}
+	tab, backtab := key{"Tab", tcell.KeyTab}, key{"Backtab", tcell.KeyBacktab}
+	up, down := key{"Up", tcell.KeyUp}, key{"Down", tcell.KeyDown}
+	left, right := key{"Left", tcell.KeyLeft}, key{"Right", tcell.KeyRight}
+	enter, esc, f5 := key{"Enter", tcell.KeyEnter}, key{"Esc", tcell.KeyEscape}, key{"F5", tcell.KeyF5}
+	keys := []key{
+		tab, tab, tab, tab, tab, tab, tab, tab, tab, tab, // every stop, round to icons
+		backtab, right, left, left, tab, backtab, // the row: Tab off resets OK
+		up, up, down, down, f5, // Up/Down leave the row as Backtab/Tab; it swallows the rest
+		backtab, up, up, down, // fields: Up/Down move focus
+		tab, tab, tab, // round to the radio box
+		down, down, down, down, // the radio box takes Down until its last item, then declines
+		enter, down, esc, // an open list takes Down; Escape closes it only
+		down, up, // a closed dropdown declines Up/Down
 	}
 	var b strings.Builder
 	b.WriteString(optionsFocusName(d))
 	for _, k := range keys {
 		ok := d.HandleKey(tcell.NewEventKey(k.k, "", tcell.ModNone))
 		fmt.Fprintf(&b, " %s>%s(%v,%v)", k.n, optionsFocusName(d), ok, d.FocusedClipboardTarget() != nil)
+		if k == enter && d.openDropDown() == nil {
+			t.Fatalf("Enter on a dropdown left its list closed")
+		}
 	}
-	const want = "icons Tab>theme(true,false) Tab>sqlstyle(true,false) Tab>cell(true,true) Tab>text(true,true) Tab>indent(true,true) " +
-		"Tab>xecap(true,true) Tab>fetchrows(true,true) Tab>intellisense(true,false) Tab>button0(true,false) Tab>button1(true,false) " +
-		"Tab>button0(true,false) Right>button1(true,false) Left>button0(true,false) " +
-		"Left>intellisense(true,false) Tab>button0(true,false) Up>intellisense(true,false) " +
-		"Backtab>fetchrows(true,true) Backtab>xecap(true,true) Up>indent(true,true) Backtab>text(true,true) Up>cell(true,true) " +
-		"Backtab>sqlstyle(true,false) Backtab>theme(true,false) Backtab>icons(true,false) Down>icons(true,false) Up>icons(true,false) " +
+	if !d.Visible() {
+		t.Fatalf("Escape on an open list closed the dialog")
+	}
+	const want = "icons Tab>theme(true,false) Tab>sqlstyle(true,false) Tab>cell(true,true) Tab>text(true,true) " +
+		"Tab>indent(true,true) Tab>xecap(true,true) Tab>fetchrows(true,true) Tab>intellisense(true,false) " +
+		"Tab>button0(true,false) Tab>icons(true,false) Backtab>button0(true,false) Right>button1(true,false) " +
+		"Left>button0(true,false) Left>button0(true,false) Tab>icons(true,false) Backtab>button0(true,false) " +
+		"Up>intellisense(true,false) Up>fetchrows(true,true) Down>intellisense(true,false) Down>button0(true,false) " +
+		"F5>button0(true,false) Backtab>intellisense(true,false) Up>fetchrows(true,true) Up>xecap(true,true) " +
+		"Down>fetchrows(true,true) Tab>intellisense(true,false) Tab>button0(true,false) Tab>icons(true,false) " +
 		"Down>icons(true,false) Down>icons(true,false) Down>icons(true,false) Down>theme(true,false) " +
-		"Down>sqlstyle(true,false) F5>sqlstyle(false,false) Down>cell(true,true) " +
-		"F5>cell(false,true) Up>sqlstyle(true,false) Up>theme(true,false) F5>theme(false,false) " +
-		"Up>icons(true,false) F5>icons(true,false) Up>icons(true,false) Up>icons(true,false) " +
-		"Up>icons(true,false) F5>icons(true,false) Tab>theme(true,false) Tab>sqlstyle(true,false) Tab>cell(true,true) " +
-		"F5>cell(false,true)"
+		"Enter>theme(true,false) Down>theme(true,false) Esc>theme(true,false) Down>sqlstyle(true,false) " +
+		"Up>theme(true,false)"
 	if got := b.String(); got != want {
 		t.Errorf("keyboard walk:\n got %s\nwant %s", got, want)
 	}

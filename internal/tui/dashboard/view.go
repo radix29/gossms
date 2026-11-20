@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/radix29/tuikit/charts"
-	"github.com/radix29/tuikit/core"
 )
 
 // Header is the identification strip both dashboards carry: the instance
@@ -161,55 +160,4 @@ type SessionRow struct {
 	UserMB      string
 	InternalMB  string
 	TotalMB     string
-}
-
-// ChartHit is where one History chart's plot area landed and what it plotted,
-// returned by DrawHistory so a click maps back to a sample. Series is the
-// chart's own slice: don't hold it past the next draw.
-type ChartHit struct {
-	Title  string
-	Plot   core.Rect
-	Series []charts.Series
-
-	// TimeRow is the time-scale row directly under Plot, zero-sized on a chart
-	// too short for one; where a caller names the pinned column's moment.
-	TimeRow core.Rect
-
-	// Snapshot marks a chart of the current sample, not a history: each series
-	// has one value describing one instant, so every column resolves to index
-	// 0 (else it would answer only on the rightmost column).
-	Snapshot bool
-}
-
-// Bucket is the index of the bucket drawn at screen column x, or -1 when x
-// is outside the plot or over a column that predates the data.
-func (h ChartHit) Bucket(x int) int {
-	if h.Snapshot {
-		if x < h.Plot.X || x >= h.Plot.Right() {
-			return -1
-		}
-		return 0
-	}
-	return charts.BucketAt(h.Plot, x, charts.BucketCount(h.Series))
-}
-
-// Column is where bucket idx is drawn now, the inverse of Bucket, for a caller
-// holding a bucket across redraws. It returns -1 once newer samples push the
-// bucket off the left edge. A snapshot chart always answers -1 (nothing drifts).
-func (h ChartHit) Column(idx int) int {
-	if h.Snapshot {
-		return -1
-	}
-	return charts.ColumnAt(h.Plot, idx, charts.BucketCount(h.Series))
-}
-
-// Value is ser's value in bucket idx (from Bucket), read the way the chart
-// drew it: a history aligns every series at its newest bucket
-// (charts.Series.AtBucket), so a tooltip reading At would disagree with the
-// column under the pointer for a series shorter than the chart.
-func (h ChartHit) Value(ser charts.Series, idx int) float64 {
-	if h.Snapshot {
-		return ser.At(idx)
-	}
-	return ser.AtBucket(idx, charts.BucketCount(h.Series))
 }

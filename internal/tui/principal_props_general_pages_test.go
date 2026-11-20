@@ -387,15 +387,11 @@ func TestSchemaGeneralUntouchedPageWritesNothing(t *testing.T) {
 // "the row is not editable" is the assertion, not "the row is absent".
 func hasEditableRow(f *propsheet.Form, label string) bool {
 	for _, r := range f.Rows() {
-		switch row := r.(type) {
-		case *propsheet.TextRow:
-			if row.Label() == sheetLabel(label) {
-				return true
-			}
-		case *propsheet.SelectRow:
-			if row.Label() == sheetLabel(label) {
-				return true
-			}
+		if row, ok := r.(*propsheet.TextRow); ok && row.Label() == sheetLabel(label) {
+			return true
+		}
+		if row, ok := asSelectRow(r); ok && row.Label() == sheetLabel(label) {
+			return true
 		}
 	}
 	return false

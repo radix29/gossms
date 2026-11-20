@@ -213,11 +213,11 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 			}
 
 			emailCheck := propsheet.Check("E-mail", j.NotifyLevelEmail != gosmo.NotifyNever)
-			// noneItem is always offered as a real choice. selectPreserving
+			// noneItem is always offered as a real choice. propsheet.SelectPreserving
 			// keeps a since-dropped operator visible instead of collapsing to
 			// opNames[0].
 			opItems := append([]string{noneItem}, opNames...)
-			operatorSelect := selectPreserving("Operator", opItems, j.NotifyEmailOperatorName, noneItem)
+			operatorSelect := propsheet.SelectPreserving("Operator", opItems, j.NotifyEmailOperatorName, noneItem)
 			conditionSelect := propsheet.Select("When to e-mail", notifyConditionItems, notifyConditionIndex(j.NotifyLevelEmail))
 			deleteCheck := propsheet.Check("Delete job", j.DeleteLevel != gosmo.NotifyNever)
 			deleteConditionSelect := propsheet.Select("When to delete", notifyConditionItems, notifyConditionIndex(j.DeleteLevel))
@@ -252,11 +252,11 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 						emailLevel = notifyConditionLevels[conditionSelect.Selected()]
 					}
 					ch.NotifyLevelEmail = &emailLevel
-					// preservedValue maps noneItem to "", sent as no operator at
+					// PreservedValue maps noneItem to "", sent as no operator at
 					// all — "leave it unchanged", since sp_update_job can't clear
 					// one. Otherwise ticking E-mail with no operator would send to
 					// the first operator.
-					if op := preservedValue(operatorSelect, noneItem); op != "" {
+					if op := operatorSelect.PreservedValue(); op != "" {
 						ch.NotifyEmailOperatorName = &op
 					}
 				}

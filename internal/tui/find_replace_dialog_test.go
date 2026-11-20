@@ -6,8 +6,11 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls/editor"
-	"github.com/radix29/tuikit/tuikittest"
 )
+
+// The dialog itself (modes, options, status line, rescope, drag latch) is
+// tested in tuikit's dialogs package. These cover goSSMS's routing: the target
+// editor, the no-panel notice and the F3/Shift+F3/Ctrl+F3 entry points.
 
 // newFindTestApp returns an App with one query panel holding text, plus the
 // find dialog wired up the way buildUI does.
@@ -40,99 +43,47 @@ func TestFindDialogNeedsAQueryPanel(t *testing.T) {
 	}
 }
 
-func TestFindDialogSeedsFromSingleLineSelection(t *testing.T) {
-	a, qp := newFindTestApp(t, "select Total from dbo.Orders\nwhere Total > 0")
-	qp.editor.SelectAll() // multi-line
-	a.findDialog().ShowFind()
-	if got := a.findDialog().fFind.Value(); got != "" {
-		t.Fatalf("Find what = %q after a multi-line selection, want it left alone", got)
-	}
-	a.findDialog().Hide()
-
-	// A single-line selection does seed the field.
-	qp.editor.SetText("select Total from dbo.Orders")
-	if err := qp.editor.SetSearch(searchFor("Total")); err != nil {
-		t.Fatal(err)
-	}
-	qp.editor.FindNext(1) // selects "Total"
-	a.findDialog().ShowFind()
-	if got := a.findDialog().fFind.Value(); got != "Total" {
-		t.Fatalf("Find what = %q, want the selected word", got)
-	}
-}
-
-func TestFindDialogEnterFindsFromAField(t *testing.T) {
+// The dialog searches the active query panel's editor: it seeds from that
+// editor's selection, and what it finds is selected there.
+func TestFindDialogTargetsTheActiveQueryPanel(t *testing.T) {
 	a, qp := newFindTestApp(t, "a bb a bb a")
+	qp.editor.SelectRange(0, 2, 0, 4) // the first "bb"
 	a.findDialog().ShowFind()
-	a.findDialog().fFind.SetValue("bb")
-
-	// Focus is on the Find what field; Enter presses Find Next.
+	if !a.findDialog().Visible() {
+		t.Fatal("the dialog did not open over a query panel")
+	}
+	if got := a.findDialog().Fields().Query; got != "bb" {
+		t.Fatalf("Find what = %q, want the panel's selection", got)
+	}
 	a.findDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if got := qp.editor.SelectedText(); got != "bb" {
-		t.Fatalf("selection = %q after Enter, want the first match", got)
-	}
-	if !strings.Contains(a.findDialog().status, "Match 1 of 2") {
-		t.Fatalf("status = %q, want a match-position readout", a.findDialog().status)
-	}
-
-	a.findDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
-	if !strings.Contains(a.findDialog().status, "Match 2 of 2") {
-		t.Fatalf("status = %q after a second Enter, want match 2", a.findDialog().status)
-	}
-}
-
-func TestFindDialogTabReachesButtons(t *testing.T) {
-	a, _ := newFindTestApp(t, "x")
-	a.findDialog().ShowFind()
-	d := a.findDialog()
-
-	// Four fields then three buttons in Find mode.
-	if got, want := d.focusCount(), 7; got != want {
-		t.Fatalf("focusCount = %d, want %d", got, want)
-	}
-	// While focus is in the fields, Enter presses Find Next (button 0).
-	if got := d.btnFocus(); got != 0 {
-		t.Fatalf("btnFocus = %d with a field focused, want 0", got)
-	}
-	for range 4 {
-		d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-	}
-	if got := d.btnFocus(); got != 0 || d.focusIdx != 4 {
-		t.Fatalf("after 4 Tabs: focusIdx=%d btnFocus=%d, want the first button", d.focusIdx, got)
-	}
-	d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-	if got := d.btnFocus(); got != 1 {
-		t.Fatalf("btnFocus = %d after another Tab, want 1 (Find Previous)", got)
-	}
-	// Tab wraps back around to the first field rather than dead-ending.
-	for range 2 {
-		d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-	}
-	if d.focusIdx != 0 {
-		t.Fatalf("focusIdx = %d after wrapping, want 0", d.focusIdx)
+	if !qp.editor.HasSearch() || qp.editor.SelectedText() != "bb" {
+		t.Fatalf("search not run in the panel's editor (has %v, selection %q)",
+			qp.editor.HasSearch(), qp.editor.SelectedText())
 	}
 }
 
 func TestFindDialogEscapeKeepsTheSearchForF3(t *testing.T) {
 	a, qp := newFindTestApp(t, "a bb a bb a")
+	qp.editor.SelectRange(0, 2, 0, 4)
 	a.findDialog().ShowFind()
-	a.findDialog().fFind.SetValue("bb")
 	a.findDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	before, _ := qp.editor.MatchPosition()
 
 	a.findDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 	if a.findDialog().Visible() {
 		t.Fatal("Escape did not close the dialog")
-	}
-	if !qp.editor.HasSearch() {
-		t.Fatal("Escape dropped the search — F3 would have nothing to repeat")
 	}
 	if !a.hasEditorSearch() {
 		t.Fatal("hasEditorSearch is false, so Find Next/Previous would be disabled in the menu")
 	}
 
 	a.findNextInEditor(1)
-	if !strings.Contains(a.statusText, "Match 2 of 2") {
-		t.Fatalf("status = %q after F3, want match 2", a.statusText)
+	after, _ := qp.editor.MatchPosition()
+	if after == before {
+		t.Fatalf("F3 stayed on match %d — it restarted instead of stepping on", after)
+	}
+	if !strings.Contains(a.statusText, "of 2 — line 1") {
+		t.Fatalf("status = %q after F3, want a match-position readout", a.statusText)
 	}
 }
 
@@ -159,11 +110,8 @@ func TestFindWordAtCursorSearchesWholeWord(t *testing.T) {
 	}
 	// The dialog's own fields track it, so opening it afterwards shows what
 	// is actually being searched.
-	if got := a.findDialog().fFind.Value(); got != "id" {
-		t.Fatalf("dialog Find what = %q, want \"id\"", got)
-	}
-	if !a.findDialog().cbWord.Checked() {
-		t.Fatal("dialog's whole-word option is out of sync with the search it ran")
+	if f := a.findDialog().Fields(); f.Query != "id" || !f.WholeWord {
+		t.Fatalf("dialog fields = %+v, out of sync with the search it ran", f)
 	}
 }
 
@@ -197,110 +145,10 @@ func TestFindWordAtCursorOnWhitespace(t *testing.T) {
 	}
 }
 
-func TestFindDialogReplaceAllReportsCount(t *testing.T) {
-	a, qp := newFindTestApp(t, "a a\na")
-	a.findDialog().ShowReplace()
-	a.findDialog().fFind.SetValue("a")
-	a.findDialog().fReplace.SetValue("z")
-	a.findDialog().doReplaceAll()
-
-	if got, want := qp.editor.Text(), "z z\nz"; got != want {
-		t.Fatalf("text = %q, want %q", got, want)
-	}
-	if !strings.Contains(a.findDialog().status, "Replaced 3") {
-		t.Fatalf("status = %q, want a replacement count", a.findDialog().status)
-	}
-}
-
-// Find mode has no "in selection only" option, so a Replace All in Find
-// mode must not silently inherit a ticked checkbox from a previous Replace
-// showing — the option is compiled from replaceMode && cbSel.
-func TestFindModeIgnoresTheSelectionOnlyOption(t *testing.T) {
-	a, qp := newFindTestApp(t, "a a")
-	a.findDialog().cbSel.SetChecked(true)
-	a.findDialog().ShowFind()
-	a.findDialog().fFind.SetValue("a")
-	a.findDialog().doFind(1)
-
-	if qp.editor.SearchOpts().InSelection {
-		t.Fatal("Find mode compiled an in-selection search from the hidden checkbox")
-	}
-}
-
-// Reopening Replace on a new selection scopes "In selection only" to that
-// selection, though the options are the ones already compiled: unchanged options
-// skip the recompile, so the dialog kept the previous selection's scope, and with
-// Find Next scoped it reported no matches with the new selection on screen.
-func TestReplaceReopenedOnANewSelectionRescopes(t *testing.T) {
-	a, qp := newFindTestApp(t, "foo foo\nfoo end")
-	d := a.findDialog()
-	qp.editor.SelectRange(0, 0, 0, 7)
-	d.ShowReplace()
-	d.fFind.SetValue("foo")
-	d.fReplace.SetValue("Z")
-	d.cbSel.SetChecked(true)
-	d.doFind(1)
-	d.Hide()
-
-	qp.editor.SelectRange(1, 0, 1, 7)
-	d.ShowReplace()
-	d.fFind.SetValue("foo") // ShowReplace seeded it from the selection
-	d.doReplaceAll()
-	if got, want := qp.editor.Text(), "foo foo\nZ end"; got != want {
-		t.Fatalf("text = %q, want %q (status %q)", got, want, d.status)
-	}
-
-	// Reopened on the current match (F3 left it selected), the search carries on.
-	qp.editor.SelectRange(0, 0, 0, 7)
-	d.ShowReplace()
-	d.fFind.SetValue("foo")
-	d.doFind(1)
-	d.Hide()
-	d.ShowReplace()
-	d.fFind.SetValue("foo")
-	if d.rescope {
-		t.Fatal("reopening on the current match asked for a fresh scope")
-	}
-}
-
-func TestFindDialogReportsAnInvalidRegex(t *testing.T) {
-	a, qp := newFindTestApp(t, "abc")
-	a.findDialog().ShowFind()
-	a.findDialog().fFind.SetValue("(unclosed")
-	a.findDialog().cbRegex.SetChecked(true)
-	a.findDialog().doFind(1)
-
-	if !strings.HasPrefix(a.findDialog().status, "Invalid regex") || !a.findDialog().statusErr {
-		t.Fatalf("status = %q (err=%v), want an invalid-regex error", a.findDialog().status, a.findDialog().statusErr)
-	}
-	if qp.editor.HasSearch() {
-		t.Fatal("an invalid pattern left a search active")
-	}
-}
-
-func TestFindDialogEmptyTermIsRefused(t *testing.T) {
-	a, qp := newFindTestApp(t, "abc")
-	a.findDialog().ShowFind()
-	a.findDialog().fFind.SetValue("")
-	a.findDialog().doFind(1)
-
-	if qp.editor.HasSearch() {
-		t.Fatal("an empty term started a search")
-	}
-	if !a.findDialog().statusErr {
-		t.Fatalf("status = %q, want a notice that nothing was entered", a.findDialog().status)
-	}
-}
-
-// searchFor is the SearchOptions a plain literal search compiles from.
-func searchFor(q string) editor.SearchOptions { return editor.SearchOptions{Query: q} }
-
 // Ctrl+F3 compiles a search without opening the dialog, so it has to leave
-// the dialog describing that search and no other. It used to sync only Find
-// what / whole word / regexp, leaving Match case (and, after a Replace-mode
-// showing, "in selection only") saying whatever the user last chose — so the
-// dialog claimed a case-sensitive search the editor was not running, and
-// optionsChanged saw a difference that wasn't real.
+// the dialog describing that search and no other — Match case and "in
+// selection only" included — while keeping the user's replacement text.
+// (That AdoptSearch leaves Find Next nothing to recompile is tuikit's test.)
 func TestFindWordAtCursorSyncsEveryDialogField(t *testing.T) {
 	// SetText leaves the caret at the start, so the first word is the one
 	// under it — no cursor movement needed to make this deterministic.
@@ -308,78 +156,38 @@ func TestFindWordAtCursorSyncsEveryDialogField(t *testing.T) {
 	d := a.findDialog()
 
 	// Leave every option set the way a previous search would have.
-	d.replaceMode = true
-	d.cbCase.SetChecked(true)
-	d.cbRegex.SetChecked(true)
-	d.cbSel.SetChecked(true)
-	d.fReplace.SetValue("Amount")
+	d.AdoptSearch(editor.SearchOptions{
+		Query: "x", Replace: "Amount",
+		MatchCase: true, Regexp: true, InSelection: true,
+	})
 
 	a.findWordAtCursor()
 
-	if got := d.fFind.Value(); got != "Total" {
-		t.Fatalf("Find what = %q, want the word at the cursor", got)
-	}
 	opts := qp.editor.SearchOpts()
 	if opts.Query != "Total" || !opts.WholeWord {
 		t.Fatalf("editor search = %+v, want a whole-word search for Total", opts)
 	}
-	if d.cbCase.Checked() != opts.MatchCase {
-		t.Errorf("Match case = %v, editor MatchCase = %v", d.cbCase.Checked(), opts.MatchCase)
+	if got := d.Fields(); got != opts {
+		t.Errorf("dialog fields = %+v, editor search = %+v", got, opts)
 	}
-	if d.cbWord.Checked() != opts.WholeWord {
-		t.Errorf("Match whole word = %v, editor WholeWord = %v", d.cbWord.Checked(), opts.WholeWord)
-	}
-	if d.cbRegex.Checked() != opts.Regexp {
-		t.Errorf("Regular expression = %v, editor Regexp = %v", d.cbRegex.Checked(), opts.Regexp)
-	}
-	if d.cbSel.Checked() != opts.InSelection {
-		t.Errorf("in selection only = %v, editor InSelection = %v", d.cbSel.Checked(), opts.InSelection)
-	}
-	// The replacement text is the dialog's to own, so it survives — and the
-	// compiled search carries it, so the two still agree.
-	if got := d.fReplace.Value(); got != "Amount" {
+	if got := d.Fields().Replace; got != "Amount" {
 		t.Errorf("Replace with = %q, want the user's text kept", got)
 	}
-	// The sequence that matters: Ctrl+F3, then open the dialog, then Find
-	// Next. optionsChanged short-circuits until a showing captures a target,
-	// so opening it is what makes the comparison real — and it must find
-	// nothing to recompile, or Find Next restarts from the cursor instead of
-	// stepping on to the next match.
-	d.ShowFind()
-	if d.optionsChanged() {
-		t.Error("optionsChanged after Ctrl+F3: a Find Next would recompile and restart from the cursor")
-	}
-	d.Hide()
 }
 
-// A latch must not survive into the next showing (tuikit invariant 4): a
-// dialog dismissed mid-drag would reopen routing every click to that field.
-func TestFindDialogShowClearsTheDragLatch(t *testing.T) {
-	// The dialog needs the screen (withScreen, as registering would give it):
-	// one without keeps a zero rect, so every press is "outside" and arms
-	// nothing.
-	a := newTestApp()
-	a.setScreen(tuikittest.NewScreen(100, 40))
-	installDialog(a, withScreen(NewFindReplaceDialog(a), a.screen))
-	qp := NewQueryPanel(a, "Query 1")
-	qp.SetBounds(0, 0, 80, 24)
-	a.panels.AddPanel(qp)
-	qp.editor.SetText("select 1")
-
-	d := a.findDialog()
-	d.ShowFind()
-	d.layout()
-	// Arm the latch the way a user does — a press inside the field — rather
-	// than by assignment, so the test also pins that a press arms one at all.
-	ix, y := d.fFind.InputX(), d.fFind.Bounds().Y
-	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
-	if d.drag.Field() == nil {
-		t.Fatal("the press did not arm a latch — test premise is wrong")
+// Ctrl+F3 with the caret inside (or just past) a word selects that word — the
+// search's first match — rather than its next occurrence: FindNext searches
+// from the caret, so it skipped the word Ctrl+F3 was pressed on.
+func TestFindWordAtCursorSelectsTheWordUnderTheCaret(t *testing.T) {
+	for _, col := range []int{8, 10} { // mid-word, just past it
+		a, qp := newFindTestApp(t, "select foo, bar from t where foo = 1")
+		qp.editor.SelectRange(0, col, 0, col)
+		a.findWordAtCursor()
+		if line, c, ok := qp.editor.CurrentMatchPos(); !ok || line != 1 || c != 8 {
+			t.Errorf("caret at col %d: current match = %d:%d (ok %v), want the word under it at 1:8", col, line, c, ok)
+		}
+		if !strings.Contains(a.statusText, "Match 1 of 2") {
+			t.Errorf("caret at col %d: status = %q, want match 1 of 2", col, a.statusText)
+		}
 	}
-
-	d.ShowFind()
-	if d.drag.Field() != nil {
-		t.Error("Show left a drag latch armed from the previous showing")
-	}
-	d.Hide()
 }

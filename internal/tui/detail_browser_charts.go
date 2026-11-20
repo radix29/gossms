@@ -42,7 +42,7 @@ type detailTooltip struct {
 // which is what a four-segment legend needs at the width half a detail
 // panel gives it.
 const (
-	detailChartSectionH = 1
+	detailChartSectionH = charts.SectionBarHeight
 	detailChartTitleH   = charts.PanelTitleHeight
 	detailChartBarH     = 2
 	detailChartLegendH  = 2
@@ -169,13 +169,11 @@ func (db *DetailBrowser) drawCharts(s tcell.Screen) {
 	if r.IsZero() {
 		return
 	}
-	sec := core.Rect{X: r.X, Y: r.Y, W: r.W, H: detailChartSectionH}
-	core.FillRect(s, sec, ' ', theme.StyleChartSection())
-	core.DrawTextClipped(s, sec.X+1, sec.Y, sec.W-2, theme.StyleChartSection(), "DISK USAGE")
+	charts.DrawSectionBar(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: detailChartSectionH}, "DISK USAGE", nil)
 
 	body := core.Rect{X: r.X, Y: r.Y + detailChartSectionH, W: r.W, H: r.H - detailChartSectionH}
-	// The panel ground first: the gutter, the rounding remainder and the bars'
-	// margins are never drawn, and would otherwise show the screen's ground.
+	// The panel ground first: the gutter and the bars' margins are never
+	// drawn, and would otherwise show the screen's ground.
 	core.FillRect(s, body, ' ', theme.StylePanel())
 	for i, panel := range detailChartPanels(body, len(db.charts)) {
 		c := db.charts[i]
@@ -192,19 +190,5 @@ func (db *DetailBrowser) drawCharts(s tcell.Screen) {
 // the ones that would not fit rather than shrinking every panel below what
 // its legend can be read at.
 func detailChartPanels(body core.Rect, n int) []core.Rect {
-	if n <= 0 || body.W <= 0 || body.H <= 0 {
-		return nil
-	}
-	fit := min(n, (body.W+detailChartGutter)/(detailChartMinPanelW+detailChartGutter))
-	if fit <= 0 {
-		return nil
-	}
-	each := (body.W - (fit-1)*detailChartGutter) / fit
-	out := make([]core.Rect, 0, fit)
-	x := body.X
-	for range fit {
-		out = append(out, core.Rect{X: x, Y: body.Y, W: each, H: body.H})
-		x += each + detailChartGutter
-	}
-	return out
+	return core.SplitColumns(body, n, detailChartGutter, detailChartMinPanelW)
 }

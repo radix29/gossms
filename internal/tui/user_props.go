@@ -117,7 +117,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 
 			rows := []propsheet.Row{propsheet.Section("User information")}
 			var nameRow *propsheet.TextRow
-			var loginRow, schemaRow *propsheet.SelectRow
+			var loginRow, schemaRow *propsheet.PreservingSelectRow
 			if builtin {
 				rows = append(rows,
 					propsheet.Static("User name", u.Name),
@@ -137,7 +137,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 						loginNames[i] = l.Name
 					}
 					loginItems := append([]string{noneItem}, loginNames...)
-					loginRow = selectPreserving("Login name", loginItems, u.LoginName, noneItem)
+					loginRow = propsheet.SelectPreserving("Login name", loginItems, u.LoginName, noneItem)
 					rows = append(rows, loginRow)
 				}
 
@@ -150,7 +150,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 					for i, s := range schemas {
 						schemaNames[i] = s.Name
 					}
-					schemaRow = selectPreserving("Default schema", schemaNames, u.DefaultSchema, unsetItem)
+					schemaRow = propsheet.SelectPreserving("Default schema", schemaNames, u.DefaultSchema, unsetItem)
 					rows = append(rows, schemaRow)
 				}
 			}
@@ -184,12 +184,12 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 					if err != nil {
 						return err
 					}
-					if schema, ok := changedTo(schemaRow, unsetItem); ok {
+					if schema, ok := schemaRow.ChangedTo(); ok {
 						if err := u.SetDefaultSchema(ctx, schema); err != nil {
 							return err
 						}
 					}
-					if login, ok := changedTo(loginRow, noneItem); ok {
+					if login, ok := loginRow.ChangedTo(); ok {
 						if err := u.SetLogin(ctx, login); err != nil {
 							return err
 						}

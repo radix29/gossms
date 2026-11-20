@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/propsheet"
 )
 
 // A propsheet page's RevertFn redraws its grid after putting the edits back.
@@ -17,7 +18,7 @@ import (
 //     on. redrawGrid is the fix.
 //   - The resync that follows runs commitCurrent first, and the detail widgets
 //     still hold the *pre-revert* values — so the selected row is written
-//     straight back to what Revert just undid. wireGridEditor's reload, which
+//     straight back to what Revert just undid. propsheet.BindGridDetail's reload, which
 //     redraws and reloads without committing, is the fix.
 //
 // A RevertFn that changes the row set (membership_page, extended_properties,
@@ -25,7 +26,7 @@ import (
 // not what these pin.
 
 // mappingRevertHarness reproduces the user-mapping idiom: a grid of rows and a
-// single-field detail editor below it, wired through the real wireGridEditor
+// single-field detail editor below it, wired through the real propsheet.BindGridDetail
 // and reverted through the real reload, exactly as both pages now do.
 type mappingRevertHarness struct {
 	grid *controls.DataGrid
@@ -71,7 +72,7 @@ func newMappingRevertHarness() *mappingRevertHarness {
 		}
 		h.field = h.schema[h.selected]
 	}
-	reload := wireGridEditor(h.grid, headers, rowsFor, commitCurrent, syncFromSelection)
+	reload := propsheet.BindGridDetail(h.grid, headers, rowsFor, commitCurrent, syncFromSelection)
 
 	h.revert = func() {
 		copy(h.schema, h.origSchema)

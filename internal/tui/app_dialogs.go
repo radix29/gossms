@@ -99,12 +99,18 @@ func newAppProgressDialog(a *App) *dialogs.ProgressDialog {
 	return d
 }
 
+// newAppKeyDiagDialog is Help > Key Diagnostics; its Copy button goes through
+// the app's clipboard writer like every other copy. handleKey and handleMouse
+// feed it while it is visible.
+func newAppKeyDiagDialog(a *App) *dialogs.KeyDiagnosticsDialog {
+	return dialogs.NewKeyDiagnosticsDialog(dialogs.KeyDiagnosticsSpec{OnCopy: a.copyWithStatus})
+}
+
 // The accessors, one per dialog type, each the only handle on its dialog. A
 // new one also goes in everyDialog (app_dialogs_test.go).
 func (a *App) connectDialog() *ConnectDialog             { return dialogOf(a, NewConnectDialog) }
 func (a *App) findDialog() *FindReplaceDialog            { return dialogOf(a, NewFindReplaceDialog) }
 func (a *App) helpDialog() *HelpDialog                   { return dialogOf(a, NewHelpDialog) }
-func (a *App) keyDiagDialog() *KeyDiagnosticsDialog      { return dialogOf(a, NewKeyDiagnosticsDialog) }
 func (a *App) updateDialog() *UpdateDialog               { return dialogOf(a, NewUpdateDialog) }
 func (a *App) propsDialog() *PropertiesDialog            { return dialogOf(a, NewPropertiesDialog) }
 func (a *App) propDialog() *PropDialog                   { return dialogOf(a, NewPropDialog) }
@@ -116,6 +122,9 @@ func (a *App) newAlertDialog() *NewAlertDialog           { return dialogOf(a, Ne
 func (a *App) newOperatorDialog() *NewOperatorDialog     { return dialogOf(a, NewNewOperatorDialog) }
 func (a *App) newCredentialDialog() *NewCredentialDialog { return dialogOf(a, NewNewCredentialDialog) }
 func (a *App) sendTestMailDialog() *SendTestMailDialog   { return dialogOf(a, NewSendTestMailDialog) }
+func (a *App) keyDiagDialog() *dialogs.KeyDiagnosticsDialog {
+	return dialogOf(a, newAppKeyDiagDialog)
+}
 func (a *App) generateScriptsDialog() *GenerateScriptsDialog {
 	return dialogOf(a, NewGenerateScriptsDialog)
 }

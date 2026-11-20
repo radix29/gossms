@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -226,5 +227,68 @@ func TestDetailSortScalesByteUnits(t *testing.T) {
 	// Non-byte units are stripped, not scaled.
 	if n, _ := parseDetailNumber("250 ms"); n != 250 {
 		t.Errorf(`parseDetailNumber("250 ms") = %v, want 250`, n)
+	}
+}
+
+// A Refresh of the node on screen keeps the cursor on the object it was on,
+// wherever the reload puts that object's row (a row added above it, a sorted
+// column's figures changed), and on its column. It went back to row 0 of the
+// loader's order: the refetch's rows went in through SetData.
+func TestDetailBrowserRefreshKeepsTheCursorOnItsRow(t *testing.T) {
+	a := newTestApp()
+	node, _ := newConnectedNode("Tables")
+	cols := []string{"Name", "Row Count"}
+	result := func(names ...string) *detailResult {
+		r := &detailResult{cols: cols}
+		for i, n := range names {
+			r.rows = append(r.rows, []string{n, strconv.Itoa(len(names) - i)})
+			r.objs = append(r.objs, nodeData{Type: NodeTable, Schema: "dbo", Name: n})
+		}
+		return r
+	}
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 100, 30)
+	db.cache[node] = result("a", "b", "c")
+	db.ShowNodeDetails(a, node)
+
+	for _, tc := range []struct {
+		name   string
+		landed *detailResult
+		want   int
+	}{
+		{"row added above", result("new", "a", "b", "c"), 2},
+		// b dropped: the cursor stays on its index (2, clamped).
+		{"row gone", result("a", "c"), 1},
+	} {
+		db.grid.SetSelectedCell(slices.Index(gridColumn(db, 0), "b"), 1)
+		db.RefreshCurrent(a)
+		db.applyResult(tc.landed) // what the refetch's postFinalResult runs
+		if row, col := db.grid.SelectedCell(); row != tc.want || col != 1 {
+			t.Errorf("%s: cursor = (%d,%d), want (%d,1)", tc.name, row, col, tc.want)
+		}
+	}
+
+	// Sorted by Row Count ascending, the cursor on c; the reload reverses the
+	// counts, so c's row moves from the top to the bottom.
+	db.applyResult(result("a", "b", "c"))
+	clickHeader(db, 1)
+	db.grid.SetSelectedCell(0, 1) // c, count 1
+	db.RefreshCurrent(a)
+	reversed := result("a", "b", "c")
+	for i, r := range reversed.rows {
+		r[1] = strconv.Itoa(i + 1)
+	}
+	db.applyResult(reversed)
+	if row, _ := db.grid.SelectedCell(); db.grid.Row(row)[0] != "c" {
+		t.Errorf("cursor on %q after the sorted reload, want c", db.grid.Row(row)[0])
+	}
+
+	// Another node's rows start at the top.
+	other, _ := newConnectedNode("Views")
+	db.cache[other] = result("x", "y", "z")
+	db.grid.SetSelectedCell(2, 1)
+	db.ShowNodeDetails(a, other)
+	if row, _ := db.grid.SelectedCell(); row != 0 {
+		t.Errorf("cursor row = %d on another node, want 0", row)
 	}
 }

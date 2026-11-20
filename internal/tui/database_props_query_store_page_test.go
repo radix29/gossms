@@ -317,7 +317,7 @@ func TestQueryStoreOffersOnlyWhatTheServerAccepts(t *testing.T) {
 }
 
 // An interval outside the seven still displays as itself rather than as a
-// neighbour — preservingItems — and an untouched page writes nothing.
+// neighbour — propsheet.PreservingItems — and an untouched page writes nothing.
 func TestQueryStoreKeepsAnOddIntervalVisible(t *testing.T) {
 	r := queryStoreResponses()
 	r[1].rows[0][6] = int64(7)

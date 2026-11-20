@@ -106,7 +106,7 @@ func pageAGReadOnlyRouting(sc *db.ServerConn, agName string) propPage {
 				urlRow.SetValue(current.url)
 				listRow.SetValue(current.list)
 			}
-			reload := wireGridEditor(grid, headers, gridRows, commitCurrent, syncFromSelection)
+			reload := propsheet.BindGridDetail(grid, headers, gridRows, commitCurrent, syncFromSelection)
 
 			gridRow := propsheet.NewGridRow(grid, 9)
 			gridRow.DirtyFn = func() bool {

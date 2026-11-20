@@ -43,7 +43,7 @@ func TestNewAGDatabaseGridMovesThroughTheForm(t *testing.T) {
 			includeRow.SetChecked(included[current])
 		}
 	}
-	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
+	reload := propsheet.BindGridDetail(grid, headers, rowsFor, commit, sync)
 
 	gridRow := propsheet.NewGridRow(grid, 7)
 	gridRow.DirtyFn = func() bool {

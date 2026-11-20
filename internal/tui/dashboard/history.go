@@ -25,13 +25,13 @@ var (
 // rather than shrinking the rect. The returned hits give each chart's plot area
 // and what it plotted, so a click maps to a sample; they are in r's coordinates,
 // so a caller drawing off-screen must translate them as it does the pixels.
-func DrawHistory(s tcell.Screen, r core.Rect, v HistoryView) []ChartHit {
+func DrawHistory(s tcell.Screen, r core.Rect, v HistoryView) []charts.PlotHit {
 	if r.W <= 0 || r.H <= 0 {
 		return nil
 	}
 	drawHeader(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: historyHeaderH}, v.Header)
 
-	hits := make([]ChartHit, 0, 10)
+	hits := make([]charts.PlotHit, 0, 10)
 	y := r.Y + historyHeaderH
 	y = historyActivity(s, r, y, v, &hits)
 	y = historyWaits(s, r, y, v, &hits)
@@ -42,7 +42,7 @@ func DrawHistory(s tcell.Screen, r core.Rect, v HistoryView) []ChartHit {
 
 // drawChart draws one overlaid history panel and records where its plot
 // landed.
-func drawChart(s tcell.Screen, panel core.Rect, title string, c charts.HistoryChart, hits *[]ChartHit) {
+func drawChart(s tcell.Screen, panel core.Rect, title string, c charts.HistoryChart, hits *[]charts.PlotHit) {
 	inner := charts.DrawPanelTitle(s, panel, title)
 	plot, timeRow := c.DrawFrame(s, inner)
 	addHit(hits, title, plot, timeRow, c.Series, false)
@@ -50,7 +50,7 @@ func drawChart(s tcell.Screen, panel core.Rect, title string, c charts.HistoryCh
 
 // drawStackedChart draws one stacked history panel and records where its
 // plot landed.
-func drawStackedChart(s tcell.Screen, panel core.Rect, title string, c charts.StackedHistoryChart, hits *[]ChartHit) {
+func drawStackedChart(s tcell.Screen, panel core.Rect, title string, c charts.StackedHistoryChart, hits *[]charts.PlotHit) {
 	inner := charts.DrawPanelTitle(s, panel, title)
 	plot, timeRow := c.DrawFrame(s, inner)
 	addHit(hits, title, plot, timeRow, c.Series, false)
@@ -63,7 +63,7 @@ func section(s tcell.Screen, r core.Rect, y, bodyH int, title string, kpis []cha
 	if y < r.Bottom() {
 		// Guarded, not left to the helpers' clipping: a section bar is a filled
 		// row, so one past the bottom of r would stripe whatever lies below.
-		drawSectionBar(s, core.Rect{X: r.X, Y: y, W: r.W, H: sectionBarH}, title, kpis)
+		charts.DrawSectionBar(s, core.Rect{X: r.X, Y: y, W: r.W, H: sectionBarH}, title, kpis)
 	}
 	body := core.Rect{X: r.X, Y: y + sectionBarH, W: r.W, H: bodyH}
 	if body.Bottom() > r.Bottom() {
@@ -72,7 +72,7 @@ func section(s tcell.Screen, r core.Rect, y, bodyH int, title string, kpis []cha
 	return body, y + sectionBarH + bodyH
 }
 
-func historyActivity(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]ChartHit) int {
+func historyActivity(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, historyBodyH, "SQL SERVER ACTIVITY", v.ActivityKPIs)
 	cols := splitColumns(body, 3)
 
@@ -99,7 +99,7 @@ func historyActivity(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]
 	return next
 }
 
-func historyWaits(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]ChartHit) int {
+func historyWaits(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, historyBodyH, "SQL SERVER WAITS", v.WaitsKPIs)
 	cols := splitColumns(body, 2)
 
@@ -126,7 +126,7 @@ func historyWaits(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]Cha
 	return next
 }
 
-func historyMemory(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]ChartHit) int {
+func historyMemory(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]charts.PlotHit) int {
 	body, next := section(s, r, y, historyBodyH, "SQL SERVER MEMORY", v.MemoryKPIs)
 	cols := splitColumns(body, 3)
 
@@ -158,7 +158,7 @@ func historyMemory(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]Ch
 	return next
 }
 
-func historyDatabaseIO(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]ChartHit) int {
+func historyDatabaseIO(s tcell.Screen, r core.Rect, y int, v HistoryView, hits *[]charts.PlotHit) int {
 	file := v.File
 	if file == "" {
 		file = "Total"

@@ -144,7 +144,7 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 		}
 		pathRow.SetValue(d.files[current].FileName)
 	}
-	reloadGrid := wireGridEditor(grid, headers, fileRows, commitCurrent, syncFromSelection)
+	reloadGrid := propsheet.BindGridDetail(grid, headers, fileRows, commitCurrent, syncFromSelection)
 
 	// A source or name change invalidates paths derived from the old ones. Dropping
 	// them puts the request back on gosmo's defaults, always in step with what is

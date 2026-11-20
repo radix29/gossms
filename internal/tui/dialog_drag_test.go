@@ -330,39 +330,6 @@ func TestFilterDialogDragOutOfAValueFieldKeepsExtending(t *testing.T) {
 	}
 }
 
-// FindReplaceDialog is the one the other five copied their comment from, and
-// the only one of the seven with no drag test of its own until now.
-func TestFindDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
-	a := newTestApp()
-	a.setScreen(tuikittest.NewScreen(100, 40)) // before the dialog: withScreen hands it on
-	installDialog(a, withScreen(NewFindReplaceDialog(a), a.screen))
-	qp := NewQueryPanel(a, "Query 1")
-	qp.SetBounds(0, 0, 80, 24)
-	a.panels.AddPanel(qp)
-	qp.editor.SetText("select 1")
-
-	d := a.findDialog()
-	d.ShowReplace() // two fields, so there is somewhere below to drag to
-	d.layout()
-	d.fFind.SetValue("abcdefgh")
-
-	ix, y := d.fFind.InputX(), d.fFind.Bounds().Y
-	if got := dragOutOf(t, d, d.fFind, ix+6, y+3); got != "abcde" {
-		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
-	}
-	if d.focusIdx != 0 {
-		t.Errorf("focusIdx = %d, want 0 — a widget below stole a gesture fFind owned", d.focusIdx)
-	}
-
-	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
-	if d.drag.Field() != nil {
-		t.Fatal("a release outside the dialog left the gesture latched")
-	}
-	if d.fFind.HandleMouse(tcell.NewEventMouse(ix+6, y+3, tcell.Button1, tcell.ModNone)) {
-		t.Error("the field is still latched — its next off-rect press was accepted")
-	}
-}
-
 // A dialog dismissed mid-drag — Escape with the button still down — never sees
 // the release, so both halves of the latch survive: the gesture and the
 // field's own mouseDragging. Show clears the gesture; it must clear the

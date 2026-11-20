@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tui/dashboard"
 	"github.com/radix29/tuikit/charts"
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/theme"
@@ -36,7 +35,7 @@ func (am *ActivityMonitor) pinTooltip(mx, my int) *amTooltip {
 
 // readTooltip fills a pin from one bucket of one chart: its time, current
 // column, chart geometry, and one row per series.
-func (am *ActivityMonitor) readTooltip(t *amTooltip, hit dashboard.ChartHit, idx int) {
+func (am *ActivityMonitor) readTooltip(t *amTooltip, hit charts.PlotHit, idx int) {
 	t.time = am.bucketTime(idx)
 	t.plot, t.timeRow = hit.Plot, hit.TimeRow
 	if !t.snapshot {
@@ -87,13 +86,13 @@ func (am *ActivityMonitor) refreshTooltip() {
 }
 
 // chartHit is the last draw's record for one chart, by title.
-func (am *ActivityMonitor) chartHit(title string) (dashboard.ChartHit, bool) {
+func (am *ActivityMonitor) chartHit(title string) (charts.PlotHit, bool) {
 	for _, hit := range am.hits {
 		if hit.Title == title {
 			return hit, true
 		}
 	}
-	return dashboard.ChartHit{}, false
+	return charts.PlotHit{}, false
 }
 
 // canvasPos translates a screen position to canvas coordinates; screenPos

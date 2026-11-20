@@ -90,8 +90,9 @@ which owns them; the entries here say how goSSMS applies them.
   rows did not move: a new column, appended rows); outside `internal/tui`
   call that directly (`propsheet.ToggleGridRow`) — never hand-roll the pair.
   After Add/Remove/Revert use `resetGrid`, not `SetData` + `SetSelectedRow`
-  (which silently drops widths). Packaged idioms: `wireGridEditor`
-  (`prop_grid_helpers.go`) for grid + detail editor; tuikit's
+  (which silently drops widths). Packaged idioms: tuikit's
+  `propsheet.BindGridDetail` for grid + detail editor (`ListEditor` when it
+  also has Add/Remove);
   `propsheet.BindCellToggle`/`NewCellToggleGrid` for "activate a cell to
   change the row"; `propsheet.StaticBlock` for a read-only detail block (build
   its rows with literal `propsheet.Static` labels, so
@@ -175,6 +176,14 @@ which owns them; the entries here say how goSSMS applies them.
   its ring and hands keys to tuikit's `dialogs.ButtonRowKey` while it is there (Connect, Back Up,
   Restore). F1 is Help; it once cycled these rows, and was the only way to
   reach Restore's OK from the keyboard.
+- **A hand-rolled dialog's ring is `propsheet.Form`'s.** The row is one stop
+  (Left/Right inside it, Up/Down leaving it), Tab/Backtab wrap at both ends, and on a field the
+  focused widget gets every key first (an open dropdown's list, a radio box's
+  arrows, a checkbox's Enter); what it declines moves focus (Up/Down too) or
+  fires the default button. Use `dialogs.FieldRingKey` + `ButtonRowKey` with
+  `dialogs.RingStep` (Find/Replace, Log Search, Filter, Options) rather than a
+  per-dialog switch: four of them had drifted into four semantics, one of which
+  trapped Tab on OK/Cancel.
 - **A dialog-level scrollbar uses `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a too-small terminal content
   is clipped to `InnerRect` (`dialogs.Stack.Draw`'s `core.ClipScreen`, narrowed by
@@ -185,7 +194,8 @@ which owns them; the entries here say how goSSMS applies them.
   `ButtonRowY() - inner.Y - 1` (one fewer again above a `DrawSeparator` line);
   `inner.H - 2` ran one row onto the buttons, so Help, Tasks and Query List hid
   their last entry for good (B20, B22).
-- **Key Diagnostics (`key_diagnostics_dialog.go`, Help menu) is a permanent
+- **Key Diagnostics (tuikit's `dialogs.KeyDiagnosticsDialog`, Help menu; fed
+  by `handleKey`/`handleMouse` in `app_events.go`) is a permanent
   feature**, not debug scaffolding — never trim it. It separates app bugs from
   terminal limits.
 - **An open dialog owns the clipboard — `activeClipboardTarget` never falls past

@@ -223,7 +223,7 @@ func orderedColumnRows(list *[]string, available []string, section, emptyNote st
 	current := -1
 	noCommit := func() {}
 	sync := func() { current = grid.SelectedRow() }
-	reload := wireGridEditor(grid, headers, rowsFor, noCommit, sync)
+	reload := propsheet.BindGridDetail(grid, headers, rowsFor, noCommit, sync)
 
 	move := func(delta int) {
 		to := current + delta

@@ -74,8 +74,8 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 			}
 
 			nameRow := propsheet.Text("Name", j.Name, 30)
-			ownerRow := selectPreserving("Owner", loginNames, j.OwnerLoginName, unknownOwnerItem)
-			categoryRow := selectPreserving("Category", catNames, j.Category, unsetItem)
+			ownerRow := propsheet.SelectPreserving("Owner", loginNames, j.OwnerLoginName, unknownOwnerItem)
+			categoryRow := propsheet.SelectPreserving("Category", catNames, j.Category, unsetItem)
 			enabledRow := propsheet.Check("Enabled", j.IsEnabled)
 			descRow := propsheet.Text("Description", j.Description, 50)
 
@@ -106,10 +106,10 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 				if descRow.Dirty() {
 					ch.Description = new(descRow.Value())
 				}
-				if cat, ok := changedTo(categoryRow, unsetItem); ok {
+				if cat, ok := categoryRow.ChangedTo(); ok {
 					ch.Category = new(cat)
 				}
-				if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
+				if owner, ok := ownerRow.ChangedTo(); ok {
 					ch.OwnerLogin = new(owner)
 				}
 				if enabledRow.Dirty() {

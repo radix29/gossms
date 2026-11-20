@@ -41,7 +41,7 @@ func keyOwnerNote(noun string) propsheet.Row {
 // families take an application role. The current owner is kept even when it
 // is not in the list (a certificate-mapped user), so an untouched row stays
 // clean.
-func keyOwnerRow(ctx context.Context, sc *db.ServerConn, dbName, current string, withRoles bool) (*propsheet.SelectRow, error) {
+func keyOwnerRow(ctx context.Context, sc *db.ServerConn, dbName, current string, withRoles bool) (*propsheet.PreservingSelectRow, error) {
 	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
@@ -53,15 +53,15 @@ func keyOwnerRow(ctx context.Context, sc *db.ServerConn, dbName, current string,
 	if !withRoles {
 		principals.Roles = nil
 	}
-	return selectPreserving("Owner", principals.owners(nil), current, unknownOwnerItem), nil
+	return propsheet.SelectPreserving("Owner", principals.owners(nil), current, unknownOwnerItem), nil
 }
 
 // keyOwnerApply writes an edited Owner row through change, and does nothing
 // for an untouched one.
-func keyOwnerApply(sc *db.ServerConn, dbName string, row *propsheet.SelectRow,
+func keyOwnerApply(sc *db.ServerConn, dbName string, row *propsheet.PreservingSelectRow,
 	change func(ctx context.Context, d *gosmo.Database, owner string) error) propApply {
 	return func(ctx context.Context) error {
-		owner, ok := changedTo(row, unknownOwnerItem)
+		owner, ok := row.ChangedTo()
 		if !ok {
 			return nil
 		}

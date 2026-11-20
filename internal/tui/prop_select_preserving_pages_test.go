@@ -16,7 +16,7 @@ import (
 // but a user mapped to it is visible either way). indexOf answers 0 for a miss,
 // and 0 on all six of these pages is a sentinel — "(None)", "<All databases>" —
 // so the page states as fact that nothing is configured, on exactly the object
-// an admin opened Properties to investigate. selectPreserving widens the list
+// an admin opened Properties to investigate. propsheet.SelectPreserving widens the list
 // with the value instead.
 //
 // Each case is asserted twice: the row shows the vanished value, and an
@@ -156,7 +156,7 @@ func TestAlertResponseShowsAJobMissingFromTheList(t *testing.T) {
 
 // The other half of the change: the stand-in must still write as "", and a
 // real pick must still write its own name. Each of the six is read back with
-// preservedValue now rather than by comparing the selected index against 0,
+// PreservedValue now rather than by comparing the selected index against 0,
 // and an index comparison is what a widened list breaks.
 func TestPreservedDropdownsStillWriteTheValuePicked(t *testing.T) {
 	t.Run("alert scope back to all databases", func(t *testing.T) {

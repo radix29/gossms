@@ -37,7 +37,10 @@ type OptionsDialog struct {
 
 	// focusable is the Tab order, top to bottom; Tab/Backtab, hit-testing and the
 	// clipboard target derive from it, so a new control is one entry here plus its
-	// Draw position. focusIdx == len(focusable) is the button row, not a widget.
+	// Draw position. focusIdx == len(focusable) is the button row, not a widget:
+	// one Tab stop crossed with the arrows (dialogs.RingStep, ButtonRowKey).
+	// btnFocus is the button the row would press: OK while focus is in the
+	// fields, so Enter from a field applies.
 	focusable []focusable
 	focusIdx  int
 	btnFocus  int // 0=OK 1=Cancel
@@ -191,59 +194,27 @@ func (d *OptionsDialog) openDropDown() *widgets.DropDown {
 	return nil
 }
 
-// HandleKey processes keyboard events.
+// HandleKey processes keyboard events: the focus ring (dialogs.FieldRingKey
+// on a control, ButtonRowKey on the button row). An open dropdown is the
+// focused control (DropDown.Focus(false) closes it), so Escape closes its list
+// only and Up/Down move in it rather than between controls.
 func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	if dd := d.openDropDown(); dd != nil && ev.Key() == tcell.KeyEscape {
-		dd.HandleKey(ev) // closes the list only
-		return true
-	}
-	if ev.Key() == tcell.KeyEscape {
-		d.Hide()
-		return true
-	}
 	if d.onButtons() {
-		last := len(d.focusable) - 1
-		switch ev.Key() {
-		case tcell.KeyTab, tcell.KeyRight:
-			d.btnFocus = (d.btnFocus + 1) % 2
-		case tcell.KeyBacktab, tcell.KeyLeft:
-			if d.btnFocus > 0 {
-				d.btnFocus--
-			} else {
-				d.setFocus(last)
-			}
-		case tcell.KeyUp:
-			d.setFocus(last)
-		case tcell.KeyEnter:
-			d.doButton()
-		}
-		return true
+		return dialogs.ButtonRowKey(ev, &d.btnFocus, 2, nil, d.doButton, d.Hide, d.moveFocus)
 	}
-	if h, ok := d.focusable[d.focusIdx].(interface {
-		HandleKey(*tcell.EventKey) bool
-	}); ok && h.HandleKey(ev) {
-		return true
+	return dialogs.FieldRingKey(ev, d.focusable[d.focusIdx], d.doButton, d.Hide, d.moveFocus)
+}
+
+// moveFocus steps the ring by dir. Leaving the button row resets it to OK, the
+// button Enter presses from a control.
+func (d *OptionsDialog) moveFocus(dir int) {
+	d.setFocus(dialogs.RingStep(d.focusable, d.focusIdx, dir))
+	if !d.onButtons() {
+		d.btnFocus = 0
 	}
-	switch ev.Key() {
-	case tcell.KeyTab, tcell.KeyDown:
-		d.setFocus(d.focusIdx + 1)
-	case tcell.KeyBacktab, tcell.KeyUp:
-		// The first control has nowhere to go back to; Backtab does not wrap.
-		if d.focusIdx > 0 {
-			d.setFocus(d.focusIdx - 1)
-		}
-	case tcell.KeyEnter:
-		d.doButton()
-	default:
-		// The radio box swallows the keys it does not use; the fields, the
-		// dropdowns and the checkbox pass them on.
-		_, isRadio := d.focusable[d.focusIdx].(*widgets.RadioBox)
-		return isRadio
-	}
-	return true
 }
 
 // HandleMouse processes mouse events.

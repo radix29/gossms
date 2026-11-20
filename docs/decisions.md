@@ -411,7 +411,7 @@ The job-state read, load-bearing:
 Files against a real FILESTREAM database on win10cli.
 
 - **`FileGroups` returns a FILESTREAM filegroup like any other**, so the picker
-  lists it; `preservingItems`' widening isn't needed.
+  lists it; `propsheet.PreservingItems`' widening isn't needed.
 - **The filegroup alone makes a file FILESTREAM** — `ADD FILE` has no type
   keyword (a file added to PRIMARY with an extensionless path came back ROWS).
   So the Type picker offers nothing more; `addableFileTypes` stays two items.
@@ -1476,10 +1476,11 @@ it from the string 'NULL'.
   level — written in the page, written back as `items[row.Selected()]`) and for
   New-X defaults; wrong for server-supplied names against a separately read
   list (they vanish if dropped between reads or invisible) — use
-  `preservedValue`/`changedTo`. `TestIndexOfSentinelListFallsBackToSentinel`.
+  `PreservedValue`/`ChangedTo`. `TestIndexOfSentinelListFallsBackToSentinel`.
 - **Merging the two user-mapping page builders is a non-goal** — the
-  duplication that caused a bug was in `wireGridEditor`, now shared; merging the
-  builders costs six injection points, two row structs, two applies.
+  duplication that caused a bug was in the grid-detail binding, now shared
+  (`propsheet.BindGridDetail`); merging the builders costs six injection
+  points, two row structs, two applies.
 - **`Form.Revert()` is exposed.** `Ctrl+Z` on a `PropertySheet` →
   `RevertPage` → `Form.Revert`, every row's `Revert`, all 25 `RevertFn`s.
   **`Ctrl+Z` is handled before the zone switch, beside `F5`** (works from page
@@ -1492,12 +1493,21 @@ it from the string 'NULL'.
   `widgets.InputField` takes `Ctrl+A`/`Ctrl+U`, not `Ctrl+Z`. A new
   `EditorRow` inherits this; a new row type with its own `Ctrl+Z` and no
   `KeyHandler` needs a different key.
-- **The two search dialogs' key-routing skeleton stays duplicated**
-  (`FindReplaceDialog.HandleKey`, `LogSearchDialog.HandleKey`). Only the
-  Tab/Backtab half is identical; Escape, `F3` and field dispatch differ. A
-  twelve-line helper for two callers isn't worth it — extract for a third
-  dialog or opportunistically. `log_search_dialog.go`'s `HandleMouse` comment
-  ("the same shape as `FindReplaceDialog`'s") goes stale if either moves.
+- **Hand-rolled dialogs share one focus ring (2026-11-20)**, superseding
+  "the two search dialogs' key-routing skeleton stays duplicated". Find/Replace,
+  Log Search, Filter and Options had four semantics (each button a Tab stop vs
+  a cycling row, Backtab wrapping or not, Up/Down moving focus or not, Options'
+  Tab trapped on OK/Cancel). Decided: the `propsheet.Form`/`ButtonRowKey`
+  model the Connect/Backup/Restore/Profile dialogs already used, the row being
+  one stop with Left/Right inside it, full wrap, and the focused widget getting
+  every key first, Up/Down moving focus only when it declines. Consequences
+  taken knowingly: Enter on a checkbox in Find/Replace toggles it (it used to
+  press Find Next), and Up/Down leave a button row as Backtab/Tab do, in
+  every `ButtonRowKey` dialog (Connect, Backup, Restore, Profile included;
+  `ListDialog` keeps them for its list). `docs/ui-rules.md`
+  § Dialogs and the clipboard has the rule. `log_search_dialog.go`'s
+  `HandleMouse` comment points at tuikit's dialog and goes stale if either
+  moves again.
 - **A combining mark does not shift a row; a tmux capture only looks like
   it.** Arabic stopwords ending in a shadda (`إنّ`, U+0651) seem to push the
   grid's and dialog's right border one column, but tcell emits base and mark in
@@ -1786,6 +1796,24 @@ it from the string 'NULL'.
     RGB data tables (the latter already share `mcSkin`); a builder would hide
     the table. `newTestEditor` stays in both repos: tuikittest importing
     `controls/editor` is an import cycle.
+- **Every section title strip is tuikit's `charts.DrawSectionBar`**
+  (2026-11-20, `docs/tuikit-reuse-plan.md` item 2): Activity Monitor, the
+  Database Detail Browser's DISK USAGE strip and the AG dashboard. The AG
+  dashboard adopted the shared look (`ChartHeading` foreground, not bold); its
+  own `Text`-on-`ChartSectionBg` bold strip claimed to match the Activity
+  Monitor and didn't. A per-caller style override is not wanted.
+- **A click on a dashboard plot maps back through tuikit's `charts.PlotHit`**
+  (2026-11-20, plan item 5), which replaced `dashboard.ChartHit` unchanged.
+  It moved with item 2 despite one consumer (the Activity Monitor readout):
+  tuikit ships the readout box, and a host rewriting the hit model tends to
+  read `At` where the chart drew `AtBucket`.
+- **Side-by-side chart panels split through tuikit's `core.SplitColumns`**
+  (2026-11-20, plan item 4): fit as many as fit at the minimum width,
+  gutters counted, the last column absorbing the remainder. The Database
+  Detail Browser's last disk-usage panel gained the 0..n-1 cells it used to
+  leave blank; the dashboard keeps "all or one" at its call site and now
+  counts the gutters too, so it collapses one or two columns of width earlier
+  rather than drawing panels a cell under `minPanelW`. No `lastAbsorbs` flag.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,

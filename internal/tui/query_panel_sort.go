@@ -45,17 +45,6 @@ type resultSorts struct {
 	byTab  map[int]resultSort
 }
 
-// sortedResultSet shows a result set in perm's order. It is a controls.NullSource
-// like the set itself, so the reordered NULLs still draw dimmed.
-type sortedResultSet struct {
-	set  query.ResultSet
-	perm []int
-}
-
-func (s sortedResultSet) Len() int                 { return len(s.perm) }
-func (s sortedResultSet) Row(i int) []string       { return s.set.Rows[s.perm[i]] }
-func (s sortedResultSet) IsNull(row, col int) bool { return s.set.IsNull(s.perm[row], col) }
-
 // activeSort is the active tab's sort, ok false when it has none.
 func (p *QueryPanel) activeSort() (resultSort, bool) {
 	if p.sorts.result != p.result || p.result == nil {
@@ -75,7 +64,9 @@ func (p *QueryPanel) showResultSet(set query.ResultSet) {
 		p.results.SetColumnAlignments(resultColumnAligns(set))
 		return
 	}
-	p.results.SetSource(set.Columns, sortedResultSet{set: set, perm: s.perm})
+	// PermutedSource passes the set's NullSource through: reordered NULLs still
+	// draw dimmed.
+	p.results.SetSource(set.Columns, controls.PermutedSource{Src: set, Perm: s.perm})
 	p.results.SetColumnAlignments(resultColumnAligns(set))
 	p.results.SetSortIndicator(s.col, s.desc)
 }
@@ -175,13 +166,10 @@ func (p *QueryPanel) setResultSort(col int, desc bool) {
 // the dragged column widths.
 func (p *QueryPanel) applyResultSort(key sortRunKey, perm []int) {
 	shown := key.tab == p.activeTab && p.resultsMode != ResultsModeText
-	selected, cursorCol := -1, 0
-	if shown {
-		row, col := p.results.SelectedCell()
-		selected, cursorCol = row, col
-		if prev, ok := p.activeSort(); ok && row >= 0 && row < len(prev.perm) {
-			selected = prev.perm[row]
-		}
+	// The order on screen now; nil, the identity, while unsorted.
+	var oldPerm []int
+	if prev, ok := p.activeSort(); ok && shown {
+		oldPerm = prev.perm
 	}
 
 	if p.sorts.result != key.result {
@@ -192,14 +180,8 @@ func (p *QueryPanel) applyResultSort(key sortRunKey, perm []int) {
 		return
 	}
 	set := key.result.Sets[key.tab]
-	p.results.SetSourcePreservingView(set.Columns, sortedResultSet{set: set, perm: perm})
+	p.results.SetSourceReordered(set.Columns, controls.PermutedSource{Src: set, Perm: perm}, oldPerm, perm)
 	p.results.SetSortIndicator(key.col, key.desc)
-	// On a miss the cursor stays on its index.
-	i := slices.Index(perm, selected)
-	if i < 0 {
-		i, _ = p.results.SelectedCell()
-	}
-	p.results.SetSelectedCell(i, cursorCol)
 }
 
 // resultSortMenuItems are the cell menu's keyboard route to the header click
@@ -211,17 +193,13 @@ func (p *QueryPanel) resultSortMenuItems() []controls.MenuItem {
 	if !ok || col < 0 || col >= len(set.Columns) {
 		return nil
 	}
-	item := func(label string, desc bool) controls.MenuItem {
-		return controls.MenuItem{
-			Label: label,
-			Enabled: func() bool {
-				s, ok := p.activeSort()
-				return !ok || s.col != col || s.desc != desc
-			},
-			Action: func() { p.setResultSort(col, desc) },
-		}
-	}
-	return []controls.MenuItem{item("Sort Ascending", false), item("Sort Descending", true)}
+	return controls.SortMenuItems(
+		func(desc bool) bool {
+			s, ok := p.activeSort()
+			return ok && s.col == col && s.desc == desc
+		},
+		func(desc bool) { p.setResultSort(col, desc) },
+	)
 }
 
 // resultSortKind is how a column's cells compare, from its declared type.

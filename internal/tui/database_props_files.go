@@ -338,9 +338,9 @@ func (p *databaseFilesPage) form(owner string) *propsheet.Form {
 		p.syncSizeRows(p.effectiveType(p.typeSelect.Value(), p.pickedFilegroup(p.typeSelect.Value())))
 	})
 
-	// wireGridEditor redraws after the commit, so the row moved off shows
+	// BindGridDetail redraws after the commit, so the row moved off shows
 	// what Apply will send rather than its loaded values.
-	wireGridEditor(p.grid, databaseFileColumns, p.rows, p.commitCurrent, p.syncFieldsFromSelection)
+	propsheet.BindGridDetail(p.grid, databaseFileColumns, p.rows, p.commitCurrent, p.syncFieldsFromSelection)
 
 	p.hint = propsheet.Hint()
 	addBtn := widgets.NewButton("Add", p.addFile)
@@ -408,7 +408,7 @@ func (p *databaseFilesPage) showFilegroupFor(fileType, fileGroup string) {
 	}
 	// Widened as the type picker is: a file can sit in a filegroup FileGroups
 	// didn't list, and a stand-in name would read as the server's answer.
-	items, i := preservingItems(p.fgNames, fileGroup)
+	items, i := propsheet.PreservingItems(p.fgNames, fileGroup)
 	p.filegroupSelect.SetItems(items)
 	p.filegroupSelect.SetSelected(i)
 }
@@ -510,10 +510,10 @@ func (p *databaseFilesPage) syncFieldsFromSelection() {
 		return
 	}
 	p.nameField.SetValue(current.name)
-	// preservingItems, not indexOf: sys.database_files also reports FILESTREAM (and
+	// propsheet.PreservingItems, not indexOf: sys.database_files also reports FILESTREAM (and
 	// memory-optimized) files, whose type is in neither item this page can create.
 	// indexOf would show "ROWS" for one as though the server had said so.
-	typeItems, typeIdx := preservingItems(addableFileTypes, current.fileType)
+	typeItems, typeIdx := propsheet.PreservingItems(addableFileTypes, current.fileType)
 	p.typeSelect.SetItems(typeItems)
 	p.typeSelect.SetSelected(typeIdx)
 	p.showFilegroupFor(current.fileType, current.fileGroup)

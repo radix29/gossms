@@ -70,11 +70,11 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 			errorField := propsheet.Int("Error number", int64(al.ErrorNumber), 0, 2147483647, "")
 			severityField := propsheet.Int("Severity", int64(al.Severity), 0, 25, "")
 			dbItems := append([]string{allDatabasesItem}, dbNames...)
-			dbRow := selectPreserving("Database", dbItems, al.DatabaseName, allDatabasesItem)
+			dbRow := propsheet.SelectPreserving("Database", dbItems, al.DatabaseName, allDatabasesItem)
 			delayField := propsheet.Int("Delay between responses", int64(al.DelayBetweenResponses/time.Second), 0, 86400, "sec")
 			messageField := propsheet.Text("Notification message", al.NotificationMessage, 50)
 			catItems := append([]string{noneItem}, catNames...)
-			categoryRow := selectPreserving("Category", catItems, al.Category, noneItem)
+			categoryRow := propsheet.SelectPreserving("Category", catItems, al.Category, noneItem)
 
 			f := propsheet.NewForm(
 				propsheet.Section("Alert identity"),
@@ -116,7 +116,7 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 					ch.ErrorNumber, ch.Severity = new(errNum), new(sev)
 				}
 				if dbRow.Dirty() {
-					ch.DatabaseName = new(preservedValue(dbRow, allDatabasesItem))
+					ch.DatabaseName = new(dbRow.PreservedValue())
 				}
 				if delayField.Dirty() {
 					n := intRowValue0(delayField.IntValue())
@@ -126,7 +126,7 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 					ch.NotificationMessage = new(messageField.Value())
 				}
 				if categoryRow.Dirty() {
-					ch.Category = new(preservedValue(categoryRow, noneItem))
+					ch.Category = new(categoryRow.PreservedValue())
 				}
 				if nameField.Dirty() {
 					ch.Name = new(nameField.Value())
@@ -187,7 +187,7 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 				jobNames[i] = j.Name
 			}
 			jobItems := append([]string{noneItem}, jobNames...)
-			responseJobSelect := selectPreserving("Response job", jobItems, al.JobName, noneItem)
+			responseJobSelect := propsheet.SelectPreserving("Response job", jobItems, al.JobName, noneItem)
 
 			f := propsheet.NewForm(
 				propsheet.Section("Operators to e-mail on this alert"),
@@ -216,7 +216,7 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 				}
 				if responseJobSelect.Dirty() {
 					// "" is sp_update_alert's own "no job response".
-					job := preservedValue(responseJobSelect, noneItem)
+					job := responseJobSelect.PreservedValue()
 					if err := al.Alter(ctx, gosmo.AlertChanges{JobName: &job}); err != nil {
 						return err
 					}

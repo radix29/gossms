@@ -56,16 +56,28 @@ func sheetLabel(label string) string {
 	return strings.TrimRight(core.PadRight(label, propsheet.LabelWidth), " ")
 }
 
-// selectRow is textRow for dropdowns.
+// selectRow is textRow for dropdowns, SelectPreserving's included.
 func selectRow(t *testing.T, f *propsheet.Form, label string) *propsheet.SelectRow {
 	t.Helper()
 	for _, r := range f.Rows() {
-		if sr, ok := r.(*propsheet.SelectRow); ok && sr.Label() == sheetLabel(label) {
+		if sr, ok := asSelectRow(r); ok && sr.Label() == sheetLabel(label) {
 			return sr
 		}
 	}
 	t.Fatalf("no select row labelled %q on this page", label)
 	return nil
+}
+
+// asSelectRow is r as a dropdown row. A PreservingSelectRow embeds its
+// *SelectRow, which a type assertion on *SelectRow alone misses.
+func asSelectRow(r propsheet.Row) (*propsheet.SelectRow, bool) {
+	switch v := r.(type) {
+	case *propsheet.SelectRow:
+		return v, true
+	case *propsheet.PreservingSelectRow:
+		return v.SelectRow, true
+	}
+	return nil, false
 }
 
 // radioRow is textRow for radio groups. Unlike Text and Select, a Radio

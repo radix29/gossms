@@ -82,7 +82,7 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 // selection) dialogs get the same scrollbar behavior via
 // ModalDialog.ScrollbarDrag.
 //
-// KeyDiagnosticsDialog was tested here too until it moved its log into a
+// KeyDiagnosticsDialog (now tuikit's) was tested here too until it moved its log into a
 // read-only editor.Editor, which draws and drags its own scrollbar — the
 // same reason StatusHistoryDialog, built that way from the start, has never
 // had a case here. That half is pinned in tuikit's

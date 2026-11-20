@@ -81,61 +81,6 @@ func indexOfOK(items []string, value string) (int, bool) {
 	return 0, false
 }
 
-// preservingItems returns base and the index of value within it, widening the
-// list with value itself when base lacks it, so the index always points at value.
-//
-// Prefer this to indexOf for any server-supplied value: indexOf's not-found 0
-// would display items[0] as fact, e.g. for a job owned by a dropped login, on
-// exactly the objects an admin opened the page to investigate.
-//
-// value must be non-empty; pass orDefault(value, <sentinel>) for a field the
-// server leaves blank. selectPreserving does that for you.
-func preservingItems(base []string, value string) ([]string, int) {
-	if i, ok := indexOfOK(base, value); ok {
-		return base, i
-	}
-	items := append(slices.Clone(base), value)
-	return items, len(items) - 1
-}
-
-// selectPreserving builds a Select row that can never misreport: it displays
-// value whether or not base offers it, showing unset when the server reported
-// nothing.
-//
-// Read it back with preservedValue, which maps unset to "" again; a stand-in must
-// not be written as a real name.
-func selectPreserving(label string, base []string, value, unset string) *propsheet.SelectRow {
-	items, i := preservingItems(base, orDefault(value, unset))
-	return propsheet.Select(label, items, i)
-}
-
-// preservedValue reads a selectPreserving row back as a value to write,
-// undoing its stand-in.
-func preservedValue(row *propsheet.SelectRow, unset string) string {
-	if v := row.Value(); v != unset {
-		return v
-	}
-	return ""
-}
-
-// changedTo reports the real value a selectPreserving row was edited to, and
-// whether there is one: dirty, and not sitting on its stand-in.
-//
-// Gate every write behind it rather than on Dirty() alone. Dirty() suffices only
-// because a stand-in is listed only when it is also the original selection, a
-// property of how the list is built far from the write; otherwise "(unresolved
-// owner)" could be sent to the server as a principal name.
-//
-// A nil row is a page that drew the value read-only for this object and never
-// changes.
-func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
-	if row == nil || !row.Dirty() {
-		return "", false
-	}
-	v := preservedValue(row, unset)
-	return v, v != ""
-}
-
 // redrawGrid replaces a grid's rows, keeping the cell cursor, dragged column
 // widths and scroll position. SetData would reset the cursor to 0,0, and
 // propsheet.GridRow (which diffs SelectedCell around the key) would then report
@@ -151,26 +96,6 @@ func redrawGrid(grid *controls.DataGrid, headers []string, rows [][]string) {
 func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row int) {
 	grid.SetDataPreservingView(headers, rows)
 	grid.SetSelectedRow(row)
-}
-
-// wireGridEditor connects a detail editor to a DataGrid's selection (the
-// grid-plus-detail shape of the AG General replica grid, Backup Preferences,
-// Read-Only Routing, User Mapping, Attach and New Index/Statistics/AG pages).
-// Moving off a row commits the editor, loads the new row, and redraws (via
-// redrawGrid, so the cursor survives OnSelectRow; otherwise only the first row is
-// reachable). Returns the redraw a page's RevertFn needs.
-func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [][]string, commitCurrent, syncFromSelection func()) (reload func()) {
-	redraw := func() { redrawGrid(grid, headers, gridRows()) }
-	grid.OnSelectRow = func(int) {
-		commitCurrent()
-		syncFromSelection()
-		redraw()
-	}
-	syncFromSelection()
-	return func() {
-		redraw()
-		syncFromSelection()
-	}
 }
 
 // compatLevelItems is the Compatibility level dropdown's base list, oldest

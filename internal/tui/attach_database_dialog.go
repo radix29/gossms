@@ -129,7 +129,7 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 		}
 		pathRow.SetValue(current.PhysicalName)
 	}
-	reloadGrid := wireGridEditor(grid, headers, fileRows, commitCurrent, syncFromSelection)
+	reloadGrid := propsheet.BindGridDetail(grid, headers, fileRows, commitCurrent, syncFromSelection)
 
 	// readFiles is both Browse's continuation and the Read File List button:
 	// a path can be typed as well as picked, and either way the file list has

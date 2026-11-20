@@ -50,7 +50,7 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 			// is one this list no longer offers — a 2019 database attached to
 			// a 2017 instance cannot happen, but indexOf's not-found 0 would
 			// silently rename it NONE if it did.
-			captureItems, captureIdx := preservingItems(captureItems, string(qs.CaptureMode))
+			captureItems, captureIdx := propsheet.PreservingItems(captureItems, string(qs.CaptureMode))
 			captureRow := propsheet.Select("Query capture mode", captureItems, captureIdx)
 			maxSizeRow := propsheet.Int("Max size", qs.MaxStorageMB, 10, 2147483647, "MB")
 			cleanupRow := propsheet.Select("Size based cleanup mode", cleanupItems, indexOf(cleanupItems, string(qs.SizeCleanupMode)))
@@ -64,7 +64,7 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 			for _, m := range gosmo.QueryStoreIntervalMinutes() {
 				intervalBase = append(intervalBase, strconv.Itoa(m))
 			}
-			intervalItems, intervalIdx := preservingItems(intervalBase, strconv.Itoa(qs.IntervalMinutes))
+			intervalItems, intervalIdx := propsheet.PreservingItems(intervalBase, strconv.Itoa(qs.IntervalMinutes))
 			intervalRow := propsheet.Select("Statistics interval (min)", intervalItems, intervalIdx)
 			maxPlansRow := propsheet.Int("Max plans per query", int64(qs.MaxPlansPerQuery), 0, 999999, "")
 			// indexOfOK, not indexOf: below 2017 the read has no column to

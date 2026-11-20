@@ -40,13 +40,81 @@ type detailRows struct {
 // showRows installs a loader's rows, sorted by the order in force. Every path
 // that puts a result on screen goes through it, so a Refresh or a progressive
 // loader's first stage keeps the sort the user picked.
+//
+// The first rows a Refresh of the node on screen shows keep the cursor on the
+// row it was on (see detailReload), and the scroll and dragged column widths
+// with it, when the columns are the same ones; everything else starts at the
+// top.
 func (db *DetailBrowser) showRows(cols []string, rows [][]string, objs []nodeData) {
+	reload := db.reload
+	db.reload = detailReload{}
 	db.base = detailRows{cols: cols, rows: rows, objs: objs}
 	sorted, sortedObjs, perm := db.sortedRows()
-	db.grid.SetData(cols, sorted)
+	if reload.node == nil || reload.node != db.currentNode || !slices.Equal(reload.cols, cols) {
+		db.grid.SetData(cols, sorted)
+	} else {
+		db.grid.SetDataPreservingView(cols, sorted)
+		// On a miss (the row is gone) the cursor stays on its index.
+		for i := range sorted {
+			if detailRowIDOf(sorted, sortedObjs, i) == reload.id {
+				db.grid.SetSelectedCell(i, reload.col)
+				break
+			}
+		}
+	}
 	db.perm = perm
 	db.setRowObjects(sorted, sortedObjs)
 	db.grid.SetSortIndicator(db.sortColumn())
+}
+
+// detailReload is the cursor of a list view whose node is being refetched: the
+// node, the columns shown, the cursor's column, and id, what its row stands
+// for. Index alone is not enough: the reload may add or drop rows above it, or
+// reorder a sorted view (its figures changed, or a progressive loader's read
+// "…" until they land and sort last), so the cursor's index names another row
+// by then.
+type detailReload struct {
+	node *explorerNode
+	cols []string
+	col  int
+	id   detailRowID
+}
+
+// detailRowID is what a list-view row stands for across a reload: its object,
+// for a view whose rows are objects, otherwise its first cell (a name, or a
+// Property/Value view's property).
+type detailRowID struct {
+	obj    nodeKey
+	hasObj bool
+	text   string
+}
+
+// detailRowIDOf is row i's detailRowID, objs being parallel to rows or nil.
+func detailRowIDOf(rows [][]string, objs []nodeData, i int) detailRowID {
+	if len(objs) == len(rows) {
+		return detailRowID{obj: objs[i].key(), hasObj: true}
+	}
+	if len(rows[i]) == 0 {
+		return detailRowID{}
+	}
+	return detailRowID{text: rows[i][0]}
+}
+
+// cursorForReload captures where the cursor is in the list view on screen, for
+// the refetch of the same node to restore; the zero value when nothing is
+// shown or the cursor is on no row.
+func (db *DetailBrowser) cursorForReload() detailReload {
+	row, col := db.grid.SelectedCell()
+	if db.base.cols == nil || row < 0 || row >= len(db.perm) {
+		return detailReload{}
+	}
+	p := db.perm[row]
+	return detailReload{
+		node: db.currentNode,
+		cols: db.base.cols,
+		col:  col,
+		id:   detailRowIDOf(db.base.rows, db.base.objs, p),
+	}
 }
 
 // clearRows forgets the list view on screen, for every path that replaces it
@@ -105,14 +173,10 @@ func (db *DetailBrowser) sortMenuItems() []controls.MenuItem {
 		return nil
 	}
 	name := db.base.cols[col]
-	item := func(label string, desc bool) controls.MenuItem {
-		return controls.MenuItem{
-			Label:   label,
-			Enabled: func() bool { return db.sort != detailSort{col: name, desc: desc} },
-			Action:  func() { db.setSort(detailSort{col: name, desc: desc}) },
-		}
-	}
-	return []controls.MenuItem{item("Sort Ascending", false), item("Sort Descending", true)}
+	return controls.SortMenuItems(
+		func(desc bool) bool { return db.sort == detailSort{col: name, desc: desc} },
+		func(desc bool) { db.setSort(detailSort{col: name, desc: desc}) },
+	)
 }
 
 // resort re-applies the order in force to the rows on screen, keeping the
@@ -124,22 +188,11 @@ func (db *DetailBrowser) resort() {
 	if db.base.cols == nil {
 		return
 	}
-	row, col := db.grid.SelectedCell()
-	selected := -1
-	if row >= 0 && row < len(db.perm) {
-		selected = db.perm[row]
-	}
 	sorted, sortedObjs, perm := db.sortedRows()
-	db.grid.SetDataPreservingView(db.base.cols, sorted)
+	db.grid.SetSourceReordered(db.base.cols, controls.SliceRowSource(sorted), db.perm, perm)
 	db.perm = perm
 	db.setRowObjects(sorted, sortedObjs)
 	db.grid.SetSortIndicator(db.sortColumn())
-	// On a miss the cursor stays on its index.
-	i := slices.Index(perm, selected)
-	if i < 0 {
-		i, _ = db.grid.SelectedCell()
-	}
-	db.grid.SetSelectedCell(i, col)
 }
 
 // sortColumn is the index of the sorted column in the rows on screen and its

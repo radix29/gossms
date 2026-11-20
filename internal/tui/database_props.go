@@ -21,7 +21,7 @@ import (
 // the owner.
 //
 // Shared by database, job, schedule, role, server-role and schema properties via
-// selectPreserving, so the six pages say the same thing about the same condition.
+// propsheet.SelectPreserving, so the six pages say the same thing about the same condition.
 const unknownOwnerItem = "(unresolved owner)"
 
 // unsetItem is the stand-in for a non-owner setting the server reports blank
@@ -155,7 +155,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			dbCaps := sc.DatabaseCapabilities(ctx, dbName)
 			userCount := valueOrUnreadable(dbCaps, "VIEW DEFINITION", strconv.Itoa(len(users)))
 
-			ownerRow := selectPreserving("Owner", loginNames, opts.Owner, unknownOwnerItem)
+			ownerRow := propsheet.SelectPreserving("Owner", loginNames, opts.Owner, unknownOwnerItem)
 			recoveryItems := []string{"SIMPLE", "FULL", "BULK_LOGGED"}
 			recoveryRow := propsheet.Select("Recovery model", recoveryItems, indexOf(recoveryItems, string(d.RecoveryModel)))
 			// An Azure edition owns its own backup chain and answers any
@@ -205,7 +205,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				if err != nil {
 					return err
 				}
-				if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
+				if owner, ok := ownerRow.ChangedTo(); ok {
 					if err := d.SetOwner(ctx, owner); err != nil {
 						return err
 					}
