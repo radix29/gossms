@@ -22,6 +22,7 @@ import (
 	"github.com/radix29/tuikit/core"
 	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/layout"
+	"github.com/radix29/tuikit/loop"
 	"github.com/radix29/tuikit/theme"
 )
 
@@ -160,18 +161,15 @@ type App struct {
 	clipWriteSeq atomic.Uint64
 
 	// wake is the queue background goroutines hand results to the UI
-	// goroutine through (see postAndWake).
-	wake wakeQueue
+	// goroutine through (see postAndWake), and the gate ordering quit's
+	// screen.Fini() against a wake in flight (tuikit's loop.Poster).
+	wake loop.Poster
 
 	// reclaiming is true while releaseClosedPanelMemory's background
 	// FreeOSMemory is running, so closing several panels in a row queues one
 	// reclaim rather than one per panel — a second sweep over a heap the first
 	// is still walking buys nothing and costs another full GC.
 	reclaiming atomic.Bool
-
-	// quitGate orders quit's screen.Fini() against wakeEventLoop's send (see
-	// quitGate).
-	quitGate quitGate
 }
 
 // NewApp constructs the application.
@@ -251,11 +249,9 @@ const (
 // event loop should quit and whether the event needs a frame. Run owns the
 // drawing, so a test can count frames across an event sequence.
 func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
-	// Cleared before draining, not after, so a postEvent+wakeEventLoop
-	// racing this instant still gets its own wake: if its append to
-	// a.wake.pending lands after drainPending's read below, wake.sent is
-	// already false and its CompareAndSwap succeeds.
-	a.wake.sent.Store(false)
+	// Every iteration, whatever woke it: Drain clears the wake coalescing
+	// flag before taking the queue, so a post racing this instant still gets
+	// its own wake (loop.Poster.Drain).
 	a.drainPending()
 	a.modals.Sync()
 
@@ -322,32 +318,6 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 // arrive as repeated identical masks, but each is a discrete scroll, not motion.
 const wheelButtons = tcell.WheelUp | tcell.WheelDown | tcell.WheelLeft | tcell.WheelRight
 
-// wakeQueue is the callbacks background goroutines have queued for the UI
-// goroutine, and whether a wakeup for them is already on its way.
-type wakeQueue struct {
-	mu      sync.Mutex
-	pending []func()
-
-	// sent coalesces wakeEventLoop calls: true from the moment an
-	// EventInterrupt is sent until the loop next wakes and clears it. A
-	// goroutine finding it already true skips its own interrupt; its queued
-	// callback still runs, since the next wake for any reason drains the whole
-	// queue. Without this, a burst of near-simultaneous completions (the
-	// per-row fetches in loadDatabasesFolderDetails and friends) each cost a
-	// full drainPending + modals.Sync + draw().
-	sent atomic.Bool
-}
-
-// quitGate serializes wakeEventLoop's channel send against quit's
-// screen.Fini(), which closes EventQ(). A flag checked before sending still
-// races — Fini() can close the channel between check and send. Holding mu
-// across flag-and-send and across set-flag-and-Fini makes the two mutually
-// exclusive: a send either completes before the close or never happens.
-type quitGate struct {
-	mu       sync.Mutex
-	quitting bool
-}
-
 // postAndWake queues fn to run on the UI goroutine and immediately wakes the
 // event loop, without waiting for an unrelated key or mouse event. Call it from
 // a background goroutine, never from the UI goroutine (see wakeEventLoop).
@@ -357,66 +327,23 @@ type quitGate struct {
 // nesting the wakeup inside the very closure waiting to be drained, which never
 // fires. Also the shared body behind PropDialog.post and every
 // New*Dialog.post.
-func (a *App) postAndWake(fn func()) {
-	a.postEvent(fn)
-	a.wakeEventLoop()
-}
+func (a *App) postAndWake(fn func()) { a.wake.Post(fn) }
 
-func (a *App) postEvent(fn func()) {
-	a.wake.mu.Lock()
-	a.wake.pending = append(a.wake.pending, fn)
-	a.wake.mu.Unlock()
-}
-
-func (a *App) drainPending() {
-	a.wake.mu.Lock()
-	fns := a.wake.pending
-	a.wake.pending = nil
-	a.wake.mu.Unlock()
-	for _, fn := range fns {
-		fn()
-	}
-}
+// drainPending runs the callbacks background goroutines have posted. handleEvent
+// calls it at the top of every iteration; tests without an event loop call it
+// by hand.
+func (a *App) drainPending() { a.wake.Drain() }
 
 // wakeEventLoop nudges the event loop to run one more iteration, draining
-// callbacks queued via postEvent and redrawing. Call it from a background
-// goroutine after postEvent; from the UI thread it would deadlock, since the loop
-// can't read EventQ mid-dispatch.
-//
-// Prefer postAndWake. The wakeup has to be sent after postEvent and outside its
-// closure: the loop drains queued callbacks only when it wakes for an event, so a
-// wakeup nested inside the closure waiting to be drained never fires and the
-// result sits queued until an unrelated keypress. The one caller that needs this
-// alone is QueryPanel's elapsed-timer tick, which has no callback to post.
-//
-// No-op when a.screen is nil (every App from newTestApp): a background goroutine
-// can outlive its test function and would panic on the nil screen. Also a no-op
-// if wake.sent is already set, or if the app is quitting — quitGate makes this
-// and Fini() mutually exclusive.
-//
-// The send is non-blocking. quitGate.mu is held across it and quit() takes the
-// same lock from a UI goroutine that is then not draining EventQ(), so a blocking
-// send on a full queue (tcell buffers 128, which all-motion mouse tracking fills
-// fast during a slow frame) would hang Ctrl+Q. Giving up on a full queue loses
-// nothing: the loop is about to wake, and every iteration clears wake.sent and
-// calls drainPending regardless of what woke it.
-func (a *App) wakeEventLoop() {
-	if a.screen == nil {
-		return
-	}
-	if !a.wake.sent.CompareAndSwap(false, true) {
-		return
-	}
-	a.quitGate.mu.Lock()
-	defer a.quitGate.mu.Unlock()
-	if a.quitGate.quitting {
-		return
-	}
-	select {
-	case a.screen.EventQ() <- tcell.NewEventInterrupt(nil):
-	default:
-	}
-}
+// queued callbacks and redrawing, with nothing to post — the one caller that
+// needs this alone is animateUntil's spinner clock (QueryPanel's elapsed timer
+// among them). Everything with a result uses postAndWake. Never from the UI
+// goroutine. A no-op without a screen (every App from newTestApp, so a
+// goroutine outliving its test never panics), after quit, and while an earlier
+// wake is undrained; the send never blocks, so a full EventQ() under
+// all-motion mouse tracking can't hang Ctrl+Q. loop.Poster.Wake has the why of
+// each.
+func (a *App) wakeEventLoop() { a.wake.Wake() }
 
 // animateUntil wakes the event loop every period until done closes — the
 // redraw clock for a widgets.Spinner, which is drawn from elapsed time and has
@@ -581,20 +508,19 @@ func (a *App) draw() {
 // Run's loop and making the channel unusable. User actions want requestQuit
 // instead, which offers to save unsaved query panels first.
 //
-// quitGate.mu is held across setting quitting and calling Fini(), so a racing
-// wakeEventLoop either completes its send first or sees quitting and skips it,
-// never sending on the closed channel.
+// a.wake.Close marks the app quitting and calls Fini() under the lock a wake
+// sends under, so a racing wakeEventLoop either completes its send first or
+// sees the close and skips it, never sending on the closed channel.
 //
 // screen is nil for the minimal *App newTestApp builds without going through
-// Run, and quitting is what everything else keys off, so it must be set either
-// way. Same reasoning as setStatus's nil check.
+// Run, and quitting (a.wake.Closed) is what everything else keys off, so it
+// must be set either way. Same reasoning as setStatus's nil check.
 func (a *App) quit() {
-	a.quitGate.mu.Lock()
-	defer a.quitGate.mu.Unlock()
-	a.quitGate.quitting = true
-	if a.screen != nil {
-		a.screen.Fini()
-	}
+	a.wake.Close(func() {
+		if a.screen != nil {
+			a.screen.Fini()
+		}
+	})
 }
 
 func (a *App) setStatus(msg string) {

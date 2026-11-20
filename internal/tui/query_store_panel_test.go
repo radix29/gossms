@@ -526,7 +526,7 @@ func TestPlanPaneRecoversFromAPanickingRead(t *testing.T) {
 	p, _, _ := newQSPanel(t, "Regressed Queries", qsOptionsResponse("READ_WRITE", "READ_WRITE"),
 		qsReportResponse(), qsPlansResponse())
 	p.plans = []*gosmo.QSPlan{{PlanID: 7}}
-	p.planRead.seq = 3
+	latestAt(&p.planRead, 3)
 	p.plansGrid.SetStatus("Reading plans for query 42...")
 
 	p.plansPanicked(3)
@@ -545,7 +545,7 @@ func TestAStalePlanPanicLeavesTheCurrentPaneAlone(t *testing.T) {
 	p, _, _ := newQSPanel(t, "Regressed Queries", qsOptionsResponse("READ_WRITE", "READ_WRITE"),
 		qsReportResponse(), qsPlansResponse())
 	p.plans = []*gosmo.QSPlan{{PlanID: 7}}
-	p.planRead.seq = 4
+	latestAt(&p.planRead, 4)
 	p.plansGrid.SetStatus("Query 42 — 1 plans")
 
 	p.plansPanicked(3)

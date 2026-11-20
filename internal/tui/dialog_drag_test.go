@@ -201,8 +201,8 @@ func TestOptionsDialogDragOutOfTheFieldKeepsExtending(t *testing.T) {
 	if got := dragOutOf(t, d, d.fMaxCellLen, ix+8, y+2); got != "2000" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "2000")
 	}
-	if d.focusable[d.focusIdx] != d.fMaxCellLen {
-		t.Errorf("focus = %d, want fMaxCellLen — a widget below stole a gesture the field owned", d.focusIdx)
+	if d.ring.Focused() != d.fMaxCellLen {
+		t.Errorf("focus = %d, want fMaxCellLen — a widget below stole a gesture the field owned", d.ring.FocusIdx)
 	}
 }
 
@@ -242,17 +242,17 @@ func TestOptionsDialogShowClearsTheDragLatch(t *testing.T) {
 	d := newOptionsForDrag(t)
 	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.Bounds().Y
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
-	if d.drag.Field() == nil {
+	if d.ring.Drag.Field() == nil {
 		t.Fatal("the press did not arm a latch — test premise is wrong")
 	}
 	d.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 	d.Show()
-	if d.drag.Field() != nil {
+	if d.ring.Drag.Field() != nil {
 		t.Error("Show left a drag latch armed from the previous showing")
 	}
 	// And the widget's own latch is no longer consulted: a press well clear of
 	// the field must land on whatever is actually there.
-	if d.HandleMouse(tcell.NewEventMouse(ix+40, y+2, tcell.Button1, tcell.ModNone)); d.focusable[d.focusIdx] == d.fMaxCellLen {
+	if d.HandleMouse(tcell.NewEventMouse(ix+40, y+2, tcell.Button1, tcell.ModNone)); d.ring.Focused() == d.fMaxCellLen {
 		t.Error("a press outside the field was routed to it by a latch from the previous showing")
 	}
 }
@@ -293,12 +293,12 @@ func TestLogSearchDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	if got := dragOutOf(t, d, d.fText1, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
-	if d.focusIdx != 0 {
-		t.Errorf("focusIdx = %d, want 0 — a field below stole a gesture fText1 owned", d.focusIdx)
+	if d.ring.FocusIdx != 0 {
+		t.Errorf("focusIdx = %d, want 0 — a field below stole a gesture fText1 owned", d.ring.FocusIdx)
 	}
 
 	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
-	if d.drag.Field() != nil {
+	if d.ring.Drag.Field() != nil {
 		t.Fatal("a release outside the dialog left the gesture latched")
 	}
 	if d.fText1.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)) {
@@ -317,12 +317,12 @@ func TestFilterDialogDragOutOfAValueFieldKeepsExtending(t *testing.T) {
 	if got := dragOutOf(t, d, f, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
-	if d.focusIdx != 1 {
-		t.Errorf("focusIdx = %d, want 1 (row 0's value field) — a widget below stole the gesture", d.focusIdx)
+	if d.ring.FocusIdx != 1 {
+		t.Errorf("focusIdx = %d, want 1 (row 0's value field) — a widget below stole the gesture", d.ring.FocusIdx)
 	}
 
 	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
-	if d.drag.Field() != nil {
+	if d.ring.Drag.Field() != nil {
 		t.Fatal("a release outside the dialog left the gesture latched")
 	}
 	if f.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)) {

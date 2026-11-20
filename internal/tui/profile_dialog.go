@@ -37,20 +37,15 @@ type ProfileDialog struct {
 	fName   *widgets.InputField
 	ddAllow *widgets.DropDown
 
-	// focusIdx == len(focusable) is the button row, one Tab stop crossed
-	// with the arrows (dialogs.RingStep, ButtonRowKey). btnFocus is the
-	// button the row would press: OK while focus is in a field, so Enter
-	// from one accepts.
-	focusIdx  int
+	// ring is the focus ring over focusable and profileButtons; its default
+	// button is OK, so Enter from a field accepts.
 	focusable []focusable
-	btnFocus  int
+	ring      dialogs.FieldRing
 	status    string
 
 	// onAccept applies the name and class; an error keeps the dialog open
 	// with it shown (a duplicate name, a failed check).
 	onAccept func(name string, allow config.AllowClass) error
-
-	drag dialogs.FieldGesture
 }
 
 // NewProfileDialog creates the dialog.
@@ -66,6 +61,12 @@ func NewProfileDialog() *ProfileDialog {
 	}
 	d.ddAllow = widgets.NewDropDown(label("Allowed Operations"), items, profileValueWidth)
 	d.focusable = []focusable{d.fName, d.ddAllow}
+	d.ring = dialogs.FieldRing{
+		Fields:  func() []focusable { return d.focusable },
+		Buttons: func() []string { return profileButtons },
+		Press:   d.doButton,
+		Dismiss: d.Hide,
+	}
 	return d
 }
 
@@ -78,34 +79,8 @@ func (d *ProfileDialog) ShowProfile(conn config.Connection, onAccept func(string
 	d.fName.SetValue(conn.Profile)
 	d.fName.SelectAll()
 	d.ddAllow.SetSelected(max(slices.Index(config.AllAllowClasses(), conn.Ceiling()), 0))
-	d.btnFocus = 0
-	d.drag.Clear()
 	d.ModalDialog.Show()
-	d.setFocus(0)
-}
-
-// setFocus focuses focusable[i], or the button row at len(focusable).
-func (d *ProfileDialog) setFocus(i int) {
-	d.focusIdx = dialogs.SetFocusIn(d.focusable, i, i)
-}
-
-// onButtons reports whether the button row has focus.
-func (d *ProfileDialog) onButtons() bool { return d.focusIdx == len(d.focusable) }
-
-func (d *ProfileDialog) focused() focusable {
-	if d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
-		return nil
-	}
-	return d.focusable[d.focusIdx]
-}
-
-// moveFocus steps the ring by dir. Leaving the button row resets it to OK, the
-// button Enter presses from a field.
-func (d *ProfileDialog) moveFocus(dir int) {
-	d.setFocus(dialogs.RingStep(d.focusable, d.focusIdx, dir))
-	if !d.onButtons() {
-		d.btnFocus = 0
-	}
+	d.ring.Reset()
 }
 
 func (d *ProfileDialog) allow() config.AllowClass {
@@ -128,8 +103,8 @@ func (d *ProfileDialog) accept() {
 	d.Hide()
 }
 
-func (d *ProfileDialog) doButton() {
-	if d.btnFocus == 0 {
+func (d *ProfileDialog) doButton(btn int) {
+	if btn == 0 {
 		d.accept()
 		return
 	}
@@ -161,61 +136,46 @@ func (d *ProfileDialog) Draw(s tcell.Screen) {
 
 	d.DrawSeparator(s)
 	active := -1
-	if d.onButtons() {
-		active = d.btnFocus
+	if d.ring.OnButtons() {
+		active = d.ring.BtnFocus
 	}
 	d.DrawButtons(s, profileButtons, active)
 	d.ddAllow.DrawOverlay(s)
 }
 
-// HandleKey is the focus ring (dialogs.FieldRingKey on a field, ButtonRowKey
-// on the button row): the focused widget gets every key first, so an open
-// dropdown takes Escape and the arrows, and a closed one opens on Enter; Enter
-// anywhere else is OK. Editing the name clears a refusal shown from the last OK.
+// HandleKey is the focus ring (dialogs.FieldRing.Key): the focused widget
+// gets every key first, so an open dropdown takes Escape and the arrows, and a
+// closed one opens on Enter; Enter anywhere else is OK. Editing the name
+// clears a refusal shown from the last OK.
 func (d *ProfileDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	if d.onButtons() {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(profileButtons), nil, d.doButton, d.Hide, d.moveFocus)
-	}
 	name := d.fName.Value()
-	dialogs.FieldRingKey(ev, d.focused(), d.doButton, d.Hide, d.moveFocus)
+	d.ring.Key(ev)
 	if d.fName.Value() != name {
 		d.status = ""
 	}
 	return true
 }
 
-// HandleMouse is dialogs.RingMouse over the focus ring.
+// HandleMouse is the focus ring's (dialogs.RingMouse).
 func (d *ProfileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	return dialogs.RingMouse(ev, &d.ModalDialog, &d.drag, d.focusable, d.focusIdx, profileButtons,
-		d.setFocus,
-		func(btn int) {
-			d.btnFocus = btn
-			d.doButton()
-		})
+	return d.ring.Mouse(ev, &d.ModalDialog)
 }
 
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on the
-// name field focuses it; nothing does while the Allowed Operations list is
-// open (core.ClipboardFocuser).
+// name field — the ring's one text field — focuses it; nothing does while the
+// Allowed Operations list is open (dialogs.ClipboardFieldAt).
 func (d *ProfileDialog) FocusClipboardTargetAt(x, y int) bool {
-	if d.ddAllow.OverlayActive() || !d.fName.HitTest(x, y) {
-		return false
-	}
-	d.setFocus(dialogs.IndexOfFocusable(d.focusable, d.fName))
-	return true
+	return d.ring.FocusClipboardTargetAt(x, y)
 }
 
 // FocusedClipboardTarget implements core.ClipboardHost: the name field while
 // it has focus.
 func (d *ProfileDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.focused() == focusable(d.fName) {
-		return d.fName
-	}
-	return nil
+	return d.ring.FocusedClipboardTarget()
 }

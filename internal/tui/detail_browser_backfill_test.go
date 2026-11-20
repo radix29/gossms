@@ -19,7 +19,7 @@ func TestBackfillRowsFillsEveryRow(t *testing.T) {
 	node := a.explorer.Selected()
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.run.seq = 1
+	latestAt(&db.run.latest, 1)
 	db.run.pending[node] = 1
 
 	cols := []string{"Name", "Size"}
@@ -57,7 +57,7 @@ func TestBackfillRowsMarksAPanickingRowFailed(t *testing.T) {
 	node := a.explorer.Selected()
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.run.seq = 1
+	latestAt(&db.run.latest, 1)
 	db.run.pending[node] = 1
 
 	cols := []string{"Name", "Size"}
@@ -99,7 +99,7 @@ func TestBackfillRowsGoroutinesAreBoundedNotJustFetches(t *testing.T) {
 	sc := addTestConn(a, "server-one")
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.run.seq = 1
+	latestAt(&db.run.latest, 1)
 
 	const n = 400
 	rows := make([][]string, n)
@@ -145,7 +145,7 @@ func TestBackfillRowsPanicDoesNotKillTheWorker(t *testing.T) {
 	sc := addTestConn(a, "server-one")
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.run.seq = 1
+	latestAt(&db.run.latest, 1)
 
 	// More rows than workers, and every worker's first row panics, so each
 	// one has to survive to pick up the rest.
@@ -184,7 +184,7 @@ func TestBackfillRowsReportsThePanic(t *testing.T) {
 	sc := addTestConn(a, "server-one")
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.run.seq = 1
+	latestAt(&db.run.latest, 1)
 
 	rows := [][]string{{"a", "…"}}
 	db.backfillRows(a, sc.Server.Context(), 1, 1, "loading the thing",
@@ -230,11 +230,11 @@ func TestBackfilledRowsReachCacheAfterSelectionMoved(t *testing.T) {
 	rows := [][]string{{"db1", "…"}, {"db2", "…"}}
 
 	// A fetch is dispatched for node at seq 1 and shows its placeholder rows.
-	db.run.seq = 1
+	latestAt(&db.run.latest, 1)
 	db.run.pending[node] = 1
 
 	// The user selects something else before the backfill lands.
-	db.run.seq = 2
+	latestAt(&db.run.latest, 2)
 
 	// The backfill writes land anyway — this is the fix.
 	rows[0][1] = "100 MB"

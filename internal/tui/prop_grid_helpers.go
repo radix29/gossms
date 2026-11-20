@@ -445,14 +445,9 @@ func autoAlignFormGrids(f *propsheet.Form) {
 	if f == nil {
 		return
 	}
-	for _, r := range f.Rows() {
-		// ToggleGridRow embeds a *GridRow, which a type switch on *GridRow
-		// alone misses (the Filegroups page's grid stayed left).
-		switch g := r.(type) {
-		case *propsheet.GridRow:
-			g.Grid.SetAutoAlign(listAutoAlign)
-		case *propsheet.ToggleGridRow:
-			g.Grid.SetAutoAlign(listAutoAlign)
-		}
+	// Form.Grids, not a type switch on *GridRow: that missed ToggleGridRow,
+	// which embeds one (the Filegroups page's grid stayed left).
+	for _, g := range f.Grids() {
+		g.SetAutoAlign(listAutoAlign)
 	}
 }

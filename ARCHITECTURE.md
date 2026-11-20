@@ -342,7 +342,7 @@ gossms/
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
-│       ├── latest.go              # the shared latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result — see § Latest-only loads
+│       ├── latest.go              # `latest`, an alias of tuikit's loop.Latest (the latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result) — see § Latest-only loads
 │       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one (bar FlushSaves' exit-time waiter)
 │       ├── prop_page_gate.go    # withRequires/withRequiresOn: attaches a gate.Right set to a propPage, the one tie between the gate package and the Properties dialogs
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
@@ -387,7 +387,7 @@ gossms/
 │       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
 │       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
-│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, the box itself is tuikit charts.DrawReadout, shared with the Detail Browser strip
+│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, the box itself is tuikit charts.DrawReadout, shared with the Detail Browser strip; the time-axis callout is charts.DrawAxisCallout
 │       ├── activity_monitor_toolbar.go # toolbar cells per tab (rate, Pause/Continue, Refresh), overflow menu, and the collection-state summary and dashboard header
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, the procedure's option switches (activity.ProcOption: Sessions' Sleeping Sessions / Additional Info), result grid, Kill Process
 │       │
@@ -768,8 +768,12 @@ takes any `core.MouseHandler`, but every `Claim` here is a text field).
 
 ## Async result delivery: postAndWake
 
-A background goroutine reports with `App.postAndWake(fn)` — never `postEvent`
-then `wakeEventLoop` by hand. The wakeup must be sent *outside* the posted
+A background goroutine reports with `App.postAndWake(fn)` — never
+`a.wake.Queue` then `wakeEventLoop` by hand. The mechanism is tuikit's
+`loop.Poster` (`App.wake`): `postAndWake`, `drainPending`, `wakeEventLoop`
+and `quit` are one-line forwards to its `Post`, `Drain`, `Wake` and `Close`,
+which hold the coalesced non-blocking wakeup and the gate ordering
+`screen.Fini()` against a wake in flight. The wakeup must be sent *outside* the posted
 closure, from the background goroutine: `Run()` drains callbacks only when it
 wakes for an `EventQ()` event, so a wakeup nested in the closure waiting to be
 drained never fires, and the result sits until an unrelated keypress. Shipped
@@ -839,8 +843,10 @@ then assert the *next* one still runs — a flag check passes on a dead latch.
 
 ## Latest-only loads: latest
 
-`internal/tui/latest.go` owns "start a load, cancel the one it replaces, drop
-stale results". Almost every async read is latest-only, and many sites own a
+`latest` owns "start a load, cancel the one it replaces, drop stale results".
+It is tuikit's `loop.Latest` (`~/go/tuikit/loop/latest.go`, where its
+contract's tests live), aliased in `internal/tui/latest.go` so the sites keep
+the short type name; the rules below are how gossms uses it. Almost every async read is latest-only, and many sites own a
 `latest` — among them an Object Explorer node's children (`object_explorer.go`), the
 completion inventory, the Query Store panel's report/plan pane/series, the Log
 File Viewer's read, a `newObjectDialog` prefetch, the Detail Browser fetch,

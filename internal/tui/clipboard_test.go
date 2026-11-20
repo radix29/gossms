@@ -314,7 +314,8 @@ type osc52Screen struct {
 	got      []byte
 }
 
-// EventQ takes postAndWake's interrupt; the test drains a.wake itself.
+// EventQ is never sent to: the test sets a.screen alone, so a.wake has no
+// screen and postAndWake only queues; the test drains a.wake itself.
 func (s *osc52Screen) EventQ() chan tcell.Event   { return make(chan tcell.Event, 1) }
 func (s *osc52Screen) SetClipboard(b []byte)      { s.got = b }
 func (s *osc52Screen) HasClipboard() bool         { return s.da52 }

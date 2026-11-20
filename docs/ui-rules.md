@@ -197,6 +197,14 @@ which owns them; the entries here say how goSSMS applies them.
   which the five hand-rolled copies had in five variants, and leaves the wheel
   inside the box to the host. A dialog with tabs, a scrollable pane or a mode
   (Connect, Back Up, Restore) keeps its own; don't stretch the helper to fit.
+- **A dialog whose whole surface is that ring holds a `dialogs.FieldRing`**
+  (Find/Replace, Log Search, Filter, Options, Profile): it owns `focusIdx`,
+  `btnFocus` and the `FieldGesture` and wires `FieldRingKey`/`ButtonRowKey`,
+  `RingMouse` and the clipboard pair over them. Set its callbacks once in the
+  constructor, call `ring.Reset()` on the opening path (the gesture latch's
+  `Clear` — `TestFieldGestureCallsAreOrderedCorrectly` checks it) and forward
+  `HandleKey`/`HandleMouse`/the clipboard methods; a new flat-ring dialog
+  starts here, not from the free functions.
 - **A dialog-level scrollbar uses `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a too-small terminal content
   is clipped to `InnerRect` (`dialogs.Stack.Draw`'s `core.ClipScreen`, narrowed by
@@ -368,7 +376,7 @@ which owns them; the entries here say how goSSMS applies them.
   `App.handleMouse` offers `a.panels` every event before routing by position
   — without it a press on Object Explorer left the Details cell menu open.
   `panel_overlay_routing_test.go` lists the implementers; add a new panel there.
-- **Report with `App.postAndWake(fn)`**, never `postEvent` + `wakeEventLoop` by
+- **Report with `App.postAndWake(fn)`**, never `a.wake.Queue` + `wakeEventLoop` by
   hand (tree nodes stuck on "Loading..."). `ARCHITECTURE.md` § Async result delivery:
   postAndWake. The elapsed-timer tick is the one legit bare `wakeEventLoop()`.
 - **An apply closure never writes page state.** `propApply` runs on the
@@ -419,7 +427,7 @@ which owns them; the entries here say how goSSMS applies them.
   the label, and a renamed node keeps the old name every later menu action
   uses. `TestPropertiesApplyReloadsTheFolderListingTheObject` lists them; a new
   one joins it. Details staleness is `staleDetails`, already generic.
-- **A load a newer one replaces uses `latest` (`latest.go`)**, never a
+- **A load a newer one replaces uses `latest` (tuikit's `loop.Latest`)**, never a
   hand-rolled token or cancel. `Begin`/`BeginTimeout` supersede and cancel;
   `Done` checks and releases; `Cancel` stops without superseding; `Abandon`
   does both. Token-only copies were bugs. Wrap for extra bookkeeping

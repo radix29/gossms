@@ -231,11 +231,10 @@ func TestLogViewerBusyToolbarIsInert(t *testing.T) {
 // path a panel shut mid-read takes.
 func TestLogViewerLoadCancelsSupersededRead(t *testing.T) {
 	lv := newTestLogViewer()
-	cancelled := false
-	lv.read.cancel = func() { cancelled = true }
+	ctx, _ := lv.read.Begin(context.Background())
 
 	lv.Close()
-	if !cancelled {
+	if ctx.Err() == nil {
 		t.Error("Close() didn't call the in-flight read's cancel func")
 	}
 	if !lv.read.Idle() {

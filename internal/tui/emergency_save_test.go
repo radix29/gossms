@@ -29,7 +29,7 @@ func TestUIPanicInAPostedCallbackRecoversUnsavedQueries(t *testing.T) {
 			}
 			paths, errs = a.emergencySaveTo(dir, now)
 		}()
-		a.postEvent(func() { panic("ui boom") })
+		a.wake.Queue(func() { panic("ui boom") })
 		a.drainPending()
 	}()
 
@@ -134,7 +134,7 @@ func TestSaveOnSignalSavesOnTheUIGoroutineAndQuits(t *testing.T) {
 	if saves != 1 {
 		t.Errorf("saved %d times, want 1", saves)
 	}
-	if !a.quitGate.quitting {
+	if !a.wake.Closed() {
 		t.Error("the UI callback did not quit, so Run would not return")
 	}
 }
@@ -157,7 +157,7 @@ func TestSaveOnSignalSavesWhenTheEventLoopIsStuck(t *testing.T) {
 	if saves != 1 {
 		t.Errorf("saved %d times, want 1 — a late loop must not save again", saves)
 	}
-	if !a.quitGate.quitting {
+	if !a.wake.Closed() {
 		t.Error("the late UI callback did not quit")
 	}
 }
@@ -186,7 +186,5 @@ func assertRecovered(t *testing.T, dir string, paths []string, errs []error) {
 }
 
 func (a *App) hasPending() bool {
-	a.wake.mu.Lock()
-	defer a.wake.mu.Unlock()
-	return len(a.wake.pending) > 0
+	return a.wake.Pending() > 0
 }

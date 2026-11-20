@@ -124,23 +124,23 @@ func TestRightClickOnADisabledFieldOpensNoClipboardMenu(t *testing.T) {
 	}
 }
 
-// FilterDialog has its own hit test over its rows; it skips a disabled value
-// field like dialogs.ClipboardFieldAt does.
+// FilterDialog's hit test (dialogs.ClipboardFieldAt, through its FieldRing)
+// skips a disabled value field.
 func TestFilterDialogRightClickSkipsADisabledValueField(t *testing.T) {
 	d := showTestFilterDialogOnScreen(t, 120, 30)
 	v := d.rows[1].value
 	v.SetEnabled(false)
-	before := d.focusIdx
+	before := d.ring.FocusIdx
 	r := v.Bounds()
 	if d.FocusClipboardTargetAt(v.InputX()+1, r.Y) {
 		t.Error("a right-click on a disabled value field was taken for the clipboard")
 	}
-	if d.focusIdx != before {
-		t.Errorf("focusIdx = %d, want %d unchanged", d.focusIdx, before)
+	if d.ring.FocusIdx != before {
+		t.Errorf("focusIdx = %d, want %d unchanged", d.ring.FocusIdx, before)
 	}
 	v.SetEnabled(true)
-	if !d.FocusClipboardTargetAt(v.InputX()+1, r.Y) || d.focusIdx != 3 {
-		t.Errorf("an enabled value field: focusIdx = %d, want 3", d.focusIdx)
+	if !d.FocusClipboardTargetAt(v.InputX()+1, r.Y) || d.ring.FocusIdx != 3 {
+		t.Errorf("an enabled value field: focusIdx = %d, want 3", d.ring.FocusIdx)
 	}
 }
 
@@ -165,12 +165,11 @@ func TestRightClickOnAnOpenDropdownListOpensNoClipboardMenu(t *testing.T) {
 	}
 }
 
-// FilterDialog's own hit test refuses too while an operator list is open over
-// the value fields of the rows below.
+// FilterDialog's hit test (its FieldRing's) refuses too while an operator list
+// is open over the value fields of the rows below.
 func TestFilterDialogRightClickIgnoredWhileAnOperatorListIsOpen(t *testing.T) {
 	d := showTestFilterDialogOnScreen(t, 120, 30)
-	d.focusIdx = 0
-	d.syncFocus()
+	d.ring.SetFocus(0)
 	d.rows[0].op.HandleKey(tcell.NewEventKey(tcell.KeyF4, "", tcell.ModNone))
 	if !d.rows[0].op.OverlayActive() {
 		t.Fatal("setup: F4 did not open the operator list")
@@ -179,8 +178,8 @@ func TestFilterDialogRightClickIgnoredWhileAnOperatorListIsOpen(t *testing.T) {
 	if d.FocusClipboardTargetAt(v.InputX()+1, v.Bounds().Y) {
 		t.Error("a right-click through the open operator list focused a value field")
 	}
-	if d.focusIdx != 0 {
-		t.Errorf("focusIdx = %d, want 0 unchanged", d.focusIdx)
+	if d.ring.FocusIdx != 0 {
+		t.Errorf("focusIdx = %d, want 0 unchanged", d.ring.FocusIdx)
 	}
 }
 

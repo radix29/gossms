@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -25,12 +26,12 @@ func TestClosePanelAtCancelsQueryStoreReads(t *testing.T) {
 	p := NewQueryStorePanel(a, nil, "appdb", "Query Store")
 	i := a.panels.AddPanel(p)
 
-	var report, plans, series bool
-	p.reportRead.cancel = func() { report = true }
-	p.planRead.cancel = func() { plans = true }
-	p.seriesRead.cancel = func() { series = true }
+	reportCtx, _ := p.reportRead.Begin(context.Background())
+	plansCtx, _ := p.planRead.Begin(context.Background())
+	seriesCtx, _ := p.seriesRead.Begin(context.Background())
 
 	a.closePanelAt(i)
+	report, plans, series := reportCtx.Err() != nil, plansCtx.Err() != nil, seriesCtx.Err() != nil
 
 	if !report || !plans || !series {
 		t.Errorf("closePanelAt cancelled report=%v plans=%v series=%v, want all three", report, plans, series)

@@ -38,17 +38,10 @@ type FilterDialog struct {
 	serverName string
 	dbName     string
 
-	// focusIdx walks each row's operator dropdown then its value field, then
-	// the button row at widgetCount(), one Tab stop crossed with the arrows
-	// (dialogs.RingStep, ButtonRowKey). btnFocus is the button the row would
-	// press: OK while focus is in the rows, so Enter from a value field applies
-	// the filter.
-	focusIdx int
-	btnFocus int
-
-	// drag is the text-selection gesture a click in a row's value field starts
-	// — see dialogs.FieldGesture for the ordering its three calls depend on.
-	drag dialogs.FieldGesture
+	// ring walks each row's operator dropdown then its value field (fields),
+	// then the button row. Its default button is OK, so Enter from a value
+	// field applies the filter.
+	ring dialogs.FieldRing
 
 	// message is the validation readout above the button row; messageY is
 	// the row it's drawn on, recorded by layout for Draw.
@@ -94,6 +87,13 @@ const filterRowFixedW = 5
 func NewFilterDialog(app *App) *FilterDialog {
 	d := &FilterDialog{app: app}
 	d.InitModal("Filter Settings", filterDialogW, 16)
+	d.ring = dialogs.FieldRing{
+		Fields:     d.fields,
+		Buttons:    d.buttons,
+		DefaultBtn: filterButtonsOK,
+		Press:      d.pressButton,
+		Dismiss:    d.Hide,
+	}
 	return d
 }
 
@@ -117,9 +117,6 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 	d.serverName = server
 	d.dbName = node.data.DBName
 	d.message = ""
-	// A latch must not survive into the next showing: a dialog dismissed mid-drag
-	// would reopen still routing every click to that field.
-	d.drag.Clear()
 
 	// Sized before the widgets are built: recentre clamps the dialog to the
 	// terminal and a widget's width is fixed at construction, so rows built at full
@@ -143,8 +140,7 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 	}
 	d.seedFrom(node.data.Filter)
 
-	d.focusIdx, d.btnFocus = 0, filterButtonsOK
-	d.syncFocus()
+	d.ring.Reset()
 	d.Show()
 }
 
@@ -219,8 +215,6 @@ func (d *FilterDialog) buttons() []string { return []string{"Clear Filter", "OK"
 // dropdown and a value field per row.
 func (d *FilterDialog) widgetCount() int { return len(d.rows) * 2 }
 
-func (d *FilterDialog) onButtons() bool { return d.focusIdx == d.widgetCount() }
-
 // fields is the ring's widgets in Tab order, widgetAt over every row.
 func (d *FilterDialog) fields() []focusable {
 	out := make([]focusable, d.widgetCount())
@@ -241,12 +235,6 @@ func (d *FilterDialog) widgetAt(i int) focusable {
 		return r.op
 	}
 	return r.value
-}
-
-func (d *FilterDialog) syncFocus() {
-	for i := range d.widgetCount() {
-		d.widgetAt(i).Focus(i == d.focusIdx)
-	}
 }
 
 // openDropDown returns the row's dropdown whose list is open, or nil. An open
@@ -303,8 +291,7 @@ func (d *FilterDialog) applyAndClose() {
 	f, badRow, err := d.buildFilter()
 	if err != nil {
 		d.message = err.Error()
-		d.focusIdx = badRow*2 + 1 // the offending value field
-		d.syncFocus()
+		d.ring.SetFocus(badRow*2 + 1) // the offending value field
 		return
 	}
 	d.app.applyNodeFilter(d.node, f)
@@ -377,7 +364,7 @@ func (d *FilterDialog) Draw(s tcell.Screen) {
 	core.DrawTextClipped(s, lx, d.messageY, inner.W-2, msgStyle, d.message)
 
 	d.DrawSeparator(s)
-	d.DrawButtons(s, d.buttons(), d.btnFocus)
+	d.DrawButtons(s, d.buttons(), d.ring.BtnFocus)
 
 	// Last, over everything else — an open list belongs on top of the rows and
 	// buttons below it.
@@ -410,64 +397,29 @@ func (d *FilterDialog) HandleKey(ev *tcell.EventKey) bool {
 		return false
 	}
 	// An open dropdown list is the focused widget (DropDown.Focus(false) closes
-	// it), so FieldRingKey's widget-first order hands it Up/Down/Enter/Escape.
-	press := func() { d.pressButton(d.btnFocus) }
-	if d.onButtons() {
-		return dialogs.ButtonRowKey(ev, &d.btnFocus, len(d.buttons()), nil, press, d.Hide, d.moveFocus)
-	}
-	return dialogs.FieldRingKey(ev, d.widgetAt(d.focusIdx), press, d.Hide, d.moveFocus)
+	// it), so the ring's widget-first order hands it Up/Down/Enter/Escape.
+	return d.ring.Key(ev)
 }
 
-// moveFocus steps the ring by dir. Leaving the button row resets it to OK, the
-// button Enter presses from a field.
-func (d *FilterDialog) moveFocus(dir int) {
-	d.focusIdx = dialogs.RingStep(d.fields(), d.focusIdx, dir)
-	if !d.onButtons() {
-		d.btnFocus = filterButtonsOK
-	}
-	d.syncFocus()
-}
-
-// HandleMouse is dialogs.RingMouse over the focus ring: an operator dropdown
+// HandleMouse is the focus ring's (dialogs.RingMouse): an operator dropdown
 // and a value field per row, then the button row.
 func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	return dialogs.RingMouse(ev, &d.ModalDialog, &d.drag, d.fields(), d.focusIdx, d.buttons(),
-		func(i int) {
-			d.focusIdx = i
-			d.syncFocus()
-		},
-		func(btn int) {
-			d.btnFocus = btn
-			d.pressButton(btn)
-		})
+	return d.ring.Mouse(ev, &d.ModalDialog)
 }
 
 // FocusClipboardTargetAt implements core.ClipboardFocuser: a right-click on a
-// row's value field focuses it; an operator dropdown is not a text field, and
-// a disabled value field is skipped, as dialogs.ClipboardFieldAt skips one.
+// row's value field focuses it. dialogs.ClipboardFieldAt skips an operator
+// dropdown (not a text field) and a disabled value field, and hits nothing
+// while a row's list is open — it covers the value fields of the rows below.
 func (d *FilterDialog) FocusClipboardTargetAt(x, y int) bool {
-	if d.openDropDown() != nil {
-		return false // its list covers the value fields of the rows below
-	}
-	for i := range d.rows {
-		if v := d.rows[i].value; v.Enabled() && v.HitTest(x, y) {
-			d.focusIdx = i*2 + 1
-			d.syncFocus()
-			return true
-		}
-	}
-	return false
+	return d.ring.FocusClipboardTargetAt(x, y)
 }
 
 // FocusedClipboardTarget implements core.ClipboardHost: the focused row's value
-// field. widgetAt answers nil past the rows, and an operator dropdown is not a
-// clipboard target, so both fall through to nil.
+// field; an operator dropdown and the button row answer nil.
 func (d *FilterDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if t, ok := d.widgetAt(d.focusIdx).(core.ClipboardTarget); ok {
-		return t
-	}
-	return nil
+	return d.ring.FocusedClipboardTarget()
 }

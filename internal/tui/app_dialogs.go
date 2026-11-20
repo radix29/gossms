@@ -49,6 +49,7 @@ func dialogOf[T Dialog](a *App, mk func(*App) T) T {
 // Dialogs a test installs without registering (installDialog) get it too.
 func (a *App) setScreen(s tcell.Screen) {
 	a.screen = s
+	a.wake.SetScreen(s)
 	a.modals.SetScreen(s)
 	for _, d := range a.dialogSlots {
 		if u, ok := d.(interface{ SetScreen(tcell.Screen) }); ok {

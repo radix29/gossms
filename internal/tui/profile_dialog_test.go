@@ -155,8 +155,8 @@ func TestProfileDialogButtonRowByKeyboard(t *testing.T) {
 	typeProfileName(pd, "x")
 	pd.HandleKey(key(tcell.KeyTab))
 	pd.HandleKey(key(tcell.KeyTab))
-	if !pd.onButtons() || pd.btnFocus != 0 {
-		t.Fatalf("two Tabs: onButtons %v btn %d, want OK", pd.onButtons(), pd.btnFocus)
+	if !pd.ring.OnButtons() || pd.ring.BtnFocus != 0 {
+		t.Fatalf("two Tabs: onButtons %v btn %d, want OK", pd.ring.OnButtons(), pd.ring.BtnFocus)
 	}
 	pd.HandleKey(key(tcell.KeyRight))
 	pd.HandleKey(key(tcell.KeyEnter)) // Cancel
@@ -210,7 +210,7 @@ func TestProfileDialogClickOpensTheAllowedOperationsList(t *testing.T) {
 	if !pd.ddAllow.OverlayActive() {
 		t.Fatal("a click on the drop-down did not leave its list open")
 	}
-	if pd.focused() != focusable(pd.ddAllow) {
+	if pd.ring.Focused() != focusable(pd.ddAllow) {
 		t.Error("the click did not focus the drop-down")
 	}
 }

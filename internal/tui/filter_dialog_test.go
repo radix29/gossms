@@ -198,8 +198,8 @@ func TestFilterDialogTabCyclesEveryStop(t *testing.T) {
 	key := func(k tcell.Key) { d.HandleKey(tcell.NewEventKey(k, "", tcell.ModNone)) }
 	seen := make(map[int]bool)
 	for range want {
-		seen[d.focusIdx] = true
-		if d.onButtons() {
+		seen[d.ring.FocusIdx] = true
+		if d.ring.OnButtons() {
 			key(tcell.KeyRight) // onto Cancel; Tab off must reset it
 		}
 		key(tcell.KeyTab)
@@ -207,12 +207,12 @@ func TestFilterDialogTabCyclesEveryStop(t *testing.T) {
 	if len(seen) != want {
 		t.Errorf("Tab visited %d of %d stops", len(seen), want)
 	}
-	if d.focusIdx != 0 || d.btnFocus != filterButtonsOK {
-		t.Errorf("after a full cycle focusIdx=%d btnFocus=%d, want 0 and OK", d.focusIdx, d.btnFocus)
+	if d.ring.FocusIdx != 0 || d.ring.BtnFocus != filterButtonsOK {
+		t.Errorf("after a full cycle focusIdx=%d btnFocus=%d, want 0 and OK", d.ring.FocusIdx, d.ring.BtnFocus)
 	}
 	key(tcell.KeyBacktab)
-	if !d.onButtons() {
-		t.Errorf("Backtab from the first stop = %d, want the button row", d.focusIdx)
+	if !d.ring.OnButtons() {
+		t.Errorf("Backtab from the first stop = %d, want the button row", d.ring.FocusIdx)
 	}
 }
 

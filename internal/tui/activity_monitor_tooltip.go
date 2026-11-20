@@ -6,7 +6,6 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/charts"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/theme"
 )
 
 // pinTooltip builds the readout for a click at (mx, my), or nil if it missed a
@@ -161,7 +160,7 @@ func (t *amTooltip) place(ax, ay int, view core.Rect, keepOut int) core.Rect {
 // colour.
 //
 // c is the canvas just blitted, which the callout reads to clear axis labels;
-// see drawTimeCallout.
+// see charts.DrawAxisCallout.
 func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *core.Buffer) {
 	if am.tooltip == nil || am.viewRect.W <= 0 || am.viewRect.H <= 0 {
 		return
@@ -187,56 +186,5 @@ func (am *ActivityMonitor) drawCallout(s tcell.Screen, c *core.Buffer) int {
 	if x < am.viewRect.X || x >= am.viewRect.Right() {
 		return -1
 	}
-	return am.drawTimeCallout(s, c, x)
-}
-
-// drawTimeCallout writes the pinned bucket's time on the time-axis row, centred
-// under column x and kept within the row and viewport (the row's labels are ages;
-// a clipped callout would read as one).
-//
-// Any label it overlaps is cleared whole, or a tail survives as a bogus number
-// ("-0:20" + callout → "-0:211:34:44"). c is the canvas the row was rendered on.
-// Returns the row, or -1 when there's no room.
-func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *core.Buffer, x int) int {
-	t := am.tooltip
-	if t.timeRow.W <= 0 || t.timeRow.H <= 0 || t.time == "" {
-		return -1
-	}
-	rowX, y := am.screenPos(t.timeRow.X, t.timeRow.Y)
-	if y < am.viewRect.Y || y >= am.viewRect.Bottom() {
-		return -1
-	}
-	w := core.DisplayWidth(t.time)
-	left := max(rowX, am.viewRect.X)
-	right := min(rowX+t.timeRow.W, am.viewRect.Right())
-	if right-left < w {
-		return -1
-	}
-	x = core.Clamp(x-w/2, left, right-w)
-
-	clearFrom, clearTo := am.labelRun(c, t.timeRow, x, x+w)
-	core.FillRect(s, core.Rect{X: clearFrom, Y: y, W: clearTo - clearFrom, H: 1}, ' ', theme.StyleChartAxis())
-	core.DrawTextClipped(s, x, y, w, theme.StyleTooltip(), t.time)
-	return y
-}
-
-// labelRun widens [from, to) on row to cover every label it touches, stopping
-// at blank columns and staying within the row and viewport.
-func (am *ActivityMonitor) labelRun(c *core.Buffer, row core.Rect, from, to int) (int, int) {
-	rowX, _ := am.screenPos(row.X, row.Y)
-	lo := max(max(rowX, am.viewRect.X), 0)
-	hi := min(rowX+row.W, am.viewRect.Right())
-
-	blank := func(x int) bool {
-		cx, _ := am.canvasPos(x, 0)
-		str, _, _ := c.Get(cx, row.Y)
-		return str == "" || str == " "
-	}
-	for from > lo && !blank(from-1) {
-		from--
-	}
-	for to < hi && !blank(to) {
-		to++
-	}
-	return from, to
+	return charts.DrawAxisCallout(s, c, am.viewport(), t.timeRow, x, t.time)
 }
