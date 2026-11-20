@@ -201,9 +201,9 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 	if am.toolRect.Contains(mx, my) {
 		am.dragZone.Arm(ev, amZoneTools)
 		if i := am.tools.CellAt(mx, my); i >= 0 {
-			am.runTool(i)
+			am.tools.RunCell(i)
 		} else if am.tools.More.Rect.Contains(mx, my) {
-			am.showOverflowMenu()
+			am.tools.OverflowMenu(am.app.contextMenu, am.rect)
 		}
 		// Claimed either way, so a disabled control or gap swallows the press.
 		return true

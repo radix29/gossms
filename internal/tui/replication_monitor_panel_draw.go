@@ -25,6 +25,9 @@ func (p *ReplicationMonitorPanel) buildTools() {
 		rmToolHistory: {Action: p.showWindowMenu},
 		rmToolErrors:  {Action: p.toggleErrorsOnly},
 	}
+	// No Reason or Status: the one withheld cell is a Refresh already running,
+	// whose grey speaks for itself.
+	p.tools.Disabled = p.toolDisabled
 	p.refreshToolLabels()
 }
 
@@ -43,14 +46,6 @@ func (p *ReplicationMonitorPanel) refreshToolLabels() {
 // toolDisabled is the one gate the row has: Refresh while a read is out. The
 // selectors stay live; a choice made mid-read takes effect on the next.
 func (p *ReplicationMonitorPanel) toolDisabled(i int) bool { return i == rmToolRefresh && p.busy }
-
-func (p *ReplicationMonitorPanel) toolReason(int) string { return "" }
-
-// runTool invokes cell i, or does nothing while it is withheld: toolReason is
-// always empty, the one withheld cell being a Refresh already running.
-func (p *ReplicationMonitorPanel) runTool(i int) {
-	p.tools.Run(i, p.toolDisabled, p.toolReason, nil)
-}
 
 func (p *ReplicationMonitorPanel) layoutTools() {
 	p.toolEnd = p.tools.Layout(p.toolRect, "")
@@ -117,7 +112,7 @@ func (p *ReplicationMonitorPanel) Draw(s tcell.Screen) {
 }
 
 // drawToolRow paints the toolbar, dimming Refresh while a read is out: the
-// predicate runTool refuses on. More is never dimmed.
+// row's gate, which RunCell refuses on. More is never dimmed.
 func (p *ReplicationMonitorPanel) drawToolRow(s tcell.Screen) {
-	p.tools.Draw(s, p.toolRect, p.toolDisabled, false)
+	p.tools.Draw(s, p.toolRect, nil, false)
 }

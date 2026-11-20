@@ -1948,6 +1948,18 @@ it from the string 'NULL'.
   Backup/Restore call sites use; inlining it would scatter the reason over
   three sites for no gain. The same round dropped `restore_dialog_plan.go`'s
   `plural`, a copy of `app.go` `pluralSuffix`.
+- **A tool row's gate is set once on `controls.ToolRow`** (2026-11-20,
+  tuikit reuse round 8, item 2): `Disabled`/`Reason`/`Status` fields, read by
+  `Run`, `OverflowItems` and `Draw` wherever they are passed nil, plus
+  `RunCell(i)` and `OverflowMenu(menu, fallback)`. The per-panel
+  `runTool`/`showOverflowMenu` (and Query Store's `runSel`/`runAct`) went;
+  the predicates themselves stay per-panel policy. Taken alone rather than
+  folded into a later `ToolRow` change, at the author's request. Query Store
+  sets `ReasonOnly`: its reasons are whole sentences and its selector labels
+  carry a value, so "Metric: Duration: Query Store records…" would replace
+  the reason-alone status it always showed. Plan Compare's pickers take only
+  `Disabled` (the draw and `runPicker` had separate copies of the predicate);
+  their refusal keeps its own "Plan A has only the one statement" text.
 - **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,

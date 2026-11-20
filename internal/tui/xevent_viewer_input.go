@@ -134,9 +134,9 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 		// The action runs on the press; xZoneToolbar swallows the repeats.
 		v.dragZone.Arm(ev, xZoneToolbar)
 		if i := v.tools.CellAt(mx, my); i >= 0 {
-			v.runTool(i)
+			v.tools.RunCell(i)
 		} else if v.tools.More.Rect.Contains(mx, my) {
-			v.showOverflowMenu()
+			v.tools.OverflowMenu(v.app.contextMenu, v.rect)
 		}
 		return true
 	}

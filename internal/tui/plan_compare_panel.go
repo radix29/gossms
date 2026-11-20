@@ -113,6 +113,7 @@ func NewPlanComparePanel(app *App, title string, a, b *showplan.Plan) *PlanCompa
 		{Action: func() { p.showStatementMenu(pcPickA) }},
 		{Action: func() { p.showStatementMenu(pcPickB) }},
 	}}
+	p.pickers.Disabled = p.pickerDisabled
 	p.ops.OnMenuItems = p.operatorMenuItems
 	p.split.SetRatio(0.4)
 	p.compare()
@@ -226,11 +227,19 @@ func statementMenuItems(plan *showplan.Plan, current int, choose func(int)) []co
 // is drawn dimmed, and a dimmed cell that swallowed its click silently is what
 // the context-gating rule exists to prevent.
 func (p *PlanComparePanel) runPicker(i int) {
-	if plan, _ := p.side(i); statementCount(plan) < 2 {
+	if p.pickerDisabled(i) {
 		p.app.setStatus(fmt.Sprintf("Plan %s has only the one statement", []string{"A", "B"}[i]))
 		return
 	}
 	p.pickers.Cells[i].Action()
+}
+
+// pickerDisabled reports whether picker i is inert: its side has one statement,
+// so its menu would offer only the statement already compared. The row's gate,
+// so the draw dims on what runPicker refuses.
+func (p *PlanComparePanel) pickerDisabled(i int) bool {
+	plan, _ := p.side(i)
+	return statementCount(plan) < 2
 }
 
 // showStatementMenu pops picker i's statement list under its cell.
@@ -466,14 +475,10 @@ func (p *PlanComparePanel) Draw(s tcell.Screen) {
 	p.ops.DrawOverlay(s)
 }
 
-// drawPickers paints the statement-picker row. A picker on a one-statement side
-// is dimmed: its menu would offer the statement already compared. The row has no
-// More (NoOverflow).
+// drawPickers paints the statement-picker row, a one-statement side dimmed
+// (pickerDisabled). The row has no More (NoOverflow).
 func (p *PlanComparePanel) drawPickers(s tcell.Screen) {
-	p.pickers.Draw(s, p.toolRect, func(i int) bool {
-		plan, _ := p.side(i)
-		return statementCount(plan) < 2
-	}, false)
+	p.pickers.Draw(s, p.toolRect, nil, false)
 }
 
 // HandleKey routes to the focused grid, after Tab, the statement keys and the

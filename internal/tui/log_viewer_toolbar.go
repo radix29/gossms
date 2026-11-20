@@ -36,6 +36,7 @@ func (lv *LogViewer) buildTools() {
 		{Label: "Recycle...", Action: lv.recycleOrDelete},
 		{Label: "Export...", Action: lv.export},
 	}
+	lv.tools.Disabled, lv.tools.Reason, lv.tools.Status = lv.toolDisabled, lv.toolReason, lv.setStatus
 	lv.refreshToolLabels()
 	// The filter box on the same row re-filters on every edit, a paste or cut
 	// included (InputField.OnChange); SetValue does not fire it.
@@ -108,19 +109,6 @@ func (lv *LogViewer) toolReason(i int) string {
 		return gate.RequiresText(lv.recycleRights()...)
 	}
 	return ""
-}
-
-// showOverflowMenu pops the buttons the row was too narrow to draw under the
-// "More ▾" cell, each gated as its button is.
-func (lv *LogViewer) showOverflowMenu() {
-	x, y := lv.tools.MenuAnchor(-1, lv.rect)
-	lv.app.contextMenu.Show(x, y, lv.tools.OverflowItems(lv.toolDisabled, lv.toolReason, lv.runTool))
-}
-
-// runTool invokes toolbar cell i's action, or says why it did not, through the
-// gate the draw dims on and the overflow menu asks (ToolRow.Run).
-func (lv *LogViewer) runTool(i int) {
-	lv.tools.Run(i, lv.toolDisabled, lv.toolReason, lv.setStatus)
 }
 
 // refreshToolLabels updates the selectors' labels from the current selection,

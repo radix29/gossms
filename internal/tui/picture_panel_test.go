@@ -199,7 +199,7 @@ func TestPicturePanelZoomAndPan(t *testing.T) {
 	if pp.zoomCols != pp.maxZoomCols() {
 		t.Errorf("zoomed to %d, cap is %d", pp.zoomCols, pp.maxZoomCols())
 	}
-	pp.runTool(picToolFit)
+	pp.tools.RunCell(picToolFit)
 	if pp.zoomed() || pp.vp.X != 0 || pp.vp.Y != 0 {
 		t.Error("Fit left the panel zoomed or scrolled")
 	}
@@ -210,7 +210,7 @@ func TestPicturePanelModeSwitch(t *testing.T) {
 	a := newTestApp()
 	pp := readyPicturePanel(t, a, 40, 20)
 	before := pp.render()
-	pp.runTool(picToolMode)
+	pp.tools.RunCell(picToolMode)
 	after := pp.render()
 	if !pp.ascii || after == before || after.Mode().String() != "ascii" {
 		t.Fatalf("mode switch: ascii=%v, art mode %v", pp.ascii, after.Mode())

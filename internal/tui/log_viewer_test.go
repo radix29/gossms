@@ -491,7 +491,7 @@ func TestTheLogViewerOverflowMenuKeepsTheGate(t *testing.T) {
 		t.Fatal("Recycle still fits at 60 columns, so this proves nothing")
 	}
 
-	lv.showOverflowMenu()
+	lv.tools.OverflowMenu(lv.app.contextMenu, lv.rect)
 	var found bool
 	for _, it := range a.contextMenu.Items() {
 		if !strings.Contains(it.Label, "Recycle") {

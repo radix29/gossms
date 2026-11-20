@@ -35,7 +35,7 @@ func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 	}
 	// "More ▾", the stand-in for whatever did not fit, is dimmed only while the
 	// whole row is; its items are gated one by one once the menu is open.
-	lv.tools.Draw(s, lv.toolRect, lv.toolDisabled, !lv.toolsEnabled())
+	lv.tools.Draw(s, lv.toolRect, nil, !lv.toolsEnabled())
 	if lv.filterVisible() {
 		lv.filter.Draw(s)
 	}

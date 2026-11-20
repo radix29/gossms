@@ -328,6 +328,8 @@ func NewActivityMonitor(app *App, sc *db.ServerConn) *ActivityMonitor {
 	am.inst.restart = am.startInstancePoller
 	am.blk = am.newProcTab(activity.BlockProc, "")
 	am.sess = am.newProcTab(activity.WhoIsActiveProc, whoIsActiveCredit())
+	// The gate is the cells' own Disabled and Reason, which buildTools latches.
+	am.tools.Status = app.setStatus
 	am.buildTools()
 	return am
 }

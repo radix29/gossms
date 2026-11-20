@@ -64,6 +64,12 @@ func (p *QueryStorePanel) buildTools() {
 		{Label: "Compare Plans", Action: p.comparePlans},
 		{Label: "Plot History", Action: p.toggleSeriesMode},
 	}
+	p.sel.Disabled, p.sel.Reason, p.sel.Status = p.selDisabled, p.selReason, p.setStatus
+	p.acts.Disabled, p.acts.Reason, p.acts.Status = p.actDisabled, p.actReason, p.setStatus
+	// The reasons are whole sentences naming what to do, and the selectors'
+	// labels carry their value: "Metric: Duration: Query Store records..." reads
+	// as nonsense.
+	p.sel.ReasonOnly, p.acts.ReasonOnly = true, true
 	p.refreshToolLabels()
 }
 
@@ -246,28 +252,6 @@ func (p *QueryStorePanel) actReason(i int) string {
 	return ""
 }
 
-// runSel invokes selector cell i's action, or says why it did not.
-func (p *QueryStorePanel) runSel(i int) {
-	if p.selDisabled(i) {
-		if reason := p.selReason(i); reason != "" {
-			p.setStatus(reason)
-		}
-		return
-	}
-	p.sel.Cells[i].Action()
-}
-
-// runAct invokes action cell i's action, or says why it did not.
-func (p *QueryStorePanel) runAct(i int) {
-	if p.actDisabled(i) {
-		if reason := p.actReason(i); reason != "" {
-			p.setStatus(reason)
-		}
-		return
-	}
-	p.acts.Cells[i].Action()
-}
-
 // popMenu shows items under selector cell i of the selector row.
 func (p *QueryStorePanel) popMenu(i int, items []controls.MenuItem) {
 	p.popMenuOn(&p.sel, i, items)
@@ -278,13 +262,6 @@ func (p *QueryStorePanel) popMenu(i int, items []controls.MenuItem) {
 func (p *QueryStorePanel) popMenuOn(row *controls.ToolRow, i int, items []controls.MenuItem) {
 	x, y := row.MenuAnchor(i, p.rect)
 	p.app.contextMenu.Show(x, y, items)
-}
-
-// showOverflowMenu pops the buttons a row was too narrow to draw, under its
-// "More ▾" cell; see ToolRow.OverflowItems for what each entry carries.
-func (p *QueryStorePanel) showOverflowMenu(row *controls.ToolRow,
-	disabled func(int) bool, reason func(int) string, run func(int)) {
-	p.popMenuOn(row, -1, row.OverflowItems(disabled, reason, run))
 }
 
 func (p *QueryStorePanel) showReportMenu() {

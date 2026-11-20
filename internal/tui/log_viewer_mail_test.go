@@ -122,7 +122,7 @@ func TestLogViewerMailLogDeleteIsGatedOnMsdbRights(t *testing.T) {
 	}
 
 	lv.conn, lv.logType = outsider, gosmo.ErrorLogDatabaseMail
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	if a.promptDialog().Visible() {
 		t.Error("a withheld Delete still asked for a date")
 	}
@@ -138,7 +138,7 @@ func TestLogViewerDeletesMailLogEntriesBeforeTheSelectedRow(t *testing.T) {
 	// Newest first: row 1 is the 08:00 error, not the first row.
 	lv.grid.SetSelectedRow(1)
 
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	if !a.promptDialog().Visible() {
 		t.Fatal("Delete did not ask what to delete")
 	}
@@ -160,7 +160,7 @@ func TestLogViewerDeletesMailLogEntriesBeforeTheSelectedRow(t *testing.T) {
 
 func TestLogViewerDeletesTheWholeMailLogOnAll(t *testing.T) {
 	a, lv, inst := newMailLogTestViewer(t)
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	answerPrompt(t, a, "ALL")
 	answerConfirm(t, a, true)
 	drainUntil(t, a, func() bool { return !lv.busy && len(inst.Statements()) > 0 }, "the purge to finish")
@@ -174,7 +174,7 @@ func TestLogViewerDeletesTheWholeMailLogOnAll(t *testing.T) {
 // reason, and nothing is asked or sent.
 func TestLogViewerMailLogDeleteRefusesAnUnreadableTime(t *testing.T) {
 	a, lv, inst := newMailLogTestViewer(t)
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	answerPrompt(t, a, "last week")
 	if !a.promptDialog().Visible() {
 		t.Error("the prompt closed on a value it cannot read")

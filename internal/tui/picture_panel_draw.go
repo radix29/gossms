@@ -29,7 +29,7 @@ func (pp *PicturePanel) drawToolbar(s tcell.Screen) {
 	}
 	pp.refreshToolLabels()
 	next := pp.tools.Layout(pp.toolRect, "")
-	pp.tools.Draw(s, pp.toolRect, pp.toolDisabled, false)
+	pp.tools.Draw(s, pp.toolRect, nil, false)
 	if w := pp.toolRect.Right() - next; w > 0 {
 		core.DrawTextClipped(s, next, pp.toolRect.Y, w, theme.StyleMenuBar(), pp.infoText())
 	}

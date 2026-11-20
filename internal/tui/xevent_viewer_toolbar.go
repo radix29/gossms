@@ -54,6 +54,7 @@ func (v *XEventViewer) buildTools() {
 	for i, id := range ids {
 		v.tools.Cells[i].Action = v.toolAction(id)
 	}
+	v.tools.Disabled, v.tools.Reason, v.tools.Status = v.toolDisabled, v.toolReason, v.app.setStatus
 	v.refreshToolLabels()
 }
 
@@ -180,11 +181,6 @@ func (v *XEventViewer) toolReason(i int) string {
 	return ""
 }
 
-// runTool invokes cell i's action, or says why it did not (ToolRow.Run).
-func (v *XEventViewer) runTool(i int) {
-	v.tools.Run(i, v.toolDisabled, v.toolReason, v.app.setStatus)
-}
-
 // runToolByID runs the cell named id, for a key binding. A mode without the
 // cell answers false.
 func (v *XEventViewer) runToolByID(id xeTool) bool {
@@ -192,15 +188,8 @@ func (v *XEventViewer) runToolByID(id xeTool) bool {
 	if i < 0 {
 		return false
 	}
-	v.runTool(i)
+	v.tools.RunCell(i)
 	return true
-}
-
-// showOverflowMenu pops the cells the row was too narrow to draw.
-func (v *XEventViewer) showOverflowMenu() {
-	x, y := v.tools.MenuAnchor(-1, v.rect)
-	v.app.contextMenu.Show(x, y,
-		v.tools.OverflowItems(v.toolDisabled, v.toolReason, v.runTool))
 }
 
 // popMenu shows items under cell id, or at the panel's top-left when the cell

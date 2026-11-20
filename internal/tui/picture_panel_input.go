@@ -21,6 +21,7 @@ func (pp *PicturePanel) buildTools() {
 		{Action: pp.toggleMode},
 		{Label: "Save As...", Action: func() { pp.app.savePicturePanel(pp, true) }},
 	}
+	pp.tools.Disabled, pp.tools.Reason, pp.tools.Status = pp.toolDisabled, pp.toolReason, pp.app.setStatus
 	pp.refreshToolLabels()
 }
 
@@ -47,17 +48,6 @@ func (pp *PicturePanel) toolReason(i int) string {
 		return ""
 	}
 	return "no picture decoded"
-}
-
-// runTool invokes toolbar cell i through the gate the draw dims on.
-func (pp *PicturePanel) runTool(i int) {
-	pp.tools.Run(i, pp.toolDisabled, pp.toolReason, pp.app.setStatus)
-}
-
-// showOverflowMenu pops the cells the row was too narrow for.
-func (pp *PicturePanel) showOverflowMenu() {
-	x, y := pp.tools.MenuAnchor(-1, pp.rect)
-	pp.app.contextMenu.Show(x, y, pp.tools.OverflowItems(pp.toolDisabled, pp.toolReason, pp.runTool))
 }
 
 // HandleKey: + / - zoom, 0 or f fits, 1 shows actual size, m switches mode,
@@ -88,15 +78,15 @@ func (pp *PicturePanel) HandleKey(ev *tcell.EventKey) bool {
 		}
 		switch ev.Str() {
 		case "+", "=":
-			pp.runTool(picToolZoomIn)
+			pp.tools.RunCell(picToolZoomIn)
 		case "-", "_":
-			pp.runTool(picToolZoomOut)
+			pp.tools.RunCell(picToolZoomOut)
 		case "0", "f", "F":
-			pp.runTool(picToolFit)
+			pp.tools.RunCell(picToolFit)
 		case "1":
-			pp.runTool(picToolActual)
+			pp.tools.RunCell(picToolActual)
 		case "m", "M":
-			pp.runTool(picToolMode)
+			pp.tools.RunCell(picToolMode)
 		default:
 			return false
 		}
@@ -135,9 +125,9 @@ func (pp *PicturePanel) HandleMouse(ev *tcell.EventMouse) bool {
 		pp.dragZone.Arm(ev, pzToolbar)
 		// The action runs on the press; pzToolbar swallows the repeats.
 		if i := pp.tools.CellAt(mx, my); i >= 0 {
-			pp.runTool(i)
+			pp.tools.RunCell(i)
 		} else if pp.tools.More.Rect.Contains(mx, my) {
-			pp.showOverflowMenu()
+			pp.tools.OverflowMenu(pp.app.contextMenu, pp.rect)
 		}
 		return true
 	}

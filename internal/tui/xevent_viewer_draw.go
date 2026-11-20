@@ -42,7 +42,7 @@ func (v *XEventViewer) Draw(s tcell.Screen) {
 
 // drawToolbar paints the toolbar row.
 func (v *XEventViewer) drawToolbar(s tcell.Screen) {
-	v.tools.Draw(s, v.toolRect, v.toolDisabled, false)
+	v.tools.Draw(s, v.toolRect, nil, false)
 }
 
 // drawDetails paints the selected event below the splitter.

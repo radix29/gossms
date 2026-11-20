@@ -96,7 +96,7 @@ func TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle(t *testing.T) {
 	if !lv.toolDisabled(logToolRecycle) {
 		t.Error("the Recycle cell draws live for a CONTROL SERVER login outside sysadmin")
 	}
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	if a.confirmDialog().Visible() {
 		t.Error("a withheld Recycle still asked for confirmation")
 	}
@@ -144,7 +144,7 @@ func TestLogViewerRecycleStaysLiveForALoginThatMay(t *testing.T) {
 		t.Error("a read in flight left the toolbar live")
 	}
 	lv.setStatus("")
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	if a.confirmDialog().Visible() {
 		t.Error("Recycle ran while a read was in flight")
 	}
@@ -164,7 +164,7 @@ func TestLogViewerRecycleCyclesTheFamilyOnScreen(t *testing.T) {
 	a, lv, inst := newRecycleTestViewer(t)
 	lv.logType = gosmo.ErrorLogAgent
 
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	if !a.confirmDialog().Visible() {
 		t.Fatal("Recycle did not ask for confirmation")
 	}
@@ -201,7 +201,7 @@ func TestLogViewerRecycleDropsTheStaleFileList(t *testing.T) {
 		{Number: 2, Date: "stale"},
 	}
 
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 	drainUntil(t, a, func() bool {
 		return !lv.busy && len(lv.files[gosmo.ErrorLogSQLServer]) > 0
@@ -223,7 +223,7 @@ func TestLogViewerRecycleDropsTheStaleFileList(t *testing.T) {
 func TestLogViewerRecycleCancelledWritesNothing(t *testing.T) {
 	a, lv, inst := newRecycleTestViewer(t)
 
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone)) // No
 
 	for _, stmt := range inst.Statements() {
@@ -245,7 +245,7 @@ func TestLogViewerRecycleIsInertWhileBusy(t *testing.T) {
 	a, lv, inst := newRecycleTestViewer(t)
 	lv.busy = true
 
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	if a.confirmDialog().Visible() {
 		t.Error("Recycle asked for confirmation while busy")
 	}
@@ -267,7 +267,7 @@ func TestLogViewerRecyclePanicClearsTheLatch(t *testing.T) {
 	lv.app = a
 	lv.conn = &db.ServerConn{}
 
-	lv.runTool(logToolRecycle)
+	lv.tools.RunCell(logToolRecycle)
 	a.confirmDialog().HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 
 	drainUntil(t, a, func() bool { return !lv.busy }, "the latch to clear after the panic")
@@ -278,7 +278,7 @@ func TestLogViewerRecyclePanicClearsTheLatch(t *testing.T) {
 	}
 	fired := 0
 	lv.tools.Cells[logToolRefresh].Action = func() { fired++ }
-	lv.runTool(logToolRefresh)
+	lv.tools.RunCell(logToolRefresh)
 	if fired != 1 {
 		t.Error("the next toolbar click was refused — the latch never really cleared")
 	}

@@ -22,7 +22,7 @@ func (lv *LogViewer) HandleKey(ev *tcell.EventKey) bool {
 	// F5 is the Refresh cell's action through the same gate as the click path: a
 	// key must not do what a dimmed button refuses.
 	if ev.Key() == tcell.KeyF5 {
-		lv.runTool(logToolRefresh)
+		lv.tools.RunCell(logToolRefresh)
 		return true
 	}
 	// Tab walks grid -> filter -> out of the panel. The last step must return
@@ -171,15 +171,15 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 		// The action runs on the press, so tcell's repeats while the button is down
-		// must not reach it again (lZoneToolbar swallows them in routeDrag). runTool
-		// applies the gate drawToolbar dims on, so a dimmed cell is inert, not merely
+		// must not reach it again (lZoneToolbar swallows them in routeDrag). RunCell
+		// applies the row's gate, which the draw dims on too, so a dimmed cell is inert, not merely
 		// grey.
 		if i := lv.tools.CellAt(mx, my); i >= 0 {
-			lv.runTool(i)
+			lv.tools.RunCell(i)
 			return true
 		}
 		if lv.tools.More.Rect.Contains(mx, my) {
-			lv.showOverflowMenu()
+			lv.tools.OverflowMenu(lv.app.contextMenu, lv.rect)
 			return true
 		}
 		return true

@@ -18,8 +18,8 @@ func (p *QueryStorePanel) Draw(s tcell.Screen) {
 	// overpaint its tail. Relaying out here is a few width measurements.
 	p.refreshToolLabels()
 	p.layoutToolRows()
-	p.drawToolRow(s, p.selRect, &p.sel, p.selDisabled)
-	p.drawToolRow(s, p.actRect, &p.acts, p.actDisabled)
+	p.drawToolRow(s, p.selRect, &p.sel)
+	p.drawToolRow(s, p.actRect, &p.acts)
 	p.drawChart(s)
 	p.chartSplit.Draw(s)
 	p.planSplit.Draw(s)
@@ -33,11 +33,11 @@ func (p *QueryStorePanel) Draw(s tcell.Screen) {
 }
 
 // drawToolRow paints one toolbar row, dimming each cell the panel would refuse a
-// click on. The dimmed state and the refusal are the same predicate, so a cell
-// that looks inert is. More is dimmed only while the whole row is; its items are
-// gated one by one once the menu is open.
-func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, row *controls.ToolRow, disabled func(int) bool) {
-	row.Draw(s, r, disabled, p.busy)
+// click on. The dimmed state and the refusal are the same predicate (the row's
+// Disabled), so a cell that looks inert is. More is dimmed only while the whole
+// row is; its items are gated one by one once the menu is open.
+func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, row *controls.ToolRow) {
+	row.Draw(s, r, nil, p.busy)
 }
 
 // drawChart plots the report's rows in the order the loader produced them:

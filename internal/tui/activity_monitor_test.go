@@ -977,7 +977,7 @@ func TestTheActivityMonitorOverflowMenuMarksTheRateInForce(t *testing.T) {
 	if len(am.tools.Hidden) == 0 {
 		t.Fatal("nothing overflowed at 30 columns, so this proves nothing")
 	}
-	am.showOverflowMenu()
+	am.tools.OverflowMenu(am.app.contextMenu, am.rect)
 
 	var found bool
 	for _, it := range am.app.contextMenu.Items() {
