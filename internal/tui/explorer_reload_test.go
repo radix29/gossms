@@ -304,3 +304,34 @@ func TestFolderRefreshLeavesCapabilitiesCached(t *testing.T) {
 		t.Error("a folder Refresh dropped the database capability cache")
 	}
 }
+
+// A disconnect while a folder's load is in flight retires the whole server
+// subtree: the load is abandoned (OnRetire), so its posted callback drops the
+// result, and a delivery that got past that is refused by the retired node.
+// RemoveRoot only forgot the IDs, so the late load registered its children
+// under an unreachable parent for the rest of the session.
+func TestDisconnectDuringLoadLeaksNothing(t *testing.T) {
+	st := newReloadTree(t)
+	oe, dbr := st.a.explorer, st.a.detailBrowser
+	st.dbs.Expanded = true
+	_, seq := st.dbs.load.BeginTimeout(context.Background(), time.Minute)
+	dbr.cache[st.alice] = &detailResult{cols: []string{"Name"}, rows: [][]string{{"alice"}}}
+
+	st.a.disconnect(st.sc)
+
+	if st.dbs.load.Done(seq) {
+		t.Error("the in-flight load under the disconnected root was not abandoned")
+	}
+	// What loadChildren's posted callback would install, had the guard passed.
+	oe.SetChildren(st.dbs, []*explorerNode{testLogin(st.sc, "late")})
+	oe.rebuild()
+	if got := oe.tree.Len(); got != 0 {
+		t.Errorf("tree.Len() after disconnect and a late delivery = %d, want 0", got)
+	}
+	if len(dbr.cache) != 0 {
+		t.Errorf("Detail Browser cache holds %d entries after the disconnect", len(dbr.cache))
+	}
+	if len(oe.tree.Roots()) != 0 || oe.view.SelectedNode() != nil {
+		t.Errorf("tree not empty: %d roots, selected row %+v", len(oe.tree.Roots()), oe.view.SelectedNode())
+	}
+}

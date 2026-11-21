@@ -350,10 +350,10 @@ func (db *DetailBrowser) InvalidateWhere(app *App, match func(*explorerNode) boo
 
 // Forget drops every cached and pending entry for nodes that have left the tree
 // (the tree's OnRelease, set in NewObjectExplorer, calls it for the nodes a
-// Reload replaced), so
-// neither map holds them alive until the connection closes. Nothing is
-// refetched: a node on screen that is among them is about to be reselected away
-// from. Nil-safe.
+// Reload replaced or a disconnect removed), so neither map holds them alive
+// until the connection closes. Nothing is refetched: a node on screen that is
+// among them is about to be reselected away from. After a disconnect's
+// PurgeConn it finds nothing left to drop. Nil-safe.
 func (db *DetailBrowser) Forget(nodes []*explorerNode) {
 	if db == nil {
 		return
