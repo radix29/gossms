@@ -574,10 +574,51 @@ func TestSQLKeywordCompletionAcceptsPhrase(t *testing.T) {
 					t.Fatal("keyword popup did not open")
 				}
 				qp.editor.HandleKey(tcell.NewEventKey(accept.key, "", tcell.ModNone))
-				if got := qp.editor.Text(); got != tt.want {
-					t.Fatalf("Text() = %q, want %q", got, tt.want)
+				want := tt.want
+				if accept.key == tcell.KeyEnter && softAtAlias[want] {
+					// Where an alias may be typed, Enter is a newline (CompletionItem.Soft).
+					want = tt.before + tt.typed + "\n" + tt.after
+				}
+				if got := qp.editor.Text(); got != want {
+					t.Fatalf("Text() = %q, want %q", got, want)
 				}
 			})
+		}
+	}
+}
+
+// softAtAlias lists TestSQLKeywordCompletionAcceptsPhrase's cases typed where a
+// new alias could start: Tab takes the keyword, Enter does not.
+var softAtAlias = map[string]bool{
+	"CREATE FUNCTION dbo.f() RETURNS INT AS BEGIN RETURN (SELECT Id FROM dbo.Customers WHERE ); END": true,
+	"SELECT * FROM dbo.Customers WHERE Id IS DISTINCT FROM 1":                                        true,
+	"SELECT * FROM dbo.Customers OUTER APPLY ":                                                       true,
+	"SELECT Name FROM dbo.Customers ORDER BY ":                                                       true,
+	"SELECT Name FROM dbo.Customers ORDER BY Name":                                                   true,
+	"SELECT Name FROM dbo.Customers GROUP /* keep */ BY Name":                                        true,
+}
+
+// A one-letter alias that a keyword starts ("o" / OUTER APPLY, "c" / CROSS
+// JOIN, "o" / ON) stays an alias when Enter ends the line, and Enter after a
+// space or "*" is a newline, not the first keyword offered ("=", FROM).
+func TestSQLKeywordCompletionEnterKeepsAliasAndNewline(t *testing.T) {
+	for _, before := range []string{
+		"SELECT * FROM dbo.Customers o",
+		"SELECT * FROM dbo.Customers c",
+		"SELECT * FROM dbo.Customers c JOIN dbo.Orders o",
+		"SELECT * FROM dbo.Customers WHERE Name ",
+		"SELECT *",
+	} {
+		qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		for _, r := range before {
+			qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+		}
+		if !qp.editor.OverlayActive() {
+			t.Fatalf("%q: keyword popup did not open", before)
+		}
+		qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+		if got := qp.editor.Text(); got != before+"\n" {
+			t.Errorf("Text() = %q, want %q", got, before+"\n")
 		}
 	}
 }

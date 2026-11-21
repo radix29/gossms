@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/sqltext"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/tuikit/controls/editor"
@@ -55,6 +56,12 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	var choices []string
 	jsonOptions, jsonBefore := false, 0
 	sourceFunctions := false
+	// aliasable: the word being typed may be a new alias ("FROM Orders o"), so
+	// a keyword it starts (OUTER APPLY) is Soft: Tab takes it, Enter is a
+	// newline. A reserved word typed in full ("where") can't be an alias. With
+	// nothing typed ("WHERE o.name |"), every keyword is Soft the same way: Enter
+	// at the end of a line is a line break, not "=".
+	aliasable := false
 	clause, queryDepth := context.clause, context.queryDepth
 	selectStart, hasFrom := context.selectStart, context.hasFrom
 	if context.only {
@@ -239,6 +246,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 			}
 			if keywordAliasPosition(aliasTokens, context.clauseStart) {
 				choices = append(choices, "AS")
+				aliasable = prefix != "" && !gosmo.IsReservedKeyword(prefix)
 			}
 		}
 		if fabric && selectStart < 0 && complete && (clause == "FROM" || clause == "ON") {
@@ -396,7 +404,8 @@ futureScan:
 		if jsonOptions && f.tokens[len(f.tokens)-1].Kind != sqlparse.TokenComma {
 			text, before = ", "+text, jsonBefore
 		}
-		items = append(items, editor.CompletionItem{Text: text, Label: label, Detail: "keyword", ReplaceBefore: before, AppendSpace: !columnType && clause != "DATEPART"})
+		items = append(items, editor.CompletionItem{Text: text, Label: label, Detail: "keyword", ReplaceBefore: before,
+			AppendSpace: !columnType && clause != "DATEPART", Soft: aliasable || prefix == ""})
 	}
 	return items, sourceComplete
 }
@@ -535,7 +544,9 @@ func routineCompletionTokens(buf []rune, pre sqlparse.PrefixScan, from int) []sq
 		return nil
 	}
 	at := head.End
-	if keywordNextIs(buf[:from], head.Start, "CREATE OR ALTER") {
+	// Split, not one "CREATE OR ALTER" literal: this matches typed text and
+	// emits nothing, which TestOnlyKnownSitesEmitCreateOrAlter cannot tell.
+	if strings.EqualFold(string(buf[head.Start:head.End]), "CREATE") && keywordNextIs(buf[:from], at, "OR ALTER") {
 		at = keywordNextToken(buf[:from], keywordNextToken(buf[:from], at).End).End
 	}
 	if !keywordNextIs(buf[:from], at, "PROCEDURE") && !keywordNextIs(buf[:from], at, "PROC") &&
