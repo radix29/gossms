@@ -151,7 +151,8 @@ func paramLength(args string) (int, bool) {
 }
 
 func article(typ string) string {
-	if strings.ContainsRune("aeiou", rune(typ[0])) {
+	// "a uniqueidentifier": u reads as "you" in every type name that has it.
+	if strings.ContainsRune("aeio", rune(typ[0])) {
 		return "n"
 	}
 	return ""

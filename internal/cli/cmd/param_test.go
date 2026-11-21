@@ -115,6 +115,11 @@ func TestParseParamEmptyValue(t *testing.T) {
 			t.Errorf("blank %s accepted", typ)
 		}
 	}
+	for typ, want := range map[string]string{"int": "not an int", "uniqueidentifier": "not a uniqueidentifier"} {
+		if _, err := parseParam("p=:" + typ); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("empty %s: %v, want %q", typ, err, want)
+		}
+	}
 	for _, typ := range []string{"nvarchar(10)", "varchar(max)", "xml"} {
 		if _, err := parseParam("p=:" + typ); err != nil {
 			t.Errorf("empty %s: %v", typ, err)
