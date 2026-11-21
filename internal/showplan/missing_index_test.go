@@ -3,6 +3,8 @@ package showplan
 import (
 	"strings"
 	"testing"
+
+	"github.com/radix29/gossms/internal/sqltext"
 )
 
 const missingIndexPlan = `<ShowPlanXML Version="1.599" Build="17.0.1125.2">
@@ -111,6 +113,32 @@ func TestMissingIndexScriptKeepsABracketInAName(t *testing.T) {
 	for _, want := range []string{"USE [Health]]Clinic]", "ON [dbo].[Odd]]Name] ([[Doctor]]],[ScheduledAt])"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("script missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestMissingIndexScriptNameCannotEscapeComment(t *testing.T) {
+	for _, name := range []string{"a*/ DROP TABLE x; /*", "*/*", "/*/", "a*/\nDROP TABLE x;\n/*", "/*"} {
+		m := MissingIndex{Database: name, Schema: name, Table: name, Equality: []string{name}, Include: []string{name}}
+		buf := []rune(m.Script())
+		var st sqltext.State
+		var kinds []sqltext.Kind
+		for i := 0; i < len(buf); {
+			var tok sqltext.Token
+			tok, st = sqltext.Next(buf, i, len(buf), st)
+			if tok.Kind == sqltext.KindEnd {
+				break
+			}
+			if tok.End <= i {
+				t.Fatalf("%q: lexer stalled at %d", name, i)
+			}
+			if tok.Kind != sqltext.KindNewline {
+				kinds = append(kinds, tok.Kind)
+			}
+			i = tok.End
+		}
+		if len(kinds) != 2 || kinds[0] != sqltext.KindComment || kinds[1] != sqltext.KindComment {
+			t.Errorf("%q: tokens = %v, want two block comments", name, kinds)
 		}
 	}
 }

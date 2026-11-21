@@ -289,3 +289,63 @@ func TestControlCharactersNeverReachTheTerminal(t *testing.T) {
 		}
 	}
 }
+
+// TestJSONSpellsHiddenCharacters pins B2: DEL, C1 controls and bidi overrides
+// in a key, cell or message leave json and jsonl as \uXXXX, whatever the
+// destination, and decode to the original.
+func TestJSONSpellsHiddenCharacters(t *testing.T) {
+	for _, evil := range []string{"a\x1b\x7f\u0085\u009b\u202e\u2066b", "plain \u00e9"} {
+		cell := evil
+		r := &Result{
+			Sets:     []Set{{Columns: []Column{{Name: evil}}, Rows: [][]*string{{&cell}}}},
+			Messages: []Message{{Text: evil}},
+			Fields:   []Field{{Key: evil, Value: evil}},
+		}
+		for _, f := range []Format{FormatJSON, FormatJSONL} {
+			var b bytes.Buffer
+			if err := Render(&b, r, DefaultOptions(f)); err != nil {
+				t.Fatal(err)
+			}
+			for _, c := range b.String() {
+				if c == 0x7f || (c >= 0x80 && c <= 0x9f) || (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069) {
+					t.Errorf("%s holds raw %U: %q", f, c, b.String())
+				}
+			}
+			dec := json.NewDecoder(&b)
+			found := false
+			for dec.More() {
+				var v any
+				if err := dec.Decode(&v); err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(fmtAny(v), evil) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("%s: %q does not round-trip", f, evil)
+			}
+		}
+	}
+}
+
+// fmtAny is every string in a decoded JSON value (keys too), NUL-separated.
+func fmtAny(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x + "\x00"
+	case []any:
+		var o string
+		for _, e := range x {
+			o += fmtAny(e)
+		}
+		return o
+	case map[string]any:
+		var o string
+		for k, e := range x {
+			o += k + "\x00" + fmtAny(e)
+		}
+		return o
+	}
+	return ""
+}

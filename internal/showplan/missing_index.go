@@ -34,18 +34,20 @@ func (m MissingIndex) CreateStatement() string {
 // Script returns SSMS's "Missing Index Details" block: impact comment, then
 // USE/CREATE, commented out as SSMS does since the name is still a placeholder.
 func (m MissingIndex) Script() string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "/*\nThe Query Processor estimates that implementing the following index could improve the query cost by %.4f%%.\n*/\n\n/*\n", m.Impact)
+	// The names come from plan XML, and inside a block comment brackets do
+	// not protect them: a "*/" would end the comment and run the rest.
+	var body strings.Builder
 	if m.Database != "" {
-		fmt.Fprintf(&sb, "USE %s\nGO\n", tsql.QuoteName(m.Database))
+		fmt.Fprintf(&body, "USE %s\nGO\n", tsql.QuoteName(m.Database))
 	}
-	fmt.Fprintf(&sb, "CREATE NONCLUSTERED INDEX [%s]\nON %s (%s)\n",
+	fmt.Fprintf(&body, "CREATE NONCLUSTERED INDEX [%s]\nON %s (%s)\n",
 		missingIndexNamePlaceholder, m.qualifiedTable(), bracketList(m.Keys()))
 	if len(m.Include) > 0 {
-		fmt.Fprintf(&sb, "INCLUDE (%s)\n", bracketList(m.Include))
+		fmt.Fprintf(&body, "INCLUDE (%s)\n", bracketList(m.Include))
 	}
-	sb.WriteString("GO\n*/\n")
-	return sb.String()
+	body.WriteString("GO\n")
+	return fmt.Sprintf("/*\nThe Query Processor estimates that implementing the following index could improve the query cost by %.4f%%.\n*/\n\n/*\n%s*/\n",
+		m.Impact, tsql.BlockCommentSafe(body.String()))
 }
 
 // qualifiedTable is "[schema].[table]"; CREATE INDEX doesn't accept a
