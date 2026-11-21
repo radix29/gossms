@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/clipperhouse/displaywidth"
+
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // renderMarkdown writes the text envelope with each Verbatim field as a fenced
@@ -29,7 +31,7 @@ func renderMarkdown(w io.Writer, r *Result, o Options) error {
 		}
 		return out
 	}, func(f Field) []string {
-		lines := verbatimLines(f.Value)
+		lines := verbatimLines(textutil.Visible(f.Value))
 		fence := strings.Repeat("`", max(3, longestRun(f.Value, '`')+1))
 		out := []string{verbatimMarker(f, len(lines)), "", fence}
 		return append(append(out, lines...), fence)
@@ -85,7 +87,7 @@ func markdownTable(head []string, rows [][]string, ncols int) []string {
 // holding the text <br> would look like a line break. One pass, so the <br>
 // written for a line break stays markup and an & is never escaped twice.
 func markdownCell(s string) string {
-	return markdownCellReplacer.Replace(strings.ReplaceAll(s, "\r\n", "\n"))
+	return markdownCellReplacer.Replace(strings.ReplaceAll(textutil.Visible(s), "\r\n", "\n"))
 }
 
 var markdownCellReplacer = strings.NewReplacer(`\`, `\\`, "|", `\|`,

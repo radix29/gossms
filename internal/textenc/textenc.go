@@ -27,6 +27,8 @@ const (
 	UTF8BOM                 // what SSMS and Windows editors write by default
 	UTF16LE                 // SSMS's own default .sql encoding
 	UTF16BE
+	UTF32LE
+	UTF32BE
 )
 
 // The byte-order marks Decode recognizes.
@@ -34,6 +36,8 @@ const (
 	BOMUTF8    = "\xef\xbb\xbf"
 	BOMUTF16LE = "\xff\xfe"
 	BOMUTF16BE = "\xfe\xff"
+	BOMUTF32LE = "\xff\xfe\x00\x00"
+	BOMUTF32BE = "\x00\x00\xfe\xff"
 )
 
 // Decode turns a file's bytes into text, reporting how it was encoded and
@@ -54,6 +58,14 @@ func Decode(data []byte) (text string, enc Encoding, lossy bool) {
 	case bytes.HasPrefix(data, []byte(BOMUTF8)):
 		data = data[len(BOMUTF8):]
 		return string(data), UTF8BOM, !utf8.Valid(data)
+	// UTF-32LE's mark begins with UTF-16LE's, so it is tested first: a
+	// UTF-16LE file that starts with a real U+0000 is not a script.
+	case bytes.HasPrefix(data, []byte(BOMUTF32LE)):
+		text, lossy = decodeUTF32(data[len(BOMUTF32LE):], false)
+		return text, UTF32LE, lossy
+	case bytes.HasPrefix(data, []byte(BOMUTF32BE)):
+		text, lossy = decodeUTF32(data[len(BOMUTF32BE):], true)
+		return text, UTF32BE, lossy
 	case bytes.HasPrefix(data, []byte(BOMUTF16LE)):
 		text, lossy = decodeUTF16(data[len(BOMUTF16LE):], false)
 		return text, UTF16LE, lossy
@@ -74,6 +86,10 @@ func Encode(text string, enc Encoding) []byte {
 		return encodeUTF16(text, false)
 	case UTF16BE:
 		return encodeUTF16(text, true)
+	case UTF32LE:
+		return encodeUTF32(text, false)
+	case UTF32BE:
+		return encodeUTF32(text, true)
 	}
 	return []byte(text)
 }
@@ -113,6 +129,44 @@ func decodeUTF16(b []byte, bigEndian bool) (text string, lossy bool) {
 		}
 	}
 	return string(utf16.Decode(units)), len(b)%2 != 0 || hasUnpairedSurrogate(units)
+}
+
+// decodeUTF32 decodes BOM-less UTF-32 of the given endianness. An invalid
+// scalar (a surrogate, or above U+10FFFF) becomes U+FFFD and a length that
+// is not a multiple of 4 drops the tail; both report lossy.
+func decodeUTF32(b []byte, bigEndian bool) (text string, lossy bool) {
+	var sb strings.Builder
+	for ; len(b) >= 4; b = b[4:] {
+		var r uint32
+		if bigEndian {
+			r = uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
+		} else {
+			r = uint32(b[3])<<24 | uint32(b[2])<<16 | uint32(b[1])<<8 | uint32(b[0])
+		}
+		if r > utf8.MaxRune || (r >= surrHighMin && r <= surrMax) {
+			lossy = true
+			r = utf8.RuneError
+		}
+		sb.WriteRune(rune(r))
+	}
+	return sb.String(), lossy || len(b) != 0
+}
+
+// encodeUTF32 encodes text as UTF-32 of the given endianness, with its BOM.
+func encodeUTF32(text string, bigEndian bool) []byte {
+	out := make([]byte, 0, 4*len(text)+4)
+	put := func(r rune) {
+		if bigEndian {
+			out = append(out, byte(r>>24), byte(r>>16), byte(r>>8), byte(r))
+		} else {
+			out = append(out, byte(r), byte(r>>8), byte(r>>16), byte(r>>24))
+		}
+	}
+	put(0xFEFF)
+	for _, r := range text {
+		put(r)
+	}
+	return out
 }
 
 // UTF-16 surrogate ranges: a high (leading) unit must be followed by a low

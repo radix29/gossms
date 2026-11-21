@@ -167,7 +167,7 @@ func (j *jsonlWriter) encode(v any) []byte {
 		// here is a string, number, bool, null or a struct of them.
 		panic(err)
 	}
-	return bytes.TrimSuffix(j.scratch.Bytes(), []byte{'\n'})
+	return textutil.JSONEscape(bytes.TrimSuffix(j.scratch.Bytes(), []byte{'\n'}))
 }
 
 // renderJSONL writes r as jsonl: the sets' lines (unless the Sink already

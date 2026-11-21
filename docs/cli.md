@@ -93,7 +93,7 @@ which avoids shell quoting:
 - A line starting with `-` is one option: split at its first whitespace into
   option and value, unless written `--name=value`.
 - Any other line is one token, so command words go on separate lines.
-- Blank lines are skipped; a BOM and CRLF line ends are tolerated.
+- Blank lines are skipped; a UTF-8, UTF-16 or UTF-32 byte-order mark and CRLF line ends are tolerated.
 - No recursion: `@x` inside a response file is a literal token. So is `@x`
   after `--`, and `@x` as the value of an option that takes one.
 
@@ -386,6 +386,13 @@ CLI_SCHEMA: 1.0
   `PROCEDURE:` after `ERROR_CODE:`.
 - Every value is one line: line breaks and tabs become spaces, so no value can
   forge a marker. An empty value prints `KEY:` — no line ends in a space.
+- Control characters never reach the terminal as themselves: ESC, BEL and the
+  other C0 controls, DEL, the C1 range (not NEL) and the bidi overrides
+  (U+202A–U+202E, U+2066–U+2069) print as their JSON spelling (`\u001b`,
+  `\u202e`) in `text` and `markdown`, in every value, column name, message and
+  verbatim block. `json` and `jsonl` spell DEL, the C1 range (NEL too) and the
+  bidi overrides the same way always, terminal or not (`encoding/json` escapes
+  only C0); the value decodes unchanged.
 
 ### `json`
 
@@ -468,9 +475,11 @@ Rows only on stdout, written by the TUI's Results To File writer: RFC 4180,
 NULL an empty field, the empty string `""` (`docs/decisions.md` § SQL NULL in
 results), every set (header row, then rows) separated by a blank line. TSV is
 the same with a tab, quoting a field that holds a tab, quote or line break.
-Cells are never clipped. Everything else — the header block, each set's
+Cells are never clipped. Bytes are kept exactly, except that stdout on a
+terminal spells control characters out as in `text`; `--out-file` and a pipe
+keep every byte. Everything else — the header block, each set's
 marker and truncation note, messages, warnings, errors — goes to **stderr** as
-the text format's summary, on success too; the exit code carries the status.
+the text format's summary, on success too; the exit code carries the status. That stderr summary honours `--no-messages`.
 
 ### `markdown`
 
@@ -641,11 +650,11 @@ Every `query` command takes its script from exactly one of:
 | Option | Alias | |
 |---|---|---|
 | `--sql <text>` | `-Q` | Inline T-SQL |
-| `--file <path>` | `-i` | A file; `-` reads stdin. UTF-8 (a BOM is dropped), or UTF-16 with a byte-order mark |
+| `--file <path>` | `-i` | A file; `-` reads stdin. UTF-8 (a BOM is dropped), or UTF-16 or UTF-32 with a byte-order mark |
 | `--sql-base64 <b64>` | | Base64 of the UTF-8 text, padded or not |
 
 None, or more than one, is `USAGE_ERROR`; so are an unreadable file, text
-that is not valid UTF-8 (or, behind a UTF-16 mark, not valid UTF-16), and a script
+that is not valid UTF-8 (or, behind a UTF-16 mark, not valid UTF-16 or UTF-32), and a script
 over 64 MB. `--file -` with `--password-stdin` is refused: both read stdin.
 Prefer `--file -` or `--sql-base64` to `--sql` for anything but one line — no
 shell quoting can damage them.
