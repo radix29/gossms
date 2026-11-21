@@ -78,6 +78,103 @@ func newTestQueryPanelWithInventory(t testing.TB, database string, objects []gos
 	return qp
 }
 
+func TestSQLBuiltinTVFAliases(t *testing.T) {
+	for _, marked := range []string{
+		"SELECT * FROM dbo.Customers CROSS APPLY GENERATE_SERIES(1,10) AS g WHERE |",
+		"SELECT * FROM dbo.Customers CROSS APPLY GENERATE_SERIES(1,10) AS g WHERE g.|",
+		"SELECT g.| FROM GENERATE_SERIES(1,10) AS g",
+		"SELECT * FROM dbo.Customers CROSS APPLY STRING_SPLIT(Name, ',') AS g WHERE |",
+		"SELECT * FROM dbo.Customers CROSS APPLY STRING_SPLIT(Name, ',') AS g WHERE g.|",
+		"SELECT g.| FROM dbo.Customers CROSS APPLY STRING_SPLIT(Name, ',') AS g",
+	} {
+		t.Run(marked, func(t *testing.T) {
+			qp := newTestQueryPanelWithFunctions(t)
+			lines, row, col := linesAndCursor(t, marked)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			want := "value"
+			if strings.Contains(marked, "WHERE |") {
+				want = "g"
+			}
+			if !containsLabel(items, want) {
+				t.Fatalf("missing %s in %v", want, labels(items))
+			}
+		})
+	}
+}
+
+func TestSQLStringSplitOrdinalColumns(t *testing.T) {
+	for _, tt := range []struct {
+		sql     string
+		ordinal bool
+	}{
+		{"SELECT s.| FROM STRING_SPLIT('a,b', ',', 1) s", true},
+		{"SELECT * FROM STRING_SPLIT(CONCAT('a', ',b'), ',', 1) s WHERE s.|", true},
+		{"SELECT s.| FROM STRING_SPLIT('a,b', ',', 0) s", false},
+		{"SELECT s.| FROM STRING_SPLIT('a,b', ',') s", false},
+		{"SELECT s.| FROM STRING_SPLIT('a,b', ',', @flag) s", false},
+		{"SELECT a.| FROM STRING_SPLIT('a,b', ',', 1) a CROSS JOIN STRING_SPLIT('x,y', ',', 0) b", true},
+		{"SELECT b.| FROM STRING_SPLIT('a,b', ',', 1) a CROSS JOIN STRING_SPLIT('x,y', ',', 0) b", false},
+		{"WITH x AS (SELECT * FROM STRING_SPLIT('a,b', ',', 1)) SELECT x.| FROM x", true},
+	} {
+		t.Run(tt.sql, func(t *testing.T) {
+			qp := newTestQueryPanelWithFunctions(t)
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if !containsLabel(items, "value") || containsLabel(items, "ordinal") != tt.ordinal {
+				t.Fatalf("columns %v, want value and ordinal=%v", labels(items), tt.ordinal)
+			}
+			if tt.ordinal && itemDetail(items, "ordinal") != "bigint, not null" {
+				t.Fatalf("ordinal type=%q, want bigint, not null", itemDetail(items, "ordinal"))
+			}
+		})
+	}
+}
+
+func TestSQLDistinctFromDoesNotIntroduceTable(t *testing.T) {
+	for _, predicate := range []string{"IS DISTINCT FROM", "IS NOT DISTINCT FROM"} {
+		for _, query := range []string{
+			"SELECT | FROM dbo.Orders WHERE CustomerId " + predicate + " Customers",
+			"SELECT | FROM dbo.Orders o JOIN dbo.Orders x ON o.CustomerId " + predicate + " Customers",
+			"WITH x AS (SELECT * FROM dbo.Orders WHERE CustomerId " + predicate + " Customers) SELECT x.| FROM x",
+			"SELECT CASE WHEN CustomerId " + predicate + " Customers THEN Id END AS Id, | FROM dbo.Orders",
+		} {
+			t.Run(query, func(t *testing.T) {
+				objects := testCustomersOrders()
+				objects[1].Columns = append(objects[1].Columns, gosmo.CatalogColumn{Name: "Customers", DataType: "int"})
+				qp := newTestQueryPanelWithInventory(t, "testdb", objects)
+				lines, row, col := linesAndCursor(t, query)
+				items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+				if containsLabel(items, "Name") || containsLabel(items, "Email") || !containsLabel(items, "Total") {
+					t.Fatalf("columns %v, want only Orders columns", labels(items))
+				}
+			})
+		}
+	}
+}
+
+func TestSQLTruncateTargets(t *testing.T) {
+	for _, tt := range []struct{ sql, want, absent string }{
+		{"TRUNCATE TABLE |", "dbo.Customers", "dbo.vActiveCustomers"},
+		{"TRUNCATE TABLE dbo.|", "dbo.Customers", "dbo.vActiveCustomers"},
+		{"TRUNCATE TABLE dbo.v|", "", "dbo.vActiveCustomers"},
+		{"CREATE TABLE #stage (Id INT); TRUNCATE TABLE #st|", "#stage", ""},
+		{"DECLARE @stage TABLE (Id INT); TRUNCATE TABLE @st|", "", "@stage"},
+		{"SELECT * FROM dbo.v|", "dbo.vActiveCustomers", ""},
+	} {
+		t.Run(tt.sql, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if tt.want != "" && !containsLabel(items, tt.want) {
+				t.Fatalf("missing %q in %v", tt.want, labels(items))
+			}
+			if tt.absent != "" && containsLabel(items, tt.absent) {
+				t.Fatalf("unexpected %q in %v", tt.absent, labels(items))
+			}
+		})
+	}
+}
+
 func testCustomersOrders() []gosmo.CatalogObject {
 	return []gosmo.CatalogObject{
 		{
@@ -780,6 +877,32 @@ func TestSQLCompletionSystemTableValuedFunctionColumns(t *testing.T) {
 	}
 }
 
+func TestSQLCompletionCatalogTVFSuggestions(t *testing.T) {
+	for _, tt := range []struct {
+		sql, label string
+		want       bool
+	}{
+		{"SELECT * FROM sys.dm_ex|", "sys.dm_exec_sql_text", true},
+		{"SELECT * FROM dbo.Orders o CROSS APPLY sys.dm_ex|", "sys.dm_exec_sql_text", true},
+		{"SELECT * FROM dm_ex|", "sys.dm_exec_sql_text", false},
+		{"SELECT * FROM dbo.fnOrders|", "dbo.fnOrdersFor", true},
+		{"SELECT * FROM fnOrders|", "dbo.fnOrdersFor", true},
+		{"SELECT dbo.fnOrders|", "dbo.fnOrdersFor", false},
+		{"UPDATE dbo.fnOrders|", "dbo.fnOrdersFor", false},
+		{"INSERT INTO dbo.fnOrders|", "dbo.fnOrdersFor", false},
+		{"SELECT * FROM dbo.Customers c WHERE dbo.fnOrders|", "dbo.fnOrdersFor", false},
+	} {
+		t.Run(tt.sql, func(t *testing.T) {
+			qp := newTestQueryPanelWithFunctions(t)
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if got := containsLabel(items, tt.label); got != tt.want {
+				t.Fatalf("%s present=%v, want %v in %v", tt.label, got, tt.want, labels(items))
+			}
+		})
+	}
+}
+
 // A function named without its argument list is not a call, and T-SQL has no
 // other way to use one in FROM — answering nothing beats offering its columns
 // on what is really a typo for a table.
@@ -849,8 +972,9 @@ func TestSQLCompletionLoadingShowsPlaceholder(t *testing.T) {
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
 
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
-	if len(items) != 1 || !items[0].Placeholder {
-		t.Fatalf("items = %+v, want a single Placeholder row while loading", items)
+	if got, want := labels(items), []string{"GENERATE_SERIES", "OPENJSON", "OPENROWSET", "REGEXP_MATCHES", "REGEXP_SPLIT_TO_TABLE", "STRING_SPLIT", "VECTOR_SEARCH", loadingCompletionItem.Label}; !slices.Equal(got, want) ||
+		!items[len(items)-1].Placeholder {
+		t.Fatalf("items = %+v, want built-in TVFs followed by the loading placeholder", items)
 	}
 }
 
@@ -969,6 +1093,61 @@ func itemDetail(items []editor.CompletionItem, label string) string {
 		}
 	}
 	return ""
+}
+
+func TestSQLCompletionCorrelatedQualifiers(t *testing.T) {
+	for _, tt := range []struct {
+		sql, want, absent string
+		fabric            bool
+	}{
+		{"SELECT * FROM dbo.Customers d WHERE EXISTS (SELECT * FROM dbo.Orders o WHERE o.CustomerId = d.|)", "Name", "", false},
+		{"SELECT * FROM dbo.Customers dbo WHERE EXISTS (SELECT * FROM dbo.Cu|)", "dbo.Customers", "Name", false},
+		{"SELECT * FROM dbo.Customers [dbo] WHERE EXISTS (SELECT * FROM [dbo].Cu|)", "dbo.Customers", "Name", false},
+		{"SELECT * FROM dbo.Customers dbo JOIN dbo.Cu|", "dbo.Customers", "Name", false},
+		{"SELECT * FROM dbo.Customers dbo WHERE EXISTS (SELECT * FROM dbo.Orders o WHERE dbo.Na| = 'x')", "Name", "dbo.Customers", false},
+		{"SELECT (SELECT d.| FROM dbo.Orders o) FROM dbo.Customers d", "Name", "", false},
+		{"SELECT * FROM dbo.Customers d WHERE EXISTS (SELECT * FROM dbo.Orders o WHERE EXISTS (SELECT * FROM dbo.Orders x WHERE x.Id = d.|))", "Name", "", false},
+		{"SELECT * FROM dbo.Customers d WHERE EXISTS (SELECT * FROM dbo.Orders d WHERE d.|)", "CustomerId", "Name", false},
+		{"SELECT * FROM dbo.Customers d WHERE EXISTS (SELECT * FROM dbo.UnknownTable d WHERE d.|)", "", "Name", false},
+		{"FROM dbo.Customers d SELECT d.Name WHERE EXISTS (FROM dbo.Orders o WHERE o.CustomerId = d.|)", "Name", "", true},
+		{"FROM dbo.Customers d CROSS APPLY OPENJSON('[1,2,3]') AS oj SELECT d.Name WHERE EXISTS (FROM dbo.Orders o WHERE oj.|)", "value", "", true},
+		{"WITH c AS (SELECT Name FROM dbo.Customers) SELECT * FROM c d WHERE EXISTS (SELECT * FROM dbo.Orders o WHERE d.|)", "Name", "", false},
+		{"WITH c AS (SELECT d.| FROM dbo.Orders o) SELECT * FROM dbo.Customers d", "", "Name", false},
+		{"SELECT * FROM dbo.Customers d JOIN (SELECT d.| FROM dbo.Orders o) x ON 1 = 1", "", "Name", false},
+		{"SELECT * FROM dbo.Customers d UNION ALL SELECT d.| FROM dbo.Orders o", "", "Name", false},
+		{"SELECT * FROM dbo.Customers d WHERE EXISTS (SELECT * FROM dbo.Orders o UNION ALL SELECT d.| FROM dbo.Orders x)", "Name", "", false},
+		{"DECLARE @rows TABLE (Note int); SELECT * FROM @rows d WHERE EXISTS (SELECT * FROM dbo.Orders o WHERE d.|)", "Note", "", false},
+		{"SELECT * FROM Billing.dbo.Invoices d WHERE EXISTS (SELECT * FROM dbo.Orders o WHERE d.|)", "InvoiceNo", "Name", false},
+		{"SELECT * FROM Pending.dbo.Invoices d WHERE EXISTS (SELECT * FROM dbo.Orders o WHERE d.|)", loadingCompletionItem.Label, "Name", false},
+	} {
+		t.Run(tt.sql, func(t *testing.T) {
+			qp := newCrossDBPanel(t)
+			if tt.fabric {
+				qp.conn.Server = fabricConn(t).Server
+			}
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if tt.want != "" && !containsLabel(items, tt.want) {
+				t.Fatalf("items %v missing correlated column %q", labels(items), tt.want)
+			}
+			if tt.absent != "" && containsLabel(items, tt.absent) {
+				t.Fatalf("items %v leaked out-of-scope column %q", labels(items), tt.absent)
+			}
+		})
+	}
+}
+
+func TestSQLCompletionCorrelatedFromFirstDeviceQuery(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", []gosmo.CatalogObject{{
+		Schema: "dbo", Name: "device_data", Type: gosmo.CatalogTable,
+		Columns: []gosmo.CatalogColumn{{Name: "snr"}, {Name: "gyroscope"}, {Name: "accelerometer"}, {Name: "gas_resistance"}, {Name: "light"}},
+	}})
+	qp.conn.Server = fabricConn(t).Server
+	lines, row, col := linesAndCursor(t, "FROM dbo.device_data AS d JOIN device_data d2 ON d.snr = d2.snr CROSS APPLY OPENJSON('[1,2,3,4,5]') AS oj SELECT d.gyroscope, d2.accelerometer, COUNT(*), AVG(gas_resistance) WHERE oj.value = '2' AND d.light > 0 AND EXISTS (FROM sys.all_views AS av WHERE av.parent_object_id = d.|")
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if !containsLabel(items, "snr") || !containsLabel(items, "gyroscope") {
+		t.Fatalf("items %v missing outer device columns", labels(items))
+	}
 }
 
 func TestSQLCompletionCTEColumnsInMainQuery(t *testing.T) {

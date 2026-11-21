@@ -25,6 +25,7 @@ var sqlKeywords = map[string]bool{
 	"BEGIN": true, "COMMIT": true, "ROLLBACK": true, "TRANSACTION": true,
 	"EXEC": true, "EXECUTE": true, "SET": true, "USE": true, "GO": true,
 	"WITH": true, "DECLARE": true, "PRINT": true, "RETURN": true,
+	"PATH": true, "AUTO": true, "WITHOUT_ARRAY_WRAPPER": true, "INCLUDE_NULL_VALUES": true,
 	"INT": true, "BIGINT": true, "VARCHAR": true, "NVARCHAR": true, "CHAR": true,
 	"NCHAR": true, "TEXT": true, "NTEXT": true, "DATETIME": true, "DATE": true,
 	"TIME": true, "BIT": true, "FLOAT": true, "DECIMAL": true, "NUMERIC": true,

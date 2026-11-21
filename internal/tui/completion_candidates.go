@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/sqltext"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/tuikit/controls/editor"
 )
@@ -13,6 +14,145 @@ import (
 // ---------------------------------------------------------------------------
 // Candidate resolution against a completionInventory
 // ---------------------------------------------------------------------------
+
+// statementProcedureContext recognizes a statement's first name, optionally
+// after EXEC/EXECUTE and a return-status assignment. Qualifier parts precede
+// the current replacement span.
+func statementProcedureContext(buf []rune, tokens []sqlparse.Token, from, qualifiers int) bool {
+	n := 0
+	for n < len(tokens) && tokens[n].Start < from {
+		n++
+	}
+	head := tokens[:n]
+	if len(head) > 0 && (keywordIs(head[0], "EXEC") || keywordIs(head[0], "EXECUTE")) {
+		head = head[1:]
+		if len(head) > 0 && !head[0].Quoted && sqlparse.HasSigil(head[0].Text) {
+			next := keywordNextToken(buf[:from], head[0].Start+len([]rune(head[0].Text)))
+			if next.Kind != sqltext.KindPunct || buf[next.Start] != '=' {
+				return false
+			}
+			head = head[1:]
+		}
+	}
+	if len(head) != qualifiers*2 {
+		return false
+	}
+	for i := 0; i < len(head); i += 2 {
+		if head[i].Kind != sqlparse.TokenIdent || head[i+1].Kind != sqlparse.TokenDot {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *QueryPanel) ddlTargetCandidates(inv *completionInventory, action, objectType string, chain []string, prefix string) ([]editor.CompletionItem, bool) {
+	if len(chain) > 2 || len(chain) == 2 && (objectType != "TABLE" || p.conn.IsFabricDW()) {
+		return nil, false
+	}
+	var schemas []string
+	if len(chain) == 1 {
+		if slices.ContainsFunc(inv.catalog.Schemas, func(schema string) bool { return inv.sameName(schema, chain[0]) }) {
+			schemas = []string{chain[0]}
+		} else if objectType == "TABLE" && !p.conn.IsFabricDW() {
+			other, pending := p.databaseInventory(inv, chain[0])
+			if other == nil {
+				return nil, pending
+			}
+			return p.databaseSchemaItems(other, nil, prefix), false
+		} else {
+			return nil, false
+		}
+	} else if len(chain) == 2 {
+		other, pending := p.databaseInventory(inv, chain[0])
+		if other == nil {
+			return nil, pending
+		}
+		inv, schemas = other, other.qualifierSchemas(chain[1])
+	}
+	var items []editor.CompletionItem
+	if len(chain) == 0 {
+		items = p.databaseSchemaItems(inv, nil, prefix)
+		if objectType == "TABLE" && !p.conn.IsFabricDW() {
+			items = append(items, p.databaseItems(strings.ToLower(prefix))...)
+		}
+	}
+	if action != "CREATE" {
+		if objectType == "PROCEDURE" {
+			items = append(items, p.procedureCandidates(inv, chain, prefix)...)
+		} else {
+			objects := inv.catalog.Objects
+			if objectType == "FUNCTION" {
+				objects = inv.catalog.Functions
+			}
+			seen := newNameSet(inv.collation)
+			if len(schemas) == 0 {
+				schemas = []string{""}
+			}
+			for _, schema := range schemas {
+				for i := range objects {
+					obj := &objects[i]
+					if schema != "" && !inv.sameName(obj.Schema, schema) ||
+						objectType == "TABLE" && obj.Type != gosmo.CatalogTable ||
+						objectType == "VIEW" && obj.Type != gosmo.CatalogView ||
+						len(chain) > 0 && seen.Has(obj.Name) {
+						continue
+					}
+					if ok, partial := nameMatch(obj.Name, strings.ToLower(prefix)); ok {
+						item := p.objectItem(obj, partial)
+						if len(chain) == 0 {
+							item.Text = gosmo.QuoteNameIfNeeded(obj.Schema) + "." + item.Text
+						}
+						if objectType == "FUNCTION" {
+							item.Detail = "function"
+						}
+						item.AppendSpace = true
+						items = append(items, item)
+						seen.Add(obj.Name)
+					}
+				}
+			}
+		}
+	}
+	sortCompletionItems(items)
+	return items, false
+}
+
+func (p *QueryPanel) procedureCandidates(inv *completionInventory, chain []string, prefix string) []editor.CompletionItem {
+	if len(chain) > 1 {
+		return nil
+	}
+	schema := ""
+	if len(chain) == 1 {
+		schema = chain[0]
+	}
+	var items []editor.CompletionItem
+	pl := strings.ToLower(prefix)
+	for _, proc := range inv.procedures {
+		if schema != "" && !inv.sameName(proc.Schema, schema) {
+			continue
+		}
+		label := proc.Schema + "." + proc.Name
+		ok, partial := nameMatch(proc.Name, pl)
+		if schema == "" {
+			if full, mid := nameMatch(label, pl); full {
+				partial = mid && (!ok || partial)
+				ok = true
+			}
+		}
+		if !ok {
+			continue
+		}
+		text := gosmo.QuoteNameIfNeeded(proc.Name)
+		if schema == "" {
+			text = gosmo.QuoteNameIfNeeded(proc.Schema) + "." + text
+		}
+		items = append(items, editor.CompletionItem{
+			Text: text, Label: label, Detail: "stored procedure", Partial: partial, AppendSpace: true,
+		})
+	}
+	sortCompletionItemsInContext(items, false, false)
+	return items
+}
 
 // resolveQualifierToRelation resolves a dot-qualifier to the relation it
 // names: first an alias, bare table name, CTE name or derived-table alias
@@ -119,6 +259,34 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 	return p.databaseSchemaItems(other, sysInv, prefix), false
 }
 
+func (p *QueryPanel) bindingItems(bindings []sqlparse.Binding, prefix string) []editor.CompletionItem {
+	pl := strings.ToLower(prefix)
+	var items []editor.CompletionItem
+	seenBinding := map[string]bool{}
+	for _, binding := range slices.Backward(bindings) {
+		// Backwards and deduplicated, to match findBinding: a redeclared name
+		// is one candidate, and it is the later declaration's.
+		name := binding.Name
+		key := strings.ToLower(name)
+		ok, partial := nameMatch(key, pl)
+		if seenBinding[key] || !ok {
+			continue
+		}
+		seenBinding[key] = true
+		detail := "temp table"
+		if strings.HasPrefix(name, "@") {
+			detail = "table variable"
+		}
+		// Never bracketed: "[@t]" names a column or object, not the variable,
+		// and "[#t]" is legal but not what the user typed.
+		items = append(items, editor.CompletionItem{
+			Text: name, Label: name, Detail: detail, Icon: p.tableIcon(gosmo.CatalogTable),
+			Partial: partial,
+		})
+	}
+	return items
+}
+
 // tableCandidates offers every schema (the connected database's own, plus "sys"
 // once its inventory has loaded), every table/view, every visible CTE name, every
 // temp table/table variable the batch declares and every ONLINE database on the
@@ -142,28 +310,7 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 			Icon: p.tableIcon(gosmo.CatalogTable), Partial: partial,
 		})
 	}
-	seenBinding := map[string]bool{}
-	for _, binding := range slices.Backward(bindings) {
-		// Backwards and deduplicated, to match findBinding: a redeclared name
-		// is one candidate, and it is the later declaration's.
-		name := binding.Name
-		key := strings.ToLower(name)
-		ok, partial := nameMatch(key, pl)
-		if seenBinding[key] || !ok {
-			continue
-		}
-		seenBinding[key] = true
-		detail := "temp table"
-		if strings.HasPrefix(name, "@") {
-			detail = "table variable"
-		}
-		// Never bracketed: "[@t]" names a column or object, not the variable,
-		// and "[#t]" is legal but not what the user typed.
-		items = append(items, editor.CompletionItem{
-			Text: name, Label: name, Detail: detail, Icon: p.tableIcon(gosmo.CatalogTable),
-			Partial: partial,
-		})
-	}
+	items = append(items, p.bindingItems(bindings, prefix)...)
 	for _, schema := range inv.catalog.Schemas {
 		ok, partial := nameMatch(schema, pl)
 		if !ok {
@@ -192,13 +339,21 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 			items = append(items, p.objectItem(obj, partial))
 		}
 	}
+	for i := range inv.catalog.Functions {
+		fn := &inv.catalog.Functions[i]
+		if ok, partial := nameMatch(fn.Name, pl); ok {
+			item := p.objectItem(fn, partial)
+			item.Text = gosmo.QuoteNameIfNeeded(fn.Schema) + "." + item.Text
+			items = append(items, item)
+		}
+	}
 	items = append(items, p.databaseItems(pl)...)
 	items = append(items, p.linkedServerItems(pl)...)
 	sortCompletionItems(items)
 	return items
 }
 
-// objectItems offers every table/view in objs whose name contains
+// objectItems offers every table/view/TVF in objs whose name contains
 // prefix — a schema's member list ("dbo.").
 func (p *QueryPanel) objectItems(objs []*gosmo.CatalogObject, prefix string) []editor.CompletionItem {
 	pl := strings.ToLower(prefix)
@@ -216,6 +371,8 @@ func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject, partial bool) editor.C
 	detail := "table"
 	if obj.Type == gosmo.CatalogView {
 		detail = "view"
+	} else if obj.Type == gosmo.CatalogFunction {
+		detail = "table-valued function"
 	}
 	return editor.CompletionItem{
 		Text: gosmo.QuoteNameIfNeeded(obj.Name), Label: obj.Schema + "." + obj.Name,
@@ -238,7 +395,7 @@ func (p *QueryPanel) columnItemsFor(cols []gosmo.CatalogColumn, prefix string) [
 			Detail: formatColumnType(col), Icon: p.columnIcon(), Partial: partial,
 		})
 	}
-	sortCompletionItems(items)
+	sortCompletionItemsInContext(items, false, false)
 	return items
 }
 
@@ -285,7 +442,7 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, collation, prefix s
 			Partial: partial,
 		})
 	}
-	sortCompletionItems(items)
+	sortCompletionItemsInContext(items, false, false)
 	return items
 }
 
@@ -334,9 +491,20 @@ func indexLowerASCII(name, pl string) (i int, ascii bool) {
 	return -1, true
 }
 
-// sortCompletionItems lists prefix matches before partial ones, each group
-// alphabetically, so what the user typed the start of stays on top.
 func sortCompletionItems(items []editor.CompletionItem) {
+	sortCompletionItemsInContext(items, true, false)
+}
+
+// Prefix matches stay ahead of partial matches so automatic selection never
+// commits a substring match when a prefix match is available.
+func sortCompletionItemsInContext(items []editor.CompletionItem, source, aggregatesFirst bool) {
+	group := func(item editor.CompletionItem) int {
+		if aggregatesFirst && item.Detail == "function" &&
+			completionBuiltins[strings.ToUpper(item.Label)].kind&(builtinAggregate|builtinFabricAggregate) != 0 {
+			return -1
+		}
+		return completionGroup(item, source)
+	}
 	slices.SortStableFunc(items, func(a, b editor.CompletionItem) int {
 		if a.Partial != b.Partial {
 			if a.Partial {
@@ -344,8 +512,48 @@ func sortCompletionItems(items []editor.CompletionItem) {
 			}
 			return -1
 		}
+		if ag, bg := group(a), group(b); ag != bg {
+			return ag - bg
+		}
 		return strings.Compare(strings.ToLower(a.Label), strings.ToLower(b.Label))
 	})
+}
+
+func completionGroup(item editor.CompletionItem, source bool) int {
+	if item.Placeholder {
+		return 8
+	}
+	if source {
+		switch item.Detail {
+		case "schema":
+			return 0
+		case "table", "view", "CTE", "temp table", "table variable":
+			return 1
+		case "table-valued function":
+			return 2
+		case "database":
+			return 3
+		case "linked server":
+			return 4
+		}
+		return 5
+	}
+	if item.Label == "*" && item.Detail == "keyword" {
+		return 2
+	}
+	switch item.Detail {
+	case "table reference":
+		return 0
+	case "function", "table-valued function", "expression", "predicate":
+		return 3
+	case "schema", "table", "view", "CTE", "temp table", "table variable":
+		return 4
+	case "database", "linked server":
+		return 5
+	case "keyword":
+		return 7
+	}
+	return 1
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +564,8 @@ func (p *QueryPanel) tableIcon(t gosmo.CatalogObjectType) rune {
 	nt := NodeTable
 	if t == gosmo.CatalogView {
 		nt = NodeView
+	} else if t == gosmo.CatalogFunction {
+		nt = NodeFunction
 	}
 	return nodeIcon(nodeData{Type: nt}, p.app.cfg.IconStyle, false)
 }

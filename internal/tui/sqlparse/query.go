@@ -58,9 +58,10 @@ type CTE struct {
 
 // Scope is what is in scope at one cursor offset.
 type Scope struct {
-	Query  *Query // innermost query containing the offset; nil if none parsed
-	CTEs   []CTE  // visible CTE definitions, innermost first
-	Clause Clause // clause state within Query, not within the statement
+	Query  *Query  // innermost query containing the offset; nil if none parsed
+	CTEs   []CTE   // visible CTE definitions, innermost first
+	Clause Clause  // clause state within Query, not within the statement
+	Outer  []Scope // visible correlation scopes, nearest first
 }
 
 // ScopeAt parses one statement's tokens into a Query tree and returns what is in
@@ -78,11 +79,11 @@ func ScopeAt(tokens []Token, upTo int) Scope {
 		return Scope{}
 	}
 	f := scopeFinder{upTo: upTo}
-	f.visit(root, nil, 0)
+	f.visit(root, nil, nil, 0)
 	if f.best == nil {
 		return Scope{}
 	}
-	return Scope{Query: f.best, CTEs: f.ctes, Clause: clauseWithin(tokens, f.best, upTo)}
+	return Scope{Query: f.best, CTEs: f.ctes, Clause: clauseWithin(tokens, f.best, upTo), Outer: f.outer}
 }
 
 // scopeFinder walks the tree for the deepest query containing upTo, carrying
@@ -92,9 +93,10 @@ type scopeFinder struct {
 	best  *Query
 	depth int
 	ctes  []CTE
+	outer []Scope
 }
 
-func (f *scopeFinder) visit(q *Query, enclosing []CTE, depth int) {
+func (f *scopeFinder) visit(q *Query, enclosing []CTE, outer []Scope, depth int) {
 	// Innermost first, so a name rebound by an inner WITH wins.
 	visible := enclosing
 	if len(q.CTEs) > 0 {
@@ -103,20 +105,25 @@ func (f *scopeFinder) visit(q *Query, enclosing []CTE, depth int) {
 	// >= rather than >: two queries at one depth can both contain upTo only when
 	// the earlier is unbounded, and then the later one is where the cursor is.
 	if q.contains(f.upTo) && (f.best == nil || depth >= f.depth) {
-		f.best, f.depth, f.ctes = q, depth, visible
+		f.best, f.depth, f.ctes, f.outer = q, depth, visible, outer
 	}
 	for i := range q.CTEs {
 		if q.CTEs[i].Body != nil {
-			f.visit(q.CTEs[i].Body, visible, depth+1)
+			f.visit(q.CTEs[i].Body, visible, nil, depth+1)
 		}
 	}
 	for _, r := range q.From {
 		if r.Derived != nil {
-			f.visit(r.Derived, visible, depth+1)
+			f.visit(r.Derived, visible, nil, depth+1)
 		}
 	}
 	for _, s := range q.Subqueries {
-		f.visit(s, visible, depth+1)
+		correlated := outer
+		// Set-operation branches are siblings, not correlation parents.
+		if q.contains(s.Start) {
+			correlated = append([]Scope{{Query: q, CTEs: visible}}, outer...)
+		}
+		f.visit(s, visible, correlated, depth+1)
 	}
 }
 
@@ -135,7 +142,19 @@ func clauseWithin(tokens []Token, q *Query, upTo int) Clause {
 	for hi > lo && tokens[hi-1].Start >= upTo {
 		hi--
 	}
-	return CurrentClause(tokens[lo:hi])
+	tokens = tokens[lo:hi]
+	for i := range tokens {
+		if IsDistinctFrom(tokens, i) {
+			filtered := append([]Token{}, tokens[:i]...)
+			for j := i + 1; j < len(tokens); j++ {
+				if !IsDistinctFrom(tokens, j) {
+					filtered = append(filtered, tokens[j])
+				}
+			}
+			return CurrentClause(filtered)
+		}
+	}
+	return CurrentClause(tokens)
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +195,15 @@ var setOperators = map[string]bool{"UNION": true, "EXCEPT": true, "INTERSECT": t
 var refIntroducers = map[string]bool{
 	"FROM": true, "JOIN": true, "INTO": true, "UPDATE": true, "DELETE": true, "APPLY": true,
 	"MERGE": true,
+}
+
+// IsDistinctFrom reports whether tokens[i] is the FROM in an IS [NOT] DISTINCT FROM predicate.
+func IsDistinctFrom(tokens []Token, i int) bool {
+	is := func(at int, word string) bool {
+		return at >= 0 && at < len(tokens) && !tokens[at].Quoted && strings.EqualFold(tokens[at].Text, word)
+	}
+	return is(i, "FROM") && is(i-1, "DISTINCT") &&
+		(is(i-2, "IS") || is(i-2, "NOT") && is(i-3, "IS"))
 }
 
 // isJoinHint reports whether the MERGE at toks[i] is a join hint ("INNER
@@ -245,7 +273,7 @@ func (p *queryParser) parseBranch() *Query {
 		case t.Kind == TokenKeyword && t.Text == "SELECT":
 			p.i++
 			q.Select = p.parseSelectList(q)
-		case t.Kind == TokenKeyword && refIntroducers[t.Text]:
+		case t.Kind == TokenKeyword && refIntroducers[t.Text] && !IsDistinctFrom(p.toks, p.i):
 			if t.Text == "MERGE" && !isJoinHint(p.toks, p.i) {
 				merge = true
 			}
@@ -376,7 +404,7 @@ func (p *queryParser) parseSelectList(q *Query) []SelectItem {
 		case t.Kind == TokenParenClose:
 			flush()
 			return items
-		case t.Kind == TokenKeyword && (selectListEnders[t.Text] || setOperators[t.Text]):
+		case t.Kind == TokenKeyword && (selectListEnders[t.Text] || setOperators[t.Text]) && !IsDistinctFrom(p.toks, p.i):
 			flush()
 			return items
 		case windowClauseAt(p.toks, p.i):
@@ -524,13 +552,44 @@ func (p *queryParser) parseRef(q *Query) bool {
 		// A table-valued function's argument list, or a legacy "t (NOLOCK)" hint.
 		// Either way the alias, if any, follows the group (and, for a rowset function,
 		// its WITH column list).
+		open := p.i
 		p.skipParenGroup()
 		ref.Call = true
 		ref.Rowset = p.parseRowset(ref)
+		if ref.Rowset == nil && ref.Schema == "" && ref.Database == "" && strings.EqualFold(ref.Name, "STRING_SPLIT") {
+			ref.Rowset = stringSplitRowset(p.toks[open:p.i])
+		}
 	}
 	p.parseRefTail(&ref)
 	q.From = append(q.From, ref)
 	return true
+}
+
+func stringSplitRowset(tokens []Token) *Rowset {
+	depth, argument, start := 0, 0, 0
+	for i, tok := range tokens {
+		switch tok.Kind {
+		case TokenParenOpen:
+			depth++
+		case TokenParenClose:
+			depth--
+			if depth == 0 {
+				if argument == 2 && i-start == 1 && tokens[start].Kind == TokenIdent &&
+					!tokens[start].Quoted && tokens[start].Text == "1" {
+					return &Rowset{Function: "STRING_SPLIT", Columns: []BindingColumn{
+						{Name: "value"}, {Name: "ordinal", Type: "bigint"},
+					}}
+				}
+				return nil
+			}
+		case TokenComma:
+			if depth == 1 {
+				argument++
+				start = i + 1
+			}
+		}
+	}
+	return nil
 }
 
 // multipartName reads the dotted name starting at the identifier tokens[i]

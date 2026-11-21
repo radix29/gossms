@@ -52,10 +52,17 @@ func crossDBLabels(t *testing.T, qp *QueryPanel, sql string) []string {
 	t.Helper()
 	lines, row, col := linesAndCursor(t, sql)
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
-	if len(items) == 1 && items[0].Placeholder {
-		return []string{"<loading>"}
+	// These tests assert catalog resolution; built-in SQL candidates have
+	// independent context, ordering and insertion coverage.
+	var out []string
+	for _, item := range items {
+		if item.Placeholder {
+			out = append(out, "<loading>")
+		} else if item.Detail != "keyword" && item.Detail != "function" && item.Detail != "table-valued function" {
+			out = append(out, item.Label)
+		}
 	}
-	return labels(items)
+	return out
 }
 
 func TestSQLCompletionCrossDatabase(t *testing.T) {

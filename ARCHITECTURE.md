@@ -376,6 +376,9 @@ gossms/
 │       ├── completion_inventory.go  # per-database + per-server(sys schema) catalog cache for IntelliSense, async load
 │       ├── completion_load.go       # the one lazy-load lifecycle every IntelliSense cache shares: latest + timeout, panic eviction, closed-connection eviction, popup refresh
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
+│       ├── completion_keywords.go   # contextual SQL keywords, aggregates and multiword clauses/windows, connection-scoped Fabric syntax
+│       ├── completion_expressions.go # lightweight shared expression context, predicate operands and suffix-preserving call edits
+│       ├── completion_spatial.go    # spatial constructors and methods for catalog columns and declared scalar variables
 │       ├── completion_relations.go  # resolves FROM-scope refs (CTEs, derived tables) to columns, with depth/cycle guards
 │       ├── completion_crossdb.go    # cross-database names: the per-server database directory, HAS_DBACCESS-gated loads of another database's inventory, "db.schema." chains
 │       ├── completion_linked.go     # linked-server four-part names: the linked-server list, a remote's databases and catalogs read through it (OPENQUERY, 10 s bound), "LS.db.schema." chains

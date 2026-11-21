@@ -155,6 +155,12 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   a name at all. Its popup label draws as `weirdname` (the newline is
   invisible), and a CR in a name is lost, since the editor normalizes CRLF
   and CR to LF.
+- **Enter right after a name typed in full commits it instead of breaking
+  the line** (seen on main and with PR 50, 2026-11-21): `FROM sys.tables⏎`
+  leaves `FROM sys.tables` with no newline, because the popup still holds the
+  exact match and Enter commits it. Keywords avoid this through
+  `CompletionItem.Soft` (alias positions, nothing typed); catalog names do
+  not. Undecided: whether an exact match should be Soft too.
 
 ## Tests: what is left
 
