@@ -470,7 +470,7 @@ results), every set (header row, then rows) separated by a blank line. TSV is
 the same with a tab, quoting a field that holds a tab, quote or line break.
 Cells are never clipped. Everything else — the header block, each set's
 marker and truncation note, messages, warnings, errors — goes to **stderr** as
-the text format's summary, on success too; the exit code carries the status.
+the text format's summary, on success too; the exit code carries the status. That stderr summary honours `--no-messages`.
 
 ### `markdown`
 
