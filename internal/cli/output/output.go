@@ -69,6 +69,12 @@ type Options struct {
 	// NoMessages leaves out PRINT and informational messages.
 	NoMessages bool
 
+	// Terminal is true when stdout is a terminal. csv and tsv keep every byte
+	// of a value except then, when control characters are spelled out
+	// (textutil.Visible) so a cell cannot drive the terminal. A file never
+	// is: --out-file keeps the exact bytes.
+	Terminal bool
+
 	// OutFile, when set, receives every row in the format its extension names;
 	// stdout gets the summary. Force replaces an existing file.
 	OutFile string

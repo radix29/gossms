@@ -30,7 +30,10 @@ import (
 type Env struct {
 	Stdin          io.Reader
 	Stdout, Stderr io.Writer
-	Getenv         func(string) string
+	// StdoutIsTerminal makes csv and tsv on stdout spell out control
+	// characters (output.Options.Terminal).
+	StdoutIsTerminal bool
+	Getenv           func(string) string
 	// ReadFile reads an @file response file (os.ReadFile). Nil refuses them.
 	ReadFile func(string) ([]byte, error)
 	// AuditPath is the audit log (audit.DefaultPath). Empty keeps no log:
@@ -85,6 +88,7 @@ func run(ctx context.Context, tree *spec.Tree, argv []string, env Env) int {
 		o = output.DefaultOptions(format)
 	}
 	o.Quiet = inv.Values["quiet"].(bool)
+	o.Terminal = env.StdoutIsTerminal
 
 	if inv.Values[args.HelpOption].(bool) {
 		return showHelp(env, tree, format, cmd.Name(), cmd)
