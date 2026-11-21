@@ -60,3 +60,20 @@ func TestNullable(t *testing.T) {
 		t.Errorf(`Nullable("x") = %v`, p)
 	}
 }
+
+func TestVisible(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"plain é 日本", "plain é 日本"},
+		{"a\x1b]52;c;ZQ==\ab", `a\u001b]52;c;ZQ==\u0007b`},
+		{"x\x7fy\u009bz", `x\u007fy\u009bz`},
+		{"p\u202eq\u2066", `p\u202eq\u2066`},
+		{"keep\n\r\t\v\f\u0085", "keep\n\r\t\v\f\u0085"},
+	} {
+		if got := Visible(c.in); got != c.want {
+			t.Errorf("Visible(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	if got := OneLine("a\nb\x1b"); got != `a b\u001b` {
+		t.Errorf("OneLine = %q", got)
+	}
+}

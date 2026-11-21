@@ -21,6 +21,12 @@ func TestDecode(t *testing.T) {
 		{"utf-8 bom stripped", []byte(BOMUTF8 + "SELECT 1"), "SELECT 1", UTF8BOM, false},
 		{"utf-16le surrogate pair", []byte{0xFF, 0xFE, 'A', 0, 0x3D, 0xD8, 0x00, 0xDE}, "A😀", UTF16LE, false},
 		{"utf-16be", []byte{0xFE, 0xFF, 0, 'A', 0, 'B'}, "AB", UTF16BE, false},
+		{"utf-32le", []byte{0xFF, 0xFE, 0, 0, 'a', 0, 0, 0, 'b', 0, 0, 0}, "ab", UTF32LE, false},
+		{"utf-32be", []byte{0, 0, 0xFE, 0xFF, 0, 0, 0, 'a'}, "a", UTF32BE, false},
+		{"utf-32 odd length", []byte{0xFF, 0xFE, 0, 0, 'a', 0, 0, 0, 1}, "a", UTF32LE, true},
+		{"utf-32 surrogate", []byte{0xFF, 0xFE, 0, 0, 0x00, 0xD8, 0, 0}, "�", UTF32LE, true},
+		{"utf-32 above max", []byte{0, 0, 0xFE, 0xFF, 0, 0x11, 0, 0}, "�", UTF32BE, true},
+		{"utf-16le real char after mark", []byte{0xFF, 0xFE, 'a', 0, 'b', 0}, "ab", UTF16LE, false},
 		{"empty", nil, "", UTF8, false},
 		// A file in a single-byte encoding has no mark, so it is read as
 		// UTF-8; the bytes come back untouched and the caller is told.
@@ -47,7 +53,7 @@ func TestDecode(t *testing.T) {
 // TestEncodeRoundTrips pins that what Decode reads, Encode writes back byte
 // for byte — File > Save of an untouched file must not change it.
 func TestEncodeRoundTrips(t *testing.T) {
-	for _, enc := range []Encoding{UTF8, UTF8BOM, UTF16LE, UTF16BE} {
+	for _, enc := range []Encoding{UTF8, UTF8BOM, UTF16LE, UTF16BE, UTF32LE, UTF32BE} {
 		for _, text := range []string{"", "SELECT N'café';\r\n", "PRINT N'🚀';"} {
 			data := Encode(text, enc)
 			got, gotEnc, lossy := Decode(data)

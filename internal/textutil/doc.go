@@ -6,7 +6,8 @@
 // Two "one line" helpers, deliberately different:
 //
 //   - OneLine keeps every character but the line breaks and tabs (Breaks),
-//     each of which becomes one space. For output that is data — the CLI's
+//     each of which becomes one space, and spells out the other control
+//     characters (Visible). For output that is data — the CLI's
 //     text renderer — where a run of spaces inside a value is part of it.
 //   - Collapse folds every whitespace run to one space and trims the ends. For
 //     a display line — a plan's statement text, a log grid cell — where a
