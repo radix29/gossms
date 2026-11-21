@@ -102,9 +102,10 @@ type profileOp struct {
 }
 
 // keyMatches reports whether e is the entry key names, as removeConnection
-// matches.
+// matches. An empty key names nothing: legacy or hand-edited entries can have
+// an empty Name, and matching them would act on every one.
 func keyMatches(e Connection, key string) bool {
-	return e.Name == key || e.GeneratedName() == key
+	return key != "" && (e.Name == key || e.GeneratedName() == key)
 }
 
 // applyTo replays the op on a list. An entry another instance removed is gone,

@@ -104,6 +104,21 @@ var onlyBefore = map[string]map[string]bool{
 // StatementAt does not cut from its condition.
 var flowVerbs = map[string]bool{"THROW": true, "RETURN": true, "GOTO": true, "BREAK": true, "CONTINUE": true}
 
+// unreserved are leaders T-SQL does not reserve, so they can be column names:
+// they start a statement unless the previous token expects an operand
+// (WHERE throw = 1, ORDER BY revert, SET revert = 1). ON is not an operand
+// token: SET NOCOUNT ON ends a statement. '*' is left out for the same reason
+// (SELECT * ends one).
+var unreserved = map[string]bool{"THROW": true, "REVERT": true}
+
+// operandBefore are the tokens after which a name or value is expected.
+var operandBefore = map[string]bool{
+	",": true, "=": true, ".": true, "(": true, "<": true, ">": true, "+": true, "-": true,
+	"/": true, "%": true, "!": true, "|": true, "&": true, "^": true,
+	"SELECT": true, "WHERE": true, "AND": true, "OR": true, "NOT": true, "BY": true, "SET": true,
+	"AS": true, "HAVING": true, "IS": true, "IN": true, "LIKE": true, "BETWEEN": true,
+}
+
 // objectTypes are the words after ALTER or DROP that make it a statement of
 // its own inside an ALTER statement; anything else (ALTER COLUMN, DROP
 // CONSTRAINT, DROP MEMBER, DROP EVENT, ...) is the ALTER's own clause. Also
@@ -352,6 +367,8 @@ func (s *stmtSplitter) advance(t stmtToken) {
 		s.pend, s.pendTok = pendNotBefore, t
 	case flowVerbs[w] && (s.leader == "IF" || s.leader == "WHILE" || s.prev == "ELSE"):
 		// IF x RETURN: an IF's body is not cut (see StatementAt's caveats).
+	case unreserved[w] && operandBefore[s.prev]:
+		// WHERE throw = 1: a column name, not a statement.
 	case onlyBefore[w] != nil:
 		if s.leader != "ALTER" || w == "COPY" {
 			s.pend, s.pendTok = pendOnlyBefore, t

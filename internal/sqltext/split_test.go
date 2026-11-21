@@ -162,6 +162,16 @@ func TestStatementAtLeaderVerbs(t *testing.T) {
 		}
 	}
 	for _, src := range []string{
+		"select * from t where throw = 1",
+		"select a from t order by revert",
+		"update t set revert = 1 where id = 2",
+	} {
+		lines := [][]rune{[]rune(src)}
+		if r, c, _, _, ok := StatementAt(lines, 0, len(lines[0])); !ok || r != 0 || c != 0 {
+			t.Errorf("%q: statement starts at %d:%d, want 0:0", src, r, c)
+		}
+	}
+	for _, src := range []string{
 		"alter table t\ndisable trigger x",
 		"alter table t\nenable trigger x",
 		"alter table t\nadd c int",
