@@ -2,15 +2,67 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gosmo/gosmotest"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/controls/editor"
 )
+
+func TestCompletionInventoryLoadsProcedureSuggestions(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		denied bool
+	}{{"available", false}, {"denied", true}} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := gosmotest.New(t)
+			srv := f.Server()
+			empty := gosmotest.Set{Columns: []string{"unused"}}
+			f.OnFunc(func(q gosmotest.Query) bool {
+				return strings.Contains(q.Text, "o.type IN ('U','V')")
+			}, gosmotest.Sets(empty, empty, empty, empty, empty))
+			procedures := gosmotest.Rows([]any{int64(10), "dbo", "GetCustomers", time.Unix(0, 0), time.Unix(0, 0)})
+			if tt.denied {
+				procedures = gosmotest.Fail(errors.New("procedure metadata denied"))
+			}
+			f.OnFunc(func(q gosmotest.Query) bool {
+				return q.Database == "testdb" && strings.Contains(q.Text, "sys.procedures")
+			}, procedures)
+			f.OnFunc(func(gosmotest.Query) bool { return true }, gosmotest.Fail(errors.New("optional metadata unavailable")))
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			qp.conn.Server = srv
+			inv := qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, qp.database)]
+			qp.app.refreshCompletionInventory(qp.conn, qp.database)
+			drainUntil(t, qp.app, func() bool { return !inv.loading }, "the procedure inventory to load")
+			if inv.err != nil || inv.catalog == nil {
+				t.Fatalf("procedure read disabled the catalog: %v", inv.err)
+			}
+			lines, row, col := linesAndCursor(t, "|")
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if got := containsLabel(items, "dbo.GetCustomers"); got == tt.denied {
+				t.Fatalf("items %v: procedure present = %v, want %v", labels(items), got, !tt.denied)
+			}
+			if !tt.denied {
+				qp.editor.SetText("EXEC dbo.")
+				qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnd, "", tcell.ModCtrl))
+				for _, r := range "get" {
+					qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+				}
+				qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+				if got, want := qp.editor.Text(), "EXEC dbo.GetCustomers "; got != want {
+					t.Fatalf("accepting procedure produced %q, want %q", got, want)
+				}
+			}
+		})
+	}
+}
 
 // evictInventory must only drop the entry the finishing load actually
 // belongs to. The sys-schema loader used to delete unconditionally, so this

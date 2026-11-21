@@ -125,7 +125,7 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 		cols := queryColumns(rc, ref.Derived)
 		return relation{name: ref.Alias, aliased: true, cols: cols}, len(cols) > 0
 	}
-	if ref.Rowset != nil {
+	if ref.Rowset != nil && ref.Rowset.Function != "STRING_SPLIT" {
 		// A rowset function names no catalog object, so an unaliased one is
 		// unqualifiable like an unaliased derived table.
 		cols := declaredColumns(ref.Rowset.Columns)
@@ -167,6 +167,14 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 		}
 	}
 	if ref.Call {
+		if ref.Schema == "" && ref.Database == "" &&
+			(strings.EqualFold(ref.Name, "GENERATE_SERIES") || strings.EqualFold(ref.Name, "STRING_SPLIT")) {
+			cols := []gosmo.CatalogColumn{{Name: "value"}}
+			if ref.Rowset != nil {
+				cols = declaredColumns(ref.Rowset.Columns)
+			}
+			return relation{name: name, aliased: aliased, cols: cols}, true
+		}
 		// A table-valued function: its result columns as the catalog records them.
 		// Tried after the tables, which "t (NOLOCK)" also parses as.
 		for _, schema := range schemas {

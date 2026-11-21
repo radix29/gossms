@@ -48,7 +48,8 @@ type completionInventory struct {
 	loading bool
 	err     error
 
-	catalog *gosmo.Catalog
+	catalog    *gosmo.Catalog
+	procedures []*gosmo.StoredProcedure
 
 	// collation is the database's catalog collation (databaseCollation, not the
 	// data collation, which a contained database does not compare names under). It
@@ -62,8 +63,7 @@ type completionInventory struct {
 	// byQualifiedName indexes catalog.Objects by schema and name (see
 	// qualifiedKey), for resolving "schema.table." / "alias." member lookups.
 	byQualifiedName *nameMap[*gosmo.CatalogObject]
-	// bySchema groups catalog.Objects by schema name, for offering every
-	// table/view in a schema after "schema.".
+	// bySchema groups tables, views and TVFs for suggestions after "schema.".
 	bySchema *nameMap[[]*gosmo.CatalogObject]
 	// fnByQualifiedName indexes catalog.Functions (table-valued functions) like
 	// byQualifiedName. Kept apart so a function only resolves where it is called
@@ -141,6 +141,8 @@ func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog, collation strin
 	for i := range cat.Functions {
 		fn := &cat.Functions[i]
 		inv.fnByQualifiedName.Set(qualifiedKey(fn.Schema, fn.Name), fn)
+		list, _ := inv.bySchema.Get(fn.Schema)
+		inv.bySchema.Set(fn.Schema, append(list, fn))
 	}
 	inv.aggByQualifiedName = newNameMap[*gosmo.CatalogAggregate](collation)
 	for i := range cat.Aggregates {
@@ -261,9 +263,10 @@ func (p *QueryPanel) refreshCompletionCache() {
 // itself.
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, inv *completionInventory) {
 	type result struct {
-		cat       *gosmo.Catalog
-		schema    string
-		collation string
+		cat        *gosmo.Catalog
+		schema     string
+		collation  string
+		procedures []*gosmo.StoredProcedure
 	}
 	srv := sc.Server
 	startCompletionLoad(a, sc, inventoryLoad(a.completion.inventories, key, inv, completionInventoryTimeout,
@@ -283,6 +286,9 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 			if d, err := srv.DatabaseByName(ctx, database); err == nil {
 				r.collation = databaseCollation(d)
 			}
+			// Procedure suggestions are optional; a refused read must not
+			// disable table/column completion.
+			r.procedures, _ = srv.DatabaseRef(database).StoredProcedures(ctx, gosmo.ObjectFilter{})
 			return r, nil
 		},
 		func(r result, err error) {
@@ -294,6 +300,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 			}
 			inv.applyCatalog(r.cat, r.collation)
 			inv.defaultSchema = r.schema
+			inv.procedures = r.procedures
 			a.setStatus(fmt.Sprintf("Autocomplete ready for %s (%d tables/views)", database, len(r.cat.Objects)))
 		}))
 }

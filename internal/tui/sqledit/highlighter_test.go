@@ -76,12 +76,16 @@ func TestSQLHighlighterRecognizesNewKeywordCategories(t *testing.T) {
 		line string
 		want string
 	}{
-		{"MERGE INTO Foo", "MERGE"},                                 // reserved keyword
-		{"DECLARE @x SQL_VARIANT", "SQL_VARIANT"},                   // data type
-		{"SELECT @@ROWCOUNT", "@@ROWCOUNT"},                         // system variable
-		{"BEGIN TRY", "TRY"},                                        // control flow
-		{"SELECT DATEADD(day, 1, GETDATE())", "DATEADD"},            // built-in function
-		{"SELECT JSON_VALUE(x, '$.a')", "JSON_VALUE"},               // JSON function
+		{"MERGE INTO Foo", "MERGE"},                      // reserved keyword
+		{"DECLARE @x SQL_VARIANT", "SQL_VARIANT"},        // data type
+		{"SELECT @@ROWCOUNT", "@@ROWCOUNT"},              // system variable
+		{"BEGIN TRY", "TRY"},                             // control flow
+		{"SELECT DATEADD(day, 1, GETDATE())", "DATEADD"}, // built-in function
+		{"SELECT JSON_VALUE(x, '$.a')", "JSON_VALUE"},    // JSON function
+		{"SELECT x FOR JSON PATH", "PATH"},
+		{"SELECT x FOR JSON path, WITHOUT_ARRAY_WRAPPER", "path"},
+		{"SELECT x FOR JSON PATH, WITHOUT_ARRAY_WRAPPER", "WITHOUT_ARRAY_WRAPPER"},
+		{"SELECT x FOR JSON AUTO, INCLUDE_NULL_VALUES", "INCLUDE_NULL_VALUES"},
 		{"SELECT geometry::STGeomFromText(x, 0)", "STGEOMFROMTEXT"}, // spatial (uppercased match)
 
 		{"SELECT * FROM t QUALIFY rn = 1", "QUALIFY"},

@@ -321,8 +321,8 @@ type PrefixScan struct {
 
 	// GoStart is where the cursor's GO-delimited batch begins: the line after
 	// the last real "GO" above it, or 0. BatchStart is the later of this and
-	// the last top-level ';'. Only tests read it (temp tables carry across
-	// GO); BatchCache's tests check its batch start against it.
+	// the last top-level ';'. Procedure completion uses it to distinguish
+	// implicit batch-start calls from calls that require EXEC.
 	GoStart int
 }
 
