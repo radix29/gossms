@@ -299,3 +299,32 @@ func FuzzParse(f *testing.F) {
 		}
 	})
 }
+
+// A response file written by Windows PowerShell 5.1 is UTF-16LE with a BOM;
+// a broken one is refused rather than parsed into NUL-laced tokens.
+func TestResponseFileEncodings(t *testing.T) {
+	utf16le := func(s string) []byte {
+		b := []byte{0xff, 0xfe}
+		for _, r := range s {
+			b = append(b, byte(r), byte(r>>8))
+		}
+		return b
+	}
+	read := func(name string) ([]byte, error) {
+		switch name {
+		case "u16.txt":
+			return utf16le("object\r\nlist\r\n--limit=5\r\n"), nil
+		case "bad16.txt":
+			return append(utf16le("object"), 0x00, 0xd8), nil // lone high surrogate
+		}
+		return nil, fs.ErrNotExist
+	}
+	inv, err := Parse(testTree(), []string{"@u16.txt"}, Options{ReadFile: read})
+	if err != nil || inv.Command.Name() != "object list" {
+		t.Fatalf("utf-16 response file: %v, %+v", err, inv)
+	}
+	_, err = Parse(testTree(), []string{"@bad16.txt"}, Options{ReadFile: read})
+	if e, ok := errors.AsType[*Error](err); !ok || e.Kind != KindResponseFile || !strings.Contains(e.Message, "UTF-16") {
+		t.Errorf("err = %v", err)
+	}
+}

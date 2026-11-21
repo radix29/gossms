@@ -93,7 +93,7 @@ which avoids shell quoting:
 - A line starting with `-` is one option: split at its first whitespace into
   option and value, unless written `--name=value`.
 - Any other line is one token, so command words go on separate lines.
-- Blank lines are skipped; a BOM and CRLF line ends are tolerated.
+- Blank lines are skipped; a UTF-8, UTF-16 or UTF-32 byte-order mark and CRLF line ends are tolerated.
 - No recursion: `@x` inside a response file is a literal token. So is `@x`
   after `--`, and `@x` as the value of an option that takes one.
 
