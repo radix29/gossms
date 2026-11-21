@@ -188,12 +188,18 @@ func jsonRow(row []*string, k []cellKind, width int) []any {
 
 // encodeJSON writes v and a newline, indented by indent ("" for one line).
 // HTML escaping is off: SQL text is full of <, > and &, and \u003c helps no
-// reader.
+// reader. DEL, C1 controls and bidi overrides are spelled \uXXXX (always, not
+// only on a terminal: the value decodes the same), so a cell cannot drive one.
 func encodeJSON(w io.Writer, v any, indent string) error {
-	enc := json.NewEncoder(w)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if indent != "" {
 		enc.SetIndent("", indent)
 	}
-	return enc.Encode(v)
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
+	_, err := w.Write(textutil.JSONEscape(buf.Bytes()))
+	return err
 }

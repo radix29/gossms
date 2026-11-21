@@ -1,8 +1,10 @@
 package textutil
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Breaks is every character OneLine replaces: the line breaks Unicode and
@@ -61,6 +63,39 @@ func Visible(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// JSONEscape spells out, as \uXXXX, every character in encoded JSON that
+// Visible would hide and encoding/json leaves raw: DEL, the C1 controls
+// (U+009B is CSI to an 8-bit-aware terminal, and U+0085 too, which isHidden
+// spares) and the bidirectional overrides. encoding/json already escapes the
+// C0 controls, and every non-ASCII byte of JSON text sits inside a string, so
+// the value decodes unchanged. b is returned as is when it holds none.
+func JSONEscape(b []byte) []byte {
+	need := func(r rune) bool { return r >= 0x7f && (isHidden(r) || r == 0x85) }
+	found := false
+	for i := 0; i < len(b); {
+		r, n := utf8.DecodeRune(b[i:])
+		if need(r) {
+			found = true
+			break
+		}
+		i += n
+	}
+	if !found {
+		return b
+	}
+	var out bytes.Buffer
+	for i := 0; i < len(b); {
+		r, n := utf8.DecodeRune(b[i:])
+		if need(r) {
+			fmt.Fprintf(&out, "\\u%04x", r)
+		} else {
+			out.Write(b[i : i+n])
+		}
+		i += n
+	}
+	return out.Bytes()
 }
 
 // Collapse folds every run of whitespace in s (unicode.IsSpace, which covers

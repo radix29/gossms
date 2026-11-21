@@ -390,7 +390,9 @@ CLI_SCHEMA: 1.0
   other C0 controls, DEL, the C1 range (not NEL) and the bidi overrides
   (U+202A–U+202E, U+2066–U+2069) print as their JSON spelling (`\u001b`,
   `\u202e`) in `text` and `markdown`, in every value, column name, message and
-  verbatim block. `json` and `jsonl` escape them already.
+  verbatim block. `json` and `jsonl` spell DEL, the C1 range (NEL too) and the
+  bidi overrides the same way always, terminal or not (`encoding/json` escapes
+  only C0); the value decodes unchanged.
 
 ### `json`
 

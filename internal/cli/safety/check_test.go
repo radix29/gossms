@@ -52,7 +52,7 @@ func TestCheckNamesTheOffendingStatements(t *testing.T) {
 	if b == nil {
 		t.Fatal("not blocked")
 	}
-	want := "UPDATE Sales.Customer (line 2); DELETE dbo.t (line 5); SELECT (line 6): keyword DISABLE (line 7)"
+	want := "UPDATE Sales.Customer (line 2); DELETE dbo.t (line 5); DISABLE TRIGGER (line 7)"
 	if got := b.Describe(); got != want {
 		t.Errorf("Describe() = %q\nwant         %q", got, want)
 	}
@@ -60,7 +60,7 @@ func TestCheckNamesTheOffendingStatements(t *testing.T) {
 		t.Errorf("detected %s, want ddl", b.Detected)
 	}
 	// Under --allow write only the ddl statement is named.
-	if got := Check(sc, Policy{Allow: write}).Describe(); got != "SELECT (line 6): keyword DISABLE (line 7)" {
+	if got := Check(sc, Policy{Allow: write}).Describe(); got != "DISABLE TRIGGER (line 7)" {
 		t.Errorf("under write: %q", got)
 	}
 }
