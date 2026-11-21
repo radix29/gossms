@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/radix29/gossms/internal/cli/spec"
+	"github.com/radix29/gossms/internal/textenc"
 )
 
 // HelpOption is the global bool that asks for a command's help. A command line
@@ -113,7 +114,8 @@ func Parse(tree *spec.Tree, argv []string, opts Options) (*spec.Invocation, erro
 // One option per line: a line starting with "-" is split at its first run of
 // spaces into the option and its value, unless it spells --x=value; any other
 // line is one token, spaces and all. That is the point of a response file: no
-// shell quoting. Blank lines are skipped, a UTF-8 BOM and \r\n are tolerated,
+// shell quoting. Blank lines are skipped, a byte-order mark (UTF-8, UTF-16, UTF-32; textenc.Decode)
+// and \r\n are tolerated,
 // and an @token inside the file stays literal (no recursion).
 func expandResponseFiles(tree *spec.Tree, argv []string, readFile func(string) ([]byte, error)) ([]string, error) {
 	if !slices.ContainsFunc(argv, isResponseFile) {
@@ -137,7 +139,19 @@ func expandResponseFiles(tree *spec.Tree, argv []string, readFile func(string) (
 		if err != nil {
 			return nil, &Error{Kind: KindResponseFile, Message: fmt.Sprintf("response file %s: %v", path, err)}
 		}
-		out = append(out, responseFileTokens(string(data))...)
+		text, enc, lossy := textenc.Decode(data)
+		if lossy {
+			as := "UTF-8"
+			switch enc {
+			case textenc.UTF16LE, textenc.UTF16BE:
+				as = "UTF-16 (its byte-order mark says so)"
+			case textenc.UTF32LE, textenc.UTF32BE:
+				as = "UTF-32 (its byte-order mark says so)"
+			}
+			return nil, &Error{Kind: KindResponseFile, Message: fmt.Sprintf("response file %s: not valid %s", path, as),
+				Hint: "Save the file as UTF-8, or UTF-16/UTF-32 with a byte-order mark."}
+		}
+		out = append(out, responseFileTokens(text)...)
 	}
 	return out, nil
 }
@@ -145,7 +159,6 @@ func expandResponseFiles(tree *spec.Tree, argv []string, readFile func(string) (
 func isResponseFile(tok string) bool { return len(tok) > 1 && tok[0] == '@' }
 
 func responseFileTokens(text string) []string {
-	text = strings.TrimPrefix(text, "\ufeff")
 	var out []string
 	for line := range strings.Lines(text) {
 		line = strings.TrimSpace(line)
