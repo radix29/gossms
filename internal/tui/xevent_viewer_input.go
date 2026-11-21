@@ -115,15 +115,9 @@ func (v *XEventViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	if !v.rect.Contains(mx, my) {
 		return false
 	}
-	if v.detailRect.Contains(mx, my) {
-		switch ev.Buttons() {
-		case tcell.WheelDown:
-			v.scrollDetails(1)
-			return true
-		case tcell.WheelUp:
-			v.scrollDetails(-1)
-			return true
-		}
+	if d, ok := core.LineWheel(ev, v.detailRect); ok {
+		v.scrollDetails(d)
+		return true
 	}
 	if v.splitter.HandleMouse(ev) {
 		v.layoutChildren()

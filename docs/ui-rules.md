@@ -335,8 +335,8 @@ which owns them; the entries here say how goSSMS applies them.
    `PropertySheet`'s `dragZone`): `Release` on `ButtonNone`, `Route` before
    hit-testing, `Arm` at every claiming branch. A new router holds one, never
    a hand-rolled zone field.
-2. `App` snapshots the modal layer (`gestureOverlay`/`overlaySnapshot`) and
-   drops held events across a change.
+2. `App` snapshots the modal layer (`gestureOverlay`, a `core.OverlayGuard`
+   over `overlaySnapshot`) and drops held events across a change.
 3. A widget acting on `Button1` has a press latch (`core.PressLatch`), set on
    press, cleared on `ButtonNone`. A dialog routing anything ahead of
    `ConsumeOutsideClick` calls `ModalDialog.TrackPress` first.

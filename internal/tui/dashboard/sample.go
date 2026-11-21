@@ -152,10 +152,6 @@ func withLegend(s tcell.Screen, panel core.Rect, title string, bars []charts.Bar
 	if r.H <= 1 || len(bars) == 0 {
 		return r
 	}
-	items := make([]charts.LegendItem, 0, len(bars))
-	for _, b := range bars {
-		items = append(items, charts.LegendItem{Label: b.Label, Short: b.Short, Color: b.Color})
-	}
-	charts.DrawLegend(s, core.Rect{X: r.X, Y: r.Bottom() - 1, W: r.W, H: 1}, items)
+	charts.DrawLegend(s, core.Rect{X: r.X, Y: r.Bottom() - 1, W: r.W, H: 1}, charts.BarLegendItems(bars))
 	return core.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - 1}
 }

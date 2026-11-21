@@ -35,9 +35,9 @@ func schemaGroupFolder(group *explorerNode) *explorerNode {
 	snap.data.Type = group.data.GroupOf
 	snap.data.Schema = ""
 	snap.data.Filter = nil
-	if group.parent != nil {
-		snap.label = group.parent.label
-		snap.data.Filter = group.parent.data.Filter
+	if group.Parent != nil {
+		snap.label = group.Parent.label
+		snap.data.Filter = group.Parent.data.Filter
 	}
 	return snap
 }

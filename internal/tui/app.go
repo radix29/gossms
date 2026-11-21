@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,11 +47,11 @@ type App struct {
 	// on release (handleMouse, routeRelease, dropExplorerNode).
 	drag core.Drag[*explorerNode]
 
-	// mouseButtonDown tracks whether Button1 is held, wherever the gesture
-	// started. The per-widget mouseDragging latches only catch a resend staying
-	// inside one widget; this lets handleMouse tell a drag that started
-	// elsewhere and drifted across the status row from a fresh press there.
-	mouseButtonDown bool
+	// buttonPress tracks whether Button1 is held, wherever the gesture
+	// started. The per-widget latches only catch a resend staying inside one
+	// widget; this lets handleMouse tell a drag that started elsewhere and
+	// drifted across the status row from a fresh press there.
+	buttonPress core.PressLatch
 
 	// gestureOwner is the region that claimed the Button1 press currently held —
 	// the App-level counterpart of
@@ -63,10 +62,10 @@ type App struct {
 	// panes. Released on ButtonNone.
 	gestureOwner core.Gesture[appGestureOwner]
 
-	// gestureOverlay is the modal layer as it stood when the current gesture
-	// began, so handleMouse can tell a dialog, context menu or menu dropdown
-	// has opened or closed since.
-	gestureOverlay overlayStack
+	// gestureOverlay holds the modal layer as it stood when the current
+	// gesture began (overlaySnapshot), so handleMouse can drop held Button1
+	// once a dialog, context menu or menu dropdown has opened or closed since.
+	gestureOverlay core.OverlayGuard[overlayStack]
 
 	menuBar       *controls.MenuBar
 	toolbar       *controls.Toolbar
@@ -106,9 +105,6 @@ type App struct {
 	// not, and logStatus feeds it from loader goroutines, so unlike every other
 	// dialog (app_dialogs.go) it is built eagerly in buildUI.
 	statusHistoryDialog *StatusHistoryDialog
-
-	// dialogSlots holds each dialog built so far, by type (dialogOf).
-	dialogSlots map[reflect.Type]Dialog
 
 	// modals holds every dialog built so far, registered by dialogOf, and the
 	// live z-order of the open ones (see dialog_stack.go).
@@ -355,6 +351,15 @@ func (a *App) buildUI() {
 	a.modals.Register(a.statusHistoryDialog)
 }
 
+// newVerticalSplitter is the app's explorer | panels split: the explorer
+// starts at 30% and can take at most 80%. Every top/bottom split (an editor
+// or grid over results/details) is a layout.NewStackSplitter.
+func newVerticalSplitter() *layout.Splitter {
+	sp := layout.NewSplitter(layout.SplitterVertical, 0.3)
+	sp.SetLimits(0.1, 0.8)
+	return sp
+}
+
 // installEntraSignIn points the two things a Microsoft Entra sign-in shows
 // the user at the TUI rather than at the process's standard output and
 // error, which under tcell are the terminal it is drawing on: the device
@@ -363,23 +368,6 @@ func (a *App) buildUI() {
 // dropped — a browser launched through xdg-open may print a line of its own,
 // which would land on the screen at the cursor and stay there until the next
 // full redraw.
-// newHorizontalSplitter is the app's top/bottom split (an editor or grid over
-// results/details): half each, neither pane below a tenth.
-func newHorizontalSplitter(label string) *layout.Splitter {
-	sp := layout.NewSplitter(layout.SplitterHorizontal, 0.5)
-	sp.SetLimits(0.1, 0.9)
-	sp.SetLabel(label)
-	return sp
-}
-
-// newVerticalSplitter is the app's explorer | panels split: the explorer
-// starts at 30% and can take at most 80%.
-func newVerticalSplitter() *layout.Splitter {
-	sp := layout.NewSplitter(layout.SplitterVertical, 0.3)
-	sp.SetLimits(0.1, 0.8)
-	return sp
-}
-
 func installEntraSignIn(a *App) {
 	db.SetDeviceCodePrompt(a.promptDeviceCode)
 	browser.Stdout, browser.Stderr = io.Discard, io.Discard

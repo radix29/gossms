@@ -5,6 +5,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/xevent"
 	"github.com/radix29/tuikit/core"
+	"github.com/radix29/tuikit/layout"
 )
 
 // xevent_viewer.go is SSMS's Extended Events viewer: Watch Live Data on a
@@ -108,7 +109,7 @@ const (
 // has opened the panel's connection.
 func NewXEventViewer(app *App, host *db.ServerConn, session, target string, live bool) *XEventViewer {
 	v := new(XEventViewer{
-		viewerPanel: newViewerPanel(app, "─── Event details ─── (drag or Ctrl+Up/Down to resize)", 0.65),
+		viewerPanel: newViewerPanel(app, "─── Event details ─── "+layout.ResizeHint, 0.65),
 		app:         app,
 		host:        host,
 		session:     session,

@@ -89,7 +89,7 @@ func TestDatabaseScopedSessionsAreReadAndWrittenInTheirDatabase(t *testing.T) {
 	if zz.data.DBName != "appdb" {
 		t.Fatalf("session node DBName = %q — every verb below would go to the server", zz.data.DBName)
 	}
-	zz.parent = &explorerNode{label: "Sessions"}
+	zz.Parent = &explorerNode{label: "Sessions"}
 
 	a.setEventSessionState(sc, zz, true)
 	waitAndDrain(t, a)

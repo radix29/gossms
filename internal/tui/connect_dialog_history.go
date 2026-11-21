@@ -87,7 +87,7 @@ func (d *ConnectDialog) profileSelectedHistory() {
 		})
 		d.reloadHistory()
 		// A connected server's Object Explorer root shows its profile name
-		// (ObjectExplorer.flatten); redraw it now, not on some later rebuild.
+		// (ObjectExplorer.row); redraw it now, not on some later rebuild.
 		d.app.explorer.rebuild()
 		for j, c := range d.historyConns {
 			if c.GeneratedName() == key {

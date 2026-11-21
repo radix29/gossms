@@ -18,10 +18,10 @@ func drillTree(t *testing.T, objs []nodeData, loaded bool) (*App, *DetailBrowser
 	t.Helper()
 	a := newTestApp()
 	sc := addTestConn(a, "srv")
-	root := a.explorer.roots[0]
+	root := a.explorer.tree.Roots()[0]
 	folder := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, conn: sc}}
 	a.explorer.SetChildren(root, []*explorerNode{folder})
-	root.expanded = true
+	root.Expanded = true
 	if loaded {
 		a.explorer.SetChildren(folder, drillChildren(objs))
 	}
@@ -66,7 +66,7 @@ func TestDetailsDoubleClickSelectsTheRowsChild(t *testing.T) {
 	if got == nil || got.data.Name != "Beta" {
 		t.Fatalf("selected %v, want the Beta table", got)
 	}
-	if !folder.expanded {
+	if !folder.Expanded {
 		t.Error("the folder stayed collapsed over the selected child")
 	}
 	if pane.grid.OverlayActive() {
@@ -78,7 +78,7 @@ func TestDetailsDoubleClickWaitsForTheFoldersLoad(t *testing.T) {
 	a, pane, folder := drillTree(t, drillObjs(), false)
 	// Expanded with nothing loaded: its load is in flight, so the drill must
 	// wait for it, not start another (which a test App can't run).
-	folder.expanded = true
+	folder.Expanded = true
 	doubleClickRow(pane, 2)
 	if a.explorer.drill == nil {
 		t.Fatal("no drill pending on an unloaded folder")
@@ -94,10 +94,10 @@ func TestDetailsDoubleClickWaitsForTheFoldersLoad(t *testing.T) {
 
 func TestASelectionBeforeTheLoadCancelsTheDrill(t *testing.T) {
 	a, pane, folder := drillTree(t, drillObjs(), false)
-	folder.expanded = true
+	folder.Expanded = true
 	doubleClickRow(pane, 2)
-	root := a.explorer.roots[0]
-	a.explorer.view.SelectID(root.id) // the user moved on
+	root := a.explorer.tree.Roots()[0]
+	a.explorer.view.SelectID(root.ID()) // the user moved on
 	a.explorer.SetChildren(folder, drillChildren(drillObjs()))
 	if got := a.explorer.Selected(); got != root {
 		t.Errorf("selected %v, want the server the user picked", got)
@@ -113,8 +113,8 @@ func TestDetailsDoubleClickOpensTheChildsSchemaGroup(t *testing.T) {
 	if got == nil || got.data.Name != "Beta" {
 		t.Fatalf("selected %v, want the Beta table", got)
 	}
-	if g := got.parent; g.data.Type != NodeSchemaGroup || !g.expanded {
-		t.Errorf("the table's parent is %v (expanded %v), want its expanded schema group", g.label, g.expanded)
+	if g := got.Parent; g.data.Type != NodeSchemaGroup || !g.Expanded {
+		t.Errorf("the table's parent is %v (expanded %v), want its expanded schema group", g.label, g.Expanded)
 	}
 }
 
@@ -137,7 +137,7 @@ func TestADetailsRowStandingForNoChildShowsItsValue(t *testing.T) {
 func TestARecordsFolderRowNavigatesAndItsPropertiesDont(t *testing.T) {
 	a := newTestApp()
 	addTestConn(a, "srv")
-	root := a.explorer.roots[0]
+	root := a.explorer.tree.Roots()[0]
 	agent := &explorerNode{label: agentRootLabel + " (Stopped)", data: nodeData{Type: NodeAgentJobs}}
 	security := &explorerNode{label: "Security", data: nodeData{Type: NodeSecurity}}
 	a.explorer.SetChildren(root, []*explorerNode{security, agent})
@@ -154,7 +154,7 @@ func TestARecordsFolderRowNavigatesAndItsPropertiesDont(t *testing.T) {
 	if got := a.explorer.Selected(); got != agent {
 		t.Fatalf("selected %v, want the (Stopped) Agent node", got)
 	}
-	a.explorer.view.SelectID(root.id)
+	a.explorer.view.SelectID(root.ID())
 	doubleClickRow(pane, 2)
 	if got := a.explorer.Selected(); got != root {
 		t.Errorf("a property row navigated to %v", got)

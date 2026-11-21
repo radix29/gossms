@@ -9,7 +9,6 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/tuikit/dialogs"
 )
 
 func newDeviceCodeTestApp() *App {
@@ -95,7 +94,6 @@ func TestDeviceCodeDialogCancelCancelsTheSignIn(t *testing.T) {
 func TestDeviceCodeDialogCopiesTheCode(t *testing.T) {
 	a := newDeviceCodeTestApp()
 	a.deviceCodeDialog().showCode(testDeviceCode, nil, nil)
-	a.modals = dialogs.Stack{}
 	a.modals.Register(a.deviceCodeDialog())
 	a.modals.Sync()
 	target := a.activeClipboardTarget()

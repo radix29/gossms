@@ -262,7 +262,6 @@ type nodeData struct {
 	// statistic is on decides the extended-property level (VIEW, not TABLE)
 	// and which New Index kinds the folder offers, before anything is read.
 	OnView       bool
-	Loaded       bool
 	IsPrimaryKey bool
 	IsOffline    bool
 	// DBState is a NodeDatabase's sys.databases state_desc (ONLINE, OFFLINE,

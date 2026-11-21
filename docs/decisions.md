@@ -2062,6 +2062,92 @@ it from the string 'NULL'.
   (`renderPreservingView`) named it as if it were tuikit API; both now point
   at `DataGrid.SetDataPreservingView`. The other goSSMS mentions in tuikit
   are history in "why" comments and stay.
+- **Every top/bottom split is tuikit's `layout.NewStackSplitter`**
+  (2026-11-20, tuikit reuse round 13, item 1). It is a horizontal bar at half
+  the rect, labelled; the 0.1/0.9 clamp gossms set by hand was already
+  `NewSplitter`'s default, so the preset takes no ratio or limits parameter
+  (`SetRatio`/`SetLimits` still apply, as `newViewerPanel` does). The label
+  suffix is `layout.ResizeHint` ("(drag or Ctrl+Up/Down to resize)").
+  `newHorizontalSplitter` went; `newVerticalSplitter` (the explorer split,
+  0.3 within 0.1/0.8, one consumer) stays in gossms.
+- **A pinned chart readout's life is tuikit's `charts.Pin`** (2026-11-20,
+  tuikit reuse round 13, item 2; taken with one consumer, Activity Monitor,
+  because tuikit already owned the box, callout and `PlotHit`, and the
+  identity-and-drift logic is what the next chart host would re-derive wrong).
+  `PinAt` pins a bucket by chart title and time, `Refresh` re-derives its
+  column each frame and reports false on chart gone / pruned / aged off the
+  plot / out of view, `Draw` does callout then box and skips a box that
+  doesn't fit. Unlike the plan, the canvas↔screen translation went too: Pin
+  takes a `core.Viewport`, as `DrawAxisCallout` already did. gossms keeps what
+  a bucket's time means per tab (`bucketTime`, `bucketIndex`) and the
+  pan/click/tab-switch drop rules (`panned`, `setTab`, `press`).
+- **Object Explorer's lazy-tree mechanics are tuikit's `controls.TreeModel`**
+  (2026-11-20, tuikit reuse round 14, item 1; taken with one consumer, as
+  `GoOnce`/`Drag`/`Pin` were, because the placeholder-ID, retire/release and
+  survivor rules are each a shipped bug any lazy tree host would re-ship).
+  This reverses tuikit `README.md`'s old "the host owns the tree model and
+  projects it" line. Generic and intrusive: `explorerNode` embeds
+  `controls.TreeItem[*explorerNode]` (alias `explorerItem`), which carries
+  `Parent`/`Children`/`Expanded`/`Loaded` (moved out of `nodeData`) and the
+  model's private ID, placeholder ID and retired flag (`ID()`,
+  `PlaceholderID()`, `Retired()`). Intrusive rather than a model owning
+  wrapper nodes of payload `T`, so `*explorerNode` stays the one identity
+  every loader, hint and cache keys on. Host hooks: `Row`, `Placeholder`,
+  `Load`, `Same` (`sameObject`), `Redirect` (the rename/Move to Schema
+  `followHint`), `OnSelect`/`OnReselect` (replacing `reselectFrom`),
+  `OnRetire`/`OnRelease` (the `latest` cancel, `detailBrowser.Forget`).
+  gossms keeps Group by Schema (it rewrites `Children` and uses
+  `Register`/`Retire`), filters, `ReloadFolders`, `followHint`/`drillHint`,
+  `resolveConn`, the per-node `latest` and `snapshot()`. The model's own tests
+  are tuikit's `treemodel_test.go`; the `explorer_*_test.go` families stayed,
+  changed only mechanically (field names, `tree.Roots()`/`ByID`/`Len`).
+- **The top-level mouse router's overlay protocol is tuikit's**
+  (2026-11-20, tuikit reuse round 14, item 2, all four parts as one round).
+  `core.RouteOverlay(o, ev)` is the `OverlayActive() && (HandleMouse(ev) ||
+  OverlayActive())` first-refusal test (three uses in `app_events.go`, one in
+  tuikit's `DataGrid` cell menu), over `core.MouseOverlay`.
+  `core.ReleaseNowhere(ev)` is the off-screen release (two in `routeRelease`,
+  one in `PanelManager`). `App.mouseButtonDown` became a `core.PressLatch`
+  (`App.buttonPress`). The overlay-change guard (2d, taken with one consumer
+  as "a bug every host re-derives") is `core.OverlayGuard[S comparable]`;
+  unlike the plan's `Press`/`Stale` pair it is one `Drop(ev, fresh, snap func() S)`,
+  so the "held `Button1` only, releases pass" half of the rule is tuikit's
+  too. `overlayStack`/`overlaySnapshot` stay gossms's. Not taken: a whole
+  `layout.Shell` router (host-specific steps between every generic one).
+- **The wheel over a `core.LinePane` is tuikit's `core.LineWheel`**
+  (2026-11-20, tuikit reuse round 14, item 3). `LineWheel(ev, r) (delta, ok)`
+  is the hit test and the ±1 step; the five hand-rolled `WheelUp`/`WheelDown`
+  switches (Log and XEvent viewer details, plan Operator Details, bottom
+  Properties, Plan tab Properties) call it and pass `delta` to their existing
+  `scroll*` helper, claiming the tick whenever `ok` (at a boundary too, as
+  before). Unlike the plan it is a function, not a `LinePane.Wheel(ev, r, n)`
+  that clamps: every host's line count wraps the selected item, so it is only
+  built on a tick that scrolls, and the plan panes' hit rect includes a
+  heading row the clamp height excludes. Author's call taken as recommended:
+  Shift+WheelUp/Down stays vertical over a `LinePane` (no horizontal axis;
+  `WheelDelta`'s sideways turn would leave it dead), WheelLeft/Right fall
+  through. The plan tree pane's own wheel (`treeSt.scroll`) is not a
+  `LinePane` and stays.
+- **App's lazy dialog slots are tuikit's `dialogs.Lazy`/`Built`**
+  (2026-11-20, tuikit reuse round 14, item 4; taken so the "a shown but
+  unregistered dialog is never drawn" rule lives beside `Stack.Register`,
+  not for lines). The one-dialog-per-type map moved onto `dialogs.Stack`;
+  `dialogOf`/`builtDialog` are one-line delegates, so no accessor changed,
+  and `App.dialogSlots` and `setScreen`'s loop went. Beyond the plan:
+  `dialogs.Replace` (the test seam behind `installDialog`: swaps a slot
+  without registering), and `Stack.SetScreen` reaches slot dialogs too, so a
+  replaced, unregistered dialog still gets the screen as it did before. Six
+  test helpers that reset `a.modals = dialogs.Stack{}` after `installDialog`
+  lost the reset (it now wipes the slots; the Device Code test failed on it).
+- **A bar chart's legend entries are tuikit's `charts.BarLegendItems`**
+  (2026-11-20, tuikit reuse round 14, item 5; the function only, as
+  recommended). `dashboard/sample.go` `withLegend` no longer copies
+  `Label`/`Short`/`Color` by hand, and `VBarChart`'s own legend uses it
+  instead of `LegendItems(barSeries(…))`. Not taken: a `BarChart.Legend`
+  field reserving the last row — one bar-panel host (`withLegend`); revisit
+  if a second appears. Stacked bars with `Parts` (the waits chart's
+  `waitLegend`) keep a host-built legend: parts are named per chart, not per
+  bar.
 - **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
   `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
   is read at draw time, so labels are fixed and a flip needs no

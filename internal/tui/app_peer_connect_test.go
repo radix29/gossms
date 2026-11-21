@@ -143,9 +143,9 @@ func TestUnregisteredPrimaryNoteOpensThePrompt(t *testing.T) {
 		t.Fatal("an unreachable (not unregistered) primary's note offers a Connect")
 	}
 
-	root := a.explorer.roots[0]
+	root := a.explorer.tree.Roots()[0]
 	a.explorer.SetChildren(root, []*explorerNode{note})
-	if !a.explorer.handleActivate(note.id) {
+	if !a.explorer.handleActivate(note.ID()) {
 		t.Fatal("activating the note did nothing")
 	}
 	if d := a.connectDialog(); !d.Visible() || !d.forPeer || d.fServer.Value() != "UBUSQL2" {

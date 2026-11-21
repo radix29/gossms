@@ -11,6 +11,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/layout"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -19,7 +20,7 @@ import (
 // either.
 func newTestLogViewer() *LogViewer {
 	lv := &LogViewer{
-		viewerPanel: viewerPanel{grid: controls.NewDataGrid(), splitter: newHorizontalSplitter("")},
+		viewerPanel: viewerPanel{grid: controls.NewDataGrid(), splitter: layout.NewStackSplitter("")},
 		// Non-nil because a toolbar press hands Press app.contextMenu.
 		app:     &App{},
 		logType: gosmo.ErrorLogSQLServer,

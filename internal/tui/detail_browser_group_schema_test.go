@@ -14,7 +14,7 @@ func TestSchemaGroupFolder(t *testing.T) {
 	folder := groupTree(t, a, NodeViews, obj(NodeView, "dbo", "v1"), obj(NodeView, "app", "v2"))
 	folder.data.Filter = &nodeFilter{criteria: []filterCriterion{{prop: filterProp{id: fpName, kind: filterText}, op: opContains, value: "v"}}}
 	a.explorer.applyGrouping(folder)
-	g := folder.children[1]
+	g := folder.Children[1]
 	if g.data.Type != NodeSchemaGroup || g.data.Schema != "dbo" {
 		t.Fatalf("children[1] = %v %q, want the dbo group", g.data.Type, g.data.Schema)
 	}
@@ -75,15 +75,15 @@ func TestGroupToggleInvalidatesDetails(t *testing.T) {
 	dbr := a.detailBrowser
 
 	a.toggleGroupBySchema()
-	group := folder.children[0]
+	group := folder.Children[0]
 	if group.data.Type != NodeSchemaGroup {
 		t.Fatalf("children[0] = %v, want a schema group", group.data.Type)
 	}
-	for _, n := range []*explorerNode{folder, group, other, folder.parent} {
+	for _, n := range []*explorerNode{folder, group, other, folder.Parent} {
 		dbr.cache[n] = &detailResult{cols: []string{"Name"}}
 	}
 	a.toggleGroupBySchema()
-	for n, want := range map[*explorerNode]bool{folder: false, group: false, other: true, folder.parent: true} {
+	for n, want := range map[*explorerNode]bool{folder: false, group: false, other: true, folder.Parent: true} {
 		if _, ok := dbr.cache[n]; ok != want {
 			t.Errorf("%s: cached = %v after the toggle, want %v", n.label, ok, want)
 		}

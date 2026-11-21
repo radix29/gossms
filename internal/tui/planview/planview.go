@@ -135,7 +135,8 @@ func New() *PlanView {
 	// the right-click / Ctrl+Space menu and "Show Value" (the Status column's
 	// full warning text gets clipped). Copy goes through OnCopyRequest.
 	v.summarySt.grid.SetCellCursor(true)
-	v.graphSplit = layout.NewSplitter(layout.SplitterHorizontal, 0.7)
+	v.graphSplit = layout.NewStackSplitter("")
+	v.graphSplit.SetRatio(0.7)  // the graph gets more room than the Properties strip
 	v.graphSt.detailOpen = true // Properties strip visible from the start
 	return v
 }

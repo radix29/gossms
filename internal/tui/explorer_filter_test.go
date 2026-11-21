@@ -241,9 +241,9 @@ func TestFilterableFoldersAreContainers(t *testing.T) {
 func TestFlattenMarksFilteredFolder(t *testing.T) {
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")
-	tables := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, Loaded: true, conn: sc}}
+	tables := &explorerNode{label: "Tables", explorerItem: explorerItem{Loaded: true}, data: nodeData{Type: NodeTables, conn: sc}}
 
-	labelOf := func() string { return a.explorer.flatten(nil, tables, 0)[0].Label }
+	labelOf := func() string { return a.explorer.row(tables, 0).Label }
 	if got := labelOf(); got != "Tables" {
 		t.Fatalf("unfiltered label = %q, want \"Tables\"", got)
 	}

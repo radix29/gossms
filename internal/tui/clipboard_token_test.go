@@ -6,7 +6,6 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/tuikit/core"
-	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/widgets"
 )
 
@@ -49,7 +48,6 @@ func newTokenDialogApp(t *testing.T) (*App, *tokenDialog) {
 	t.Helper()
 	a := newClipboardTestApp()
 	d := newTokenDialog()
-	a.modals = dialogs.Stack{}
 	a.modals.Register(d)
 	a.modals.Sync()
 	return a, d

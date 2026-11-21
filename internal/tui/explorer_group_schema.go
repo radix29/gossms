@@ -27,9 +27,9 @@ func isGroupedObject(c *explorerNode) bool {
 // group itself would drop its objects for good. Direct parent comparisons (the
 // Details invalidation in staleDetails) keep using parent.
 func (n *explorerNode) listingParent() *explorerNode {
-	p := n.parent
+	p := n.Parent
 	if p != nil && p.data.Type == NodeSchemaGroup {
-		return p.parent
+		return p.Parent
 	}
 	return p
 }
@@ -60,12 +60,12 @@ func (oe *ObjectExplorer) applyGrouping(folder *explorerNode) {
 			g := bySchema[c.data.Schema]
 			if g == nil {
 				g = oe.schemaGroup(folder, c.data.Schema, old)
-				g.children = nil
+				g.Children = nil
 				bySchema[c.data.Schema] = g
 				groups = append(groups, g)
 			}
-			c.parent = g
-			g.children = append(g.children, c)
+			c.Parent = g
+			g.Children = append(g.Children, c)
 		}
 		slices.SortStableFunc(groups, func(a, b *explorerNode) int {
 			return strings.Compare(strings.ToLower(a.data.Schema), strings.ToLower(b.data.Schema))
@@ -73,16 +73,16 @@ func (oe *ObjectExplorer) applyGrouping(folder *explorerNode) {
 		children = append(children, groups...)
 	} else {
 		for _, c := range folder.flat {
-			c.parent = folder
+			c.Parent = folder
 			children = append(children, c)
 		}
 	}
 	for _, g := range old {
-		if !g.retired && !slices.Contains(groups, g) {
+		if !g.Retired() && !slices.Contains(groups, g) {
 			oe.retireGroup(g)
 		}
 	}
-	folder.children = children
+	folder.Children = children
 	if groups != nil {
 		folder.groups = groups
 	} else {
@@ -99,36 +99,32 @@ func (oe *ObjectExplorer) schemaGroup(folder *explorerNode, schema string, old [
 		if g.data.Schema != schema {
 			continue
 		}
-		if !g.retired {
+		if !g.Retired() {
 			return g
 		}
-		expanded = g.expanded
+		expanded = g.Expanded
 	}
 	g := &explorerNode{
-		id:       oe.allocID(),
-		label:    schema,
-		parent:   folder,
-		expanded: expanded,
+		explorerItem: explorerItem{Parent: folder, Expanded: expanded, Loaded: true},
+		label:        schema,
 		data: nodeData{
 			Type:    NodeSchemaGroup,
 			conn:    folder.data.conn,
 			DBName:  folder.data.DBName,
 			Schema:  schema,
 			GroupOf: folder.data.Type,
-			Loaded:  true,
 		},
 	}
-	oe.byID[g.id] = g
+	oe.tree.Register(g)
 	return g
 }
 
 // retireGroup takes a group out of the tree, released by the next rebuild like
 // any retired node. Only the group: its objects were re-parented, not dropped,
-// so unlike dropChildren nothing below it is retired or has its load cancelled.
+// so unlike a Reload's DropChildren nothing below it is retired or has its
+// load cancelled.
 func (oe *ObjectExplorer) retireGroup(g *explorerNode) {
-	g.retired = true
-	g.children = nil
-	oe.retired = append(oe.retired, g)
+	oe.tree.Retire(g)
 }
 
 // regroupAll re-applies grouping to every loaded grouped folder of every root,
@@ -138,29 +134,29 @@ func (oe *ObjectExplorer) retireGroup(g *explorerNode) {
 // (or a node under it, or its "Loading..." row) stays on screen and rebuild's
 // SetNodes keeps it selected by id: the objects are the same nodes, only
 // re-parented. Without it the selection would fold into a collapsed group and
-// reselect would move it to the group. Toggling OFF needs nothing: an object's
+// the rebuild would move it to the group. Toggling OFF needs nothing: an object's
 // group was open for it to be selected, so its folder is open too.
 func (oe *ObjectExplorer) regroupAll() {
 	var folders []*explorerNode
 	var walk func(*explorerNode)
 	walk = func(n *explorerNode) {
-		if groupedFolderTypes[n.data.Type] && n.data.Loaded && !n.retired {
+		if groupedFolderTypes[n.data.Type] && n.Loaded && !n.Retired() {
 			folders = append(folders, n)
 		}
-		for _, c := range n.children {
+		for _, c := range n.Children {
 			walk(c)
 		}
 	}
-	for _, r := range oe.roots {
+	for _, r := range oe.tree.Roots() {
 		walk(r)
 	}
 	for _, f := range folders {
 		oe.applyGrouping(f)
 	}
 	if oe.app.groupBySchema {
-		for cur := oe.selectedOwner(); cur != nil; cur = cur.parent {
+		for cur := oe.selectedOwner(); cur != nil; cur = cur.Parent {
 			if cur.data.Type == NodeSchemaGroup {
-				cur.expanded = true
+				cur.Expanded = true
 			}
 		}
 	}
@@ -170,17 +166,8 @@ func (oe *ObjectExplorer) regroupAll() {
 // selectedOwner is the node the tree's selection stands for: the selected node,
 // or the node a selected "Loading..." row belongs to. nil with no selection.
 func (oe *ObjectExplorer) selectedOwner() *explorerNode {
-	tn := oe.view.SelectedNode()
-	if tn == nil {
-		return nil
-	}
-	switch tag := tn.Tag.(type) {
-	case *explorerNode:
-		return tag
-	case loadingRow:
-		return tag.owner
-	}
-	return nil
+	n, _ := oe.tree.SelectedOwner()
+	return n
 }
 
 // toggleGroupBySchema flips View > Group by Schema (Alt+G) for every server in
@@ -188,7 +175,7 @@ func (oe *ObjectExplorer) selectedOwner() *explorerNode {
 // place (regroupAll), so every expanded subtree and the selection survive.
 func (a *App) toggleGroupBySchema() {
 	a.groupBySchema = !a.groupBySchema
-	// Before regroupAll, whose reselect (off a retired group) fetches the
+	// Before regroupAll, whose reselection (off a retired group) fetches the
 	// folder: every cached grouped folder and group was built in the other mode.
 	a.detailBrowser.InvalidateWhere(a, func(n *explorerNode) bool {
 		return groupedFolderTypes[n.data.Type] || n.data.Type == NodeSchemaGroup

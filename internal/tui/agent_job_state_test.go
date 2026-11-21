@@ -26,8 +26,8 @@ func agentJobTestNode(sc *db.ServerConn) *explorerNode {
 	n := opNode(NodeAgentJob, "", agentJobName, "")
 	n.data.conn = sc
 	parent := &explorerNode{label: "Jobs"}
-	n.parent = parent
-	parent.children = []*explorerNode{n}
+	n.Parent = parent
+	parent.Children = []*explorerNode{n}
 	return n
 }
 

@@ -405,13 +405,33 @@ func (v *PlanView) expandSelected() {
 	v.rebuildTreeRows()
 }
 
-func (v *PlanView) collapseSelected() {
+// collapseSelected reports whether it collapsed anything, so Left can fall
+// back to selectParent.
+func (v *PlanView) collapseSelected() bool {
 	n := v.selectedNode()
 	if n == nil || len(n.Children) == 0 || v.treeSt.collapsed[n.ID] {
-		return
+		return false
 	}
 	v.treeSt.collapsed[n.ID] = true
 	v.rebuildTreeRows()
+	return true
+}
+
+// selectParent moves the selection to the selected operator's parent: the
+// nearest row above with a smaller depth, since rows is the flattened visible
+// tree and a shown child's parent always precedes it. A no-op on the root.
+func (v *PlanView) selectParent() {
+	idx := v.selectedRowIndex()
+	if idx < 0 {
+		return
+	}
+	d := v.treeSt.rows[idx].depth
+	for i := idx - 1; i >= 0; i-- {
+		if v.treeSt.rows[i].depth < d {
+			v.selectNode(v.treeSt.rows[i].node.ID)
+			return
+		}
+	}
 }
 
 func (v *PlanView) toggleSelectedExpand() {
@@ -501,7 +521,11 @@ func (v *PlanView) handleTreeTabKey(ev *tcell.EventKey) bool {
 		v.expandSelected()
 		return true
 	case tcell.KeyLeft, tcell.KeyBackspace, tcell.KeyBackspace2:
-		v.collapseSelected()
+		// As in Windows Explorer: collapse an expanded operator, otherwise go to
+		// its parent.
+		if !v.collapseSelected() {
+			v.selectParent()
+		}
 		return true
 	case tcell.KeyEnter:
 		v.toggleSelectedExpand()
@@ -514,31 +538,25 @@ func (v *PlanView) handleTreeTabKey(ev *tcell.EventKey) bool {
 // splitter, and forwards to the summary grid while it's shown.
 func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
+	if d, ok := core.LineWheel(ev, v.detailsPaneRect); ok {
+		v.scrollDetails(d)
+		return true
+	}
+	if v.bottomMode == bottomProperties {
+		if d, ok := core.LineWheel(ev, v.bottomRect); ok {
+			v.scrollBottomProps(d)
+			return true
+		}
+	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
 		if v.treePaneRect.Contains(mx, my) && v.treeSt.scroll > 0 {
 			v.treeSt.scroll--
 			return true
 		}
-		if v.detailsPaneRect.Contains(mx, my) {
-			v.scrollDetails(-1)
-			return true
-		}
-		if v.bottomMode == bottomProperties && v.bottomRect.Contains(mx, my) {
-			v.scrollBottomProps(-1)
-			return true
-		}
 	case tcell.WheelDown:
 		if v.treePaneRect.Contains(mx, my) && v.treeSt.scroll < len(v.treeSt.rows)-v.treePaneRect.H {
 			v.treeSt.scroll++
-			return true
-		}
-		if v.detailsPaneRect.Contains(mx, my) {
-			v.scrollDetails(1)
-			return true
-		}
-		if v.bottomMode == bottomProperties && v.bottomRect.Contains(mx, my) {
-			v.scrollBottomProps(1)
 			return true
 		}
 	case tcell.ButtonNone:

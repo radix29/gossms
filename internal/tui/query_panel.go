@@ -253,7 +253,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 		title:    title,
 		editor:   editor.NewEditor(sqledit.Highlighter(theme.Active())),
 		results:  results,
-		splitter: newHorizontalSplitter("─── Results ─── (drag or Ctrl+Up/Down to resize)"),
+		splitter: layout.NewStackSplitter("─── Results ─── " + layout.ResizeHint),
 	})
 	results.SetStatusStyle(p.resultsStatusStyle)
 	// Before anything sets text: SetText expands tabs at the editor's current width,
@@ -262,6 +262,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	p.editor.SetIndentRule(sqledit.IndentRule)
 	sqledit.Configure(p.editor)
 	p.editor.SetWrapMode(app.wordWrap)
+	p.editor.SetCurrentLineHighlight(true)
 	p.messages = editor.NewEditor(p.messagesHighlighter)
 	p.messages.SetReadOnly(true)
 	p.messages.OnDoubleClick = p.goToMessageLine

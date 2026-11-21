@@ -44,7 +44,7 @@ func newViewerPanel(app *App, title string, ratio float64) viewerPanel {
 	grid.SetMaxCellWidth(app.cfg.MaxCellLength + 2)
 	p := viewerPanel{
 		grid:     grid,
-		splitter: newHorizontalSplitter(title),
+		splitter: layout.NewStackSplitter(title),
 		// A message longer than the pane is normal (stack dumps, deadlock XML), so
 		// say so rather than end mid-sentence.
 		detail: core.LinePane{More: "▾ more (Alt+↓)"},

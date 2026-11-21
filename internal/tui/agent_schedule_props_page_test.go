@@ -125,8 +125,8 @@ func twinScheduleNode(sc *db.ServerConn) *explorerNode {
 	n.data.conn = sc
 	n.data.AgentScheduleID = 8
 	parent := &explorerNode{label: "Schedules"}
-	n.parent = parent
-	parent.children = []*explorerNode{n}
+	n.Parent = parent
+	parent.Children = []*explorerNode{n}
 	return n
 }
 

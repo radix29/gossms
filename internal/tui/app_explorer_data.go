@@ -44,7 +44,7 @@ func serverWriteContext(sc *db.ServerConn) (context.Context, context.CancelFunc)
 // A retired node (replaced by a Reload, expanded from its stale row) isn't
 // loaded; SetChildren would refuse it.
 func (a *App) loadChildren(node *explorerNode) {
-	if node.retired {
+	if node.Retired() {
 		return
 	}
 	sc := resolveConn(node)
@@ -101,7 +101,7 @@ func (a *App) childFetchPanicked(node *explorerNode, seq int) {
 // failed check leaves the label alone.
 func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 	var agentNode *explorerNode
-	for _, c := range serverNode.children {
+	for _, c := range serverNode.Children {
 		if c.data.Type == NodeAgentJobs {
 			agentNode = c
 			break
@@ -135,7 +135,7 @@ type stateApplier interface {
 // stateNodeOf is sc's first node of type t, or nil when the tree has not
 // loaded one.
 func (a *App) stateNodeOf(sc *db.ServerConn, t NodeType) *explorerNode {
-	for _, r := range a.explorer.roots {
+	for _, r := range a.explorer.tree.Roots() {
 		if r.data.conn == sc {
 			return findDescendantByType(r, t)
 		}
@@ -158,7 +158,7 @@ func refreshStateLabel[S stateApplier](a *App, sc *db.ServerConn, t NodeType, wh
 		defer cancel()
 		st := fetch(ctx, sc)
 		a.postAndWake(func() {
-			if node.retired {
+			if node.Retired() {
 				return
 			}
 			st.applyTo(node)
@@ -180,7 +180,7 @@ func (a *App) onNodeSelected(node *explorerNode) {
 }
 
 // onNodeReselected is onNodeSelected for a selection Object Explorer moved
-// itself (off a node a rebuild no longer shows; ObjectExplorer.reselect).
+// itself (off a node a rebuild no longer shows; controls.TreeModel.Rebuild).
 // Details follows; the status bar only while it still shows from's path, so a
 // write's "deleted"/"renamed" message isn't replaced by the reload that
 // follows.

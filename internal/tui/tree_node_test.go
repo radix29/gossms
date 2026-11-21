@@ -81,11 +81,11 @@ func TestSchemaGroupNode(t *testing.T) {
 	sc, _ := newGConn(t)
 	a := newTestApp()
 	folder := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, conn: sc, DBName: "db1"}}
-	group := &explorerNode{label: "dbo", parent: folder, data: nodeData{
-		Type: NodeSchemaGroup, DBName: "db1", Schema: "dbo", GroupOf: NodeTables, Loaded: true,
+	group := &explorerNode{label: "dbo", explorerItem: explorerItem{Parent: folder, Loaded: true}, data: nodeData{
+		Type: NodeSchemaGroup, DBName: "db1", Schema: "dbo", GroupOf: NodeTables,
 	}}
-	folder.children = []*explorerNode{group}
-	folder.data.Loaded = true
+	folder.Children = []*explorerNode{group}
+	folder.Loaded = true
 	var labels []string
 	var refresh func()
 	for _, it := range a.nodeMenuItems(group) {
@@ -102,8 +102,8 @@ func TestSchemaGroupNode(t *testing.T) {
 	// Refresh reloads the folder: the group has no loader, so reloading the
 	// group itself would leave it empty.
 	refresh()
-	if folder.data.Loaded || !group.retired {
+	if folder.Loaded || !group.Retired() {
 		t.Errorf("Refresh on a schema group: folder Loaded = %v, group retired = %v; want the folder reloaded",
-			folder.data.Loaded, group.retired)
+			folder.Loaded, group.Retired())
 	}
 }

@@ -12,9 +12,9 @@ import (
 // so it must leave the cache alone.
 func TestPropDialogApplyStalesTheDetailsItEdited(t *testing.T) {
 	folder := &explorerNode{label: "Symmetric Keys"}
-	key := &explorerNode{label: "k1", parent: folder}
-	child := &explorerNode{label: "child", parent: key}
-	sibling := &explorerNode{label: "k2", parent: folder}
+	key := &explorerNode{label: "k1", explorerItem: explorerItem{Parent: folder}}
+	child := &explorerNode{label: "child", explorerItem: explorerItem{Parent: key}}
+	sibling := &explorerNode{label: "k2", explorerItem: explorerItem{Parent: folder}}
 	all := []*explorerNode{folder, key, child, sibling}
 
 	setup := func() (*App, *PropDialog) {

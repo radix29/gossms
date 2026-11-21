@@ -146,6 +146,16 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
 
+## Completion: what is left
+
+- **A catalog name holding a control character is offered as-is.** A table
+  named `weird⏎name` (legal inside brackets) is offered as `[weird⏎name]`;
+  since tuikit round 6 bug 4 the commit splits it into two real lines, so
+  the query runs (driven live 2026-11-21). Undecided: whether to offer such
+  a name at all. Its popup label draws as `weirdname` (the newline is
+  invisible), and a CR in a name is lost, since the editor normalizes CRLF
+  and CR to LF.
+
 ## Tests: what is left
 
 - **`TestSessionPropertiesApplyReloadsTheSessionsTargets/Apply` is flaky**

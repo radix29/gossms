@@ -175,8 +175,9 @@ type ActivityMonitor struct {
 	viewGen uint64
 
 	// tooltip is the readout pinned by the last click, nil if none. Survives
-	// redraws, so a paused dashboard keeps it.
-	tooltip *amTooltip
+	// redraws, so a paused dashboard keeps it; refreshTooltip moves it onto its
+	// sample's column each draw.
+	tooltip *charts.Pin
 
 	dragZone core.Gesture[amDragZone]
 }
@@ -271,29 +272,6 @@ type amCanvasKey struct {
 	// palette re-renders on a theme switch; without it a paused monitor (no new
 	// gen) keeps the old theme's colours.
 	palette theme.Palette
-}
-
-// amTooltip is a pinned readout of one sample: every series of a chart at the
-// clicked bucket, in chart colours.
-//
-// It pins the sample (chart and time), not the screen spot; its position is
-// re-derived each draw, since new samples push history columns left.
-type amTooltip struct {
-	chart string // charts.PlotHit.Title of the chart the pin lives on
-	time  string // the pinned bucket's clock time — its identity and caption
-	rows  []charts.ReadoutRow
-
-	// snapshot marks a pin on a current-sample chart: one bucket, no time axis,
-	// so nothing drifts.
-	snapshot bool
-
-	// col and row are the pinned point in canvas coordinates (bucket column,
-	// click row within the plot), translated at draw time.
-	col, row int
-
-	// plot and timeRow are the pinned chart's canvas rects, re-read each draw:
-	// the pin drops outside plot, and the time callout sits on timeRow.
-	plot, timeRow core.Rect
 }
 
 // NewActivityMonitor creates the panel for one server connection.

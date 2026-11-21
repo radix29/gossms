@@ -385,7 +385,7 @@ func xeSavedTree(t *testing.T, sc *db.ServerConn) (a *App, session, idle *explor
 	folder := &explorerNode{label: "Sessions", data: nodeData{Type: NodeEventSessions, conn: sc}}
 	session = &explorerNode{label: "zz_trace", data: nodeData{Type: NodeEventSession, Name: "zz_trace", conn: sc}}
 	idle = &explorerNode{label: "system_health", data: nodeData{Type: NodeEventSession, Name: "system_health", conn: sc}}
-	root.expanded, folder.expanded, session.expanded = true, true, true
+	root.Expanded, folder.Expanded, session.Expanded = true, true, true
 	a.explorer.SetChildren(root, []*explorerNode{folder})
 	a.explorer.SetChildren(folder, []*explorerNode{idle, session})
 	targets = []*explorerNode{
@@ -393,7 +393,7 @@ func xeSavedTree(t *testing.T, sc *db.ServerConn) (a *App, session, idle *explor
 		{label: "package0.ring_buffer", data: nodeData{Type: NodeEventTarget, Name: "ring_buffer", XESession: "zz_trace", conn: sc}},
 	}
 	a.explorer.SetChildren(session, targets)
-	a.explorer.view.SelectID(session.id)
+	a.explorer.view.SelectID(session.ID())
 	return a, session, idle, targets
 }
 
@@ -425,11 +425,11 @@ func TestSessionPropertiesApplyReloadsTheSessionsTargets(t *testing.T) {
 			t.Fatalf("statements = %q", inst.Statements())
 		}
 		for _, tg := range targets {
-			if !tg.retired {
+			if !tg.Retired() {
 				t.Errorf("target %q survived the Apply — the session node was not reloaded", tg.label)
 			}
 		}
-		if idle.expanded || len(idle.children) > 0 {
+		if idle.Expanded || len(idle.Children) > 0 {
 			t.Error("another session was touched")
 		}
 		if got := a.explorer.Selected(); got != session {
@@ -437,8 +437,8 @@ func TestSessionPropertiesApplyReloadsTheSessionsTargets(t *testing.T) {
 		}
 		// The reload's fetch lands; Apply's page reloads often post first,
 		// so one callback is not enough.
-		drainUntil(t, a, func() bool { return len(session.children) == 2 }, "the session's targets to reload")
-		if got := labelsOfNodes(session.children); !slices.Equal(got, []string{"package0.event_file", "package0.ring_buffer"}) {
+		drainUntil(t, a, func() bool { return len(session.Children) == 2 }, "the session's targets to reload")
+		if got := labelsOfNodes(session.Children); !slices.Equal(got, []string{"package0.event_file", "package0.ring_buffer"}) {
 			t.Errorf("session's children after the reload = %v", got)
 		}
 		if got := a.explorer.Selected(); got != session {
@@ -452,7 +452,7 @@ func TestSessionPropertiesApplyReloadsTheSessionsTargets(t *testing.T) {
 
 		runAndWait(t, d, d.runScript)
 		for _, tg := range targets {
-			if tg.retired {
+			if tg.Retired() {
 				t.Errorf("Script Changes reloaded the session node (target %q retired)", tg.label)
 			}
 		}

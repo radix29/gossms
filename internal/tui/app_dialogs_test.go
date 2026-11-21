@@ -9,18 +9,18 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/tuikit/dialogs"
 )
 
 // installDialog puts d in a's slot for its type, replacing whatever dialogOf
-// built, for a test that needs a fresh dialog or one it built itself. It does
-// not register d, as assigning the old App field did not: a test that routes
-// input through a.modals registers it itself.
+// built, for a test that needs a fresh dialog or one it built itself
+// (dialogs.Replace). It does not register d, as assigning the old App field did
+// not: a test that routes input through a.modals registers it itself.
+// Never reset a.modals (a.modals = dialogs.Stack{}) after installing: the
+// Stack holds the slots too, so the next accessor quietly builds a fresh,
+// unconfigured dialog in place of the installed one.
 func installDialog[T Dialog](a *App, d T) T {
-	if a.dialogSlots == nil {
-		a.dialogSlots = make(map[reflect.Type]Dialog)
-	}
-	a.dialogSlots[reflect.TypeFor[T]()] = d
-	return d
+	return dialogs.Replace(&a.modals, d)
 }
 
 // withScreen gives d the screen registering it would (ModalDialog.SetScreen),
