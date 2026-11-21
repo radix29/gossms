@@ -105,10 +105,13 @@ func readSQLSource(inv *spec.Invocation) (string, error) {
 	text, enc, lossy := textenc.Decode(data)
 	if lossy {
 		as := "UTF-8"
-		if enc == textenc.UTF16LE || enc == textenc.UTF16BE {
+		switch enc {
+		case textenc.UTF16LE, textenc.UTF16BE:
 			as = "UTF-16 (its byte-order mark says so)"
+		case textenc.UTF32LE, textenc.UTF32BE:
+			as = "UTF-32 (its byte-order mark says so)"
 		}
-		return "", usageError(what+": the T-SQL is not valid "+as, "Save the file as UTF-8, or UTF-16 with a byte-order mark.")
+		return "", usageError(what+": the T-SQL is not valid "+as, "Save the file as UTF-8, or UTF-16/UTF-32 with a byte-order mark.")
 	}
 	return text, nil
 }

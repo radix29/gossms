@@ -320,3 +320,19 @@ func TestLoadReadOnlyWritesNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestEmptyKeyNamesNoConnection(t *testing.T) {
+	cfg := &Config{Connections: []Connection{{Server: "a", User: "sa"}, {Server: "b", User: "sa"}}}
+	if _, err := cfg.ProfileByName(""); !errors.Is(err, ErrProfileNotFound) {
+		t.Errorf("ProfileByName(\"\") = %v, want ErrProfileNotFound", err)
+	}
+	if err := cfg.SetProfile("", "x", AllowRead); !errors.Is(err, ErrProfileNotFound) {
+		t.Errorf("SetProfile(\"\") = %v, want ErrProfileNotFound", err)
+	}
+	if cfg.RemoveConnection("") {
+		t.Error("RemoveConnection(\"\") reported a removal")
+	}
+	if len(cfg.Connections) != 2 || len(cfg.ops) != 0 {
+		t.Errorf("list changed: %d connections, %d ops", len(cfg.Connections), len(cfg.ops))
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/radix29/gossms/internal/export"
+	"github.com/radix29/gossms/internal/textutil"
 )
 
 // recordWriter is csv or tsv over export.RecordWriter, the writer the TUI's
@@ -14,6 +15,7 @@ import (
 type recordWriter struct {
 	rw        *export.RecordWriter
 	noHeaders bool
+	visible   bool // spell out control characters (stdout on a terminal)
 	cells     []string
 	isNull    []bool
 }
@@ -32,7 +34,7 @@ func (w *recordWriter) beginSet(cols []Column) error {
 	}
 	names := make([]string, len(cols))
 	for i, c := range cols {
-		names[i] = c.Name
+		names[i] = w.show(c.Name)
 	}
 	return w.rw.BeginSet(names)
 }
@@ -49,9 +51,16 @@ func (w *recordWriter) row(row []*string, ncols int) error {
 			w.cells, w.isNull = append(w.cells, ""), append(w.isNull, true)
 			continue
 		}
-		w.cells, w.isNull = append(w.cells, *c), append(w.isNull, false)
+		w.cells, w.isNull = append(w.cells, w.show(*c)), append(w.isNull, false)
 	}
 	return w.rw.WriteRecord(w.cells, w.isNull)
+}
+
+func (w *recordWriter) show(s string) string {
+	if w.visible {
+		return textutil.Visible(s)
+	}
+	return s
 }
 
 func (w *recordWriter) flush() error { return w.rw.Flush() }
@@ -59,6 +68,7 @@ func (w *recordWriter) flush() error { return w.rw.Flush() }
 // renderRecords writes r's sets as csv or tsv.
 func renderRecords(w io.Writer, r *Result, o Options) error {
 	rw := newRecordWriter(w, o.Format, o.NoHeaders)
+	rw.visible = o.Terminal
 	for _, s := range r.Sets {
 		if s.InFile {
 			continue

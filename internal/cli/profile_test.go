@@ -106,6 +106,16 @@ func TestProfileShow(t *testing.T) {
 	}
 }
 
+func TestProfileShowEmptyNameIsNotFound(t *testing.T) {
+	r := runProfile(t, profileDeps(t, nil), "profile", "show", "", "-o", "json")
+	if r.exit != 8 {
+		t.Fatalf("exit %d, want 8\n%s", r.exit, r.stdout)
+	}
+	if e := firstError(t, envelope(t, r.stdout)); e["code"] != "NOT_FOUND" {
+		t.Errorf("error %v", e)
+	}
+}
+
 func TestProfileNotFound(t *testing.T) {
 	d := profileDeps(t, nil)
 	for _, argv := range [][]string{

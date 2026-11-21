@@ -275,6 +275,9 @@ type runOptions struct {
 	// stopOnError and noSinkNotices are WithStopOnError and WithoutSinkNotices.
 	stopOnError   bool
 	noSinkNotices bool
+
+	// eachBatchOnce is WithEachBatchOnce.
+	eachBatchOnce bool
 }
 
 // run is one Execute call in progress: the Result it fills, its options, and
@@ -332,6 +335,15 @@ func WithStopOnError() Option {
 // unaffected.
 func WithoutSinkNotices() Option {
 	return func(o *runOptions) { o.noSinkNotices = true }
+}
+
+// WithEachBatchOnce sends every non-empty batch exactly once, whatever its GO n
+// count (GO 0 included, so a batch that would run zero times still has its
+// syntax checked), and leaves out the "completed N times" notice. For a caller
+// that checks batches rather than runs them: repeating a batch proves nothing
+// its first run did not. Result.Batches then counts batches, not repetitions.
+func WithEachBatchOnce() Option {
+	return func(o *runOptions) { o.eachBatchOnce = true }
 }
 
 // Execute runs script against db, SSMS-style, split on GO, on a pooled
@@ -447,7 +459,11 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 	}
 
 	for _, b := range sqltext.SplitBatches(script) {
-		for range b.Count {
+		reps := b.Count
+		if r.opts.eachBatchOnce {
+			reps = 1
+		}
+		for range reps {
 			if ctx.Err() != nil || r.cut || res.StoppedOnError {
 				return true, nil
 			}
@@ -464,7 +480,7 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 				}
 			}
 		}
-		if b.Count > 1 {
+		if reps > 1 {
 			res.addNotice(fmt.Sprintf("Batch execution completed %d times.", b.Count))
 		}
 	}

@@ -47,6 +47,9 @@ var statementLeaders = func() map[string]bool {
 		"GRANT": true, "DENY": true, "REVOKE": true, "BACKUP": true, "RESTORE": true, "DBCC": true,
 		"KILL": true, "SHUTDOWN": true, "RECONFIGURE": true, "CHECKPOINT": true, "WAITFOR": true,
 		"OPEN": true, "CLOSE": true, "FETCH": true, "DEALLOCATE": true, "BULK": true,
+		"THROW": true, "RETURN": true, "GOTO": true, "BREAK": true, "CONTINUE": true,
+		"REVERT": true, "SETUSER": true, "READTEXT": true, "WRITETEXT": true, "UPDATETEXT": true,
+		"ENABLE": true, "DISABLE": true, "ADD": true, "COPY": true,
 	}
 	for w := range dmlLeaders {
 		m[w] = true
@@ -84,6 +87,36 @@ var notBefore = map[string]map[string]bool{
 	"UPDATE": {"(": true, "CASCADE": true, "NO": true, "SET": true},
 	"DELETE": {"CASCADE": true, "NO": true, "SET": true},
 	"MERGE":  {"RANGE": true, "JOIN": true},
+}
+
+// onlyBefore names, per leader, the only next tokens that make it a statement:
+// DISABLE/ENABLE TRIGGER, ADD SIGNATURE, COPY INTO. Elsewhere they are clauses
+// (ALTER TABLE ... ADD c int) or plain names. ENABLE, DISABLE and ADD are never
+// a statement inside an ALTER, whose own clauses they are.
+var onlyBefore = map[string]map[string]bool{
+	"ENABLE":  {"TRIGGER": true},
+	"DISABLE": {"TRIGGER": true},
+	"ADD":     {"SIGNATURE": true},
+	"COPY":    {"INTO": true},
+}
+
+// flowVerbs are the leaders that are usually an IF/WHILE/ELSE body, which
+// StatementAt does not cut from its condition.
+var flowVerbs = map[string]bool{"THROW": true, "RETURN": true, "GOTO": true, "BREAK": true, "CONTINUE": true}
+
+// unreserved are leaders T-SQL does not reserve, so they can be column names:
+// they start a statement unless the previous token expects an operand
+// (WHERE throw = 1, ORDER BY revert, SET revert = 1). ON is not an operand
+// token: SET NOCOUNT ON ends a statement. '*' is left out for the same reason
+// (SELECT * ends one).
+var unreserved = map[string]bool{"THROW": true, "REVERT": true}
+
+// operandBefore are the tokens after which a name or value is expected.
+var operandBefore = map[string]bool{
+	",": true, "=": true, ".": true, "(": true, "<": true, ">": true, "+": true, "-": true,
+	"/": true, "%": true, "!": true, "|": true, "&": true, "^": true,
+	"SELECT": true, "WHERE": true, "AND": true, "OR": true, "NOT": true, "BY": true, "SET": true,
+	"AS": true, "HAVING": true, "IS": true, "IN": true, "LIKE": true, "BETWEEN": true,
 }
 
 // objectTypes are the words after ALTER or DROP that make it a statement of
@@ -131,11 +164,12 @@ type stmtToken struct {
 type pendKind int
 
 const (
-	pendNone      pendKind = iota
-	pendWith               // WITH: the next token decides hint, option or CTE
-	pendWithName           // WITH name: AS or ( next makes it a CTE
-	pendSubClause          // ALTER/DROP inside an ALTER: objectTypes next makes it a statement
-	pendNotBefore          // UPDATE/DELETE/MERGE: notBefore next makes it no statement
+	pendNone       pendKind = iota
+	pendWith                // WITH: the next token decides hint, option or CTE
+	pendWithName            // WITH name: AS or ( next makes it a CTE
+	pendSubClause           // ALTER/DROP inside an ALTER: objectTypes next makes it a statement
+	pendNotBefore           // UPDATE/DELETE/MERGE: notBefore next makes it no statement
+	pendOnlyBefore          // ENABLE/DISABLE/ADD/COPY: only onlyBefore next makes it a statement
 )
 
 // stmtSplitter decides, one token at a time, where statements begin within a
@@ -147,6 +181,7 @@ type stmtSplitter struct {
 	depth          int
 	prev, prevPrev string // the last two tokens' text
 	leader         string // the keyword that began the current statement
+	setSeen        bool   // an UPDATE leader already had its SET: the next top-level SET is a statement
 
 	pendingMainSelect bool // INSERT waiting for its SELECT or EXEC
 	pendingFromSelect bool // FROM-first source waiting for its optional SELECT
@@ -178,6 +213,7 @@ func (s *stmtSplitter) shift(t stmtToken) {
 func (s *stmtSplitter) start(t stmtToken) {
 	s.cut(t.row, t.col)
 	s.leader = t.text
+	s.setSeen = false
 	s.pendingMainSelect = t.text == "INSERT"
 	s.pendingFromSelect = false
 	s.pendingCTEMain = false
@@ -215,6 +251,10 @@ func (s *stmtSplitter) resolve(t stmtToken) bool {
 		}
 	case pendNotBefore:
 		if !notBefore[tok.text][t.text] {
+			s.start(tok)
+		}
+	case pendOnlyBefore:
+		if onlyBefore[tok.text][t.text] {
 			s.start(tok)
 		}
 	}
@@ -299,7 +339,7 @@ func (s *stmtSplitter) advance(t stmtToken) {
 		case w == "WITH":
 			s.pend, s.pendTok, s.pendCont = pendWith, t, true
 		case (s.prev == "AS" || s.prev == "THEN" || s.prev == "FOR") && dmlLeaders[w]:
-			s.leader, s.pendingMainSelect = w, w == "INSERT"
+			s.leader, s.pendingMainSelect, s.setSeen = w, w == "INSERT", false
 			s.querySource = w == "SELECT" || w == "INSERT"
 		}
 		return
@@ -315,7 +355,9 @@ func (s *stmtSplitter) advance(t stmtToken) {
 		s.pendingCTEMain = false
 		s.leader, s.pendingMainSelect = w, w == "INSERT"
 		s.querySource = w == "INSERT" || w == "SELECT"
-	case w == "SET" && (s.leader == "UPDATE" || s.leader == "ALTER" || s.leader == "MERGE" ||
+	case w == "SET" && s.leader == "UPDATE" && !s.setSeen:
+		s.setSeen = true
+	case w == "SET" && (s.leader == "ALTER" || s.leader == "MERGE" ||
 		s.prev == "DELETE" || s.prev == "UPDATE"):
 	case w == "WITH":
 		s.pend, s.pendTok, s.pendCont = pendWith, t, false
@@ -323,6 +365,14 @@ func (s *stmtSplitter) advance(t stmtToken) {
 		s.pend, s.pendTok = pendSubClause, t
 	case notBefore[w] != nil:
 		s.pend, s.pendTok = pendNotBefore, t
+	case flowVerbs[w] && (s.leader == "IF" || s.leader == "WHILE" || s.prev == "ELSE"):
+		// IF x RETURN: an IF's body is not cut (see StatementAt's caveats).
+	case unreserved[w] && operandBefore[s.prev]:
+		// WHERE throw = 1: a column name, not a statement.
+	case onlyBefore[w] != nil:
+		if s.leader != "ALTER" || w == "COPY" {
+			s.pend, s.pendTok = pendOnlyBefore, t
+		}
 	default:
 		s.start(t)
 	}

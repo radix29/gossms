@@ -239,3 +239,113 @@ func TestRenderUnknownFormat(t *testing.T) {
 		t.Error("parquet rendered; want an error for a format with no renderer")
 	}
 }
+
+// TestControlCharactersNeverReachTheTerminal pins Bug 1 of round 8: ESC, BEL,
+// DEL, C1 and bidi controls in a column name, cell, message, warning or error
+// are spelled out in text and markdown, and in csv/tsv when stdout is a
+// terminal; a pipe or file keeps the bytes.
+func TestControlCharactersNeverReachTheTerminal(t *testing.T) {
+	const evil = "a\x1b]52;c;ZQ==\a\x7f\u0085\u202e"
+	cell := evil
+	r := &Result{
+		Sets:     []Set{{Columns: []Column{{Name: evil}}, Rows: [][]*string{{&cell}}}},
+		Messages: []Message{{Text: evil}},
+		Warnings: []string{evil},
+		Errors:   []*Error{NewError(CodeGeneralError, evil, evil)},
+	}
+	bad := func(s string) bool {
+		for _, c := range s {
+			if (c < 0x20 && c != '\n') || (c >= 0x7f && c <= 0x9f) || c == 0x202e {
+				return true
+			}
+		}
+		return false
+	}
+	for _, f := range []Format{FormatText, FormatMarkdown, FormatCSV, FormatTSV} {
+		o := DefaultOptions(f)
+		o.Terminal = true
+		var b bytes.Buffer
+		if err := Render(&b, r, o); err != nil {
+			t.Fatal(err)
+		}
+		if f == FormatCSV || f == FormatTSV {
+			// rows only: strip the quoting newline question by checking bytes
+			if strings.ContainsAny(b.String(), "\x1b\a\x7f\u202e") {
+				t.Errorf("%s on a terminal holds a control: %q", f, b.String())
+			}
+			o.Terminal = false
+			b.Reset()
+			Render(&b, r, o)
+			if !strings.Contains(b.String(), "\x1b") {
+				t.Errorf("%s off a terminal lost its bytes: %q", f, b.String())
+			}
+			continue
+		}
+		if bad(b.String()) {
+			t.Errorf("%s holds a control: %q", f, b.String())
+		}
+		if !strings.Contains(b.String(), `\u001b]52`) {
+			t.Errorf("%s lacks the spelled escape: %q", f, b.String())
+		}
+	}
+}
+
+// TestJSONSpellsHiddenCharacters pins B2: DEL, C1 controls and bidi overrides
+// in a key, cell or message leave json and jsonl as \uXXXX, whatever the
+// destination, and decode to the original.
+func TestJSONSpellsHiddenCharacters(t *testing.T) {
+	for _, evil := range []string{"a\x1b\x7f\u0085\u009b\u202e\u2066b", "plain \u00e9"} {
+		cell := evil
+		r := &Result{
+			Sets:     []Set{{Columns: []Column{{Name: evil}}, Rows: [][]*string{{&cell}}}},
+			Messages: []Message{{Text: evil}},
+			Fields:   []Field{{Key: evil, Value: evil}},
+		}
+		for _, f := range []Format{FormatJSON, FormatJSONL} {
+			var b bytes.Buffer
+			if err := Render(&b, r, DefaultOptions(f)); err != nil {
+				t.Fatal(err)
+			}
+			for _, c := range b.String() {
+				if c == 0x7f || (c >= 0x80 && c <= 0x9f) || (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069) {
+					t.Errorf("%s holds raw %U: %q", f, c, b.String())
+				}
+			}
+			dec := json.NewDecoder(&b)
+			found := false
+			for dec.More() {
+				var v any
+				if err := dec.Decode(&v); err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(fmtAny(v), evil) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("%s: %q does not round-trip", f, evil)
+			}
+		}
+	}
+}
+
+// fmtAny is every string in a decoded JSON value (keys too), NUL-separated.
+func fmtAny(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x + "\x00"
+	case []any:
+		var o string
+		for _, e := range x {
+			o += fmtAny(e)
+		}
+		return o
+	case map[string]any:
+		var o string
+		for k, e := range x {
+			o += k + "\x00" + fmtAny(e)
+		}
+		return o
+	}
+	return ""
+}

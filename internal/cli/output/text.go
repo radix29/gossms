@@ -47,7 +47,7 @@ func renderText(w io.Writer, r *Result, o Options, tables bool) error {
 		}
 		return textSet(n, s, o)
 	}, func(f Field) []string {
-		lines := verbatimLines(f.Value)
+		lines := verbatimLines(textutil.Visible(f.Value))
 		return append([]string{verbatimMarker(f, len(lines))}, lines...)
 	}))
 }

@@ -784,7 +784,7 @@ func (d Deps) queryParse(ctx context.Context, inv *spec.Invocation) (*output.Res
 		return res, nil
 	}
 	// Every batch, so every syntax error is reported in one call.
-	qr := c.sess.ExecuteToSink(rctx, script, inv.Sink, query.WithoutSinkNotices())
+	qr := c.sess.ExecuteToSink(rctx, script, inv.Sink, query.WithoutSinkNotices(), query.WithEachBatchOnce())
 	// The session is closed next anyway; switching back is for tidiness, and
 	// a failure changes nothing the caller sees.
 	off, offCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

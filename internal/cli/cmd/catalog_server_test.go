@@ -101,7 +101,7 @@ func (s *catalogServer) rules() {
 			}
 		}
 		return rows
-	}, "OBJECT_SCHEMA_NAME(o.parent_object_id)", "FROM   sys.objects o")
+	}, "OBJECT_SCHEMA_NAME(o.parent_object_id)", "FROM   sys.all_objects o")
 	s.on(func(q gosmotest.Query) [][]any {
 		var rows [][]any
 		for _, o := range s.objects {
@@ -124,7 +124,7 @@ func (s *catalogServer) rules() {
 			return nil
 		}
 		return [][]any{clitest.ViewRow(&gosmo.View{ObjectID: o.ObjectID, Schema: o.Schema, Name: o.Name, IsSchemaBound: true}, catalogAt)}
-	}, "FROM   sys.views o", "AND  o.name")
+	}, "FROM   sys.all_views o", "AND  o.name")
 	s.on(func(q gosmotest.Query) [][]any {
 		id, _ := q.Arg(0).(int64)
 		var rows [][]any
@@ -132,6 +132,6 @@ func (s *catalogServer) rules() {
 			rows = append(rows, clitest.ColumnRow(c))
 		}
 		return rows
-	}, "FROM   sys.columns c", "WHERE  c.object_id = @p1")
+	}, "FROM   sys.all_columns c", "WHERE  c.object_id = @p1")
 	s.on(func(gosmotest.Query) [][]any { return [][]any{{1252}} }, "COLLATIONPROPERTY(@p1, 'CodePage')")
 }

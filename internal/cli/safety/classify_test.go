@@ -300,11 +300,11 @@ func TestClassifyMergedStatementsAreFloored(t *testing.T) {
 		script, word string
 		want         spec.Class
 	}{
-		{"SELECT 1\nDISABLE TRIGGER tr ON t", "DISABLE", ddl},
-		{"SELECT 1\nENABLE TRIGGER tr ON t", "ENABLE", ddl},
-		{"PRINT 'x'\nWRITETEXT t.c @p 'x'", "WRITETEXT", write},
-		{"SELECT 1\nUPDATETEXT t.c @p 0 0 'x'", "UPDATETEXT", write},
-		{"SET NOCOUNT ON\nDISABLE TRIGGER tr ON ALL SERVER", "DISABLE", ddl},
+		{"SELECT 1\nDISABLE TRIGGER tr ON t", "", ddl},
+		{"SELECT 1\nENABLE TRIGGER tr ON t", "", ddl},
+		{"PRINT 'x'\nWRITETEXT t.c @p 'x'", "", write},
+		{"SELECT 1\nUPDATETEXT t.c @p 0 0 'x'", "", write},
+		{"SET NOCOUNT ON\nDISABLE TRIGGER tr ON ALL SERVER", "", ddl},
 		{"PRINT 1 THROW 50000, 'x', 1", "", read},
 		{"IF UPDATE(a) PRINT 1", "", read},
 		// INTO in a subquery is no SELECT … INTO, but still floored.
@@ -584,7 +584,6 @@ func TestClassifyReasons(t *testing.T) {
 		{"DBCC CHECKDB", "DBCC CHECKDB is not on the read allow-list"},
 		{"DROP LOGIN l", "DROP LOGIN is administration"},
 		{"EXEC (@x)", "dynamic SQL is not classified"},
-		{"SELECT 1\nDISABLE TRIGGER t ON x", "keyword DISABLE (line 2)"},
 		{"INSERT #t EXEC sp_configure", "procedure sp_configure is administration (line 1)"},
 		{"EXEC evil.sp_who", "procedure evil.sp_who is not on the read allow-list"},
 		{"EXEC dbo.xp_msver", "procedure dbo.xp_msver is not on the read allow-list: xp_msver is read only unqualified, as sys.xp_msver or as master.dbo.xp_msver"},

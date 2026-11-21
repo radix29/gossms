@@ -140,3 +140,48 @@ func TestStatementCutter(t *testing.T) {
 		t.Errorf("cuts at %q, want %q", got, want)
 	}
 }
+
+// A statement led by a verb outside the original allow-list, or a second SET
+// after an UPDATE's own, starts its own statement; the clause forms of the
+// same words still continue the statement above.
+func TestStatementAtLeaderVerbs(t *testing.T) {
+	prevs := []string{"select 1", "update t set a = 1", "delete t", "declare @x int", "exec p", "set nocount on"}
+	nexts := []string{
+		"throw 50000, 'x', 1", "return", "goto lbl", "break", "continue", "revert", "setuser",
+		"disable trigger tr on t", "enable trigger tr on t", "readtext t.c @p 0 1", "writetext t.c @p 'x'",
+		"updatetext t.c @p 0 0 'x'", "add signature to p by certificate c", "copy into t from 'u'",
+		"set nocount off",
+	}
+	for _, p := range prevs {
+		for _, n := range nexts {
+			lines := [][]rune{[]rune(p), []rune(n)}
+			r, _, _, _, ok := StatementAt(lines, 1, 0)
+			if !ok || r != 1 {
+				t.Errorf("%q then %q: statement starts at row %d, want 1", p, n, r)
+			}
+		}
+	}
+	for _, src := range []string{
+		"select * from t where throw = 1",
+		"select a from t order by revert",
+		"update t set revert = 1 where id = 2",
+	} {
+		lines := [][]rune{[]rune(src)}
+		if r, c, _, _, ok := StatementAt(lines, 0, len(lines[0])); !ok || r != 0 || c != 0 {
+			t.Errorf("%q: statement starts at %d:%d, want 0:0", src, r, c)
+		}
+	}
+	for _, src := range []string{
+		"alter table t\ndisable trigger x",
+		"alter table t\nenable trigger x",
+		"alter table t\nadd c int",
+		"alter database d\nset recovery simple",
+		"merge t using s on 1 = 1\nwhen matched then update set a = 1",
+		"create trigger tr on t\nafter update as select 1",
+	} {
+		lines := [][]rune{[]rune(strings.Split(src, "\n")[0]), []rune(strings.Split(src, "\n")[1])}
+		if r, _, _, _, _ := StatementAt(lines, 1, 0); r != 0 {
+			t.Errorf("%q: second line starts its own statement (row %d), want it to continue", src, r)
+		}
+	}
+}

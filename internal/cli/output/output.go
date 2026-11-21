@@ -69,6 +69,12 @@ type Options struct {
 	// NoMessages leaves out PRINT and informational messages.
 	NoMessages bool
 
+	// Terminal is true when stdout is a terminal. csv and tsv keep every byte
+	// of a value except then, when control characters are spelled out
+	// (textutil.Visible) so a cell cannot drive the terminal. A file never
+	// is: --out-file keeps the exact bytes.
+	Terminal bool
+
 	// OutFile, when set, receives every row in the format its extension names;
 	// stdout gets the summary. Force replaces an existing file.
 	OutFile string
@@ -173,14 +179,23 @@ type Message struct {
 	Text string
 }
 
+// withoutMessages returns r without its Messages when o.NoMessages is set (a
+// copy, r is not modified). Errors and warnings are different fields and stay.
+// Render and RenderSummary both go through it, so they cannot drift apart.
+func (o Options) withoutMessages(r *Result) *Result {
+	if !o.NoMessages || len(r.Messages) == 0 {
+		return r
+	}
+	c := *r
+	c.Messages = nil
+	return &c
+}
+
 // Render writes r to w in o's format. Text's and markdown's quiet drops the
 // header (a JSON envelope is always whole, since a parser relies on its
 // shape); csv and tsv write rows only (RenderSummary has the rest).
 func Render(w io.Writer, r *Result, o Options) error {
-	if o.NoMessages && len(r.Messages) > 0 {
-		c := *r
-		c.Messages, r = nil, &c
-	}
+	r = o.withoutMessages(r)
 	switch o.Format {
 	case FormatText, FormatJSON, FormatMarkdown, FormatCSV, FormatTSV:
 		return renderCapped(w, r, o)
@@ -193,6 +208,7 @@ func Render(w io.Writer, r *Result, o Options) error {
 // RenderSummary writes csv's and tsv's summary — the text envelope, its
 // result sets as their marker lines and truncation notes only — for stderr.
 func RenderSummary(w io.Writer, r *Result, o Options) error {
+	r = o.withoutMessages(r)
 	o.Format = FormatText
 	return renderText(w, r, o, false)
 }

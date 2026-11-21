@@ -165,7 +165,7 @@ func (s *objectServer) connectRules() {
 			}
 		}
 		return rows
-	}, "OBJECT_SCHEMA_NAME(o.parent_object_id)", "FROM   sys.objects o")
+	}, "OBJECT_SCHEMA_NAME(o.parent_object_id)", "FROM   sys.all_objects o")
 	s.on(func(q gosmotest.Query) [][]any {
 		var rows [][]any
 		for _, o := range s.objects {
@@ -309,7 +309,7 @@ func (s *objectServer) describeRules() {
 			return nil
 		}
 		return [][]any{clitest.ViewRow(&gosmo.View{ObjectID: o.ObjectID, Schema: o.Schema, Name: o.Name, IsSchemaBound: true}, objectsAt)}
-	}, "FROM   sys.views o", "AND  o.name")
+	}, "FROM   sys.all_views o", "AND  o.name")
 	s.on(func(gosmotest.Query) [][]any { return [][]any{{int64(1234)}} }, "SELECT SUM(p.rows)")
 	s.on(func(q gosmotest.Query) [][]any {
 		cols := s.columns(q.Arg(0) == int64(vCustomerID))
@@ -321,7 +321,7 @@ func (s *objectServer) describeRules() {
 			rows = append(rows, clitest.ColumnRow(c))
 		}
 		return rows
-	}, "FROM   sys.columns c", "WHERE  c.object_id = @p1")
+	}, "FROM   sys.all_columns c", "WHERE  c.object_id = @p1")
 	s.on(func(q gosmotest.Query) [][]any {
 		var rows [][]any
 		for _, ix := range s.indexes(q.Arg(0) == int64(vCustomerID)) {

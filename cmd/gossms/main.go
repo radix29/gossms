@@ -32,7 +32,7 @@ func main() {
 		return
 	case modeCLI:
 		os.Exit(cli.Main(context.Background(), os.Args[1:],
-			cli.Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv, ReadFile: os.ReadFile,
+			cli.Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, StdoutIsTerminal: isTerminal(int(os.Stdout.Fd())), Getenv: os.Getenv, ReadFile: os.ReadFile,
 				AuditPath: audit.DefaultPath()}))
 	case modeNoTerminal:
 		fmt.Fprintln(os.Stderr, noTerminalMessage)

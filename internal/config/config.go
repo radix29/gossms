@@ -846,7 +846,7 @@ func (c *Config) RemoveConnection(name string) bool {
 func removeConnection(list []Connection, name string) ([]Connection, bool) {
 	n := len(list)
 	list = slices.DeleteFunc(list, func(existing Connection) bool {
-		return existing.Name == name || existing.GeneratedName() == name
+		return keyMatches(existing, name)
 	})
 	return list, len(list) != n
 }

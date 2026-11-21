@@ -103,3 +103,49 @@ func TestParameterize(t *testing.T) {
 		}
 	}
 }
+
+// An empty value would convert to 0 or 1900-01-01; only a string type may be
+// empty.
+func TestParseParamEmptyValue(t *testing.T) {
+	for _, typ := range []string{"int", "date", "decimal(5,1)", "bit", "uniqueidentifier", "datetime2(3)"} {
+		if _, err := parseParam("p=:" + typ); err == nil {
+			t.Errorf("empty %s accepted", typ)
+		}
+		if _, err := parseParam("p= :" + typ); err == nil {
+			t.Errorf("blank %s accepted", typ)
+		}
+	}
+	for _, typ := range []string{"nvarchar(10)", "varchar(max)", "xml"} {
+		if _, err := parseParam("p=:" + typ); err != nil {
+			t.Errorf("empty %s: %v", typ, err)
+		}
+	}
+}
+
+// sp_executesql truncates silently, so a value over (n) is refused.
+func TestParseParamTooLong(t *testing.T) {
+	for _, tt := range []struct {
+		raw string
+		ok  bool
+	}{
+		{"p=abcde:nvarchar(5)", true},
+		{"p=abcdef:nvarchar(5)", false},
+		{"p=abcde:varchar(5)", true},
+		{"p=abcdef:varchar(5)", false},
+		{"p=😀:nvarchar(1)", false}, // surrogate pair: 2 UTF-16 units
+		{"p=😀:nvarchar(2)", true},
+		{"p=😀:varchar(1)", true}, // one rune
+		{"p=ab:nchar(1)", false},
+		{"p=" + strings.Repeat("x", 128) + ":sysname", true},
+		{"p=" + strings.Repeat("x", 129) + ":sysname", false},
+		{"p=" + strings.Repeat("x", 9000) + ":nvarchar(max)", true},
+		{"b=0xAABB:varbinary(2)", true},
+		{"b=0xAABBCC:varbinary(2)", false},
+		{"b=0xAABBCC:varbinary(max)", true},
+	} {
+		_, err := parseParam(tt.raw)
+		if (err == nil) != tt.ok {
+			t.Errorf("%.40q: err = %v, want ok=%v", tt.raw, err, tt.ok)
+		}
+	}
+}

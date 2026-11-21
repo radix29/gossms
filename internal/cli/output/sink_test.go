@@ -441,6 +441,27 @@ func TestRenderSummary(t *testing.T) {
 	}
 }
 
+// --no-messages applies to the stderr summary of csv and tsv too; the caller's
+// result is untouched.
+func TestRenderSummaryNoMessages(t *testing.T) {
+	for _, f := range []Format{FormatCSV, FormatTSV} {
+		r := *goldenCases["sets"]
+		n := len(r.Messages)
+		o := DefaultOptions(f)
+		o.NoMessages = true
+		var out bytes.Buffer
+		if err := RenderSummary(&out, &r, o); err != nil {
+			t.Fatal(err)
+		}
+		if s := out.String(); strings.Contains(s, "=== MESSAGES ===") || !strings.Contains(s, "=== RESULT 1") {
+			t.Errorf("%s: --no-messages summary wrong:\n%s", f, s)
+		}
+		if len(r.Messages) != n || n == 0 {
+			t.Errorf("%s: caller's messages changed or fixture has none (%d -> %d)", f, n, len(r.Messages))
+		}
+	}
+}
+
 // D7: --out-file takes every row, unclipped, in its extension's format; a
 // failed run leaves the destination as it was; an existing file needs --force.
 func TestOutFile(t *testing.T) {

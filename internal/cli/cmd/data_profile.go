@@ -62,9 +62,18 @@ type profileAgg struct {
 // profileAggFor is the aggregates a column of system type base gets. A
 // type not named — xml, text, ntext, image, geography, geometry, vector, a
 // type newer than this list — gets none: each is refused by COUNT(DISTINCT)
-// or MIN, or (text, ntext) by LEN.
-func profileAggFor(base string) profileAgg {
-	switch strings.ToLower(base) {
+// or MIN, or (text, ntext) by LEN. lob is a (MAX) column (max_length -1):
+// distinct and MIN/MAX would read every value and ship the winners, so it
+// gets its DATALENGTH (LOB length is metadata) and nothing else.
+func profileAggFor(base string, lob bool) profileAgg {
+	lower := strings.ToLower(base)
+	if lob {
+		switch lower {
+		case "varchar", "nvarchar", "varbinary":
+			return profileAgg{length: "DATALENGTH"}
+		}
+	}
+	switch lower {
 	case "bit":
 		// MIN(bit) is Msg 8117; as tinyint it reads 0/1, as the grid shows a bit.
 		return profileAgg{distinct: true, minMax: "CAST(%s AS tinyint)"}
@@ -106,7 +115,7 @@ func profiledColumns(cols []*gosmo.Column, aliases map[string]string) []profiled
 		}
 		var agg profileAgg
 		if c.ColumnEncryptionKey == "" {
-			agg = profileAggFor(base)
+			agg = profileAggFor(base, c.MaxLength == -1)
 		}
 		out[i] = profiledColumn{col: c, agg: agg}
 	}
