@@ -82,6 +82,9 @@ func (st *selectionTree) screenLine() int {
 // Rename and Properties went to db2.
 func TestExplorerSelectionSurvivesLoadAboveIt(t *testing.T) {
 	st := newSelectionTree(t)
+	// A view shorter than the tree, so keeping Security's line after the load
+	// leaves no blank rows; in a taller one the tree rightly scrolls up to fill.
+	st.a.explorer.SetBounds(0, 0, 40, 6)
 	st.dbs.Expanded = true // expanded, still showing "Loading..."
 	st.a.explorer.rebuild()
 	st.selectNode(t, st.security)
