@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/sqltext"
@@ -95,13 +98,63 @@ func parseParam(raw string) (param, error) {
 		if !isHexLiteral(value) {
 			return bad("a binary value is written 0x followed by hex digits")
 		}
+		if n, ok := paramLength(m[2]); ok && (len(value)-2+1)/2 > n {
+			return bad(fmt.Sprintf("%d bytes do not fit %s", (len(value)-2+1)/2, typ))
+		}
 		p.value = value
 	} else {
+		// An empty string converts to 0, 1900-01-01 and the like, so a
+		// shell variable that expanded to nothing would run with a value
+		// nobody wrote. Only a string type can mean "empty".
+		if strings.TrimSpace(value) == "" && !paramStringTypes[m[1]] {
+			return param{}, usageError(fmt.Sprintf("--param %q: an empty value is not a%s %s", raw, article(m[1]), m[1]),
+				"Give the value, or use a string type for an empty string.")
+		}
+		// sp_executesql converts to the declared type without Msg 8152, so a
+		// longer string would be cut and match other rows. char/varchar count
+		// runes (code-page bytes depend on the collation: a conservative
+		// floor); nchar/nvarchar count UTF-16 code units.
+		limit, ok := paramLength(m[2])
+		if m[1] == "sysname" {
+			limit, ok = 128, true
+		}
+		if ok && paramLengthTypes[m[1]] {
+			n := utf8.RuneCountInString(value)
+			if m[1] == "nchar" || m[1] == "nvarchar" || m[1] == "sysname" {
+				n = len(utf16.Encode([]rune(value)))
+			}
+			if n > limit {
+				return param{}, usageError(fmt.Sprintf("--param %s: %d characters do not fit %s", p.name, n, typ),
+					"Shorten the value or declare a longer type.")
+			}
+		}
 		// The server converts the string to the declared type, as it would
 		// a client's string parameter; a bad value fails there (Msg 8114).
 		p.value = gosmo.QuoteLiteral(value)
 	}
 	return p, nil
+}
+
+// paramStringTypes may hold an empty value.
+var paramStringTypes = map[string]bool{
+	"char": true, "varchar": true, "nchar": true, "nvarchar": true,
+	"sysname": true, "xml": true, "sql_variant": true,
+}
+
+// paramLengthTypes have a length the value is checked against.
+var paramLengthTypes = map[string]bool{"char": true, "varchar": true, "nchar": true, "nvarchar": true, "sysname": true}
+
+// paramLength is the n of a type's "(n)"; false for no argument or (max).
+func paramLength(args string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(args))
+	return n, err == nil
+}
+
+func article(typ string) string {
+	if strings.ContainsRune("aeiou", rune(typ[0])) {
+		return "n"
+	}
+	return ""
 }
 
 func typeArgsValid(kind paramArgs, args string, given bool) bool {

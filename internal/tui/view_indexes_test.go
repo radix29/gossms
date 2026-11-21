@@ -17,7 +17,7 @@ const idxView = "vOrders"
 
 // idxViewResp answers Database.ViewByName for sales.vOrders, schema-bound.
 func idxViewResp() fakeResponse {
-	return fakeResponse{match: "FROM   sys.views o", db: idxDatabase, arg: idxView, cols: 6, rows: [][]driver.Value{
+	return fakeResponse{match: "FROM   sys.all_views o", db: idxDatabase, arg: idxView, cols: 6, rows: [][]driver.Value{
 		{idxTableObjectID, idxSchema, idxView, time.Time{}, time.Time{}, true},
 	}}
 }

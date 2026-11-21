@@ -25,7 +25,7 @@ func TestProfileAggForTypeFamilies(t *testing.T) {
 		{[]string{"xml", "text", "ntext", "image", "geography", "geometry", "vector", "json", ""}, profileAgg{}},
 	} {
 		for _, typ := range tc.types {
-			if got := profileAggFor(typ); got != tc.want {
+			if got := profileAggFor(typ, false); got != tc.want {
 				t.Errorf("%q: %+v, want %+v", typ, got, tc.want)
 			}
 		}
@@ -107,6 +107,42 @@ func TestNullPct(t *testing.T) {
 		got := nullPct(tc.nulls, tc.rows)
 		if (got == nil) != (tc.want == nil) || got != nil && *got != tc.want {
 			t.Errorf("%v/%v: %v, want %v", tc.nulls, tc.rows, got, tc.want)
+		}
+	}
+}
+
+// A (MAX) column gets its byte length and nothing that reads the value, and
+// --top-values (one GROUP BY per column with distinct) skips it.
+func TestProfileMaxColumnsAreLengthOnly(t *testing.T) {
+	lenOnly := profileAgg{length: "DATALENGTH"}
+	for _, typ := range []string{"varchar", "nvarchar", "varbinary"} {
+		if got := profileAggFor(typ, true); got != lenOnly {
+			t.Errorf("%s(max): %+v, want %+v", typ, got, lenOnly)
+		}
+	}
+	if got, want := profileAggFor("int", true), profileAggFor("int", false); got != want {
+		t.Errorf("int: %+v, want %+v", got, want)
+	}
+	cols := profiledColumns([]*gosmo.Column{
+		{Name: "v", DataType: "varchar", MaxLength: -1},
+		{Name: "n", DataType: "nvarchar", MaxLength: -1},
+		{Name: "b", DataType: "varbinary", MaxLength: -1},
+		{Name: "s", DataType: "varchar", MaxLength: 20},
+	}, nil)
+	sql := profileStatement(cols, "[dbo].[t]", fragments{})
+	for _, bad := range []string{"DISTINCT [v]", "MIN([v])", "MAX([n])", "DISTINCT [b]", "MIN([b])"} {
+		if strings.Contains(sql, bad) {
+			t.Errorf("statement reads a MAX value (%s):\n%s", bad, sql)
+		}
+	}
+	for _, want := range []string{"MIN(DATALENGTH([v]))", "MAX(DATALENGTH([b]))", "DISTINCT [s]"} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("statement lacks %s:\n%s", want, sql)
+		}
+	}
+	for i, pc := range cols {
+		if pc.agg.distinct != (i == 3) {
+			t.Errorf("%s: distinct = %v", pc.col.Name, pc.agg.distinct)
 		}
 	}
 }

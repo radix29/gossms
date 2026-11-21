@@ -322,7 +322,7 @@ func idxColumnResp(names ...string) fakeResponse {
 			"", "", "", "", false,
 		}
 	}
-	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 42, rows: rows}
+	return fakeResponse{match: "FROM   sys.all_columns c", db: idxDatabase, cols: 42, rows: rows}
 }
 
 // loadIncludedColumns loads the Included Columns page for an index keyed on

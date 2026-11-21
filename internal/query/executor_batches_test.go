@@ -154,3 +154,21 @@ func BenchmarkGoRepeat(b *testing.B) {
 		})
 	}
 }
+
+// WithEachBatchOnce sends each batch once whatever its GO count, GO 0 included
+// (its syntax is still checked), with no "completed N times" notice.
+func TestExecuteEachBatchOnce(t *testing.T) {
+	s, fc, _ := openFakeSession(t, make([][]fakeMsg, 4)...)
+	defer s.Close()
+	res := s.Execute(context.Background(), "select 1\nGO 3\nselect 2\nGO 0\nselect 3", WithEachBatchOnce())
+	want := []string{"select 1\n", "select 2\n", "select 3"}
+	if got := fc.conn.batchTexts; !slices.Equal(got, want) {
+		t.Errorf("sent %q, want %q", got, want)
+	}
+	if res.Batches != 3 {
+		t.Errorf("Batches = %d, want 3", res.Batches)
+	}
+	if hasMessage(res, "Batch execution completed 3 times.") {
+		t.Errorf("repeat notice present: %q", messageTexts(res))
+	}
+}
