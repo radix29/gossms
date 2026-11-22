@@ -98,11 +98,14 @@ func ddlColumnDefinitionChoices(tokens []sqlparse.Token, fabric bool) ([]string,
 }
 
 func ddlDataTypes(fabric bool) []string {
-	types := []string{"BIGINT", "BIT", "CHAR(", "DATE", "DATETIME2", "DECIMAL(", "FLOAT", "INT", "NUMERIC(",
-		"REAL", "SMALLINT", "TIME", "UNIQUEIDENTIFIER", "VARBINARY(", "VARCHAR("}
+	// JSON and VECTOR are listed for every edition and gated by version and
+	// edition in builtinDefinitions (builtinDataType).
+	types := []string{"BIGINT", "BIT", "CHAR(", "DATE", "DATETIME2", "DECIMAL(", "FLOAT", "INT", "JSON", "NUMERIC(",
+		"REAL", "SMALLINT", "TIME", "UNIQUEIDENTIFIER", "VARBINARY(", "VARCHAR(", "VECTOR("}
 	if !fabric {
-		types = append(types, "BINARY(", "DATETIME", "DATETIMEOFFSET", "IMAGE", "MONEY", "NCHAR(", "NTEXT",
-			"NVARCHAR(", "ROWVERSION", "SMALLDATETIME", "SMALLMONEY", "SQL_VARIANT", "TEXT", "TINYINT", "XML")
+		types = append(types, "BINARY(", "DATETIME", "DATETIMEOFFSET", "GEOGRAPHY", "GEOMETRY", "HIERARCHYID",
+			"IMAGE", "MONEY", "NCHAR(", "NTEXT", "NVARCHAR(", "ROWVERSION", "SMALLDATETIME", "SMALLMONEY",
+			"SQL_VARIANT", "SYSNAME", "TEXT", "TINYINT", "XML")
 	}
 	return types
 }

@@ -346,7 +346,9 @@ func caseWhenAhead(buf []rune, cursor int) (sqltext.Token, bool) {
 	return sqltext.Token{}, false
 }
 
-func expressionCompletionItems(buf []rune, cursor int, prefix string, scalar, condition, aggregate, analytic, fabric bool, existing []editor.CompletionItem) []editor.CompletionItem {
+// expressionCompletionItems offers the builtins cc's position takes. The
+// caller gates them (builtinCompletionSupported) with everything else.
+func expressionCompletionItems(buf []rune, cursor int, prefix string, cc completionContext, fabric bool, existing []editor.CompletionItem) []editor.CompletionItem {
 	var items []editor.CompletionItem
 	seen := make(map[string]bool, len(existing))
 	for _, item := range existing {
@@ -359,11 +361,11 @@ func expressionCompletionItems(buf []rune, cursor int, prefix string, scalar, co
 		seen[label] = true
 		items = append(items, completionCallItem(buf, cursor, label, detail, window))
 	}
-	if scalar {
+	if cc.scalar {
 		for _, function := range scalarCompletions {
 			add(strings.TrimSuffix(function, "("), "function", false)
 		}
-		if aggregate {
+		if cc.aggregate {
 			functions := aggregateCompletions
 			if fabric {
 				functions = fabricAggregateCompletions
@@ -372,18 +374,15 @@ func expressionCompletionItems(buf []rune, cursor int, prefix string, scalar, co
 				add(strings.TrimSuffix(function, "("), "function", false)
 			}
 		}
-		if analytic {
+		if cc.analytic {
 			for _, function := range windowCompletions {
 				add(strings.TrimSuffix(function, "("), "function", true)
 			}
 		}
 	}
-	if condition {
+	if cc.condition {
 		for _, function := range predicateCompletions {
-			label := strings.TrimSuffix(function, "(")
-			if !fabric || !completionBuiltins[label].noWarehouse {
-				add(label, "predicate", false)
-			}
+			add(strings.TrimSuffix(function, "("), "predicate", false)
 		}
 	}
 	return items
@@ -516,10 +515,16 @@ func scalarParenthesizedPosition(buf []rune, parent, current []sqlparse.Token, s
 	return !source || sourceFunction
 }
 
-func (p *QueryPanel) builtinCompletionSupported(label string) bool {
+// builtinCompletionSupported is the one version and edition gate for
+// completion items: a label with no row in builtinDefinitions passes. A
+// datatype position looks the label up among the data types instead.
+func (p *QueryPanel) builtinCompletionSupported(label string, datatype bool) bool {
 	builtin := completionBuiltins[label]
+	if datatype {
+		builtin = completionDataTypes[label]
+	}
 	fabric := p.conn.IsFabricDW()
-	if fabric && builtin.noWarehouse || !fabric && builtin.kind&builtinWarehouseOnly != 0 {
+	if fabric && builtin.kind&builtinNoWarehouse != 0 || !fabric && builtin.kind&builtinWarehouseOnly != 0 {
 		return false
 	}
 	if builtin.since == 0 || p.conn.Server == nil {

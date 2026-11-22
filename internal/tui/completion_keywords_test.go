@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
 )
 
 func TestSQLKeywordCompletionContexts(t *testing.T) {
@@ -1373,6 +1375,112 @@ func TestSQLCompletionAcceptsProcedureInLaterBatchOrExplicitCall(t *testing.T) {
 			qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 			if got := qp.editor.Text(); got != tt.want {
 				t.Fatalf("accepting procedure produced %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// IS [NOT] DISTINCT FROM is SQL Server 2022's, gated by its builtinDefinitions
+// rows rather than by a label filter in the provider.
+func TestSQLCompletionDistinctFromVersion(t *testing.T) {
+	for _, version := range []string{"15.0.2000.5", "16.0.1000.6"} {
+		for _, tt := range []struct{ sql, label string }{
+			{"SELECT * FROM dbo.Customers WHERE Id |", "IS DISTINCT FROM"},
+			{"SELECT * FROM dbo.Customers WHERE Id |", "IS NOT DISTINCT FROM"},
+			{"SELECT * FROM dbo.Customers WHERE Id IS |", "DISTINCT FROM"},
+			{"SELECT * FROM dbo.Customers WHERE Id IS |", "NOT DISTINCT FROM"},
+			{"SELECT * FROM dbo.Customers WHERE Id IS NOT |", "DISTINCT FROM"},
+		} {
+			t.Run(version+"/"+tt.sql+"/"+tt.label, func(t *testing.T) {
+				sc, _ := newGConnAtVersion(t, version)
+				qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+				qp.conn.Server = sc.Server
+				lines, row, col := linesAndCursor(t, tt.sql)
+				items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+				if got, want := containsLabel(items, tt.label), strings.HasPrefix(version, "16."); got != want {
+					t.Fatalf("%s present=%v, want %v in %v", tt.label, got, want, labels(items))
+				}
+				if !containsLabel(items, "NULL") && !containsLabel(items, "IS NULL") {
+					t.Fatalf("the ungated predicates are missing too: %v", labels(items))
+				}
+			})
+		}
+	}
+}
+
+// Data types offered in a column or parameter list: JSON and VECTOR from SQL
+// Server 2025 (and Azure SQL), never in a Fabric Warehouse, which also lacks
+// the spatial types, HIERARCHYID and SYSNAME.
+func TestSQLCompletionDataTypesByVersionAndEdition(t *testing.T) {
+	servers := []struct {
+		name           string
+		conn           func(t *testing.T) *db.ServerConn
+		modern, fabric bool
+	}{
+		{"2022", func(t *testing.T) *db.ServerConn { sc, _ := newGConnAtVersion(t, "16.0.1000.6"); return sc }, false, false},
+		{"2025", func(t *testing.T) *db.ServerConn { sc, _ := newGConnAtVersion(t, "17.0.1000.7"); return sc }, true, false},
+		{"azure", func(t *testing.T) *db.ServerConn { sc, _ := newGConnOnAzure(t, 5); return sc }, true, false},
+		{"fabric", fabricConn, false, true},
+	}
+	for _, server := range servers {
+		for _, sql := range []string{
+			"CREATE TABLE dbo.NewTable (Id |",
+			"CREATE PROCEDURE dbo.p @a |",
+			"CREATE FUNCTION dbo.f () RETURNS |",
+		} {
+			t.Run(server.name+"/"+sql, func(t *testing.T) {
+				qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+				qp.conn.Server = server.conn(t).Server
+				lines, row, col := linesAndCursor(t, sql)
+				items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+				if !containsLabel(items, "INT") {
+					t.Fatalf("not a type list: %v", labels(items))
+				}
+				for _, label := range []string{"JSON", "VECTOR"} {
+					if got := containsLabel(items, label); got != server.modern {
+						t.Errorf("%s present=%v, want %v in %v", label, got, server.modern, labels(items))
+					}
+				}
+				for _, label := range []string{"SYSNAME", "GEOGRAPHY", "GEOMETRY", "HIERARCHYID"} {
+					if got := containsLabel(items, label); got == server.fabric {
+						t.Errorf("%s present=%v, want %v in %v", label, got, !server.fabric, labels(items))
+					}
+				}
+			})
+		}
+	}
+}
+
+// A type completion must not gate the same word as a keyword: FOR JSON is
+// older than the JSON type and is offered in a Fabric Warehouse.
+func TestSQLCompletionForJSONIsNotGatedAsTheJSONType(t *testing.T) {
+	for _, fabric := range []bool{false, true} {
+		t.Run(fmt.Sprint(fabric), func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			if fabric {
+				qp.conn.Server = fabricConn(t).Server
+			} else {
+				sc, _ := newGConnAtVersion(t, "16.0.1000.6")
+				qp.conn.Server = sc.Server
+			}
+			lines, row, col := linesAndCursor(t, "SELECT Name FROM dbo.Customers FOR |")
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if !containsLabel(items, "JSON") {
+				t.Fatalf("JSON missing after FOR: %v", labels(items))
+			}
+		})
+	}
+}
+
+// A column typed with a newly listed type gets the NULL follow-up.
+func TestSQLCompletionNullAfterNewDataTypes(t *testing.T) {
+	for _, typ := range []string{"sysname", "geography", "geometry", "hierarchyid", "json", "vector(3)"} {
+		t.Run(typ, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.NewTable (Name "+typ+" |")
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if !containsLabel(items, "NULL") || !containsLabel(items, "NOT NULL") {
+				t.Fatalf("items %v, want NULL and NOT NULL", labels(items))
 			}
 		})
 	}

@@ -128,6 +128,11 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   terminal. Not run: Git Bash *inside mintty* (bare gossms should be refused
   without ConPTY, § Modes in `docs/cli.md`) and PowerShell 7 (`pwsh` is not
   installed there).
+- **Kerberos (`AuthWindows` off Windows) not dialled live since go-mssqldb
+  v1.12.0** swapped `jcmturner/gokrb5` for the `go-krb5/krb5` fork — no KDC is
+  reachable. Checked: the `krb5` provider still registers and `KerberosOptions`
+  reach it (a missing `ConfigFile` fails naming the file). A ticket exchange
+  against a real realm is unverified.
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
 - **A bulk load cannot carry a character the database's code page lacks to
@@ -135,8 +140,8 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   without COLLATE, so the server reads char bytes in the *database's* default
   code page; in a non-UTF-8 database `Ж` cannot reach a Cyrillic varchar column
   of a Latin1 database. gosmo's `BulkInsert` checks and encodes every value and
-  refuses it by name rather than storing `?`. **Blocked on go-mssqldb** (v1.11.2
-  is the latest): it writes the column list itself (`makeDecl` in
+  refuses it by name rather than storing `?`. **Blocked on go-mssqldb** (v1.12.0
+  checked): it writes the column list itself (`makeDecl` in
   `bulkcopy.go`, never a COLLATE) and sends each column's wire type from the
   table's own metadata. Reopen when the driver lets a caller declare a column's
   collation (an upstream PR; a forked `replace` would not reach gosmo's
@@ -173,6 +178,10 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   exact match and Enter commits it. Keywords avoid this through
   `CompletionItem.Soft` (alias positions, nothing typed); catalog names do
   not. Undecided: whether an exact match should be Soft too.
+- **User-defined types are never offered in a column or parameter list**
+  (`ddlDataTypes` lists system types only; 2026-11-22 review C1). A column
+  typed with one gets no `NULL`/`NOT NULL` follow-up either. Offering them
+  needs the catalog inventory in a path that is lexical today; undecided.
 
 ## Fix order
 

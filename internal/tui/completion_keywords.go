@@ -30,8 +30,8 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	}
 	// CREATE OR ALTER (2016 SP1) and DROP … IF EXISTS (2016) are at the
 	// supported floor (docs/open-threads.md § Version support), so every
-	// server is offered both; the WINDOW clause is SQL Server 2022's.
-	namedWindow := p.conn.Server == nil || p.conn.Server.Info().AtLeast(gosmo.SQLServer2022)
+	// server is offered both; the WINDOW clause is SQL Server 2022's, gated
+	// with the builtins (builtinDefinitions).
 	f := cc.frame
 	statement, statementStart := keywordDMLStatement(f.tokens)
 	defer func() {
@@ -39,10 +39,10 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 			if cc.scalar && strings.HasPrefix("CASE", strings.ToUpper(prefix)) {
 				items = append(items, caseCompletionItem(buf, cursor))
 			}
-			items = append(items, expressionCompletionItems(buf, cursor, prefix, cc.scalar, cc.condition, cc.aggregate, cc.analytic, fabric, items)...)
+			items = append(items, expressionCompletionItems(buf, cursor, prefix, cc, fabric, items)...)
 		}
 		items = slices.DeleteFunc(items, func(item editor.CompletionItem) bool {
-			return !p.builtinCompletionSupported(item.Label)
+			return !p.builtinCompletionSupported(item.Label, columnType)
 		})
 	}()
 	s := keywordScope{buf: buf, from: from, fabric: fabric, cc: cc, f: f, clause: cc.clause,
@@ -80,7 +80,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 		if fabric && cc.selectStart < 0 && s.complete && (clause == "FROM" || clause == "ON") {
 			s.choices = append(s.choices, "SELECT")
 		}
-		s.trailingClauseChoices(namedWindow)
+		s.trailingClauseChoices()
 	}
 
 	if predicateClause(clause) && (clause != "QUALIFY" || fabric) {
@@ -416,7 +416,7 @@ func (s *keywordScope) aliasChoices(prefix string) (aliasable bool) {
 
 // trailingClauseChoices adds the clauses that may follow the current one in
 // a query: WHERE … WINDOW, QUALIFY (Fabric) and FOR JSON|XML|BROWSE.
-func (s *keywordScope) trailingClauseChoices(namedWindow bool) {
+func (s *keywordScope) trailingClauseChoices() {
 	direction := keywordIs(s.last, "ASC") || keywordIs(s.last, "DESC")
 	if s.f.window || !(s.complete || s.clause == "ORDER" && direction) {
 		return
@@ -428,7 +428,7 @@ func (s *keywordScope) trailingClauseChoices(namedWindow bool) {
 		}
 		fallthrough
 	case "FROM", "WHERE", "ON", "GROUP", "HAVING":
-		if namedWindow && (s.clause != "SELECT" || s.cc.hasFrom) {
+		if s.clause != "SELECT" || s.cc.hasFrom {
 			s.choices = append(s.choices, "WINDOW")
 		}
 		if s.fabric {
