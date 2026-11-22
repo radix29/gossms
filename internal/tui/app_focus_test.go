@@ -8,8 +8,7 @@ import (
 	"github.com/radix29/tuikit/tuikittest"
 )
 
-// Ctrl+Tab (App.cycleFocus) steps Explorer → editor → results → Explorer when
-// the panel has results.
+// With the explorer hidden, Ctrl+Tab and Ctrl+Shift+Tab cycle editor ↔ results only.
 func TestHiddenExplorerIsSkippedByFocusCycles(t *testing.T) {
 	a := newDragTestApp(t, 0)
 	qp := NewQueryPanel(a, "Query 1")
@@ -38,6 +37,8 @@ func TestHiddenExplorerIsNotReopenedByTabFallback(t *testing.T) {
 	}
 }
 
+// Ctrl+Tab (App.cycleFocus) steps Explorer → editor → results → Explorer when
+// the panel has results.
 func TestCycleFocusThreeWay(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
