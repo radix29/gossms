@@ -84,6 +84,11 @@ func parseParam(raw string) (param, error) {
 	if !known {
 		return bad(fmt.Sprintf("%q is not a type --param declares", m[1]))
 	}
+	// A length-less string or binary type is length 1 in a declaration, so
+	// sp_executesql would receive the value's first character.
+	if kind == argsLength && !strings.Contains(typ, "(") {
+		return bad(fmt.Sprintf("%s needs a length: %s(n) or %s(max)", m[1], m[1], m[1]))
+	}
 	if !typeArgsValid(kind, m[2], strings.Contains(typ, "(")) {
 		return bad(fmt.Sprintf("%q: wrong arguments for %s", typ, m[1]))
 	}
@@ -128,11 +133,55 @@ func parseParam(raw string) (param, error) {
 					"Shorten the value or declare a longer type.")
 			}
 		}
+		if kind == argsPrecision {
+			if err := decimalFits(p.name, value, m[1], m[2]); err != nil {
+				return param{}, err
+			}
+		}
 		// The server converts the string to the declared type, as it would
 		// a client's string parameter; a bad value fails there (Msg 8114).
 		p.value = gosmo.QuoteLiteral(value)
 	}
 	return p, nil
+}
+
+// paramDecimal is a value the server converts to decimal: a sign, digits
+// and a point. Anything else (1,5 or 1e3) fails there with Msg 8114, so it
+// is not checked here.
+var paramDecimal = regexp.MustCompile(`^[+-]?([0-9]*)(?:\.([0-9]*))?$`)
+
+// decimalFits refuses a decimal/numeric value the declared precision and
+// scale would change: the server rounds extra decimals silently. A bare type
+// is (18,0), (p) is (p,0). Leading zeros and trailing fractional zeros do
+// not count, since dropping them changes nothing.
+func decimalFits(name, value, base, args string) error {
+	prec, scale := 18, 0
+	if args != "" {
+		parts := strings.Split(strings.ReplaceAll(args, " ", ""), ",")
+		prec, _ = strconv.Atoi(parts[0])
+		if len(parts) == 2 {
+			scale, _ = strconv.Atoi(parts[1])
+		}
+	}
+	m := paramDecimal.FindStringSubmatch(strings.TrimSpace(value))
+	if m == nil || m[1]+m[2] == "" {
+		return nil
+	}
+	whole, frac := len(strings.TrimLeft(m[1], "0")), len(strings.TrimRight(m[2], "0"))
+	typ := fmt.Sprintf("%s(%d,%d)", base, prec, scale)
+	places := "places"
+	if frac == 1 {
+		places = "place"
+	}
+	switch {
+	case frac > scale:
+		return usageError(fmt.Sprintf("--param %s: %s has %d decimal %s; %s keeps %d", name, strings.TrimSpace(value), frac, places, typ, scale),
+			"Declare a scale that holds the value: the server would round it.")
+	case whole > prec-scale:
+		return usageError(fmt.Sprintf("--param %s: %s has %d digits before the point; %s keeps %d", name, strings.TrimSpace(value), whole, typ, prec-scale),
+			"Declare a larger precision.")
+	}
+	return nil
 }
 
 // paramStringTypes may hold an empty value.
@@ -170,7 +219,16 @@ func typeArgsValid(kind paramArgs, args string, given bool) bool {
 	case argsScale:
 		return len(parts) == 1 && number(parts[0])
 	case argsPrecision:
-		return (len(parts) == 1 || len(parts) == 2) && !slices.ContainsFunc(parts, func(s string) bool { return !number(s) })
+		// The precision is 1 to 38 and the scale at most the precision.
+		if len(parts) > 2 || slices.ContainsFunc(parts, func(s string) bool { return !number(s) }) {
+			return false
+		}
+		prec, _ := strconv.Atoi(parts[0])
+		scale := 0
+		if len(parts) == 2 {
+			scale, _ = strconv.Atoi(parts[1])
+		}
+		return prec >= 1 && prec <= 38 && scale <= prec
 	case argsLength:
 		return len(parts) == 1 && (number(parts[0]) || parts[0] == "max")
 	}

@@ -95,7 +95,11 @@ support); this section covers only the environment.
   owner, and before a test timeout was armed, so no stack); 16 later runs and
   every run since the owner change did not reproduce it. Likely the probe's
   own format listener, unproven. If a Windows user reports a frozen copy,
-  suspect this first.
+  suspect this first. Since 2026-11-22 such a hang no longer takes Paste
+  with it: tuikit's `Dispatcher.Paste` waits at most `toolTimeout + 1s` for
+  earlier copies, then reads what the clipboard holds (later copies still
+  queue behind the stuck one). Not yet re-run on win10cli with a clipboard
+  manager.
 
 ## Format Document: what is left
 
@@ -124,6 +128,11 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   terminal. Not run: Git Bash *inside mintty* (bare gossms should be refused
   without ConPTY, § Modes in `docs/cli.md`) and PowerShell 7 (`pwsh` is not
   installed there).
+- **Kerberos (`AuthWindows` off Windows) not dialled live since go-mssqldb
+  v1.12.0** swapped `jcmturner/gokrb5` for the `go-krb5/krb5` fork — no KDC is
+  reachable. Checked: the `krb5` provider still registers and `KerberosOptions`
+  reach it (a missing `ConfigFile` fails naming the file). A ticket exchange
+  against a real realm is unverified.
 - **Entra methods through the command line not run live** — no Azure instance
   is available; resolution and refusals are unit-tested only.
 - **A bulk load cannot carry a character the database's code page lacks to
@@ -131,12 +140,20 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   without COLLATE, so the server reads char bytes in the *database's* default
   code page; in a non-UTF-8 database `Ж` cannot reach a Cyrillic varchar column
   of a Latin1 database. gosmo's `BulkInsert` checks and encodes every value and
-  refuses it by name rather than storing `?`. **Blocked on go-mssqldb** (v1.11.2
-  is the latest): it writes the column list itself (`makeDecl` in
+  refuses it by name rather than storing `?`. **Blocked on go-mssqldb** (v1.12.0
+  checked): it writes the column list itself (`makeDecl` in
   `bulkcopy.go`, never a COLLATE) and sends each column's wire type from the
   table's own metadata. Reopen when the driver lets a caller declare a column's
   collation (an upstream PR; a forked `replace` would not reach gosmo's
   dependents).
+- **`--max-rows-affected` and `RECEIVE`, `WRITETEXT`, `UPDATETEXT`
+  (suspected, not run live).** The target check (`cmd.checkWriteTargets`)
+  reads INSERT/UPDATE/DELETE/MERGE only. `RECEIVE` removes queue rows but
+  returns them as a result set, so its count arrives after the set and is
+  not added to `rowsAffected` (`collect`); the two text verbs' counts were
+  never looked at. Under the limit each probably commits uncounted. Refusing
+  them offline under `MaxRowsAffected` would close it; confirm the counts
+  live first.
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.
@@ -161,15 +178,10 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   exact match and Enter commits it. Keywords avoid this through
   `CompletionItem.Soft` (alias positions, nothing typed); catalog names do
   not. Undecided: whether an exact match should be Soft too.
-
-## Tests: what is left
-
-- **`TestSessionPropertiesApplyReloadsTheSessionsTargets/Apply` is flaky**
-  (2026-11-20, `internal/tui`): one full `go test ./...` run failed with
-  "gosmotest: no rule answers the query" for the `sys.dm_os_volume_stats`
-  disk-space query, which the test's fake has no rule for; `-count=5` on the
-  test alone and `-count=3` on the package passed. Likely a background load
-  outliving the previous test and hitting this test's fake. Not chased.
+- **User-defined types are never offered in a column or parameter list**
+  (`ddlDataTypes` lists system types only; 2026-11-22 review C1). A column
+  typed with one gets no `NULL`/`NOT NULL` follow-up either. Offering them
+  needs the catalog inventory in a path that is lexical today; undecided.
 
 ## Fix order
 

@@ -373,14 +373,19 @@ func TestEventSessionDetailListsEventsThenTargets(t *testing.T) {
 // xeSavedTree is an App over sc with Sessions ▸ zz_trace expanded and loaded
 // — its two targets under it — and system_health listed but never expanded.
 // zz_trace is selected.
+//
+// The Details pane goes in after AddRoot, which selects the server node: with
+// a pane already there, that selection starts the server-details fetch, whose
+// disk-volume read sc has no rule for. Selecting zz_trace cancels it, but not
+// before the read when the fetch goroutine wins the race (about 1 run in 300).
 func xeSavedTree(t *testing.T, sc *db.ServerConn) (a *App, session, idle *explorerNode, targets []*explorerNode) {
 	t.Helper()
 	a = newTestApp()
 	a.explorer.SetBounds(0, 0, 40, 30)
-	a.detailBrowser = NewDetailBrowser("Object Explorer Details")
 	installDialog(a, NewPropDialog(a))
 	a.connections = append(a.connections, sc)
 	a.explorer.AddRoot("testsrv", sc)
+	a.detailBrowser = NewDetailBrowser("Object Explorer Details")
 	root := a.explorer.Selected()
 	folder := &explorerNode{label: "Sessions", data: nodeData{Type: NodeEventSessions, conn: sc}}
 	session = &explorerNode{label: "zz_trace", data: nodeData{Type: NodeEventSession, Name: "zz_trace", conn: sc}}

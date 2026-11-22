@@ -412,7 +412,8 @@ func loadViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 	return withSystemFolder(l, node, "System Views", NodeSystemViews, views), nil
 }
 
-// loadSystemViewsChildren returns the "sys" schema's own catalog views.
+// loadSystemViewsChildren returns the views SQL Server ships in the
+// INFORMATION_SCHEMA and "sys" schemas.
 func loadSystemViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return loadSchemaScoped(l, node, NodeView, true,
 		func(d *gosmo.Database) ([]*gosmo.View, error) {

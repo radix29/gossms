@@ -145,12 +145,11 @@ func (d Deps) dbCreate(ctx context.Context, inv *spec.Invocation) (*output.Resul
 	defer sc.Close()
 	srv := sc.Server
 
-	// A level above the server's own (its major × 10); Azure and an
+	// A level above the server's own (compatCeiling); Azure and an
 	// unread version are left to the server, as db set does.
-	if info := srv.Info(); req.CompatLevel != 0 && info != nil && !info.IsAzure() &&
-		info.VersionMajor >= int(gosmo.SQLServer2016) && int(req.CompatLevel) > info.VersionMajor*10 {
-		return res, usageError(fmt.Sprintf("--compat %d is above this server's %d", req.CompatLevel, info.VersionMajor*10),
-			fmt.Sprintf("Give a level from %d to %d.", minCompatLevel, info.VersionMajor*10))
+	if top := compatCeiling(srv.Info()); req.CompatLevel != 0 && top != 0 && int(req.CompatLevel) > top {
+		return res, usageError(fmt.Sprintf("--compat %d is above this server's %d", req.CompatLevel, top),
+			fmt.Sprintf("Give a level from %d to %d.", minCompatLevel, top))
 	}
 	switch taken, err := srv.DatabaseByName(ctx, req.Name); {
 	case err == nil:

@@ -34,6 +34,12 @@ const (
 	kindSchema    = "schema"
 )
 
+// kindSystemTable is a type-S system base table (sys.sysschobjs, …): no
+// Object Explorer folder lists it, and sys.tables, which TableByName reads,
+// never holds it, so the commands that read a table refuse it
+// (systemTableError) rather than resolve it and fail the second read.
+const kindSystemTable = "system_table"
+
 // objectKinds is --type's enum, in the order object list prints the kinds.
 var objectKinds = []string{kindTable, kindView, kindProcedure, kindFunction, kindTrigger,
 	kindSynonym, kindSequence, kindType, kindSchema}
@@ -49,7 +55,7 @@ const (
 // folder of its own (a constraint, a rule) is its type_desc lower-cased.
 func kindOfDesc(typeDesc string) string {
 	switch typeDesc {
-	case "USER_TABLE", "SYSTEM_TABLE":
+	case "USER_TABLE":
 		return kindTable
 	case "VIEW":
 		return kindView
@@ -66,6 +72,14 @@ func kindOfDesc(typeDesc string) string {
 		return kindSequence
 	}
 	return strings.ToLower(typeDesc)
+}
+
+// systemTableError is the usage error for reading o, a system base table
+// (kindSystemTable), as a table.
+func systemTableError(o *gosmo.ObjectInfo) error {
+	return usageError(fmt.Sprintf("%s is a system base table, which SQL Server exposes only over the dedicated admin connection",
+		gosmo.QualifiedName(o.Schema, o.Name)),
+		"Query the catalog views over it instead (sys.objects, sys.columns, …).")
 }
 
 // ObjectCommands is the object group: its node and its read commands.

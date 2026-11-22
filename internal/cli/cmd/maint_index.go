@@ -284,6 +284,8 @@ func tableOrViewOf(ctx context.Context, dbase *gosmo.Database, o *gosmo.ObjectIn
 		tv.table, err = dbase.TableByName(ctx, o.Schema, o.Name)
 	case kindView:
 		tv.view, err = dbase.ViewByName(ctx, o.Schema, o.Name)
+	case kindSystemTable:
+		return tv, systemTableError(o)
 	default:
 		return tv, usageError(fmt.Sprintf("%s is a %s, which has no %s", gosmo.QualifiedName(o.Schema, o.Name), kind, what),
 			"Give a table or a view; `gossms object describe` shows any object.")

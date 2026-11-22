@@ -314,17 +314,17 @@ func qsWindows(q gosmotest.Query) [][2]time.Time {
 
 // reportRule answers the report whose queries contain every one of subs
 // from s.rows, ranked by key descending.
-func (m *monitorServer) reportRule(report string, key func(*gosmo.QSQueryStat) float64, subs ...string) {
-	s := m.qs
-	m.OnFunc(func(q gosmotest.Query) bool { return has(q, subs...) }, func(q gosmotest.Query) gosmotest.Result {
-		s.reads = append(s.reads, qsRead{report, q})
-		if s.readErr != nil {
-			return gosmotest.Result{Err: s.readErr}
+func (s *monitorServer) reportRule(report string, key func(*gosmo.QSQueryStat) float64, subs ...string) {
+	qs := s.qs
+	s.OnFunc(func(q gosmotest.Query) bool { return has(q, subs...) }, func(q gosmotest.Query) gosmotest.Result {
+		qs.reads = append(qs.reads, qsRead{report, q})
+		if qs.readErr != nil {
+			return gosmotest.Result{Err: qs.readErr}
 		}
 		minExec, _ := qsParam(q, qsMinExec).(int64)
 		pct, hasFloor := qsParam(q, qsRegression).(float64)
 		var kept []*gosmo.QSQueryStat
-		for _, st := range s.rows {
+		for _, st := range qs.rows {
 			switch {
 			case st.ExecCount < minExec, report == "regressed" && st.BaselineExecCount < minExec:
 			case hasFloor && (st.BaselineValue <= 0 || st.Regression < st.BaselineValue*pct/100):
@@ -342,20 +342,20 @@ func (m *monitorServer) reportRule(report string, key func(*gosmo.QSQueryStat) f
 	})
 }
 
-func (m *monitorServer) qsRules() {
-	s := m.qs
-	m.on(func(gosmotest.Query) [][]any {
-		if s.state == "" {
+func (s *monitorServer) qsRules() {
+	qs := s.qs
+	s.on(func(gosmotest.Query) [][]any {
+		if qs.state == "" {
 			return nil
 		}
-		return [][]any{clitest.QueryStoreInfoRow(s.state)}
+		return [][]any{clitest.QueryStoreInfoRow(qs.state)}
 	}, "FROM   sys.database_query_store_options")
-	m.OnFunc(func(q gosmotest.Query) bool { return has(q, "GROUP BY ws.wait_category_desc") }, func(q gosmotest.Query) gosmotest.Result {
-		s.reads = append(s.reads, qsRead{"categories", q})
-		if s.readErr != nil {
-			return gosmotest.Result{Err: s.readErr}
+	s.OnFunc(func(q gosmotest.Query) bool { return has(q, "GROUP BY ws.wait_category_desc") }, func(q gosmotest.Query) gosmotest.Result {
+		qs.reads = append(qs.reads, qsRead{"categories", q})
+		if qs.readErr != nil {
+			return gosmotest.Result{Err: qs.readErr}
 		}
-		waits := slices.Clone(s.waits)
+		waits := slices.Clone(qs.waits)
 		slices.SortStableFunc(waits, func(a, b *gosmo.QSWaitStat) int { return cmp.Compare(b.Value, a.Value) })
 		var rows [][]any
 		for _, w := range waits {
@@ -364,11 +364,11 @@ func (m *monitorServer) qsRules() {
 		return gosmotest.Result{Sets: []gosmotest.Set{{Rows: rows}}}
 	})
 	value := func(st *gosmo.QSQueryStat) float64 { return st.Value }
-	m.reportRule("waiting", value, "COALESCE(MAX(rs.last_execution_time), MAX(rsi.end_time))")
-	m.reportRule("regressed", func(st *gosmo.QSQueryStat) float64 { return st.Regression }, "WITH recent AS (", "ORDER BY regression DESC")
-	m.reportRule("variation", func(st *gosmo.QSQueryStat) float64 { return st.Variation }, "ORDER BY variation DESC")
-	m.reportRule("forced", value, "MAX(CAST(p.is_forced_plan AS int)) = 1", "ORDER BY value DESC")
-	m.reportRule("top", value, "FROM   sys.query_store_query ", "ORDER BY value DESC")
+	s.reportRule("waiting", value, "COALESCE(MAX(rs.last_execution_time), MAX(rsi.end_time))")
+	s.reportRule("regressed", func(st *gosmo.QSQueryStat) float64 { return st.Regression }, "WITH recent AS (", "ORDER BY regression DESC")
+	s.reportRule("variation", func(st *gosmo.QSQueryStat) float64 { return st.Variation }, "ORDER BY variation DESC")
+	s.reportRule("forced", value, "MAX(CAST(p.is_forced_plan AS int)) = 1", "ORDER BY value DESC")
+	s.reportRule("top", value, "FROM   sys.query_store_query ", "ORDER BY value DESC")
 }
 
 // dlServer is the event sessions monitor deadlocks reads: system_health
@@ -390,14 +390,14 @@ const (
 	dbsRead  = "ORDER BY name"
 )
 
-func (m *monitorServer) dlRules() {
-	s := m.dl
+func (s *monitorServer) dlRules() {
+	dl := s.dl
 	// session is the event session a by-name read names, nil for none.
 	session := func(q gosmotest.Query) *gosmo.EventSession {
-		if s.session == nil || argString(q, 0) != s.session.Name {
+		if dl.session == nil || argString(q, 0) != dl.session.Name {
 			return nil
 		}
-		return s.session
+		return dl.session
 	}
 	child := func(pick func(events, actions, targets, fields [][]any) [][]any) func(gosmotest.Query) [][]any {
 		return func(q gosmotest.Query) [][]any {
@@ -409,7 +409,7 @@ func (m *monitorServer) dlRules() {
 			return pick(events, actions, targets, fields)
 		}
 	}
-	m.on(func(q gosmotest.Query) [][]any {
+	s.on(func(q gosmotest.Query) [][]any {
 		es := session(q)
 		if es == nil {
 			return nil
@@ -417,27 +417,27 @@ func (m *monitorServer) dlRules() {
 		row, _, _, _, _ := clitest.EventSessionRows(es, 1)
 		return [][]any{row}
 	}, "FROM   sys.server_event_sessions s\nLEFT   JOIN sys.dm_xe_sessions r", "WHERE  s.name = @p1")
-	m.on(child(func(e, _, _, _ [][]any) [][]any { return e }), "FROM   sys.server_event_session_events e", "WHERE  s.name = @p1")
-	m.on(child(func(_, a, _, _ [][]any) [][]any { return a }), "FROM   sys.server_event_session_actions a", "WHERE  s.name = @p1")
-	m.on(child(func(_, _, t, _ [][]any) [][]any { return t }), "FROM   sys.server_event_session_targets t", "WHERE  s.name = @p1")
-	m.on(child(func(_, _, _, f [][]any) [][]any { return f }), "FROM   sys.server_event_session_fields f", "WHERE  s.name = @p1")
-	m.on(func(q gosmotest.Query) [][]any {
+	s.on(child(func(e, _, _, _ [][]any) [][]any { return e }), "FROM   sys.server_event_session_events e", "WHERE  s.name = @p1")
+	s.on(child(func(_, a, _, _ [][]any) [][]any { return a }), "FROM   sys.server_event_session_actions a", "WHERE  s.name = @p1")
+	s.on(child(func(_, _, t, _ [][]any) [][]any { return t }), "FROM   sys.server_event_session_targets t", "WHERE  s.name = @p1")
+	s.on(child(func(_, _, _, f [][]any) [][]any { return f }), "FROM   sys.server_event_session_fields f", "WHERE  s.name = @p1")
+	s.on(func(q gosmotest.Query) [][]any {
 		var names []any
 		if len(q.Args) > 3 {
 			names = q.Args[3:]
 		}
 		var rows [][]any
-		for i, e := range s.events {
+		for i, e := range dl.events {
 			if names == nil || slices.Contains(names, any(e.Name)) {
 				rows = append(rows, []any{`C:\Log\system_health_0_1.xel`, int64(4096 * (i + 1)), clitest.EventXML(e)})
 			}
 		}
 		return rows
 	}, fileRead)
-	m.on(func(q gosmotest.Query) [][]any {
+	s.on(func(q gosmotest.Query) [][]any {
 		if es := session(q); es == nil || !es.IsRunning {
 			return nil
 		}
-		return [][]any{{clitest.RingBufferXML(s.events)}}
+		return [][]any{{clitest.RingBufferXML(dl.events)}}
 	}, ringRead)
 }

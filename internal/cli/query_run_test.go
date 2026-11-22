@@ -67,16 +67,21 @@ func (f *fakeSession) EndTransactions(_ context.Context, commit bool) error {
 func (f *fakeSession) Close() { f.closed = true }
 
 // queryDeps is profileDeps (dev: ceiling write, saved password) with a
-// connection that always succeeds and sess as its query session. dialled
-// counts the connects.
+// connection that always succeeds — to newTargetServer's — and sess as its
+// query session. dialled counts the connects.
 func queryDeps(t *testing.T, sess *fakeSession) (cmd.Deps, *int) {
 	dialled := new(int)
-	d := profileDeps(t, func(_ context.Context, c config.Connection, r db.Role) (*db.ServerConn, error) {
+	ts := newTargetServer(t) // for --max-rows-affected's check of the write targets
+	d := profileDeps(t, func(ctx context.Context, c config.Connection, r db.Role) (*db.ServerConn, error) {
 		*dialled++
 		if r != db.RoleCLI {
 			t.Errorf("dialled as %v", r)
 		}
-		return &db.ServerConn{}, nil
+		srv, err := ts.Connect(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &db.ServerConn{Server: srv}, nil
 	})
 	d.OpenSession = func(context.Context, *db.ServerConn, string) (cmd.Session, error) { return sess, nil }
 	return d, dialled
