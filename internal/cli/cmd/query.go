@@ -73,7 +73,7 @@ func QueryCommands(d Deps) []*spec.Command {
 			Summary: "Report each statement's operation class (read, write, ddl, admin) and the script's",
 			Description: "Classifies without connecting: one row per statement with its batch, line, class, leading " +
 				"keywords, the object it acts on, why it is above its leader's class, and flags " +
-				"(transaction-control, not-in-transaction, nocount, dynamic-sql, exec, mode-option, output-clause, sequence-advance). " +
+				"(transaction-control, not-in-transaction, nocount, dynamic-sql, exec, mode-option, output-clause, sequence-advance, uncounted). " +
 				"Anything unrecognised counts as write. With --allow it also applies the check a run would " +
 				"(SET PARSEONLY, NOEXEC and SHOWPLAN_* are refused too) and answers BLOCKED, exit 7, when the script " +
 				"would be refused.",

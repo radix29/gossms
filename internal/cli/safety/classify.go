@@ -46,6 +46,10 @@ const (
 	// FlagSequence: NEXT VALUE FOR, which advances a sequence outside any
 	// transaction — a rollback does not undo it (docs/cli.md § Transactions).
 	FlagSequence
+	// FlagUncounted: RECEIVE, WRITETEXT or UPDATETEXT, whose changes the
+	// server's row counts miss (live, 17): RECEIVE's count arrives after its
+	// result set and so reads like a SELECT's, the text verbs report none.
+	FlagUncounted
 )
 
 var flagNames = []struct {
@@ -60,6 +64,7 @@ var flagNames = []struct {
 	{FlagModeOption, "mode-option"},
 	{FlagOutput, "output-clause"},
 	{FlagSequence, "sequence-advance"},
+	{FlagUncounted, "uncounted"},
 }
 
 // Has reports whether every flag in g is set in f.
@@ -636,6 +641,9 @@ func floor(st *Statement, toks []token) {
 			if wr, ok := readWrite(toks, i); ok {
 				st.Writes = append(st.Writes, wr)
 			}
+		}
+		if v.name == "RECEIVE" || v.name == "WRITETEXT" || v.name == "UPDATETEXT" {
+			st.Flags |= FlagUncounted
 		}
 		st.raise(c, "keyword "+v.name+at)
 	}

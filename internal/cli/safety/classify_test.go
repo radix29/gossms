@@ -507,6 +507,10 @@ func TestClassifyFlags(t *testing.T) {
 		{"DELETE t OUTPUT deleted.*", FlagOutput},
 		{"SELECT NEXT VALUE FOR dbo.seq", FlagSequence},
 		{"INSERT t (id) VALUES (NEXT VALUE FOR s)", FlagSequence},
+		{"RECEIVE TOP (1) * FROM dbo.q", FlagUncounted},
+		{"WAITFOR (RECEIVE * FROM dbo.q), TIMEOUT 100", FlagUncounted},
+		{"WRITETEXT dbo.t.x @p 'z'", FlagUncounted},
+		{"IF @p IS NOT NULL UPDATETEXT dbo.t.x @p 0 NULL 'z'", FlagUncounted},
 	} {
 		if got := Classify(tt.script).Flags; !got.Has(tt.want) {
 			t.Errorf("Classify(%q).Flags = %v, want %v among them", tt.script, got.Names(), tt.want.Names())

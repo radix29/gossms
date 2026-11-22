@@ -52,7 +52,6 @@ a sentence and link.
 | `ARCHITECTURE.md` | Package map, layering, data flow, threading, and the long-form *why* behind each idiom |
 | tuikit's `README.md` / `ARCHITECTURE.md` (`~/go/tuikit`) | Everything inside the library: package map, design principles, the gesture protocol, library-level widget and dialog rules |
 | `docs/open-threads.md` | Work knowingly left undone: bugs, deferred scope, release blockers |
-| `docs/windows-testing.md` | Findings and run history of the Windows (win10cli) test runs |
 | `docs/decisions.md` | Settled decisions and exclusions — the "do not re-raise" record |
 
 `README.md` is user-facing and owns features; the F1 help dialog

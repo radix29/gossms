@@ -89,7 +89,17 @@ support); this section covers only the environment.
   `@@VERSION`; if either differs, make it the test in `detectFabricDW` and
   keep the hostname only as the fallback.
 
-## Windows test run: what is left\n\nFindings and run history: `docs/windows-testing.md`. Open: `-race` needs a C\ncompiler on win10cli; the lock is unfair under heavy contention on slow disks.\n\n## Windows clipboard: what is left
+## Windows test run: what is left
+
+Open: `fileutil.WithLock` is unfair under heavy contention on slow disks. Every
+waiter polls on the same fixed 5 ms beat and each hold costs two fsyncs, so on
+win10cli a waiter can starve past `lockWait` (2 s). Two tests were loosened
+rather than the product changed, because `lockWait` also bounds exit time
+(`internal/tui/app_saves.go`): `TestWithLockSerializesReadModifyWrite` raises
+`lockWait`, `TestAppendRotationLosesNothing` retries an `Append` that lost the
+lock.
+
+## Windows clipboard: what is left
 
 - **One clipboard-manager run hung** (2026-11-18, before the message-only
   owner, and before a test timeout was armed, so no stack); 16 later runs and
@@ -98,8 +108,9 @@ support); this section covers only the environment.
   suspect this first. Since 2026-11-22 such a hang no longer takes Paste
   with it: tuikit's `Dispatcher.Paste` waits at most `toolTimeout + 1s` for
   earlier copies, then reads what the clipboard holds (later copies still
-  queue behind the stuck one). Not yet re-run on win10cli with a clipboard
-  manager.
+  queue behind the stuck one). Re-driven on win10cli 2026-11-22 with Ditto
+  running, over RDP in Git Bash/mintty: 40 Ctrl+C/Ctrl+V cycles at 80 ms and a
+  paced 10-paste run, no freeze, UI live throughout; not reproduced.
 
 ## Format Document: what is left
 
@@ -114,7 +125,7 @@ Settled design: `docs/decisions.md` § Format Document.
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
 
-- **Windows: mintty and PowerShell 7 not driven.** Phases 0 and 1 ran on
+- **Windows: PowerShell 7 command line not driven.** Phases 0 and 1 ran on
   win10cli on 2026-11-18 and passed with no fix: cmd, Windows PowerShell 5.1
   and Git Bash over ssh — modes (bare gossms refused on pipes, exit 1),
   help, did-you-mean, response files (BOM + CRLF), every format, `--out-file`
@@ -125,9 +136,9 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   over RDP: UTF-8 renders, Ctrl+C is `CANCELLED`/130, bare gossms starts the
   UI and Ctrl+Q restores the console. The command line has no colour,
   width-dependent output or password prompt, so nothing else depends on the
-  terminal. Not run: Git Bash *inside mintty* (bare gossms should be refused
-  without ConPTY, § Modes in `docs/cli.md`) and PowerShell 7 (`pwsh` is not
-  installed there).
+  terminal. Git Bash *inside mintty* was driven on 2026-11-22: bare gossms
+  starts (ConPTY, not refused), connects, opens a query tab and Ctrl+Q exits 0.
+  Not run: the command line from PowerShell 7 (7.7.0 is installed on win10cli).
 - **Kerberos (`AuthWindows` off Windows) not dialled live since go-mssqldb
   v1.12.0** swapped `jcmturner/gokrb5` for the `go-krb5/krb5` fork — no KDC is
   reachable. Checked: the `krb5` provider still registers and `KerberosOptions`
@@ -146,14 +157,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   table's own metadata. Reopen when the driver lets a caller declare a column's
   collation (an upstream PR; a forked `replace` would not reach gosmo's
   dependents).
-- **`--max-rows-affected` and `RECEIVE`, `WRITETEXT`, `UPDATETEXT`
-  (suspected, not run live).** The target check (`cmd.checkWriteTargets`)
-  reads INSERT/UPDATE/DELETE/MERGE only. `RECEIVE` removes queue rows but
-  returns them as a result set, so its count arrives after the set and is
-  not added to `rowsAffected` (`collect`); the two text verbs' counts were
-  never looked at. Under the limit each probably commits uncounted. Refusing
-  them offline under `MaxRowsAffected` would close it; confirm the counts
-  live first.
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.

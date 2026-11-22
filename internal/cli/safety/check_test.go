@@ -118,6 +118,12 @@ func TestCheckMaxRowsAffectedBlindSpots(t *testing.T) {
 		{"EXEC dbo.p", true},
 		{"EXEC (@sql)", true},
 		{"UPDATE t SET a = 1 OUTPUT inserted.a", true},
+		// Uncounted (live, 17): RECEIVE's count follows its set, the text
+		// verbs report none.
+		{"RECEIVE TOP (2) * FROM dbo.q", true},
+		{"WAITFOR (RECEIVE * FROM dbo.q), TIMEOUT 100", true},
+		{"WRITETEXT dbo.t.x @p 'z'", true},
+		{"UPDATETEXT dbo.t.x @p 0 NULL 'z'", true},
 	} {
 		b := Check(Classify(tt.script), Policy{Allow: admin, Transaction: true, MaxRowsAffected: true})
 		if (b != nil) != tt.blocked {

@@ -85,11 +85,11 @@ func Check(sc *Script, p Policy) *Blocked {
 		}
 	}
 	if p.MaxRowsAffected {
-		const blind = FlagNoCount | FlagDynamic | FlagExec | FlagOutput
+		const blind = FlagNoCount | FlagDynamic | FlagExec | FlagOutput | FlagUncounted
 		if sc.Flags&blind != 0 {
 			b.Statements = matching(sc, func(st Statement) bool { return st.Flags&blind != 0 })
 			b.Message = "--max-rows-affected cannot count every row this script changes " +
-				"(SET NOCOUNT ON, dynamic SQL, a procedure call or an OUTPUT clause)"
+				"(SET NOCOUNT ON, dynamic SQL, a procedure call, an OUTPUT clause, RECEIVE, WRITETEXT or UPDATETEXT)"
 			b.Hint = uncountedHint
 			return b
 		}

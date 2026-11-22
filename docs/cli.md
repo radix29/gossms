@@ -928,7 +928,9 @@ commit on their own). The record's `transaction` says how it ended:
   BLOCKED, exit 7. With `--transaction rollback` it rolls back either way.
   It can only trust what the server counts, so it refuses (exit 7, before
   connecting) a script with `SET NOCOUNT ON`, dynamic SQL, a procedure call
-  not on the read allow-list or an `OUTPUT` clause.
+  not on the read allow-list, an `OUTPUT` clause, or `RECEIVE`, `WRITETEXT`
+  or `UPDATETEXT` (flag `uncounted`: `RECEIVE`'s count follows the rows it
+  returns, so it reads like a `SELECT`'s, and the text verbs report none).
 - **The server counts a write's own target only.** A trigger's changes are
   hidden by the `SET NOCOUNT ON` most triggers open with, and a foreign key's
   `ON DELETE`/`ON UPDATE` action (`CASCADE`, `SET NULL`, `SET DEFAULT`) is
