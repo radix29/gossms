@@ -322,11 +322,8 @@ func TestLoadCorruptFileReturnsEmptyConfig(t *testing.T) {
 // An existing but unreadable config must not be saved over: an empty Config
 // written back would destroy a file that's still fine.
 func TestLoadRefusesToSaveOverAnUnreadableConfig(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows mode bits cannot deny read access")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("running as root: a 0000 file is still readable")
+	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+		t.Skip("a 0000 file is still readable (root) or mode bits do not gate reads (Windows)")
 	}
 	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {

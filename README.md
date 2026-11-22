@@ -247,7 +247,7 @@ or use File > Export Results) to export the result set on screen, in the order
 shown, to a CSV, tab-separated, JSON or XML file. Show Value on a `varbinary`/`image` cell that holds a picture
 (PNG, JPEG, GIF, BMP, TIFF or WebP) opens it in its own tab as terminal art,
 as does File > Open of a picture file (recognized by its content, not its
-extension), with fit, zoom, pan and Save; pictures render in Unicode block sextants, with
+extension), with fit, zoom, pan, brightness and contrast, and Save; pictures render in Unicode block sextants, with
 an ASCII mode for fonts that lack them. Right-click any text field — a dialog's
 input box, the query editor, the Log Viewer's filter — for Cut, Copy, Paste and
 Select All; on read-only text (Messages, Results to Text, a plan's XML, a

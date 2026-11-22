@@ -402,9 +402,10 @@ func TestSQLBuiltinCompletionVersionBoundaries(t *testing.T) {
 			for _, name := range []string{"STRING_AGG", "CONCAT_WS", "TRIM", "TRANSLATE", "GENERATE_SERIES", "||"} {
 				sql := "SELECT " + name + "| FROM dbo.Customers"
 				want := tt.functions
-				if name == "||" {
+				switch name {
+				case "||":
 					sql, want = "SELECT * FROM dbo.Customers WHERE Name |", tt.concat
-				} else if name == "GENERATE_SERIES" {
+				case "GENERATE_SERIES":
 					sql, want = "SELECT * FROM GENERATE_SERIES|", tt.series
 				}
 				lines, row, col := linesAndCursor(t, sql)

@@ -244,9 +244,9 @@ func TestNewUserPrefetchHoldsEveryPrincipalName(t *testing.T) {
 			}}),
 		loginListResponse(),
 		// Not under test: the prefetch's certificate, key and options reads.
-		fakeResponse{match: "FROM   sys.certificates", cols: 8},
-		fakeResponse{match: "FROM   sys.asymmetric_keys", cols: 10},
-		fakeResponse{match: "d.page_verify_option_desc", cols: 35}}
+		{match: "FROM   sys.certificates", cols: 8},
+		{match: "FROM   sys.asymmetric_keys", cols: 10},
+		{match: "d.page_verify_option_desc", cols: 35}}
 	responses = append(responses, databaseSchemaResponses()...)
 	sc, _ := newGConn(t, responses...)
 	pf, err := fetchNewUserPrefetch(context.Background(), sc, "appdb")

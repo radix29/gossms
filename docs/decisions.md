@@ -1674,6 +1674,20 @@ it from the string 'NULL'.
   columns, so the 22-column name would clip on every tile. The label is
   display-only: `PhysicalOp`, plan-compare matching and CLI output keep the
   XML's "Clustered Index Scan"/"Index Scan".
+- **Enter after a name typed in full breaks the line; Tab still commits it**
+  (2026-11-22, fix plan F4). A non-keyword candidate whose text the typed
+  span already equals under the database's collation is `CompletionItem.Soft`
+  (`softenExactMatches`, `completion_provider.go`): committing it would change
+  nothing, so `FROM sys.tables⏎` is a newline. Under a case-sensitive
+  collation `orders` is not `Orders`, so Enter commits the catalog's spelling.
+  Keywords are deliberately excluded: a fully typed `from⏎` still commits
+  `FROM ` (upper-cased, with its space), as
+  `TestSQLKeywordCompletionKeepsFullyTypedKeywords` pins.
+- **A catalog name holding a control character is not offered** (2026-11-22,
+  fix plan F7). `sqlCompletionCandidates` drops any candidate whose Label has a
+  C0 character or DEL (`hasControlChar`): its popup label draws without the
+  character and a CR is lost to the editor's CRLF normalisation, so the insert
+  would name a different object. Typing such a name by hand still works.
 
 ### Activity Monitor
 
@@ -1747,6 +1761,14 @@ it from the string 'NULL'.
   still holds the holder's token — portable O_EXCL files, no GOOS branch. Left:
   a crash inside the microsecond break window leaves a stale `.break`, which
   is removed outright (`breakStaleLock`).
+- **`fileutil.WithLock` hands the lock to a starving waiter with a priority
+  marker, not a backoff or a ticket queue** (2026-11-22). A waiter that has
+  lost for `lockPriorityAfter` (100 ms) creates `.lock.wait`; everyone else
+  stands back while it is there. The cause of the starvation was barging (a
+  holder saving again retakes the lock before the waiter's next poll), so a
+  jittered 5→50 ms backoff, tried first, made it worse (win10cli: 10/10
+  failures against 0/10). A FIFO ticket queue was declined as more crash
+  cases for the same result. Not FIFO: one waiter is prioritised at a time.
 - **`widgets.InputField.HandleKey` keeps its exception to the `HandleKey`
   rule**. It claims every key it binds, Left at column 0
   and Right at the end included, where grid/editor/tree/list hand edge keys to

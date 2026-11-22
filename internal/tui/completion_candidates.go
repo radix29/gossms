@@ -369,9 +369,10 @@ func (p *QueryPanel) objectItems(objs []*gosmo.CatalogObject, prefix string) []e
 
 func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject, partial bool) editor.CompletionItem {
 	detail := "table"
-	if obj.Type == gosmo.CatalogView {
+	switch obj.Type {
+	case gosmo.CatalogView:
 		detail = "view"
-	} else if obj.Type == gosmo.CatalogFunction {
+	case gosmo.CatalogFunction:
 		detail = "table-valued function"
 	}
 	return editor.CompletionItem{
@@ -562,9 +563,10 @@ func completionGroup(item editor.CompletionItem, source bool) int {
 
 func (p *QueryPanel) tableIcon(t gosmo.CatalogObjectType) rune {
 	nt := NodeTable
-	if t == gosmo.CatalogView {
+	switch t {
+	case gosmo.CatalogView:
 		nt = NodeView
-	} else if t == gosmo.CatalogFunction {
+	case gosmo.CatalogFunction:
 		nt = NodeFunction
 	}
 	return nodeIcon(nodeData{Type: nt}, p.app.cfg.IconStyle, false)

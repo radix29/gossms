@@ -98,8 +98,9 @@ support); this section covers only the environment.
   suspect this first. Since 2026-11-22 such a hang no longer takes Paste
   with it: tuikit's `Dispatcher.Paste` waits at most `toolTimeout + 1s` for
   earlier copies, then reads what the clipboard holds (later copies still
-  queue behind the stuck one). Not yet re-run on win10cli with a clipboard
-  manager.
+  queue behind the stuck one). Re-driven on win10cli 2026-11-22 with Ditto
+  running, over RDP in Git Bash/mintty: 40 Ctrl+C/Ctrl+V cycles at 80 ms and a
+  paced 10-paste run, no freeze, UI live throughout; not reproduced.
 
 ## Format Document: what is left
 
@@ -114,20 +115,6 @@ Settled design: `docs/decisions.md` § Format Document.
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
 
-- **Windows: mintty and PowerShell 7 not driven.** Phases 0 and 1 ran on
-  win10cli on 2026-11-18 and passed with no fix: cmd, Windows PowerShell 5.1
-  and Git Bash over ssh — modes (bare gossms refused on pipes, exit 1),
-  help, did-you-mean, response files (BOM + CRLF), every format, `--out-file`
-  (Windows and MSYS paths, `--force`, a directory), `-i -`, `--sql-base64`,
-  `--password-env`/`--password-stdin`, a profile's saved password and its
-  drop on override, Windows Authentication, `host\instance`, the `GOSSMS_*`
-  variables, exit codes 0/2/3/4/5/6/7/8; stdout has no CR. In a real console
-  over RDP: UTF-8 renders, Ctrl+C is `CANCELLED`/130, bare gossms starts the
-  UI and Ctrl+Q restores the console. The command line has no colour,
-  width-dependent output or password prompt, so nothing else depends on the
-  terminal. Not run: Git Bash *inside mintty* (bare gossms should be refused
-  without ConPTY, § Modes in `docs/cli.md`) and PowerShell 7 (`pwsh` is not
-  installed there).
 - **Kerberos (`AuthWindows` off Windows) not dialled live since go-mssqldb
   v1.12.0** swapped `jcmturner/gokrb5` for the `go-krb5/krb5` fork — no KDC is
   reachable. Checked: the `krb5` provider still registers and `KerberosOptions`
@@ -146,14 +133,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   table's own metadata. Reopen when the driver lets a caller declare a column's
   collation (an upstream PR; a forked `replace` would not reach gosmo's
   dependents).
-- **`--max-rows-affected` and `RECEIVE`, `WRITETEXT`, `UPDATETEXT`
-  (suspected, not run live).** The target check (`cmd.checkWriteTargets`)
-  reads INSERT/UPDATE/DELETE/MERGE only. `RECEIVE` removes queue rows but
-  returns them as a result set, so its count arrives after the set and is
-  not added to `rowsAffected` (`collect`); the two text verbs' counts were
-  never looked at. Under the limit each probably commits uncounted. Refusing
-  them offline under `MaxRowsAffected` would close it; confirm the counts
-  live first.
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.
@@ -162,26 +141,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-
-## Completion: what is left
-
-- **A catalog name holding a control character is offered as-is.** A table
-  named `weird⏎name` (legal inside brackets) is offered as `[weird⏎name]`;
-  since tuikit round 6 bug 4 the commit splits it into two real lines, so
-  the query runs (driven live 2026-11-21). Undecided: whether to offer such
-  a name at all. Its popup label draws as `weirdname` (the newline is
-  invisible), and a CR in a name is lost, since the editor normalizes CRLF
-  and CR to LF.
-- **Enter right after a name typed in full commits it instead of breaking
-  the line** (seen on main and with PR 50, 2026-11-21): `FROM sys.tables⏎`
-  leaves `FROM sys.tables` with no newline, because the popup still holds the
-  exact match and Enter commits it. Keywords avoid this through
-  `CompletionItem.Soft` (alias positions, nothing typed); catalog names do
-  not. Undecided: whether an exact match should be Soft too.
-- **User-defined types are never offered in a column or parameter list**
-  (`ddlDataTypes` lists system types only; 2026-11-22 review C1). A column
-  typed with one gets no `NULL`/`NOT NULL` follow-up either. Offering them
-  needs the catalog inventory in a path that is lexical today; undecided.
 
 ## Fix order
 

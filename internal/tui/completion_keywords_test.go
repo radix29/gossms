@@ -1485,3 +1485,89 @@ func TestSQLCompletionNullAfterNewDataTypes(t *testing.T) {
 		})
 	}
 }
+
+// User-defined types follow the system ones in a column or parameter list,
+// schema-qualified; a table type only where it is legal (a parameter, then
+// READONLY), and a column typed with one gets the NULL follow-up.
+func TestSQLCompletionUserDefinedTypes(t *testing.T) {
+	newPanel := func(t *testing.T, fabric bool) *QueryPanel {
+		qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		if fabric {
+			qp.conn.Server = fabricConn(t).Server
+		}
+		inv := qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "testdb")]
+		inv.catalog.Types = []gosmo.CatalogType{
+			{Schema: "dbo", Name: "Phone", Kind: gosmo.CatalogAliasType},
+			{Schema: "geo", Name: "Point 3", Kind: gosmo.CatalogClrType},
+			{Schema: "dbo", Name: "Rows", Kind: gosmo.CatalogTableType},
+		}
+		return qp
+	}
+	for _, tt := range []struct {
+		sql       string
+		want, not []string
+	}{
+		{"CREATE TABLE dbo.T (Id INT, Home |", []string{"INT", "dbo.Phone", "geo.[Point 3]"}, []string{"dbo.Rows"}},
+		{"CREATE TABLE dbo.T (Home ph|", []string{"dbo.Phone"}, []string{"INT", "geo.[Point 3]"}},
+		{"CREATE TABLE dbo.T (Home dbo.p|", []string{"dbo.Phone"}, []string{"dbo.Rows", "INT"}},
+		{"CREATE TABLE dbo.T (Home dbo.|", []string{"dbo.Phone"}, []string{"dbo.Customers", "geo.[Point 3]"}},
+		{"CREATE TABLE dbo.T (Home geo.|", []string{"geo.[Point 3]"}, []string{"dbo.Phone"}},
+		{"CREATE PROCEDURE dbo.p @rows dbo.|", []string{"dbo.Phone", "dbo.Rows"}, nil},
+		{"CREATE FUNCTION dbo.f(@h INT) RETURNS dbo.|", []string{"dbo.Phone"}, []string{"dbo.Rows", "dbo.Customers"}},
+		{"SELECT * FROM dbo.|", []string{"dbo.Customers"}, []string{"dbo.Phone"}},
+		{"CREATE TABLE dbo.T (Home dbo.Phone |", []string{"NULL", "NOT NULL"}, nil},
+		{"CREATE TABLE dbo.T (Home [dbo].[phone] |", []string{"NULL", "NOT NULL"}, nil},
+		{"CREATE TABLE dbo.T (Home Phone NOT |", []string{"NULL"}, nil},
+		{"CREATE TABLE dbo.T (Home geo.[Point 3] |", []string{"NULL", "NOT NULL"}, nil},
+		{"CREATE TABLE dbo.T (Home dbo.Rows |", nil, []string{"NULL", "NOT NULL"}},
+		{"CREATE PROCEDURE dbo.p @rows |", []string{"INT", "dbo.Phone", "dbo.Rows"}, nil},
+		{"CREATE PROCEDURE dbo.p @rows dbo.Rows |", []string{"READONLY"}, []string{"OUTPUT", "AS"}},
+		{"CREATE PROCEDURE dbo.p @rows dbo.Rows READONLY |", []string{"AS"}, []string{"OUTPUT", "READONLY"}},
+		{"CREATE PROCEDURE dbo.p @home dbo.Phone |", []string{"AS", "OUTPUT"}, []string{"READONLY"}},
+		{"CREATE FUNCTION dbo.f(@rows dbo.Rows |)", []string{"READONLY"}, nil},
+		{"CREATE FUNCTION dbo.f(@home dbo.Phone) RETURNS |", []string{"INT", "TABLE", "dbo.Phone"}, []string{"dbo.Rows"}},
+		{"CREATE FUNCTION dbo.f() RETURNS @r TABLE (Home |)", []string{"dbo.Phone"}, []string{"dbo.Rows"}},
+	} {
+		t.Run(tt.sql, func(t *testing.T) {
+			qp := newPanel(t, false)
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			for _, label := range tt.want {
+				if !containsLabel(items, label) {
+					t.Errorf("%q missing: %v", label, labels(items))
+				}
+			}
+			for _, label := range tt.not {
+				if containsLabel(items, label) {
+					t.Errorf("%q offered: %v", label, labels(items))
+				}
+			}
+		})
+	}
+	t.Run("inserted schema-qualified after a bare prefix", func(t *testing.T) {
+		qp := newPanel(t, false)
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home ph|")
+		items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		for _, item := range items {
+			if item.Label == "dbo.Phone" && (item.Text != "dbo.Phone" || item.Detail != "alias type") {
+				t.Fatalf("item = %+v", item)
+			}
+		}
+	})
+	t.Run("after a typed schema, inserted by bare name", func(t *testing.T) {
+		qp := newPanel(t, false)
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home geo.p|")
+		items, replace := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if len(items) != 1 || items[0].Text != "[Point 3]" || replace != len("CREATE TABLE dbo.T (Home geo.") {
+			t.Fatalf("items %+v at %d", items, replace)
+		}
+	})
+	t.Run("Fabric offers none", func(t *testing.T) {
+		qp := newPanel(t, true)
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home |")
+		items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if !containsLabel(items, "INT") || containsLabel(items, "dbo.Phone") {
+			t.Fatalf("items %v, want system types only", labels(items))
+		}
+	})
+}

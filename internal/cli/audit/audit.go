@@ -120,7 +120,7 @@ func rotate(path string, n int64) error {
 	if fi.Size() == 0 || fi.Size()+n <= MaxSize {
 		return nil
 	}
-	if err := os.Rename(path, path+Rotated); err != nil {
+	if err := fileutil.Rename(path, path+Rotated); err != nil {
 		return fmt.Errorf("rotating the audit log: %w", err)
 	}
 	return nil

@@ -36,7 +36,7 @@ type completionContext struct {
 func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Token, query *sqlparse.Query, from int) (c completionContext) {
 	action, objectType, tail := ddlCompletionTarget(tokens, from)
 	if action != "DROP" && (objectType == "PROCEDURE" || objectType == "FUNCTION") {
-		if choices, datatype, handled := ddlRoutineChoices(buf, tail, objectType, from, p.conn.IsFabricDW()); handled {
+		if choices, datatype, handled := ddlRoutineChoices(buf, tail, objectType, from, p.ddlTypes()); handled {
 			c.choices, c.datatype, c.only = choices, datatype, true
 			return
 		}
@@ -48,9 +48,10 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 	stack := []completionFrame{{start: start}}
 	for _, tok := range tokens {
 		if tok.Start < start {
-			if tok.Kind == sqlparse.TokenParenOpen {
+			switch tok.Kind {
+			case sqlparse.TokenParenOpen:
 				c.queryDepth++
-			} else if tok.Kind == sqlparse.TokenParenClose {
+			case sqlparse.TokenParenClose:
 				c.queryDepth--
 			}
 			continue

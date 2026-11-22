@@ -694,3 +694,25 @@ func TestCreateStreamRefusesAReadOnlyFile(t *testing.T) {
 	}
 	assertOnlyFile(t, dir, "results.csv")
 }
+
+// Rename returns a persistent denial as itself once renameRetry has passed,
+// not as a timeout or a nil.
+func TestRenameReturnsAPersistentDenial(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the POSIX mode bits can make read-only, as non-root")
+	}
+	defer func(d time.Duration) { renameRetry = d }(renameRetry)
+	renameRetry = 20 * time.Millisecond
+	dir := t.TempDir()
+	src := filepath.Join(dir, "a")
+	if err := os.WriteFile(src, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o700)
+	if err := Rename(src, filepath.Join(dir, "b")); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("Rename = %v, want a permission error", err)
+	}
+}

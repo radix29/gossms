@@ -16,6 +16,7 @@ import (
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
 
+	"github.com/radix29/gotuipic"
 	"github.com/radix29/tuikit/dialogs"
 )
 
@@ -322,5 +323,123 @@ func TestOpenQueryFileSniffsPictures(t *testing.T) {
 				t.Errorf("decoded format = %q, err = %q, data intact = %v", pp.format, pp.errText, bytes.Equal(pp.data, tt.data))
 			}
 		})
+	}
+}
+
+// Tone steps stop at the clamp and say so, a step re-renders (pictureKey
+// carries both tone fields) while a refused one keeps the cached art, and
+// Reset is withheld until there is a tone to undo.
+func TestPictureToneClampsAndReRenders(t *testing.T) {
+	a := newTestApp()
+	pp := readyPicturePanel(t, a, 40, 20)
+	if !pp.toolDisabled(picToolResetTone) {
+		t.Error("Reset is enabled at the picture's own tone")
+	}
+	for _, tc := range []struct {
+		name  string
+		cell  int
+		field *int
+		want  int
+		limit string
+	}{
+		{"brighter", picToolBrighter, &pp.bright, pictureToneMax, "Brightness at its maximum"},
+		{"darker", picToolDarker, &pp.bright, -pictureToneMax, "Brightness at its minimum"},
+		{"more contrast", picToolMoreContrast, &pp.contrast, pictureToneMax, "Contrast at its maximum"},
+		{"less contrast", picToolLessContrast, &pp.contrast, -pictureToneMax, "Contrast at its minimum"},
+	} {
+		pp.resetTone()
+		before := pp.render()
+		pp.tools.RunCell(tc.cell)
+		stepped := pp.render()
+		if stepped == before {
+			t.Errorf("%s: a tone step kept the cached art", tc.name)
+		}
+		if pp.toolDisabled(picToolResetTone) {
+			t.Errorf("%s: Reset is disabled after a step", tc.name)
+		}
+		for range 2 * pictureToneMax {
+			pp.tools.RunCell(tc.cell)
+		}
+		if *tc.field != tc.want {
+			t.Errorf("%s: step is %d, want the clamp %d", tc.name, *tc.field, tc.want)
+		}
+		if !strings.HasPrefix(a.statusText, tc.limit) {
+			t.Errorf("%s: status %q at the clamp, want %q", tc.name, a.statusText, tc.limit)
+		}
+		atLimit := pp.render()
+		pp.tools.RunCell(tc.cell)
+		if pp.render() != atLimit {
+			t.Errorf("%s: a refused step re-rendered", tc.name)
+		}
+	}
+	pp.tools.RunCell(picToolResetTone)
+	if pp.bright != 0 || pp.contrast != 0 || !pp.toolDisabled(picToolResetTone) {
+		t.Errorf("Reset left %d/%d, Reset enabled=%v", pp.bright, pp.contrast, !pp.toolDisabled(picToolResetTone))
+	}
+	if strings.Contains(pp.infoText(), "Brightness") {
+		t.Errorf("toolbar shows a tone at 0/0: %q", pp.infoText())
+	}
+	pp.adjustTone(3, -1)
+	if !strings.Contains(pp.infoText(), "Brightness +3, contrast -1") {
+		t.Errorf("toolbar %q does not show the tone", pp.infoText())
+	}
+}
+
+// Every picTool* index runs the cell buildTools put there: an index that
+// drifts from the cells makes a key run its neighbour's action.
+func TestPictureToolIndexesMatchTheCells(t *testing.T) {
+	pp := readyPicturePanel(t, newTestApp(), 200, 20)
+	for _, tc := range []struct {
+		i     int
+		label string
+	}{
+		{picToolFit, "Fit"},
+		{picToolActual, "1:1"},
+		{picToolZoomIn, "Zoom +"},
+		{picToolZoomOut, "Zoom -"},
+		{picToolMode, "Mode: "},
+		{picToolBrighter, "Bright +"},
+		{picToolDarker, "Bright -"},
+		{picToolMoreContrast, "Contrast +"},
+		{picToolLessContrast, "Contrast -"},
+		{picToolResetTone, "Reset"},
+		{picToolSave, "Save As..."},
+	} {
+		if got := pp.tools.Cells[tc.i].Label; !strings.HasPrefix(got, tc.label) {
+			t.Errorf("cell %d is %q, want %q", tc.i, got, tc.label)
+		}
+	}
+	if len(pp.tools.Cells) != picToolSave+1 {
+		t.Errorf("%d cells, picTool* names %d", len(pp.tools.Cells), picToolSave+1)
+	}
+}
+
+// A conversion gotuipic refuses is not retried while the state is unchanged:
+// render runs on every Draw, so a retry would redo the refused conversion
+// each frame. A different state, or a new picture, tries again.
+func TestPictureRenderFailureIsNotRetriedEachFrame(t *testing.T) {
+	pp := readyPicturePanel(t, newTestApp(), 80, 30)
+	pp.zoomCols = int(gotuipic.DefaultMaxCells) + 1 // one row is already over the cap
+	if pp.render() != nil || pp.renderFail == "" {
+		t.Fatalf("an over-cap zoom rendered (fail %q)", pp.renderFail)
+	}
+	// A retry would overwrite the sentinel with the conversion's error.
+	pp.renderFail = "sentinel"
+	if pp.render() != nil || pp.renderFail != "sentinel" {
+		t.Fatalf("the failed state was converted again (fail %q)", pp.renderFail)
+	}
+	pp.zoomCols = 0
+	if pp.render() == nil || pp.renderFail != "" {
+		t.Fatalf("a changed state did not render (fail %q)", pp.renderFail)
+	}
+	pp.zoomCols = int(gotuipic.DefaultMaxCells) + 1
+	pp.render()
+	pic, err := decodePicture(cellHex(encodePicture(t, "png")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp.setDecoded(pic, nil)
+	if pp.renderFail != "" {
+		t.Errorf("a new picture kept the old failure %q", pp.renderFail)
 	}
 }

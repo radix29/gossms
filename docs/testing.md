@@ -137,6 +137,16 @@ session is disconnected and locked. `/create … /f` again to change the command
 (`/change` asks for a password), and give `-test.timeout` and a minute or two
 of start latency. Delete the task and files after.
 
+**On win10cli the lock, config and audit tests are slow and flake first.**
+`scripts/wintest.sh` runs `go test` there over ssh. An uncontended
+`fileutil.WithLock`+`WriteAtomic` costs ~22 ms, contended ~52 ms
+(`BenchmarkWithLock*`, i5-2500K), versus well under 1 ms on Linux — fsync, not
+a bug. `internal/fileutil`, `internal/config` and `internal/cli/audit` take
+10–45 s there and are the first to fail under full-suite load; rerun them
+alone (`scripts/wintest.sh test -count=3 ./internal/fileutil/
+./internal/config/ ./internal/cli/audit/`) before calling a failure real.
+`-race` cannot run there (no C compiler; `CGO_ENABLED=0`).
+
 **A timing test over pure channels and timers runs in `synctest.Test`.** The
 bubble's clock is fake, so a window holds exactly the ticks the schedule
 predicts: assert exact counts and wait with `synctest.Sleep`, not a

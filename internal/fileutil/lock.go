@@ -19,6 +19,9 @@ var (
 	lockStale = 10 * time.Second
 	// lockPoll is the retry interval while the lock is held.
 	lockPoll = 5 * time.Millisecond
+	// lockPriorityAfter is how long a waiter loses before it claims the
+	// priority marker (claimPriority).
+	lockPriorityAfter = 100 * time.Millisecond
 )
 
 // WithLock runs fn while holding path's lock file, path + ".lock", so two gossms
@@ -36,25 +39,68 @@ var (
 // holder's token, and release removes it only while it still holds that token,
 // so a holder that overran lockStale leaves its successor's lock alone.
 //
+// A waiter that has lost for lockPriorityAfter claims priority: it creates
+// lock + ".wait" holding its token, and every other caller stands back while
+// that marker is there (blockedByPriority), so the next release goes to it.
+// Polling alone was unfair: a holder that saves again took the lock straight
+// back on release, before the sleeping waiter's next poll, and on a slow disk
+// (two fsyncs per hold) a waiter lost every race until lockWait. A longer or
+// jittered poll made that worse — it only cuts the waiter's tries. One waiter
+// holds the marker at a time; the owner removes it once it has the lock, or
+// when it gives up. The marker decides who goes next, never mutual exclusion
+// (the lock file alone does that), so its races cost fairness, not safety.
+//
 // If a live holder keeps the lock past lockWait, WithLock returns an error
 // without running fn; callers keep their pending changes for the next save.
 func WithLock(path string, fn func() error) error {
 	lock := resolveSymlink(path) + ".lock"
 	token := strconv.Itoa(os.Getpid()) + " " + rand.Text()
-	deadline := time.Now().Add(lockWait)
+	wait := lock + ".wait"
+	start := time.Now()
+	deadline := start.Add(lockWait)
+	var denied error
+	prioritized := false
+	defer func() {
+		if prioritized {
+			releaseLockFile(wait, token)
+		}
+	}()
 	for {
+		if !prioritized && blockedByPriority(wait) {
+			if time.Now().After(deadline) {
+				return fmt.Errorf("%s is locked by another gossms instance (remove %s if none is running)", path, lock)
+			}
+			time.Sleep(lockPoll)
+			continue
+		}
 		took, err := createLockFile(lock, token)
-		if err != nil {
+		if err != nil && !errors.Is(err, fs.ErrPermission) {
 			return err
 		}
 		if took {
+			if prioritized {
+				releaseLockFile(wait, token)
+				prioritized = false
+			}
 			break
 		}
+		// Windows reports ERROR_ACCESS_DENIED, not "exists", for an
+		// O_EXCL create against a lock file that is delete-pending (the
+		// holder just removed it, or a handle is still open). That is
+		// contention, so keep waiting; only a denial that outlasts the
+		// deadline (a genuinely unwritable directory) is returned, as itself.
+		denied = err
 		if isStaleLock(lock) && breakStaleLock(lock, token) {
 			continue
 		}
 		if time.Now().After(deadline) {
+			if denied != nil {
+				return denied
+			}
 			return fmt.Errorf("%s is locked by another gossms instance (remove %s if none is running)", path, lock)
+		}
+		if !prioritized && time.Since(start) >= lockPriorityAfter {
+			prioritized = claimPriority(wait, token)
 		}
 		time.Sleep(lockPoll)
 	}
@@ -78,6 +124,31 @@ func createLockFile(lock, token string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// blockedByPriority reports whether another waiter holds the priority marker
+// wait. Called only by a caller that does not hold it. A marker older than
+// twice lockWait outlived its owner (an owner gives up and removes it within
+// lockWait), so it is removed and ignored; until then a waiter that crashed
+// holding it makes saves fail as "locked", as a crashed holder does. A stat
+// error counts as absent: on Windows a marker being deleted refuses opens.
+func blockedByPriority(wait string) bool {
+	fi, err := os.Stat(wait)
+	if err != nil {
+		return false
+	}
+	if time.Since(fi.ModTime()) > 2*lockWait {
+		os.Remove(wait)
+		return false
+	}
+	return true
+}
+
+// claimPriority creates the priority marker wait holding token, reporting
+// whether this caller now holds it.
+func claimPriority(wait, token string) bool {
+	took, err := createLockFile(wait, token)
+	return err == nil && took
 }
 
 // isStaleLock reports whether lock exists and is older than lockStale.
