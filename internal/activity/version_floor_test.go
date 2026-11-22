@@ -51,6 +51,7 @@ func TestOnlyKnownSitesEmitCreateOrAlter(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		rel = filepath.ToSlash(rel)
 		src, err := os.ReadFile(path)
 		if err != nil {
 			return err
