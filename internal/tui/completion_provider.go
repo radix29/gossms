@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/sqltext"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/tuikit/controls/editor"
@@ -59,7 +60,50 @@ var loadingCompletionItem = editor.CompletionItem{Label: "Loading suggestions...
 // armed on the way to its return then reshape them in one fixed order.
 func (p *QueryPanel) sqlCompletionCandidates(req editor.CompletionRequest) ([]editor.CompletionItem, int) {
 	items, replaceCol, post := p.baseCompletionCandidates(req)
-	return post.apply(items), replaceCol
+	items = post.apply(items)
+	items = slices.DeleteFunc(items, func(item editor.CompletionItem) bool { return hasControlChar(item.Label) })
+	softenExactMatches(items, req, replaceCol, post.collation)
+	return items, replaceCol
+}
+
+// hasControlChar reports a C0 control character or DEL in s. A catalog name
+// holding one (legal inside brackets) cannot be offered faithfully: its popup
+// label draws without the character and a CR is lost to the editor's CRLF
+// normalisation, so the insert would name a different object. Typing such a
+// name by hand still works. Labels are the raw names; keyword and template
+// Text may legitimately hold newlines, which is why the Label is tested.
+func hasControlChar(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f })
+}
+
+// softenExactMatches marks Soft every name candidate whose Text the typed span
+// [replaceCol, Col+ReplaceAfter) already equals under collation: committing it
+// would change nothing, so Enter after a name typed in full ("FROM
+// sys.tables⏎") must break the line, not swallow the key. Tab still commits.
+// Under a case-sensitive collation `ORDERS` is not `Orders`, and Enter commits
+// the fix. Keywords are left alone: a fully typed one still commits on Enter,
+// upper-cased with its space (TestSQLKeywordCompletionKeepsFullyTypedKeywords).
+func softenExactMatches(items []editor.CompletionItem, req editor.CompletionRequest, replaceCol int, collation string) {
+	if req.Row < 0 || req.Row >= len(req.Lines) {
+		return
+	}
+	line := req.Lines[req.Row]
+	if replaceCol < 0 || replaceCol > req.Col || req.Col > len(line) {
+		return
+	}
+	for i := range items {
+		item := &items[i]
+		if item.Detail == "keyword" || item.Placeholder || item.Soft || item.ReplaceBefore > 0 || item.CursorOffset != 0 {
+			continue
+		}
+		end := req.Col + max(0, item.ReplaceAfter)
+		if end > len(line) {
+			continue
+		}
+		if typed := string(line[replaceCol:end]); typed != "" && gosmo.SameName(collation, typed, item.Text) {
+			item.Soft = true
+		}
+	}
 }
 
 // completionPost is the post-processing baseCompletionCandidates arms as it
@@ -92,6 +136,10 @@ type completionPost struct {
 	keywordsHavingAgg bool // a HAVING frame expecting an aggregate
 
 	shift int
+
+	// collation is the database's (completionInventory.collation) once the
+	// inventory was read; softenExactMatches compares under it (empty folds).
+	collation string
 }
 
 func (post completionPost) apply(items []editor.CompletionItem) []editor.CompletionItem {
@@ -251,6 +299,13 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 			}
 		}
 	}
+	if state == sqlparse.LexNormal && len(chain) == 1 {
+		if routine := routineCompletionTokens(buf, pre, rowStart+replaceFrom); len(routine) > 0 {
+			if types, handled := p.qualifiedTypeCandidates(buf, routine, nil, rowStart+replaceFrom, upTo, prefix); handled {
+				return types, replaceFrom, post
+			}
+		}
+	}
 	// Statements stacked with no ';' between them still lex as one
 	// ';'/GO-delimited span; narrow to the DML statement holding the cursor so
 	// a bare column cc doesn't pick up FROM refs from an unrelated
@@ -293,6 +348,12 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 		}
 		memberAccess = tok.Kind == sqlparse.TokenDot
 	}
+	if action, objectType, _ := ddlCompletionTarget(tokens, rowStart+replaceFrom); state == sqlparse.LexNormal && len(chain) == 1 &&
+		action == "CREATE" && objectType == "TABLE" {
+		if types, handled := p.qualifiedTypeCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix); handled {
+			return types, replaceFrom, post
+		}
+	}
 	if state == sqlparse.LexNormal && !hasQualifier && len(chain) == 0 && !memberAccess {
 		keywords, sourceComplete := p.keywordCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix)
 		for i := range keywords {
@@ -315,6 +376,7 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 	if inv.err != nil || inv.catalog == nil {
 		return nil, replaceFrom, post
 	}
+	post.collation = inv.collation
 	ddlAction, ddlType, ddlTail := ddlCompletionTarget(tokens, rowStart+replaceFrom)
 	if ddlAction == "DROP" {
 		if len(ddlTail) >= 2 && keywordIs(ddlTail[0], "IF") && keywordIs(ddlTail[1], "EXISTS") {

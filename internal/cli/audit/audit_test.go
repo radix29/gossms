@@ -285,16 +285,7 @@ func TestAppendRotationLosesNothing(t *testing.T) {
 	for w := range writers {
 		go func() {
 			for i := range perWriter {
-				// WithLock gives up after 2 s and the lock is unfair; on a
-				// slow Windows disk (two fsyncs per hold) a writer can starve
-				// past that. The documented answer is to try again.
-				var err error
-				for range 20 {
-					if err = Append(path, Record{Command: cmd(w, i), Args: []string{}}); err == nil || !strings.Contains(err.Error(), "locked by another") {
-						break
-					}
-				}
-				if err != nil {
+				if err := Append(path, Record{Command: cmd(w, i), Args: []string{}}); err != nil {
 					errs <- err
 					return
 				}

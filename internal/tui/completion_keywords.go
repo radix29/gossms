@@ -23,8 +23,12 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	cc := p.analyzeCompletionContext(buf, tokens, query, from)
 	columnType := cc.datatype
 	ddlAction, ddlType, ddlTail := ddlCompletionTarget(tokens, from)
+	userTypes := ddlTypes{fabric: fabric}
+	if columnType || ddlAction == "CREATE" && ddlType == "TABLE" {
+		userTypes = p.ddlTypes()
+	}
 	if ddlAction == "CREATE" && ddlType == "TABLE" {
-		if types, inside := ddlColumnTypeChoices(ddlTail, fabric); inside {
+		if types, inside := ddlColumnTypeChoices(ddlTail, userTypes); inside {
 			cc.only, cc.choices, columnType = true, types, true
 		}
 	}
@@ -104,6 +108,13 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	}
 	prefixUpper := strings.ToUpper(prefix)
 	for _, candidate := range choices {
+		if typ, ok := userTypes.userType(candidate); ok && columnType {
+			// Typed as either the qualified or the bare name.
+			if strings.HasPrefix(strings.ToUpper(candidate), prefixUpper) || strings.HasPrefix(strings.ToUpper(typ.Name), prefixUpper) {
+				items = append(items, editor.CompletionItem{Text: candidate, Label: candidate, Detail: ddlUserTypeDetail(typ), Soft: prefix == ""})
+			}
+			continue
+		}
 		function := strings.HasSuffix(candidate, "(")
 		label := strings.TrimSuffix(candidate, "(")
 		word, _, phrase := strings.Cut(label, " ")

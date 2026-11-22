@@ -27,7 +27,7 @@ func TestCompletionInventoryLoadsProcedureSuggestions(t *testing.T) {
 			empty := gosmotest.Set{Columns: []string{"unused"}}
 			f.OnFunc(func(q gosmotest.Query) bool {
 				return strings.Contains(q.Text, "o.type IN ('U','V')")
-			}, gosmotest.Sets(empty, empty, empty, empty, empty))
+			}, gosmotest.Sets(empty, empty, empty, empty, empty, empty))
 			procedures := gosmotest.Rows([]any{int64(10), "dbo", "GetCustomers", time.Unix(0, 0), time.Unix(0, 0)})
 			if tt.denied {
 				procedures = gosmotest.Fail(errors.New("procedure metadata denied"))

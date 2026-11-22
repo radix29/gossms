@@ -4,8 +4,10 @@ import (
 	"slices"
 	"strings"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/sqltext"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
+	"github.com/radix29/tuikit/controls/editor"
 )
 
 func ddlCompletionTarget(tokens []sqlparse.Token, from int) (action, objectType string, tail []sqlparse.Token) {
@@ -39,15 +41,15 @@ func ddlCompletionTarget(tokens []sqlparse.Token, from int) (action, objectType 
 	return "", "", nil
 }
 
-func ddlColumnTypeChoices(tokens []sqlparse.Token, fabric bool) ([]string, bool) {
+func ddlColumnTypeChoices(tokens []sqlparse.Token, types ddlTypes) ([]string, bool) {
 	open := slices.IndexFunc(tokens, func(tok sqlparse.Token) bool { return tok.Kind == sqlparse.TokenParenOpen })
 	if open < 1 || !keywordAliasPosition(tokens[:open], 0) {
 		return nil, false
 	}
-	return ddlColumnDefinitionChoices(tokens[open+1:], fabric)
+	return ddlColumnDefinitionChoices(tokens[open+1:], types)
 }
 
-func ddlColumnDefinitionChoices(tokens []sqlparse.Token, fabric bool) ([]string, bool) {
+func ddlColumnDefinitionChoices(tokens []sqlparse.Token, types ddlTypes) ([]string, bool) {
 	depth, start := 1, 0
 	for i := start; i < len(tokens); i++ {
 		switch tokens[i].Kind {
@@ -73,14 +75,13 @@ func ddlColumnDefinitionChoices(tokens []sqlparse.Token, fabric bool) ([]string,
 		keywordIs(column[0], "FOREIGN") || keywordIs(column[0], "CHECK") {
 		return nil, true
 	}
-	types := ddlDataTypes(fabric)
 	if len(column) == 1 {
-		return types, true
+		return types.withUser(ddlDataTypes(types.fabric), false), true
 	}
-	if !slices.ContainsFunc(types, func(name string) bool { return keywordIs(column[1], strings.TrimSuffix(name, "(")) }) {
+	end, typ, ok := types.match(column, 1)
+	if !ok || typ.Kind == gosmo.CatalogTableType {
 		return nil, true
 	}
-	end := 2
 	if end < len(column) && column[end].Kind == sqlparse.TokenParenOpen {
 		close := slices.IndexFunc(column[end+1:], func(tok sqlparse.Token) bool { return tok.Kind == sqlparse.TokenParenClose })
 		if close < 0 {
@@ -95,6 +96,135 @@ func ddlColumnDefinitionChoices(tokens []sqlparse.Token, fabric bool) ([]string,
 		return []string{"NULL"}, true
 	}
 	return nil, true
+}
+
+// ddlTypes is what a DDL data-type position offers: the system types for the
+// edition, then the database's user-defined ones, schema-qualified — alias
+// and CLR types wherever a type goes, table types in a parameter list only.
+// user is empty on Fabric, which has no CREATE TYPE, and until the
+// database's inventory has loaded (ddlTypes reads it, never starts it).
+type ddlTypes struct {
+	fabric    bool
+	user      []gosmo.CatalogType
+	collation string
+}
+
+// ddlTypes is the type set p's database offers a DDL data-type position.
+func (p *QueryPanel) ddlTypes() ddlTypes {
+	t := ddlTypes{fabric: p.conn.IsFabricDW()}
+	if t.fabric || p.app == nil {
+		return t
+	}
+	inv := p.app.completion.inventories[completionInventoryKey(p.conn.Opts, p.database)]
+	if inv != nil && !inv.loading && inv.err == nil && inv.catalog != nil {
+		t.user, t.collation = inv.catalog.Types, inv.collation
+	}
+	return t
+}
+
+// ddlUserTypeLabel is the schema-qualified name a user-defined type is offered
+// and inserted as.
+func ddlUserTypeLabel(typ gosmo.CatalogType) string {
+	return gosmo.QuoteNameIfNeeded(typ.Schema) + "." + gosmo.QuoteNameIfNeeded(typ.Name)
+}
+
+// ddlUserTypeDetail is a user-defined type's popup detail.
+func ddlUserTypeDetail(typ gosmo.CatalogType) string {
+	switch typ.Kind {
+	case gosmo.CatalogTableType:
+		return "table type"
+	case gosmo.CatalogClrType:
+		return "CLR type"
+	}
+	return "alias type"
+}
+
+// withUser appends the user-defined types to names, table types only when
+// table (a parameter list).
+func (t ddlTypes) withUser(names []string, table bool) []string {
+	for _, typ := range t.user {
+		if table || typ.Kind != gosmo.CatalogTableType {
+			names = append(names, ddlUserTypeLabel(typ))
+		}
+	}
+	return names
+}
+
+// userType is the user-defined type offered as label, if one is.
+func (t ddlTypes) userType(label string) (gosmo.CatalogType, bool) {
+	for _, typ := range t.user {
+		if ddlUserTypeLabel(typ) == label {
+			return typ, true
+		}
+	}
+	return gosmo.CatalogType{}, false
+}
+
+// match finds the data type written at tokens[at]: a system type or an
+// unqualified user-defined one (one token), or schema.type (three). end is
+// the index after it; typ is the user-defined type matched, zero for a
+// system one. Names compare under the database collation.
+func (t ddlTypes) match(tokens []sqlparse.Token, at int) (end int, typ gosmo.CatalogType, ok bool) {
+	if at >= len(tokens) || tokens[at].Kind != sqlparse.TokenIdent {
+		return 0, typ, false
+	}
+	if at+2 < len(tokens) && tokens[at+1].Kind == sqlparse.TokenDot && tokens[at+2].Kind == sqlparse.TokenIdent {
+		for _, u := range t.user {
+			if gosmo.SameName(t.collation, u.Schema, tokens[at].Text) && gosmo.SameName(t.collation, u.Name, tokens[at+2].Text) {
+				return at + 3, u, true
+			}
+		}
+		return 0, typ, false
+	}
+	if slices.ContainsFunc(ddlDataTypes(t.fabric), func(name string) bool { return keywordIs(tokens[at], strings.TrimSuffix(name, "(")) }) {
+		return at + 1, typ, true
+	}
+	for _, u := range t.user {
+		if gosmo.SameName(t.collation, u.Name, tokens[at].Text) {
+			return at + 1, u, true
+		}
+	}
+	return 0, typ, false
+}
+
+// qualifiedTypeCandidates answers "schema.|" where a DDL data type goes: that
+// schema's user-defined types, inserted by bare name after the typed
+// qualifier. handled is false where the qualifier does not start a data
+// type, leaving the position to the catalog-name path (which would offer
+// the schema's tables here).
+func (p *QueryPanel) qualifiedTypeCandidates(buf []rune, tokens []sqlparse.Token, query *sqlparse.Query, from, cursor int, prefix string) (items []editor.CompletionItem, handled bool) {
+	end := 0
+	for end < len(tokens) && tokens[end].Start < from {
+		end++
+	}
+	if end < 2 || tokens[end-1].Kind != sqlparse.TokenDot || tokens[end-2].Kind != sqlparse.TokenIdent ||
+		end >= 3 && tokens[end-3].Kind == sqlparse.TokenDot {
+		return nil, false
+	}
+	schema := tokens[end-2]
+	types := p.ddlTypes()
+	system := ddlDataTypes(types.fabric)
+	at, _ := p.keywordCandidates(buf, tokens, query, schema.Start, cursor, "")
+	for _, item := range at {
+		typ, ok := types.userType(item.Label)
+		if !ok {
+			handled = handled || slices.ContainsFunc(system, func(name string) bool { return strings.TrimSuffix(name, "(") == item.Label })
+			continue
+		}
+		handled = true
+		if gosmo.SameName(types.collation, typ.Schema, schema.Text) && strings.HasPrefix(strings.ToUpper(typ.Name), strings.ToUpper(prefix)) {
+			item.Text, item.Soft = gosmo.QuoteNameIfNeeded(typ.Name), prefix == ""
+			items = append(items, item)
+		}
+	}
+	return items, handled
+}
+
+// ddlRoutineDataTypes is the system types a routine signature accepts.
+func ddlRoutineDataTypes(fabric bool) []string {
+	return slices.DeleteFunc(ddlDataTypes(fabric), func(name string) bool {
+		return name == "IMAGE" || name == "NTEXT" || name == "TEXT" || name == "ROWVERSION"
+	})
 }
 
 func ddlDataTypes(fabric bool) []string {
@@ -150,7 +280,7 @@ func ddlMaxLengthChoices(tokens []sqlparse.Token) []string {
 	return nil
 }
 
-func ddlParameterChoices(buf []rune, tokens []sqlparse.Token, from int, function, parenthesized, fabric bool) ([]string, bool) {
+func ddlParameterChoices(buf []rune, tokens []sqlparse.Token, from int, function, parenthesized bool, types ddlTypes) ([]string, bool) {
 	start, depth := 0, 0
 	for i, tok := range tokens {
 		switch tok.Kind {
@@ -168,21 +298,27 @@ func ddlParameterChoices(buf []rune, tokens []sqlparse.Token, from int, function
 	if len(param) == 0 || !sqlparse.HasSigil(param[0].Text) || param[0].Quoted {
 		return nil, false
 	}
-	types := slices.DeleteFunc(ddlDataTypes(fabric), func(name string) bool {
-		return name == "IMAGE" || name == "NTEXT" || name == "TEXT" || name == "ROWVERSION"
-	})
 	at := 1
 	if at < len(param) && keywordIs(param[at], "AS") {
 		at++
 	}
 	if at == len(param) {
-		return types, true
+		return types.withUser(ddlRoutineDataTypes(types.fabric), true), true
 	}
 	if depth > 0 {
 		return ddlMaxLengthChoices(param[at:]), true
 	}
-	complete, last := keywordExpressionComplete(buf, keywordNextToken(buf, param[at].Start).End, from, "VALUE")
-	tail := keywordNextToken(buf[:from], keywordNextToken(buf, param[at].Start).End)
+	// A table type must be READONLY, so that is all it is offered.
+	typeEnd, typ, ok := types.match(param, at)
+	if !ok {
+		typeEnd = at + 1
+	}
+	if typ.Kind == gosmo.CatalogTableType && typ.Name != "" && typeEnd == len(param) {
+		return []string{"READONLY"}, false
+	}
+	afterType := keywordNextToken(buf, param[typeEnd-1].Start).End
+	complete, last := keywordExpressionComplete(buf, afterType, from, "VALUE")
+	tail := keywordNextToken(buf[:from], afterType)
 	if tail.Kind != sqltext.KindEnd && !complete {
 		return nil, false
 	}
@@ -202,7 +338,7 @@ func ddlParameterChoices(buf []rune, tokens []sqlparse.Token, from int, function
 
 // Only routine signatures and their first body keywords; SQL inside the body
 // continues through the normal query completion path.
-func ddlRoutineChoices(buf []rune, tail []sqlparse.Token, objectType string, from int, fabric bool) ([]string, bool, bool) {
+func ddlRoutineChoices(buf []rune, tail []sqlparse.Token, objectType string, from int, types ddlTypes) ([]string, bool, bool) {
 	if len(tail) == 0 || tail[0].Kind != sqlparse.TokenIdent {
 		return nil, false, false
 	}
@@ -229,7 +365,7 @@ func ddlRoutineChoices(buf []rune, tail []sqlparse.Token, objectType string, fro
 		choices, handled := ddlRoutineBodyChoices(buf, tail, h, from, function)
 		return choices, false, handled
 	}
-	return ddlRoutineSignatureChoices(buf, tail, h, from, function, fabric)
+	return ddlRoutineSignatureChoices(buf, tail, h, from, function, types)
 }
 
 // routineHeader locates a routine header's RETURNS and its body's AS (-1
@@ -400,14 +536,11 @@ func ddlRoutineBlockChoices(buf []rune, tail, body []sqlparse.Token, returns, fr
 
 // ddlRoutineSignatureChoices completes a routine header before its AS: the
 // parameter list, RETURNS and its type, and AS itself.
-func ddlRoutineSignatureChoices(buf []rune, tail []sqlparse.Token, h routineHeader, from int, function, fabric bool) ([]string, bool, bool) {
-	types := slices.DeleteFunc(ddlDataTypes(fabric), func(name string) bool {
-		return name == "IMAGE" || name == "NTEXT" || name == "TEXT" || name == "ROWVERSION"
-	})
+func ddlRoutineSignatureChoices(buf []rune, tail []sqlparse.Token, h routineHeader, from int, function bool, types ddlTypes) ([]string, bool, bool) {
 	if h.returns >= 0 {
 		result := tail[h.returns+1:]
 		if len(result) == 0 {
-			return append(types, "TABLE"), true, true
+			return append(types.withUser(ddlRoutineDataTypes(types.fabric), false), "TABLE"), true, true
 		}
 		if sqlparse.HasSigil(result[0].Text) {
 			if len(result) == 1 {
@@ -417,7 +550,7 @@ func ddlRoutineSignatureChoices(buf []rune, tail []sqlparse.Token, h routineHead
 				return nil, false, true
 			}
 			if h.depth > 0 {
-				choices, _ := ddlColumnDefinitionChoices(result[3:], fabric)
+				choices, _ := ddlColumnDefinitionChoices(result[3:], types)
 				return choices, true, true
 			}
 		}
@@ -428,10 +561,10 @@ func ddlRoutineSignatureChoices(buf []rune, tail []sqlparse.Token, h routineHead
 	}
 	if h.depth > 0 {
 		if tail[0].Kind == sqlparse.TokenParenOpen {
-			choices, datatype := ddlParameterChoices(buf, tail[1:], from, function, true, fabric)
+			choices, datatype := ddlParameterChoices(buf, tail[1:], from, function, true, types)
 			return choices, datatype, true
 		}
-		choices, datatype := ddlParameterChoices(buf, tail, from, function, false, fabric)
+		choices, datatype := ddlParameterChoices(buf, tail, from, function, false, types)
 		return choices, datatype, true
 	}
 	if function {
@@ -446,6 +579,6 @@ func ddlRoutineSignatureChoices(buf []rune, tail []sqlparse.Token, h routineHead
 	if tail[0].Kind == sqlparse.TokenParenOpen && tail[len(tail)-1].Kind == sqlparse.TokenParenClose {
 		return []string{"AS"}, false, true
 	}
-	choices, datatype := ddlParameterChoices(buf, tail, from, function, false, fabric)
+	choices, datatype := ddlParameterChoices(buf, tail, from, function, false, types)
 	return choices, datatype, true
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
+
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/tuikit/controls/editor"
@@ -1661,5 +1663,70 @@ func BenchmarkCompletionLowercaseLongStatement(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		qp.sqlCompletionCandidates(req)
+	}
+}
+
+// A name typed in full is Soft (F4): Enter breaks the line instead of
+// committing what is already there, Tab still commits. Under a case-sensitive
+// collation a case-different name is not the same one, so Enter commits the
+// catalog's spelling.
+func TestSQLCompletionExactNameEnterIsNewline(t *testing.T) {
+	for _, tt := range []struct {
+		name, collation, typed, key, want string
+	}{
+		{"enter after exact", "", "Customers", "enter", "SELECT * FROM dbo.Customers\n"},
+		{"enter after folded", "", "customers", "enter", "SELECT * FROM dbo.customers\n"},
+		{"tab after exact", "", "Customers", "tab", "SELECT * FROM dbo.Customers"},
+		{"enter after prefix", "", "Cust", "enter", "SELECT * FROM dbo.Customers"},
+		{"enter under CS, case differs", "Latin1_General_CS_AS", "customers", "enter", "SELECT * FROM dbo.Customers"},
+		{"enter under CS, exact", "Latin1_General_CS_AS", "Customers", "enter", "SELECT * FROM dbo.Customers\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "testdb")].collation = tt.collation
+			qp.editor.SetText("SELECT * FROM dbo.")
+			qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnd, "", tcell.ModCtrl))
+			for _, r := range tt.typed {
+				qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+			}
+			if !qp.editor.OverlayActive() {
+				t.Fatal("popup closed after typing the name")
+			}
+			key := tcell.KeyEnter
+			if tt.key == "tab" {
+				key = tcell.KeyTab
+			}
+			qp.editor.HandleKey(tcell.NewEventKey(key, "", tcell.ModNone))
+			if got := qp.editor.Text(); got != tt.want {
+				t.Fatalf("Text() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A catalog name holding a control character cannot be offered faithfully
+// (fix plan F7): the popup label draws without it and a CR is lost to CRLF
+// normalisation. It is skipped; every other name still completes.
+func TestSQLCompletionSkipsControlCharacterNames(t *testing.T) {
+	objs := append(testCustomersOrders(),
+		gosmo.CatalogObject{ObjectID: 90, Schema: "dbo", Name: "Cust\nweird", Type: gosmo.CatalogTable},
+		gosmo.CatalogObject{ObjectID: 91, Schema: "dbo", Name: "Cust\rcr", Type: gosmo.CatalogTable},
+		gosmo.CatalogObject{ObjectID: 92, Schema: "dbo", Name: "Cust\x7fdel", Type: gosmo.CatalogTable},
+	)
+	qp := newTestQueryPanelWithInventory(t, "testdb", objs)
+	items, _ := qp.sqlCompletionCandidates(editor.CompletionRequest{
+		Lines: [][]rune{[]rune("SELECT * FROM dbo.Cust")}, Row: 0, Col: len("SELECT * FROM dbo.Cust"),
+	})
+	var labels []string
+	for _, it := range items {
+		labels = append(labels, it.Label)
+	}
+	if !slices.Contains(labels, "dbo.Customers") {
+		t.Fatalf("Customers missing from %q", labels)
+	}
+	for _, l := range labels {
+		if hasControlChar(l) {
+			t.Fatalf("control-character name offered: %q", l)
+		}
 	}
 }

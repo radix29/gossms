@@ -89,16 +89,6 @@ support); this section covers only the environment.
   `@@VERSION`; if either differs, make it the test in `detectFabricDW` and
   keep the hostname only as the fallback.
 
-## Windows test run: what is left
-
-Open: `fileutil.WithLock` is unfair under heavy contention on slow disks. Every
-waiter polls on the same fixed 5 ms beat and each hold costs two fsyncs, so on
-win10cli a waiter can starve past `lockWait` (2 s). Two tests were loosened
-rather than the product changed, because `lockWait` also bounds exit time
-(`internal/tui/app_saves.go`): `TestWithLockSerializesReadModifyWrite` raises
-`lockWait`, `TestAppendRotationLosesNothing` retries an `Append` that lost the
-lock.
-
 ## Windows clipboard: what is left
 
 - **One clipboard-manager run hung** (2026-11-18, before the message-only
@@ -125,20 +115,6 @@ Settled design: `docs/decisions.md` § Format Document.
 
 The phase plan and its as-built record are `todo/comm-params.md` § 15.
 
-- **Windows: PowerShell 7 command line not driven.** Phases 0 and 1 ran on
-  win10cli on 2026-11-18 and passed with no fix: cmd, Windows PowerShell 5.1
-  and Git Bash over ssh — modes (bare gossms refused on pipes, exit 1),
-  help, did-you-mean, response files (BOM + CRLF), every format, `--out-file`
-  (Windows and MSYS paths, `--force`, a directory), `-i -`, `--sql-base64`,
-  `--password-env`/`--password-stdin`, a profile's saved password and its
-  drop on override, Windows Authentication, `host\instance`, the `GOSSMS_*`
-  variables, exit codes 0/2/3/4/5/6/7/8; stdout has no CR. In a real console
-  over RDP: UTF-8 renders, Ctrl+C is `CANCELLED`/130, bare gossms starts the
-  UI and Ctrl+Q restores the console. The command line has no colour,
-  width-dependent output or password prompt, so nothing else depends on the
-  terminal. Git Bash *inside mintty* was driven on 2026-11-22: bare gossms
-  starts (ConPTY, not refused), connects, opens a query tab and Ctrl+Q exits 0.
-  Not run: the command line from PowerShell 7 (7.7.0 is installed on win10cli).
 - **Kerberos (`AuthWindows` off Windows) not dialled live since go-mssqldb
   v1.12.0** swapped `jcmturner/gokrb5` for the `go-krb5/krb5` fork — no KDC is
   reachable. Checked: the `krb5` provider still registers and `KerberosOptions`
@@ -165,26 +141,6 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-
-## Completion: what is left
-
-- **A catalog name holding a control character is offered as-is.** A table
-  named `weird⏎name` (legal inside brackets) is offered as `[weird⏎name]`;
-  since tuikit round 6 bug 4 the commit splits it into two real lines, so
-  the query runs (driven live 2026-11-21). Undecided: whether to offer such
-  a name at all. Its popup label draws as `weirdname` (the newline is
-  invisible), and a CR in a name is lost, since the editor normalizes CRLF
-  and CR to LF.
-- **Enter right after a name typed in full commits it instead of breaking
-  the line** (seen on main and with PR 50, 2026-11-21): `FROM sys.tables⏎`
-  leaves `FROM sys.tables` with no newline, because the popup still holds the
-  exact match and Enter commits it. Keywords avoid this through
-  `CompletionItem.Soft` (alias positions, nothing typed); catalog names do
-  not. Undecided: whether an exact match should be Soft too.
-- **User-defined types are never offered in a column or parameter list**
-  (`ddlDataTypes` lists system types only; 2026-11-22 review C1). A column
-  typed with one gets no `NULL`/`NOT NULL` follow-up either. Offering them
-  needs the catalog inventory in a path that is lexical today; undecided.
 
 ## Fix order
 

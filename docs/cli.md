@@ -330,8 +330,10 @@ network timeout) `TIMEOUT`; anything else `CONNECTION_FAILED`.
 Results go to **stdout** in the `--output` format; errors too, so the caller
 parses one stream. On an error, stderr also gets one line,
 `gossms: <CODE>: <message>`. Output is UTF-8 without a BOM, `\n` line ends on
-every OS, independent of the locale. Windows PowerShell 5.1 decodes a native command's
-output with `[Console]::OutputEncoding` (the OEM code page by default), so a
+every OS, independent of the locale. Windows PowerShell 5.1 and PowerShell 7
+both decode a native command's output with `[Console]::OutputEncoding` (the
+OEM code page by default; PowerShell 7's UTF-8 `$OutputEncoding` covers only
+what is piped *into* gossms), so a
 script that captures non-ASCII output sets it to UTF-8 first; a console window
 shows it correctly either way. Library logging is discarded unless
 `--verbose`, so nothing else appears on stderr.
