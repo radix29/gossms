@@ -349,7 +349,7 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 		memberAccess = tok.Kind == sqlparse.TokenDot
 	}
 	if action, objectType, _ := ddlCompletionTarget(tokens, rowStart+replaceFrom); state == sqlparse.LexNormal && len(chain) == 1 &&
-		action == "CREATE" && objectType == "TABLE" {
+		(action == "CREATE" && objectType == "TABLE" || qualifiedDataTypePosition(buf, stmtTokens, rowStart+replaceFrom)) {
 		if types, handled := p.qualifiedTypeCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix); handled {
 			return types, replaceFrom, post
 		}

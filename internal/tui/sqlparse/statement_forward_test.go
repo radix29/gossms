@@ -149,6 +149,7 @@ var forwardCases = []string{
 	"SELECT a FROM t WITH (NOLOCK) WHERE a = 1\nSELECT b FROM u",
 	"SELECT j.a FROM OPENJSON(@j) WITH (a int '$.a') AS j WHERE j.a = 1\nWITH c AS (SELECT 1 x) SELECT x FROM c",
 	"INSERT INTO t WITH (TABLOCK) (a)\nSELECT x.a FROM x\nSELECT y.b FROM y",
+	"CREATE TYPE dbo.X FROM int NOT NULL\nSELECT b FROM u",
 }
 
 // The cases the plan names, asserted by content rather than only against the
@@ -189,6 +190,8 @@ func TestNarrowStatementForwardContinuations(t *testing.T) {
 		{"SELECT | FROM t WITH (NOLOCK) WHERE a = 1\nSELECT b FROM u", "SELECT  FROM t WITH (NOLOCK) WHERE a = 1"},
 		{"SELECT j.a FROM OPENJSON(@j) WITH (a int) AS j WHERE j.|\nSELECT b FROM u", "SELECT j.a FROM OPENJSON(@j) WITH (a int) AS j WHERE j."},
 		{"SELECT a FROM t\nWITH c AS (SELECT | FROM u) SELECT x FROM c", "WITH c AS (SELECT  FROM u) SELECT x FROM c"},
+		// An alias type's FROM is its base type, not a FROM-first query.
+		{"CREATE TYPE dbo.X FROM |int\nSELECT b FROM u", "CREATE TYPE dbo.X FROM int"},
 	}
 	for _, c := range cases {
 		cur := strings.IndexByte(c.sql, '|')

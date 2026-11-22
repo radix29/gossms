@@ -1571,3 +1571,91 @@ func TestSQLCompletionUserDefinedTypes(t *testing.T) {
 		}
 	})
 }
+
+// TestSQLCompletionDataTypePositions covers the data-type positions outside
+// CREATE TABLE and routine headers (dataTypePosition): each offers types, not
+// the object list, and the follow-up after a written type.
+func TestSQLCompletionDataTypePositions(t *testing.T) {
+	newPanel := func(t *testing.T) *QueryPanel {
+		qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		inv := qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "testdb")]
+		inv.catalog.Types = []gosmo.CatalogType{
+			{Schema: "dbo", Name: "Phone", Kind: gosmo.CatalogAliasType},
+			{Schema: "geo", Name: "Point 3", Kind: gosmo.CatalogClrType},
+			{Schema: "dbo", Name: "Rows", Kind: gosmo.CatalogTableType},
+		}
+		return qp
+	}
+	objects := []string{"dbo.Customers", "dbo.vActiveCustomers", "sales.Region", "dbo"}
+	for _, tt := range []struct {
+		sql       string
+		want, not []string
+	}{
+		// DECLARE: scalar, alias, CLR and table types, TABLE and CURSOR; no
+		// text/ntext/image (Msg 2739).
+		{"DECLARE @x |", []string{"INT", "ROWVERSION", "dbo.Phone", "geo.[Point 3]", "dbo.Rows", "TABLE", "CURSOR"}, append([]string{"TEXT", "NTEXT", "IMAGE"}, objects...)},
+		{"DECLARE @x i|", []string{"INT"}, objects},
+		{"DECLARE @x AS i|", []string{"INT"}, objects},
+		{"DECLARE @x ph|", []string{"dbo.Phone"}, objects},
+		{"DECLARE @a INT = 1, @b |", []string{"INT", "dbo.Phone"}, objects},
+		{"DECLARE @a INT = dbo.f(1, 2), @b |", []string{"INT"}, objects},
+		{"DECLARE @x INT |", []string{"="}, append([]string{"INT"}, objects...)},
+		{"DECLARE @x VARCHAR(10) |", []string{"="}, objects},
+		{"DECLARE @x NVARCHAR(|", []string{"MAX"}, objects},
+		{"DECLARE @t dbo.Rows |", nil, append([]string{"="}, objects...)},
+		{"DECLARE @t TABLE |", nil, objects},
+		{"DECLARE @t TABLE (a i|", []string{"INT"}, objects},
+		{"DECLARE @t TABLE (a INT, b |", []string{"INT", "dbo.Phone"}, append([]string{"dbo.Rows"}, objects...)},
+		{"DECLARE @t TABLE (a INT |", []string{"NULL", "NOT NULL"}, objects},
+		{"CREATE PROCEDURE dbo.p AS BEGIN DECLARE @x |", []string{"INT", "dbo.Phone"}, objects},
+		// CAST/CONVERT: system and CLR types, never alias or table types.
+		{"SELECT CAST(1 AS |", []string{"INT", "geo.[Point 3]"}, append([]string{"dbo.Phone", "dbo.Rows", "TABLE"}, objects...)},
+		{"SELECT TRY_CAST('1' AS d|", []string{"DATE", "DECIMAL"}, objects},
+		{"SELECT CAST(Name AS NVARCHAR(| FROM dbo.Customers", []string{"MAX"}, []string{"Name"}},
+		{"SELECT CONVERT(i|", []string{"INT"}, objects},
+		{"SELECT TRY_CONVERT(|", []string{"INT", "geo.[Point 3]"}, append([]string{"dbo.Phone"}, objects...)},
+		{"SELECT CAST((SELECT TOP (1) Id AS x FROM dbo.Orders) AS |", []string{"INT"}, objects},
+		// ALTER TABLE: system, alias and CLR types; NULL/NOT NULL after.
+		{"ALTER TABLE dbo.T ADD c i|", []string{"INT"}, objects},
+		{"ALTER TABLE dbo.T ADD c |", []string{"INT", "dbo.Phone", "geo.[Point 3]"}, append([]string{"dbo.Rows"}, objects...)},
+		{"ALTER TABLE dbo.T ADD a INT, b |", []string{"INT"}, objects},
+		{"ALTER TABLE dbo.T ADD c INT |", []string{"NULL", "NOT NULL"}, objects},
+		{"ALTER TABLE dbo.T ALTER COLUMN c n|", []string{"NVARCHAR", "NCHAR"}, objects},
+		{"ALTER TABLE dbo.T ALTER COLUMN c NVARCHAR(20) NOT |", []string{"NULL"}, []string{"NOT NULL"}},
+		// CREATE TYPE … FROM: system base types only (Msg 222 and kin).
+		{"CREATE TYPE dbo.X FROM n|", []string{"NVARCHAR", "NUMERIC"}, objects},
+		{"CREATE TYPE dbo.X FROM |", []string{"INT", "TEXT"}, append([]string{"XML", "SYSNAME", "GEOGRAPHY", "ROWVERSION", "dbo.Phone", "geo.[Point 3]"}, objects...)},
+		{"CREATE TYPE dbo.X FROM INT |", []string{"NULL", "NOT NULL"}, objects},
+		// Qualified: the schema's types the position takes.
+		{"DECLARE @x dbo.|", []string{"dbo.Phone", "dbo.Rows"}, []string{"dbo.Customers"}},
+		{"SELECT CAST(1 AS geo.|", []string{"geo.[Point 3]"}, nil},
+		{"SELECT CAST(1 AS dbo.|", nil, []string{"dbo.Phone", "dbo.Customers"}},
+		{"ALTER TABLE dbo.T ADD c dbo.|", []string{"dbo.Phone"}, []string{"dbo.Rows", "dbo.Customers"}},
+		// Negative rows: positions that keep today's answer.
+		{"SELECT CAST(N| AS INT) FROM dbo.Customers", []string{"Name"}, []string{"INT", "NVARCHAR"}},
+		{"SELECT CONVERT(INT, N|) FROM dbo.Customers", []string{"Name"}, []string{"NVARCHAR"}},
+		{"SELECT CONVERT(N|", nil, []string{"Name"}},
+		{"SELECT CAST(Id AS INT) FROM |", []string{"dbo.Customers"}, []string{"INT"}},
+		{"DECLARE c CURSOR FOR SELECT | FROM dbo.Customers", []string{"Name"}, []string{"INT"}},
+		{"DECLARE @x INT = | FROM dbo.Customers", nil, []string{"INT", "="}},
+		{"DECLARE @x INT\nSELECT | FROM dbo.Customers", []string{"Name"}, []string{"INT"}},
+		{"ALTER TABLE |", []string{"dbo.Customers"}, []string{"INT"}},
+		{"SELECT * FROM dbo.|", []string{"dbo.Customers"}, []string{"dbo.Phone"}},
+	} {
+		t.Run(tt.sql, func(t *testing.T) {
+			qp := newPanel(t)
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			for _, label := range tt.want {
+				if !containsLabel(items, label) {
+					t.Errorf("%q missing: %v", label, labels(items))
+				}
+			}
+			for _, label := range tt.not {
+				if containsLabel(items, label) {
+					t.Errorf("%q offered: %v", label, labels(items))
+				}
+			}
+		})
+	}
+}

@@ -41,6 +41,10 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 			return
 		}
 	}
+	if choices, datatype, handled := dataTypeChoices(buf, tokens, from, p.ddlTypes()); handled {
+		c.choices, c.datatype, c.only = choices, datatype, true
+		return
+	}
 	start := 0
 	if query != nil {
 		start = query.Start
