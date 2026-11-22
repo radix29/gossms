@@ -42,8 +42,11 @@ Severity is ordered by what a user can lose, not by effort.
 
 - **W2 — B2 + B3**: done (default schema then dbo; `nameMatch` and open-`[`
   positions; `TestSQLCompletionUserTypeResolution`; driven on win10cli).
-- **W3 — A1**: split `baseCompletionCandidates` (339 lines) into phases, which
-  B1 (done, W1) and B2 (done, W2) both touch.
+- **W3 — A1**: done (`completionPosition` built by `completionPositionAt` and
+  `scopeCompletionPosition`; phases `routineSignatureCandidates`,
+  `positionalCandidates`, `catalogCandidates`, `relationCandidates`; one
+  `ddlCompletionTarget` call; driven on win10cli against the pre-split binary,
+  identical popups).
 - **W4 — A3 + N1** (gosmo): `CatalogTypeKind` gets a zero "unknown" value;
   `catalog()` takes a struct; `SystemCatalog` stops sending a query that
   can't return rows. Rerun `TestLiveVersionSweep` on 13.
@@ -83,38 +86,6 @@ info. Add the case to the open-threads CS-server list for a live check.
 ---
 
 ## Architecture, simplification, refactoring
-
-### A1 — `baseCompletionCandidates` is 339 lines
-
-**Where:** `internal/tui/completion_provider.go`, `baseCompletionCandidates`
-(the longest function in the three repos).
-
-**What:** one function does lexing and the row/column conversion, statement
-narrowing and scope, the inventory-free answers (spatial, qualified types,
-keywords), the inventory answers (DDL targets, procedures) and the relation
-answers. Observed costs:
-
-- `ddlCompletionTarget(tokens, rowStart+replaceFrom)` is computed twice
-  (once to gate `qualifiedTypeCandidates`, again after the inventory loads).
-- Qualified user-defined types go through `qualifiedTypeCandidates` for
-  CREATE TABLE only; the routine-signature case reaches the same answer by
-  another path (the keyword list). B1 added a third: `qualifiedDataTypePosition`
-  widens the `qualifiedTypeCandidates` gate in `baseCompletionCandidates`.
-  B3 (W2) lifted the `LexNormal` gate off the routine and qualified-type
-  calls and added a `LexBracket` call to `keywordCandidates`, which answers
-  only a data-type position there.
-- `slices.Contains([]string{"TABLE", "VIEW", "PROCEDURE", "FUNCTION"}, …)`
-  builds a slice per keystroke.
-- `rowStart+replaceFrom` is recomputed in ~10 places.
-
-**Plan:** a `completionPosition` struct built once (`buf`, `tokens`,
-`stmtTokens`, `scope`, `state`, `chain`, `qualifier`, `prefix`, `at :=
-rowStart+replaceFrom`, `ddl` action/type/tail), and three methods in order —
-`positionalCandidates` (no inventory: spatial, data types incl. B1's
-positions, keywords), `catalogCandidates` (DDL targets, procedures),
-`relationCandidates` (the final switch). Each returns `(items, done bool)`.
-Pure move, no behaviour change: `completion_*_test.go` is the oracle, run
-before and after; `TestSQLCompletionDataTypePositions` (B1's probe table) included.
 
 ### A2 — `buildSecurablesMatrix` takes 12 positional parameters, two always the same
 

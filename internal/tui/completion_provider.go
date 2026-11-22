@@ -183,50 +183,118 @@ func (post completionPost) apply(items []editor.CompletionItem) []editor.Complet
 }
 
 // baseCompletionCandidates is sqlCompletionCandidates before its
-// completionPost steps.
+// completionPost steps. Its phases run in a fixed order, each either answering
+// or passing on: routine signatures (read from the un-narrowed prefix), the
+// positional answers that need no inventory, the catalog answers (DDL targets,
+// procedures), then the relation answers. They arm post as they go, so moving
+// a phase changes which steps a return carries (see completionPost).
 func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (items []editor.CompletionItem, replaceCol int, post completionPost) {
-	lines, row, col := req.Lines, req.Row, req.Col
 	if p.app.cfg.IntelliSenseDisabled {
-		return nil, col, post
+		return nil, req.Col, post
 	}
 	if p.conn == nil || !p.app.isConnected(p.conn) {
-		return nil, col, post
+		return nil, req.Col, post
 	}
+	pos, ok := p.completionPositionAt(req, &post)
+	if !ok {
+		return nil, req.Col, post
+	}
+	if items, done := p.routineSignatureCandidates(pos); done {
+		return items, pos.replaceFrom, post
+	}
+	p.scopeCompletionPosition(pos)
+	if items, done := p.positionalCandidates(pos, &post); done {
+		return items, pos.replaceFrom, post
+	}
+	inv := p.app.ensureCompletionInventory(p.conn, p.database)
+	if inv.loading {
+		return []editor.CompletionItem{loadingCompletionItem}, pos.replaceFrom, post
+	}
+	if inv.err != nil || inv.catalog == nil {
+		return nil, pos.replaceFrom, post
+	}
+	post.collation = inv.collation
+	if items, done := p.catalogCandidates(pos, inv, &post); done {
+		return items, pos.replaceFrom, post
+	}
+	return p.relationCandidates(pos, inv), pos.replaceFrom, post
+}
 
+// completionPosition is what baseCompletionCandidates's phases share about the
+// cursor. completionPositionAt fills the lexical half; scopeCompletionPosition
+// fills the statement half once routineSignatureCandidates has had its turn.
+type completionPosition struct {
+	req   editor.CompletionRequest
+	pre   sqlparse.PrefixScan
+	buf   []rune
+	upTo  int // the cursor's offset in buf
+	state sqlparse.LexState
+
+	qualifier, prefix string
+	hasQualifier      bool
+	chain             []string
+
+	rowStart    int // the cursor row's offset in buf
+	replaceFrom int // the replaced span's start, as a column on the cursor's row
+	at          int // rowStart+replaceFrom: the same start as a buf offset
+	forwardFrom int // where the forward scan resumes (past an open '[''s ']')
+	batchStart  int
+
+	// tokens is the statement up to the cursor: split at a DML header by
+	// completionPositionAt, then narrowed by scopeCompletionPosition.
+	tokens []sqlparse.Token
+
+	// Set by scopeCompletionPosition.
+	stmt               []rune           // buf up to the statement's end
+	stmtTokens         []sqlparse.Token // the whole statement, both sides of the cursor
+	scope              sqlparse.Scope
+	refs               []sqlparse.FromRef
+	clause             sqlparse.Clause
+	cc                 completionContext
+	memberAccess       bool // the last token before the replaced span is a '.'
+	ddlAction, ddlType string
+	ddlTail            []sqlparse.Token
+}
+
+// completionPositionAt lexes up to the cursor and finds the replaced span. It
+// reports false when nothing completes here (a string or comment, mid-word, a
+// span the next token continues as a name); post.shift is armed on the way.
+func (p *QueryPanel) completionPositionAt(req editor.CompletionRequest, post *completionPost) (*completionPosition, bool) {
+	lines, row, col := req.Lines, req.Row, req.Col
 	p.completionBuf = sqlparse.FlattenLinesInto(p.completionBuf, lines)
-	buf := p.completionBuf
-	upTo := sqlparse.OffsetForCursor(lines, row, col)
+	pos := &completionPosition{req: req, buf: p.completionBuf}
+	buf := pos.buf
+	pos.upTo = sqlparse.OffsetForCursor(lines, row, col)
+	upTo := pos.upTo
 
 	// Scoped to the current statement — a table named in an earlier ';'- or
 	// GO-separated statement must not leak into this one's FROM-scope/clause
 	// detection (see sqlparse.ScanPrefix, which PrefixCache answers for).
-	pre := p.completionPrefix.Scan(lines, buf, row, upTo, sqlparse.TextRevision{
+	pos.pre = p.completionPrefix.Scan(lines, buf, row, upTo, sqlparse.TextRevision{
 		Doc: req.Text.Doc, Version: req.Text.Version, DirtyFrom: req.Text.DirtyFrom,
 	})
-	tokens, state, batchStart, quoteStart := pre.Tokens, pre.State, pre.BatchStart, pre.QuoteStart
+	tokens, quoteStart := pos.pre.Tokens, pos.pre.QuoteStart
+	pos.state, pos.batchStart = pos.pre.State, pos.pre.BatchStart
 
-	var qualifier, prefix string
 	var replaceFrom int
-	var hasQualifier bool
-	var chain []string
-	switch state {
+	switch pos.state {
 	case sqlparse.LexNormal:
 		if upTo < len(buf) && sqltext.IsWordContinue(buf[upTo]) {
-			return nil, col, post
+			return nil, false
 		}
-		qualifier, prefix, replaceFrom, hasQualifier = sqlparse.TokenContext(tokens, upTo)
-		chain = sqlparse.QualifierChain(tokens, upTo)
+		pos.qualifier, pos.prefix, replaceFrom, pos.hasQualifier = sqlparse.TokenContext(tokens, upTo)
+		pos.chain = sqlparse.QualifierChain(tokens, upTo)
 	case sqlparse.LexBracket:
 		// An unterminated bracket identifier ("FROM [Cus|") is the one
 		// non-normal lexer state completion still works in: everything after
 		// the '[' is the prefix, and the whole "[..." span is replaced on
 		// commit (gosmo.QuoteNameIfNeeded re-quotes only when needed).
-		qualifier, _, _, hasQualifier = sqlparse.TokenContext(tokens, quoteStart)
-		chain = sqlparse.QualifierChain(tokens, quoteStart)
-		prefix = string(buf[quoteStart+1 : upTo])
+		pos.qualifier, _, _, pos.hasQualifier = sqlparse.TokenContext(tokens, quoteStart)
+		pos.chain = sqlparse.QualifierChain(tokens, quoteStart)
+		pos.prefix = string(buf[quoteStart+1 : upTo])
 		replaceFrom = quoteStart
 	default:
-		return nil, col, post // inside a string literal or comment
+		return nil, false // inside a string literal or comment
 	}
 
 	// Everything above works in flattened-buffer offsets, but the
@@ -235,30 +303,30 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 	// replaced span always starts on the cursor's own row (identifiers can't span
 	// lines; a '[' on an earlier row is malformed and bails), so subtracting the
 	// row's start offset converts it.
-	rowStart := sqlparse.OffsetForCursor(lines, row, 0)
-	if replaceFrom < rowStart {
-		return nil, col, post
+	pos.rowStart = sqlparse.OffsetForCursor(lines, row, 0)
+	if replaceFrom < pos.rowStart {
+		return nil, false
 	}
-	replaceFrom -= rowStart
+	pos.at, pos.replaceFrom = replaceFrom, replaceFrom-pos.rowStart
 
 	// FROM-scope/clause analysis looks at the whole statement, not just the
 	// part already typed — a table named in "SELECT | FROM Customers c"
 	// resolves as well as one typed above the cursor. The forward scan must
 	// resume in normal lexer state, so when the cursor sits inside an
 	// unterminated bracket identifier, skip past its closing ']' first.
-	forwardFrom := upTo
-	if state == sqlparse.LexBracket {
+	pos.forwardFrom = upTo
+	if pos.state == sqlparse.LexBracket {
 		quoted, after := sqltext.Next(buf, quoteStart, len(buf), sqltext.State{})
-		forwardFrom = quoted.End
+		pos.forwardFrom = quoted.End
 		if after.Mode == sqltext.ModeNormal {
 			post.shift = quoted.End - upTo
 		}
 	}
-	if replaceFrom+rowStart < upTo {
-		tail := keywordNextToken(buf, forwardFrom)
+	if pos.at < upTo {
+		tail := keywordNextToken(buf, pos.forwardFrom)
 		if tail.Kind == sqltext.KindPunct &&
 			(buf[tail.Start] == '.' || buf[tail.Start] == ':' && keywordNextIs(buf, tail.End, ":")) {
-			return nil, col, post
+			return nil, false
 		}
 	}
 	// DML splitting leaves non-DML headers together. Also recognize the next
@@ -269,9 +337,9 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 		return tok.Kind == sqlparse.TokenKeyword && sqltext.EndsDML(tok.Text) ||
 			keywordIs(tok, "EXEC") || keywordIs(tok, "EXECUTE")
 	}) {
-		start := keywordStatementStart(buf, tokens[0].Start, rowStart+replaceFrom)
+		start := keywordStatementStart(buf, tokens[0].Start, pos.at)
 		current := sqlparse.TokensFrom(tokens, start)
-		action, objectType, tail := ddlCompletionTarget(current, rowStart+replaceFrom)
+		action, objectType, tail := ddlCompletionTarget(current, pos.at)
 		if action == "CREATE" && objectType == "TABLE" {
 			depth, closed := 0, false
 			for _, tok := range tail {
@@ -283,109 +351,142 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 					closed = closed || depth == 0
 				}
 			}
-			if closed && depth == 0 && (prefix == "" || slices.ContainsFunc(
+			if closed && depth == 0 && (pos.prefix == "" || slices.ContainsFunc(
 				[]string{"CREATE", "ALTER", "DROP", "TRUNCATE", "SELECT", "INSERT", "UPDATE", "DELETE", "EXEC", "EXECUTE", "DECLARE"},
-				func(word string) bool { return strings.HasPrefix(word, strings.ToUpper(prefix)) },
+				func(word string) bool { return strings.HasPrefix(word, strings.ToUpper(pos.prefix)) },
 			)) {
-				start = rowStart + replaceFrom
+				start = pos.at
 			}
 		}
-		tokens, batchStart = sqlparse.TokensFrom(tokens, start), start
+		tokens, pos.batchStart = sqlparse.TokensFrom(tokens, start), start
 	}
-	// An open '[' reaches the routine and data-type paths too: there it
-	// starts a user-defined type name (keywordCandidates).
-	if !hasQualifier && len(chain) == 0 {
-		if routine := routineCompletionTokens(buf, pre, rowStart+replaceFrom); len(routine) > 0 {
-			if keywords, only := p.keywordCandidates(buf, routine, nil, rowStart+replaceFrom, upTo, prefix); only {
-				return keywords, replaceFrom, post
+	pos.tokens = tokens
+	return pos, true
+}
+
+// routineSignatureCandidates answers a data-type position in a routine's
+// parameter list or RETURNS clause, read from the un-narrowed prefix. An open
+// '[' reaches it too: there it starts a user-defined type name
+// (keywordCandidates).
+func (p *QueryPanel) routineSignatureCandidates(pos *completionPosition) ([]editor.CompletionItem, bool) {
+	if !pos.hasQualifier && len(pos.chain) == 0 {
+		if routine := routineCompletionTokens(pos.buf, pos.pre, pos.at); len(routine) > 0 {
+			if keywords, only := p.keywordCandidates(pos.buf, routine, nil, pos.at, pos.upTo, pos.prefix); only {
+				return keywords, true
 			}
 		}
 	}
-	if len(chain) == 1 {
-		if routine := routineCompletionTokens(buf, pre, rowStart+replaceFrom); len(routine) > 0 {
-			if types, handled := p.qualifiedTypeCandidates(buf, routine, nil, rowStart+replaceFrom, upTo, prefix); handled {
-				return types, replaceFrom, post
+	if len(pos.chain) == 1 {
+		if routine := routineCompletionTokens(pos.buf, pos.pre, pos.at); len(routine) > 0 {
+			if types, handled := p.qualifiedTypeCandidates(pos.buf, routine, nil, pos.at, pos.upTo, pos.prefix); handled {
+				return types, true
 			}
 		}
 	}
+	return nil, false
+}
+
+// scopeCompletionPosition narrows pos to the statement holding the cursor and
+// fills the statement half of pos: its query scope, clause and DDL target.
+func (p *QueryPanel) scopeCompletionPosition(pos *completionPosition) {
 	// Statements stacked with no ';' between them still lex as one
 	// ';'/GO-delimited span; narrow to the DML statement holding the cursor so
 	// a bare column context doesn't pick up FROM refs from an unrelated
 	// statement above or below it. The forward lex stops at the next statement
 	// rather than running to the next ';' or GO (see
 	// sqlparse.NarrowStatementForward).
-	stmtStart, stmtEnd, forwardTokens := sqlparse.NarrowStatementForward(lines, buf, row, batchStart, forwardFrom, upTo, tokens)
-	tokens = sqlparse.TokensFrom(tokens, stmtStart)
-	stmtTokens := append(append([]sqlparse.Token{}, tokens...), forwardTokens...)
+	stmtStart, stmtEnd, forwardTokens := sqlparse.NarrowStatementForward(pos.req.Lines, pos.buf, pos.req.Row, pos.batchStart, pos.forwardFrom, pos.upTo, pos.tokens)
+	pos.tokens = sqlparse.TokensFrom(pos.tokens, stmtStart)
+	pos.stmt = pos.buf[:stmtEnd]
+	pos.stmtTokens = append(append([]sqlparse.Token{}, pos.tokens...), forwardTokens...)
 
 	// The query tree, not the flat scan: the cursor's innermost SELECT, the
 	// CTEs visible from it, and its own clause state (see sqlparse.ScopeAt). A
 	// statement the parser can make nothing of leaves Query nil, and the flat
 	// FROM-scope scan answers for it.
-	scope := sqlparse.ScopeAt(stmtTokens, upTo)
-	refs, clause := scope.Query.FromRefs(), scope.Clause
-	if scope.Query == nil {
-		refs, clause = sqlparse.ParseFromScope(stmtTokens), sqlparse.CurrentClause(tokens)
+	pos.scope = sqlparse.ScopeAt(pos.stmtTokens, pos.upTo)
+	pos.refs, pos.clause = pos.scope.Query.FromRefs(), pos.scope.Clause
+	if pos.scope.Query == nil {
+		pos.refs, pos.clause = sqlparse.ParseFromScope(pos.stmtTokens), sqlparse.CurrentClause(pos.tokens)
 	}
-	cc := p.analyzeCompletionContext(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom)
-	if cc.only && len(cc.choices) == 0 {
-		return nil, replaceFrom, post
+	pos.cc = p.analyzeCompletionContext(pos.stmt, pos.stmtTokens, pos.scope.Query, pos.at)
+	if pos.cc.apply {
+		pos.clause = sqlparse.ClauseTable
 	}
-	if cc.apply {
-		clause = sqlparse.ClauseTable
-	}
-	if predicateClause(cc.clause) {
-		clause = sqlparse.ClauseColumn
+	if predicateClause(pos.cc.clause) {
+		pos.clause = sqlparse.ClauseColumn
 	}
 
-	if state == sqlparse.LexNormal {
-		if spatial, handled := p.spatialStaticCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix); handled {
-			return spatial, replaceFrom, post
-		}
-	}
-	memberAccess := false
-	for _, tok := range tokens {
-		if tok.Start >= rowStart+replaceFrom {
+	for _, tok := range pos.tokens {
+		if tok.Start >= pos.at {
 			break
 		}
-		memberAccess = tok.Kind == sqlparse.TokenDot
+		pos.memberAccess = tok.Kind == sqlparse.TokenDot
 	}
-	if action, objectType, _ := ddlCompletionTarget(tokens, rowStart+replaceFrom); len(chain) == 1 &&
-		(action == "CREATE" && objectType == "TABLE" || qualifiedDataTypePosition(buf, stmtTokens, rowStart+replaceFrom)) {
-		if types, handled := p.qualifiedTypeCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix); handled {
-			return types, replaceFrom, post
+	pos.ddlAction, pos.ddlType, pos.ddlTail = ddlCompletionTarget(pos.tokens, pos.at)
+}
+
+// positionalCandidates answers what the position alone settles, with no
+// inventory: spatial statics, qualified data types (CREATE TABLE and
+// qualifiedDataTypePosition), and keywords. Keywords that leave room for
+// catalog names are armed on post instead of returned.
+func (p *QueryPanel) positionalCandidates(pos *completionPosition, post *completionPost) ([]editor.CompletionItem, bool) {
+	if pos.cc.only && len(pos.cc.choices) == 0 {
+		return nil, true
+	}
+	if pos.state == sqlparse.LexNormal {
+		if spatial, handled := p.spatialStaticCandidates(pos.stmt, pos.stmtTokens, pos.scope.Query, pos.at, pos.upTo, pos.prefix); handled {
+			return spatial, true
 		}
 	}
-	if state == sqlparse.LexBracket && !hasQualifier && len(chain) == 0 && !memberAccess {
-		if types, only := p.keywordCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix); only {
-			return types, replaceFrom, post
+	if len(pos.chain) == 1 &&
+		(pos.ddlAction == "CREATE" && pos.ddlType == "TABLE" || qualifiedDataTypePosition(pos.buf, pos.stmtTokens, pos.at)) {
+		if types, handled := p.qualifiedTypeCandidates(pos.stmt, pos.stmtTokens, pos.scope.Query, pos.at, pos.upTo, pos.prefix); handled {
+			return types, true
 		}
 	}
-	if state == sqlparse.LexNormal && !hasQualifier && len(chain) == 0 && !memberAccess {
-		keywords, sourceComplete := p.keywordCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix)
+	if pos.hasQualifier || len(pos.chain) > 0 || pos.memberAccess {
+		return nil, false
+	}
+	switch pos.state {
+	case sqlparse.LexBracket:
+		if types, only := p.keywordCandidates(pos.stmt, pos.stmtTokens, pos.scope.Query, pos.at, pos.upTo, pos.prefix); only {
+			return types, true
+		}
+	case sqlparse.LexNormal:
+		keywords, sourceComplete := p.keywordCandidates(pos.stmt, pos.stmtTokens, pos.scope.Query, pos.at, pos.upTo, pos.prefix)
 		for i := range keywords {
 			if strings.HasSuffix(keywords[i].Label, "DISTINCT FROM") {
-				keywords[i] = reuseDistinctCompletionTail(keywords[i], buf, upTo)
+				keywords[i] = reuseDistinctCompletionTail(keywords[i], pos.buf, pos.upTo)
 			}
 		}
 		if sourceComplete {
-			return keywords, replaceFrom, post
+			return keywords, true
 		}
 		post.keywords = keywords
-		post.keywordsNoPrefix = prefix == ""
-		post.keywordsTableSort = clause == sqlparse.ClauseTable
-		post.keywordsHavingAgg = cc.frame.having && cc.aggregate
+		post.keywordsNoPrefix = pos.prefix == ""
+		post.keywordsTableSort = pos.clause == sqlparse.ClauseTable
+		post.keywordsHavingAgg = pos.cc.frame.having && pos.cc.aggregate
 	}
-	inv := p.app.ensureCompletionInventory(p.conn, p.database)
-	if inv.loading {
-		return []editor.CompletionItem{loadingCompletionItem}, replaceFrom, post
+	return nil, false
+}
+
+// ddlTargetType reports an object type whose DDL names a catalog object
+// ddlTargetCandidates lists.
+func ddlTargetType(objectType string) bool {
+	switch objectType {
+	case "TABLE", "VIEW", "PROCEDURE", "FUNCTION":
+		return true
 	}
-	if inv.err != nil || inv.catalog == nil {
-		return nil, replaceFrom, post
-	}
-	post.collation = inv.collation
-	ddlAction, ddlType, ddlTail := ddlCompletionTarget(tokens, rowStart+replaceFrom)
-	if ddlAction == "DROP" {
+	return false
+}
+
+// catalogCandidates answers the DDL target and procedure-call positions from
+// the inventory. post.tvf is armed between the two, so a DDL target list
+// carries no TVF step and everything after it does.
+func (p *QueryPanel) catalogCandidates(pos *completionPosition, inv *completionInventory, post *completionPost) ([]editor.CompletionItem, bool) {
+	ddlTail := pos.ddlTail
+	if pos.ddlAction == "DROP" {
 		if len(ddlTail) >= 2 && keywordIs(ddlTail[0], "IF") && keywordIs(ddlTail[1], "EXISTS") {
 			ddlTail = ddlTail[2:]
 		}
@@ -396,43 +497,52 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 			}
 		}
 	}
-	if slices.Contains([]string{"TABLE", "VIEW", "PROCEDURE", "FUNCTION"}, ddlType) && !slices.ContainsFunc(ddlTail, func(tok sqlparse.Token) bool {
+	if ddlTargetType(pos.ddlType) && !slices.ContainsFunc(ddlTail, func(tok sqlparse.Token) bool {
 		return tok.Kind != sqlparse.TokenIdent && tok.Kind != sqlparse.TokenDot
 	}) {
 		if len(ddlTail) > 0 && ddlTail[len(ddlTail)-1].Kind != sqlparse.TokenDot {
-			return nil, replaceFrom, post
+			return nil, true
 		}
-		targets, wait := p.ddlTargetCandidates(inv, ddlAction, ddlType, chain, prefix)
+		targets, wait := p.ddlTargetCandidates(inv, pos.ddlAction, pos.ddlType, pos.chain, pos.prefix)
 		if wait {
-			return []editor.CompletionItem{loadingCompletionItem}, replaceFrom, post
+			return []editor.CompletionItem{loadingCompletionItem}, true
 		}
-		if ddlType == "TABLE" && ddlAction != "CREATE" && len(chain) == 0 && sqlparse.ContainsSigil(buf, 0) {
-			bindings := p.completionBatch.Bindings(lines, buf, row)
-			temps := slices.DeleteFunc(p.bindingItems(bindings, prefix), func(item editor.CompletionItem) bool {
+		if pos.ddlType == "TABLE" && pos.ddlAction != "CREATE" && len(pos.chain) == 0 && sqlparse.ContainsSigil(pos.buf, 0) {
+			bindings := p.completionBatch.Bindings(pos.req.Lines, pos.buf, pos.req.Row)
+			temps := slices.DeleteFunc(p.bindingItems(bindings, pos.prefix), func(item editor.CompletionItem) bool {
 				return item.Detail != "temp table"
 			})
 			targets = append(targets, temps...)
 			sortCompletionItems(targets)
 		}
-		return targets, replaceFrom, post
+		return targets, true
 	}
-	post.tvf, post.tvfApply, post.tvfWhere = true, cc.apply, cc.clause
-	post.callBuf, post.callFrom = buf[:stmtEnd], forwardFrom
-	if statementProcedureContext(buf, tokens, rowStart+replaceFrom, len(chain)) {
-		procStart := rowStart + replaceFrom
+	post.tvf, post.tvfApply, post.tvfWhere = true, pos.cc.apply, pos.cc.clause
+	post.callBuf, post.callFrom = pos.stmt, pos.forwardFrom
+	if statementProcedureContext(pos.buf, pos.tokens, pos.at, len(pos.chain)) {
+		tokens := pos.tokens
+		procStart := pos.at
 		if len(tokens) > 0 {
 			procStart = tokens[0].Start
 		}
-		explicit := len(tokens) > 0 && tokens[0].Start < rowStart+replaceFrom &&
+		explicit := len(tokens) > 0 && tokens[0].Start < pos.at &&
 			(keywordIs(tokens[0], "EXEC") || keywordIs(tokens[0], "EXECUTE"))
 		// A bare procedure call is valid only as the batch's first statement.
 		// Keep the keyword-only list until EXEC is supplied in later statements.
-		if !explicit && keywordNextToken(buf, pre.GoStart).Start < procStart {
-			return nil, replaceFrom, post
+		if !explicit && keywordNextToken(pos.buf, pos.pre.GoStart).Start < procStart {
+			return nil, true
 		}
-		return p.procedureCandidates(inv, chain, prefix), replaceFrom, post
+		return p.procedureCandidates(inv, pos.chain, pos.prefix), true
 	}
+	return nil, false
+}
+
+// relationCandidates answers from the statement's FROM scope: objects,
+// columns, members of a qualifier, and multi-part names.
+func (p *QueryPanel) relationCandidates(pos *completionPosition, inv *completionInventory) []editor.CompletionItem {
 	sysInv := p.app.ensureSysCompletionInventory(p.conn)
+	scope, refs, clause, tokens := pos.scope, pos.refs, pos.clause, pos.tokens
+	chain, qualifier, prefix := pos.chain, pos.qualifier, pos.prefix
 
 	// Temp tables and table variables are declared in a different statement from
 	// the one using them, so their shapes come from a scan of the whole
@@ -443,13 +553,13 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 	// batch: a temp table outlives GO.
 	var bindings []sqlparse.Binding
 	wantBindings := bindingsWanted(clause, scope.Query, refs, scope.CTEs, qualifier, prefix)
-	if hasQualifier {
+	if pos.hasQualifier {
 		for _, outer := range scope.Outer {
 			wantBindings = wantBindings || bindingsWanted(clause, outer.Query, nil, outer.CTEs, qualifier, prefix)
 		}
 	}
-	if wantBindings && sqlparse.ContainsSigil(buf, 0) {
-		bindings = p.completionBatch.Bindings(lines, buf, row)
+	if wantBindings && sqlparse.ContainsSigil(pos.buf, 0) {
+		bindings = p.completionBatch.Bindings(pos.req.Lines, pos.buf, pos.req.Row)
 	}
 	// A three-part ref whose database's inventory is still loading leaves
 	// pending set: the column answer would be missing its columns, so the
@@ -460,8 +570,8 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 	rc.linked = p.linkedObject
 	rc.pending = &pending
 	rels := resolveRefs(rc, refs)
-	sourceObject := clause == sqlparse.ClauseTable && !cc.scalar
-	if hasQualifier && !sourceObject {
+	sourceObject := clause == sqlparse.ClauseTable && !pos.cc.scalar
+	if pos.hasQualifier && !sourceObject {
 		matches := func(ref sqlparse.FromRef) bool {
 			name := ref.Alias
 			if name == "" {
@@ -483,11 +593,9 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 			}
 		}
 	}
-	if state == sqlparse.LexNormal && memberAccess {
-		if cc.scalar {
-			if spatial, handled := p.spatialMemberCandidates(buf[:stmtEnd], tokens, pre.GoStart, rowStart+replaceFrom, upTo, rels, inv.collation, prefix); handled {
-				return spatial, replaceFrom, post
-			}
+	if pos.state == sqlparse.LexNormal && pos.memberAccess && pos.cc.scalar {
+		if spatial, handled := p.spatialMemberCandidates(pos.stmt, tokens, pos.pre.GoStart, pos.at, pos.upTo, rels, inv.collation, prefix); handled {
+			return spatial
 		}
 	}
 	loadingOr := func(items []editor.CompletionItem, wait bool) []editor.CompletionItem {
@@ -498,37 +606,34 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 	}
 	if len(tokens) >= 2 && keywordIs(tokens[0], "TRUNCATE") && keywordIs(tokens[1], "TABLE") {
 		if len(chain) > 0 {
-			items, wait := p.ddlTargetCandidates(inv, "ALTER", "TABLE", chain, prefix)
-			return loadingOr(items, wait), replaceFrom, post
+			return loadingOr(p.ddlTargetCandidates(inv, "ALTER", "TABLE", chain, prefix))
 		}
-		items = p.tableCandidates(inv, sysInv, nil, bindings, prefix)
-		items = slices.DeleteFunc(items, func(item editor.CompletionItem) bool {
+		items := p.tableCandidates(inv, sysInv, nil, bindings, prefix)
+		return slices.DeleteFunc(items, func(item editor.CompletionItem) bool {
 			return item.Detail != "schema" && item.Detail != "table" && item.Detail != "temp table" &&
 				!strings.HasPrefix(item.Detail, "database")
 		})
-		return items, replaceFrom, post
 	}
 
 	switch {
 	case len(chain) >= 2:
-		items, wait := p.chainCandidates(inv, sysInv, chain, prefix)
-		return loadingOr(items, wait), replaceFrom, post
-	case hasQualifier:
+		return loadingOr(p.chainCandidates(inv, sysInv, chain, prefix))
+	case pos.hasQualifier:
 		if sourceObject {
 			rels = nil
 		}
 		items, wait := p.memberCandidates(inv, sysInv, rels, qualifier, prefix)
-		return loadingOr(items, wait || pending), replaceFrom, post
+		return loadingOr(items, wait || pending)
 	case clause == sqlparse.ClauseTable:
-		return p.tableCandidates(inv, sysInv, scope.CTEs, bindings, prefix), replaceFrom, post
+		return p.tableCandidates(inv, sysInv, scope.CTEs, bindings, prefix)
 	case pending:
-		return []editor.CompletionItem{loadingCompletionItem}, replaceFrom, post
+		return []editor.CompletionItem{loadingCompletionItem}
 	case len(rels) == 0:
 		// Column context but nothing resolvable FROM'd yet: no columns to
 		// pull, so fall back to the object list.
-		return p.tableCandidates(inv, sysInv, nil, bindings, prefix), replaceFrom, post
+		return p.tableCandidates(inv, sysInv, nil, bindings, prefix)
 	default:
-		return p.scopedColumnCandidates(rels, inv.collation, prefix), replaceFrom, post
+		return p.scopedColumnCandidates(rels, inv.collation, prefix)
 	}
 }
 
