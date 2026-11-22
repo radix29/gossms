@@ -1683,6 +1683,16 @@ it from the string 'NULL'.
   Keywords are deliberately excluded: a fully typed `from⏎` still commits
   `FROM ` (upper-cased, with its space), as
   `TestSQLKeywordCompletionKeepsFullyTypedKeywords` pins.
+- **Enter commits a keyword at an alias position** (2026-11-23,
+  `docs/completion-enter-at-alias-position.md`). `FROM mytable WH⏎` gives
+  `WHERE `, as Tab does. e6083d5 had made a started word Soft wherever a new
+  alias could be typed, so `FROM Orders o⏎` kept the alias instead of taking
+  `OUTER APPLY`; in use that made Enter seem to work on some keywords and not
+  others (`GR⏎` committed after WHERE, not after a table). The cost is
+  accepted: an alias typed without `AS` at the end of a line needs Escape
+  before Enter. Only the nothing-typed position stays Soft for keywords
+  (`WHERE Name ⏎` is a newline, not `=`).
+  `TestSQLKeywordCompletionEnterCommitsAtAliasPosition` pins it.
 - **A catalog name holding a control character is not offered** (2026-11-22,
   fix plan F7). `sqlCompletionCandidates` drops any candidate whose Label has a
   C0 character or DEL (`hasControlChar`): its popup label draws without the

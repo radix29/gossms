@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 
-	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/sqltext"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/tuikit/controls/editor"
@@ -57,12 +56,6 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	}()
 	s := keywordScope{buf: buf, from: from, fabric: fabric, cc: cc, f: f, clause: cc.clause,
 		statement: statement, statementStart: statementStart, ddlAction: ddlAction, ddlTail: ddlTail}
-	// aliasable: the word being typed may be a new alias ("FROM Orders o"), so
-	// a keyword it starts (OUTER APPLY) is Soft: Tab takes it, Enter is a
-	// newline. A reserved word typed in full ("where") can't be an alias. With
-	// nothing typed ("WHERE o.name |"), every keyword is Soft the same way: Enter
-	// at the end of a line is a line break, not "=".
-	aliasable := false
 	clause := cc.clause
 	if cc.only {
 		s.choices, s.sourceComplete = cc.choices, true
@@ -86,7 +79,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 		s.complete, s.tail = keywordExpressionComplete(buf, expressionStart, from, clause)
 		s.sourceComplete = s.complete && (clause == "FROM" || clause == "JOIN")
 		s.applyClauseRules()
-		aliasable = s.aliasChoices(prefix)
+		s.aliasChoices()
 		if fabric && cc.selectStart < 0 && s.complete && (clause == "FROM" || clause == "ON") {
 			s.choices = append(s.choices, "SELECT")
 		}
@@ -169,7 +162,11 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 			text, before = ", "+text, s.jsonBefore
 		}
 		items = append(items, editor.CompletionItem{Text: text, Label: label, Detail: "keyword", ReplaceBefore: before,
-			AppendSpace: !columnType && clause != "DATEPART", Soft: aliasable || prefix == ""})
+			// With nothing typed ("WHERE o.name |") a keyword is Soft: Enter at the
+			// end of a line is a line break, not "=". A started word commits on
+			// Enter even where it could be a new alias ("FROM Orders o"):
+			// docs/decisions.md, Enter commits a keyword at an alias position.
+			AppendSpace: !columnType && clause != "DATEPART", Soft: prefix == ""})
 	}
 	return items, sourceComplete
 }
@@ -423,21 +420,19 @@ func nextClauseChoices(s *keywordScope) []string {
 	return nil
 }
 
-// aliasChoices adds AS where the finished expression may take an alias and
-// reports whether the typed word may itself be that alias.
-func (s *keywordScope) aliasChoices(prefix string) (aliasable bool) {
+// aliasChoices adds AS where the finished expression may take an alias.
+func (s *keywordScope) aliasChoices() {
 	if !s.complete || s.clause != "SELECT" && s.clause != "FROM" && s.clause != "JOIN" {
-		return false
+		return
 	}
 	aliasTokens := s.f.tokens
 	if s.clause == "SELECT" {
 		aliasTokens = keywordProjection(aliasTokens[s.cc.selectStart:])
 	}
 	if !keywordAliasPosition(aliasTokens, s.cc.clauseStart) {
-		return false
+		return
 	}
 	s.choices = append(s.choices, "AS")
-	return prefix != "" && !gosmo.IsReservedKeyword(prefix)
 }
 
 // trailingClauseChoices adds the clauses that may follow the current one in
