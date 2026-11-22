@@ -903,7 +903,11 @@ commit on their own). The record's `transaction` says how it ended:
 - The check refuses (exit 7) a script that controls transactions itself
   (`BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `SAVE TRAN`, `SET
   IMPLICIT_TRANSACTIONS ON`) or holds a statement SQL Server refuses inside
-  one (`ALTER DATABASE`, `BACKUP`, `RESTORE`, …).
+  one (flag `not-in-transaction`): `CREATE`/`ALTER`/`DROP DATABASE` (every
+  form) and `FULLTEXT`, `BACKUP`, `RESTORE`, `RECONFIGURE`, `KILL`, `DBCC
+  SHRINKFILE`/`SHRINKDATABASE`, `CREATE`/`ALTER`/`DROP EVENT SESSION`, and a
+  resumable index operation (`RESUMABLE = ON` anywhere; `ALTER INDEX …
+  RESUME`/`PAUSE`/`ABORT`) — nested behind `IF` too.
 - **The guarantee covers the script's own statements, not procedure
   bodies.** A procedure's `COMMIT` ends the wrapper and commits what came
   before it, and what follows runs in autocommit. This is found afterwards
@@ -913,13 +917,39 @@ commit on their own). The record's `transaction` says how it ended:
   outside the transaction, so the values a rolled-back run took are gone.
   The run is not refused; a run that rolls back carries a warning naming the
   lines (flag `sequence-advance`).
+- **Nor is an identity value, or a sequence a column default advances.** An
+  `INSERT` into a table with an `IDENTITY` column moves the identity on, and
+  one into a table whose column defaults to `NEXT VALUE FOR s` advances `s`;
+  a rollback undoes the rows, not the numbers, so a rolled-back trial run
+  leaves a gap in both. Neither is flagged: the script never names the
+  sequence, and finding either would mean reading each target's columns.
 - `--max-rows-affected <n>` commits only when `rowsAffected` stays at or
   under `n`; over it the transaction is rolled back and the answer is
   BLOCKED, exit 7. With `--transaction rollback` it rolls back either way.
   It can only trust what the server counts, so it refuses (exit 7, before
   connecting) a script with `SET NOCOUNT ON`, dynamic SQL, a procedure call
-  not on the read allow-list or an `OUTPUT` clause. Triggers' counts are
-  included: it over-counts rather than under-counts.
+  not on the read allow-list or an `OUTPUT` clause.
+- **The server counts a write's own target only.** A trigger's changes are
+  hidden by the `SET NOCOUNT ON` most triggers open with, and a foreign key's
+  `ON DELETE`/`ON UPDATE` action (`CASCADE`, `SET NULL`, `SET DEFAULT`) is
+  never counted: a one-row `DELETE` of a parent can remove thousands of
+  children and report `(1 rows affected)`. So after connecting, before the
+  script is sent, `--max-rows-affected` reads every `INSERT`, `UPDATE`,
+  `DELETE` and `MERGE` target — nested behind `IF` or `WHILE` too, an alias
+  resolved to its table, a synonym to its base — and refuses (BLOCKED, exit
+  7, `statements` naming each write and what it found) one with an enabled
+  DML trigger the statement fires, or referenced by an enabled foreign key
+  whose action for it is not `NO ACTION`. It fails closed: a view, a name the
+  login cannot see or that is found nowhere, and a linked server's table are
+  refused too; a CTE, a derived table or a rowset function as the target
+  already before connecting (and so under `--dry-run`, which never
+  connects). A table variable or `#temp` table carries neither and passes. A
+  name is looked for in the run's database and every database a `USE` in the
+  script names (a three-part name in its own), a one-part name in every
+  schema: a same-named table with a trigger elsewhere refuses too. When the
+  limit cannot hold a script, run it without: `--transaction rollback`
+  first, and check the changed tables themselves, since its `rowsAffected`
+  misses the same rows.
 
 ## Execution plans
 

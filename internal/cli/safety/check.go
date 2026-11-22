@@ -46,6 +46,12 @@ func effective(allow, ceiling spec.Class) spec.Class {
 	return allow
 }
 
+// uncountedHint is the hint of a --max-rows-affected refusal: a script whose
+// changes the server does not count in full cannot be limited by the count,
+// and a --transaction rollback run's rowsAffected misses the same changes.
+const uncountedHint = "Run it without --max-rows-affected. Try it under --transaction rollback first, " +
+	"and check the changed tables themselves: its rowsAffected does not show everything either."
+
 // Check decides whether sc may run under p, nil when it may. The checks run in
 // a fixed order, and the first that refuses is reported: the class against
 // --allow and the ceiling, then the modes the command line owns (SET
@@ -84,11 +90,40 @@ func Check(sc *Script, p Policy) *Blocked {
 			b.Statements = matching(sc, func(st Statement) bool { return st.Flags&blind != 0 })
 			b.Message = "--max-rows-affected cannot count every row this script changes " +
 				"(SET NOCOUNT ON, dynamic SQL, a procedure call or an OUTPUT clause)"
-			b.Hint = "Use --transaction rollback to measure the rows affected first."
+			b.Hint = uncountedHint
+			return b
+		}
+		// A write's triggers and cascades are checked on the server
+		// (cmd.checkWriteTargets); one whose table cannot be named is refused
+		// here.
+		for _, w := range sc.Writes() {
+			if w.Unresolvable != "" {
+				b.Statements = append(b.Statements, w.Describe(w.Unresolvable))
+			}
+		}
+		if len(b.Statements) > 0 {
+			b.Message = "--max-rows-affected cannot tell which table this script writes, so it cannot check it for " +
+				"triggers and cascading foreign keys, whose changes the server does not count"
+			b.Hint = "Write the table's own name (UPDATE dbo.t SET … FROM dbo.t JOIN …), or: " + uncountedHint
 			return b
 		}
 	}
 	return nil
+}
+
+// RefuseUncounted is the refusal of the writes --max-rows-affected's check on
+// the server found it cannot count — statements describes each, with what it
+// found: a trigger, a cascading foreign key, a view, no table at all. Nil
+// when statements is empty.
+func (p Policy) RefuseUncounted(sc *Script, statements []Statement) *Blocked {
+	if len(statements) == 0 {
+		return nil
+	}
+	return &Blocked{Detected: sc.Class, Allowed: p.Allowed(), Statements: statements,
+		Message: "--max-rows-affected cannot count every row this script changes: a trigger or a foreign key's " +
+			"ON DELETE/ON UPDATE action changes rows the server does not count, and a view's or an unknown " +
+			"name's tables cannot be checked for either",
+		Hint: uncountedHint}
 }
 
 // Refuse is the class check alone: the refusal of what — "the script", or a

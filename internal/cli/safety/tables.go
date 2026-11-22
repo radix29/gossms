@@ -116,8 +116,10 @@ var adminObjects = map[string]bool{
 }
 
 // notInTransactionObjects are the CREATE/ALTER/DROP objects SQL Server refuses
-// inside a user transaction. Every DATABASE form is listed, scoped
-// configuration included: a refusal is cheaper than a partial commit.
+// inside a user transaction, every form of them (notInTransaction holds the
+// other refused statements, EVENT SESSION among them). Every DATABASE form is
+// listed, scoped configuration included: a refusal is cheaper than a partial
+// commit.
 var notInTransactionObjects = map[string]bool{
 	"DATABASE": true, "FULLTEXT": true,
 }

@@ -29,7 +29,8 @@ const (
 	// IMPLICIT_TRANSACTIONS ON — refused under --transaction rollback.
 	FlagTranControl Flag = 1 << iota
 	// FlagNotInTransaction: a statement SQL Server refuses inside a user
-	// transaction (ALTER DATABASE, BACKUP, RESTORE, RECONFIGURE, …).
+	// transaction (ALTER DATABASE, BACKUP, KILL, a resumable index operation,
+	// …; notInTransaction).
 	FlagNotInTransaction
 	// FlagNoCount: SET NOCOUNT ON, after which the server reports no row counts.
 	FlagNoCount
@@ -97,6 +98,10 @@ type Statement struct {
 	Reason string
 
 	Flags Flag
+
+	// Writes is the statement's table writes, nested ones included, for
+	// --max-rows-affected's check of their targets.
+	Writes []Write
 }
 
 // Script is a classified script.
@@ -448,13 +453,13 @@ func leaderRule(st *Statement, toks []token, first bool) {
 			st.Class, st.Reason = spec.ClassAdmin, serverTriggerReason
 		}
 	case "BACKUP", "RESTORE":
-		st.Class, st.Flags = spec.ClassAdmin, FlagNotInTransaction
+		st.Class = spec.ClassAdmin
 		if n := next(1); n.kind == sqltext.KindWord {
 			st.Leader += " " + n.word
 			st.Object = objectName(toks, 2)
 		}
 	case "RECONFIGURE":
-		st.Class, st.Flags = spec.ClassAdmin, FlagNotInTransaction
+		st.Class = spec.ClassAdmin
 	case "DBCC":
 		dbcc(st, toks)
 	case "EXEC", "EXECUTE":
@@ -548,25 +553,7 @@ func selectInto(st *Statement, toks []token) {
 
 // dmlTarget is the object an INSERT/UPDATE/DELETE/MERGE names first, past
 // TOP (n), INTO and FROM.
-func dmlTarget(toks []token) string {
-	i := 1
-	if i < len(toks) && toks[i].is("TOP") {
-		i++
-		if i < len(toks) && toks[i].punct("(") {
-			for i++; i < len(toks) && toks[i].depth > toks[0].depth; i++ {
-			}
-		} else if i < len(toks) && toks[i].kind == sqltext.KindNumber {
-			i++ // the legacy TOP n
-		}
-		if i < len(toks) && toks[i].is("PERCENT") {
-			i++
-		}
-	}
-	if i < len(toks) && (toks[i].is("INTO") || toks[i].is("FROM")) {
-		i++
-	}
-	return objectName(toks, i)
-}
+func dmlTarget(toks []token) string { return objectName(toks, dmlTargetIndex(toks)) }
 
 func createAlterDrop(st *Statement, toks []token) {
 	verb, obj := createAlterObject(toks)
@@ -597,9 +584,6 @@ func createAlterDrop(st *Statement, toks []token) {
 	}
 	if obj == "TRIGGER" && onAllServer(toks, i+1) {
 		st.Class, st.Reason = spec.ClassAdmin, serverTriggerReason
-	}
-	if notInTransactionObjects[obj] {
-		st.Flags |= FlagNotInTransaction
 	}
 }
 
@@ -864,6 +848,9 @@ func floor(st *Statement, toks []token) {
 		}
 		w := tk.word
 		at := " (line " + strconv.Itoa(tk.line) + ")"
+		if notInTransaction(toks, i) {
+			st.Flags |= FlagNotInTransaction
+		}
 		switch {
 		case w == "EXEC" || w == "EXECUTE":
 			if next.is("AS") {
@@ -926,6 +913,56 @@ func floor(st *Statement, toks []token) {
 			st.raise(spec.ClassAdmin, serverTriggerReason+at)
 			continue
 		}
+		if writeVerbs[v.name] {
+			if wr, ok := readWrite(toks, i); ok {
+				st.Writes = append(st.Writes, wr)
+			}
+		}
 		st.raise(c, "keyword "+v.name+at)
 	}
+}
+
+// notInTransaction reports whether toks[i] begins a statement SQL Server
+// refuses inside a user transaction (docs/cli.md § Transactions): BACKUP,
+// RESTORE, RECONFIGURE, KILL (Msg 6115), DBCC SHRINKFILE/SHRINKDATABASE (Msg
+// 8920), CREATE/ALTER/DROP of a notInTransactionObjects object or an EVENT
+// SESSION (Msg 574), a resumable index operation — any RESUMABLE = ON (CREATE
+// INDEX, ALTER INDEX … REBUILD, ALTER TABLE … ADD CONSTRAINT) and ALTER INDEX
+// … RESUME, PAUSE or ABORT (Msg 574). floor asks at every word, so a form the
+// splitter merged into another statement, or nested behind IF, flags as one
+// that leads does. CHECKPOINT, DBCC CHECKDB and CREATE EVENT NOTIFICATION run
+// in a transaction (all three live, 17).
+func notInTransaction(toks []token, i int) bool {
+	at := func(j int) token {
+		if j < len(toks) {
+			return toks[j]
+		}
+		return token{}
+	}
+	switch toks[i].word {
+	case "BACKUP", "RESTORE", "RECONFIGURE", "KILL":
+		return true
+	case "DBCC":
+		return at(i+1).is("SHRINKFILE") || at(i+1).is("SHRINKDATABASE")
+	case "RESUMABLE":
+		return at(i+1).punct("=") && at(i+2).is("ON")
+	case "CREATE", "ALTER", "DROP":
+		_, obj := createAlterObject(toks[i:])
+		switch {
+		case notInTransactionObjects[obj]:
+			return true
+		case obj == "EVENT":
+			return at(i + 2).is("SESSION")
+		case obj == "INDEX" && toks[i].word == "ALTER":
+			// ALTER INDEX {ix | ALL} ON t {RESUME | PAUSE | ABORT}
+			_, j := nameParts(toks, i+2)
+			if !at(j).is("ON") {
+				return false
+			}
+			_, j = nameParts(toks, j+1)
+			a := at(j)
+			return a.is("RESUME") || a.is("PAUSE") || a.is("ABORT")
+		}
+	}
+	return false
 }

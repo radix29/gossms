@@ -141,6 +141,14 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   table's own metadata. Reopen when the driver lets a caller declare a column's
   collation (an upstream PR; a forked `replace` would not reach gosmo's
   dependents).
+- **`--max-rows-affected` and `RECEIVE`, `WRITETEXT`, `UPDATETEXT`
+  (suspected, not run live).** The target check (`cmd.checkWriteTargets`)
+  reads INSERT/UPDATE/DELETE/MERGE only. `RECEIVE` removes queue rows but
+  returns them as a result set, so its count arrives after the set and is
+  not added to `rowsAffected` (`collect`); the two text verbs' counts were
+  never looked at. Under the limit each probably commits uncounted. Refusing
+  them offline under `MaxRowsAffected` would close it; confirm the counts
+  live first.
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
   (phase 4) — every instance here has one volume, and none is older than
   2016 SP3.

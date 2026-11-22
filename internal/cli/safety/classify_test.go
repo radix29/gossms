@@ -467,6 +467,27 @@ func TestClassifyFlags(t *testing.T) {
 		{"RESTORE DATABASE d FROM DISK = 'x'", FlagNotInTransaction},
 		{"RECONFIGURE", FlagNotInTransaction},
 		{"CREATE FULLTEXT CATALOG c", FlagNotInTransaction},
+		{"KILL 53", FlagNotInTransaction},
+		{"KILL STATS JOB 9", FlagNotInTransaction},
+		{"DBCC SHRINKFILE(1)", FlagNotInTransaction},
+		{"DBCC SHRINKDATABASE(d)", FlagNotInTransaction},
+		{"CREATE INDEX ix ON t(a) WITH (ONLINE = ON, RESUMABLE = ON)", FlagNotInTransaction},
+		{"CREATE UNIQUE INDEX ix ON t(a) WITH (online=on,resumable=on)", FlagNotInTransaction},
+		{"ALTER INDEX ALL ON dbo.t REBUILD WITH (ONLINE = ON, RESUMABLE = ON)", FlagNotInTransaction},
+		{"ALTER TABLE t ADD CONSTRAINT pk PRIMARY KEY (a) WITH (ONLINE = ON, RESUMABLE = ON)", FlagNotInTransaction},
+		{"ALTER INDEX ix ON dbo.t RESUME", FlagNotInTransaction},
+		{"ALTER INDEX [ix] ON [dbo].[t] PAUSE", FlagNotInTransaction},
+		{"ALTER INDEX ALL ON t ABORT", FlagNotInTransaction},
+		{"CREATE EVENT SESSION s ON SERVER ADD EVENT sqlserver.sql_batch_completed", FlagNotInTransaction},
+		{"ALTER EVENT SESSION s ON SERVER STATE = START", FlagNotInTransaction},
+		{"DROP EVENT SESSION s ON SERVER", FlagNotInTransaction},
+		// Nested behind IF, or merged into the statement before: the floor flags it.
+		{"IF 1 = 1 KILL 53", FlagNotInTransaction},
+		{"IF 1 = 1 ALTER DATABASE d SET ONLINE", FlagNotInTransaction},
+		{"IF 1 = 1 BACKUP LOG d TO DISK = 'x'", FlagNotInTransaction},
+		{"IF 1 = 1 DROP EVENT SESSION s ON SERVER", FlagNotInTransaction},
+		{"IF 1 = 1 ALTER INDEX ix ON t RESUME", FlagNotInTransaction},
+		{"IF 1 = 1 DBCC SHRINKFILE(1)", FlagNotInTransaction},
 		{"SET NOCOUNT ON", FlagNoCount},
 		{"SET XACT_ABORT, NOCOUNT ON", FlagNoCount},
 		{"EXEC (@sql)", FlagDynamic},
@@ -501,6 +522,14 @@ func TestClassifyFlags(t *testing.T) {
 		{"ALTER TABLE t ADD c int", 0},
 		{"SELECT 'BEGIN TRAN'", 0},
 		{"EXEC p @x OUTPUT", FlagExec}, // an output parameter is no OUTPUT clause
+		// These run inside a transaction (live, 17): no not-in-transaction.
+		{"CHECKPOINT", 0},
+		{"DBCC CHECKDB", 0},
+		{"CREATE INDEX ix ON t(a) WITH (ONLINE = ON, RESUMABLE = OFF)", 0},
+		{"ALTER INDEX ix ON t REBUILD WITH (ONLINE = ON)", 0},
+		{"ALTER INDEX ix ON t REORGANIZE", 0},
+		{"CREATE EVENT NOTIFICATION n ON DATABASE FOR CREATE_TABLE TO SERVICE 's', 'current database'", 0},
+		{"SELECT resumable, abort, pause FROM t", 0},
 	} {
 		if got := Classify(tt.script).Flags; got != tt.want {
 			t.Errorf("Classify(%q).Flags = %v, want %v", tt.script, got.Names(), tt.want.Names())
