@@ -31,7 +31,8 @@ import (
 type App struct {
 	screen tcell.Screen
 
-	explorerSplit *layout.Splitter
+	explorerSplit  *layout.Splitter
+	explorerHidden bool
 
 	explorer *ObjectExplorer
 	panels   *layout.PanelManager
@@ -394,6 +395,11 @@ func (a *App) layoutAll() {
 
 	left := a.explorerSplit.FirstRect()
 	right := a.explorerSplit.SecondRect()
+	if a.explorerHidden {
+		a.explorer.SetBounds(0, 0, 0, 0)
+		a.panels.SetBounds(0, menuH, w, contentH)
+		return
+	}
 	a.explorer.SetBounds(left.X, left.Y, left.W, left.H)
 	a.panels.SetBounds(right.X, right.Y, right.W, right.H)
 }
@@ -411,8 +417,10 @@ func (a *App) draw() {
 
 	a.menuBar.Draw(s)
 	a.toolbar.Draw(s)
-	a.explorerSplit.Draw(s)
-	a.explorer.Draw(s)
+	if !a.explorerHidden {
+		a.explorerSplit.Draw(s)
+		a.explorer.Draw(s)
+	}
 	a.panels.Draw(s)
 
 	// Status bar
@@ -436,7 +444,9 @@ func (a *App) draw() {
 	// menu dropdown and context menu extend into.
 	a.menuBar.DrawOverlay(s)
 	a.toolbar.DrawOverlay(s)
-	a.explorer.DrawOverlay(s)
+	if !a.explorerHidden {
+		a.explorer.DrawOverlay(s)
+	}
 	a.drawDragGhost(s, w)
 
 	// Modal dialogs, drawn bottom-to-top so a nested dialog paints over its

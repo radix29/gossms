@@ -2,11 +2,13 @@ package tui
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/core"
 )
 
 // groupTree is a connection's tree holding one loaded folder of type ft in
@@ -536,6 +538,69 @@ func TestSchemaGroupDrag(t *testing.T) {
 	a.handleMouse(tcell.NewEventMouse(dragTestLabelX, y, tcell.ButtonNone, tcell.ModNone))
 }
 
+func TestExplorerCloseAndViewMenuRestore(t *testing.T) {
+	a := newDragTestApp(t, 1)
+	selected := a.explorer.Selected()
+	qp := NewQueryPanel(a, "Query 1")
+	a.panels.AddPanel(qp)
+	a.explorerSplit.SetRatio(0.4)
+	a.layoutAll()
+	a.focusExplorer()
+	before := a.explorer.view.Bounds()
+	a.explorer.Draw(a.screen)
+	var header strings.Builder
+	for x := range before.W {
+		str, _, _ := a.screen.Get(x, before.Y)
+		header.WriteString(str)
+	}
+	x := strings.Index(header.String(), "[x]")
+	group := strings.Index(header.String(), "[⋮]")
+	if group < 0 || x <= group || !strings.HasSuffix(header.String(), "[x]┐") {
+		t.Fatalf("missing close button after grouping button in right corner: %q", header.String())
+	}
+	x = core.DisplayWidth(header.String()[:x])
+	a.handleMouse(tcell.NewEventMouse(x+1, before.Y, tcell.Button1, tcell.ModNone))
+	a.handleMouse(tcell.NewEventMouse(x+1, before.Y+3, tcell.Button1, tcell.ModNone))
+	a.handleMouse(tcell.NewEventMouse(x+1, before.Y+3, tcell.ButtonNone, tcell.ModNone))
+	if !a.explorerHidden || a.focus != focusOnPanels || a.explorer.view.Focused() {
+		t.Fatal("close did not hide the explorer and focus the panel")
+	}
+	if got := a.panels.Bounds(); got.X != 0 || got.W != dragTestScreenW {
+		t.Fatalf("hidden explorer still occupies panel space: %+v", got)
+	}
+	if a.explorer.Selected() != selected || len(a.connections) != 1 {
+		t.Fatal("hiding changed the tree or connections")
+	}
+	item := findMenuBarItem(t, a.buildMenus(), "View", "Object Explorer")
+	item.Action()
+	if a.explorerHidden || a.focus != focusOnExplorer || !a.explorer.view.Focused() {
+		t.Fatal("View > Object Explorer did not show and focus the explorer")
+	}
+	if got := a.explorer.view.Bounds(); got != before || a.explorer.Selected() != selected {
+		t.Fatalf("reopening lost geometry or selection: %+v", got)
+	}
+	a.focusPanels()
+	item.Action()
+	if a.explorerHidden || a.focus != focusOnExplorer || a.explorer.view.Bounds() != before {
+		t.Fatal("View > Object Explorer changed the visible explorer instead of focusing it")
+	}
+}
+
+func TestHiddenExplorerDoesNotTakeSplitterMouseEvents(t *testing.T) {
+	a := newDragTestApp(t, 1)
+	a.panels.AddPanel(NewQueryPanel(a, "Query 1"))
+	a.layoutAll()
+	bar := a.explorerSplit.SplitPos()
+	ratio := a.explorerSplit.Ratio()
+	a.hideExplorer()
+	a.handleMouse(tcell.NewEventMouse(bar, 4, tcell.Button1, tcell.ModNone))
+	a.handleMouse(tcell.NewEventMouse(bar+10, 4, tcell.Button1, tcell.ModNone))
+	a.handleMouse(tcell.NewEventMouse(bar+10, 4, tcell.ButtonNone, tcell.ModNone))
+	if !a.explorerHidden || a.focus != focusOnPanels || a.explorerSplit.Ratio() != ratio {
+		t.Fatal("the hidden explorer or its splitter handled panel mouse events")
+	}
+}
+
 // TestGroupBySchemaTitleButton: the "[⋮]"/"[Σ]" on the Object Explorer's top border
 // is the mouse surface of Alt+G. A click toggles once per press, never arms an
 // explorer drag (the press is on the border, not a row) and leaves a visible
@@ -549,8 +614,8 @@ func TestGroupBySchemaTitleButton(t *testing.T) {
 	a.explorer.SetChildren(folder, []*explorerNode{t1})
 	a.explorer.view.SelectID(t1.ID())
 
-	// The button sits just inside the top-right corner of the explorer pane.
-	bx, by := dragTestSplitX-1-3+1, 1
+	// The grouping button sits before the close button in the top border.
+	bx, by := dragTestSplitX-1-3-4+1, 1
 	press := func(step string, wantOn bool) {
 		t.Helper()
 		a.handleMouse(tcell.NewEventMouse(bx, by, tcell.Button1, tcell.ModNone))

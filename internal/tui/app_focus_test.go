@@ -3,12 +3,41 @@ package tui
 import (
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/tuikit/tuikittest"
 )
 
 // Ctrl+Tab (App.cycleFocus) steps Explorer → editor → results → Explorer when
 // the panel has results.
+func TestHiddenExplorerIsSkippedByFocusCycles(t *testing.T) {
+	a := newDragTestApp(t, 0)
+	qp := NewQueryPanel(a, "Query 1")
+	a.panels.AddPanel(qp)
+	qp.setResult(newTestResult(1, false), false)
+	a.hideExplorer()
+	for _, cycle := range []func(){a.cycleFocus, a.cycleFocusReverse} {
+		qp.setResultsFocused(false)
+		cycle()
+		if !qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden {
+			t.Fatal("hidden-explorer focus cycle did not move from editor to results")
+		}
+		cycle()
+		if qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden {
+			t.Fatal("hidden-explorer focus cycle did not return to the editor")
+		}
+	}
+}
+
+func TestHiddenExplorerIsNotReopenedByTabFallback(t *testing.T) {
+	a := newDragTestApp(t, 0)
+	a.hideExplorer()
+	a.handleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+	if !a.explorerHidden || a.focus != focusOnPanels {
+		t.Fatal("Tab from an empty panel area reopened the hidden explorer")
+	}
+}
+
 func TestCycleFocusThreeWay(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")

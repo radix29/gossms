@@ -21,9 +21,20 @@ func (f appFocus) String() string {
 }
 
 func (a *App) focusExplorer() {
+	if a.explorerHidden {
+		a.explorerHidden = false
+		a.layoutAll()
+	}
 	a.focus = focusOnExplorer
 	a.explorer.Focus(true)
 	a.syncActivePanelFocus()
+}
+
+func (a *App) hideExplorer() {
+	a.explorerHidden = true
+	a.drag.Cancel()
+	a.focusPanels()
+	a.layoutAll()
 }
 
 func (a *App) focusPanels() {
@@ -59,7 +70,14 @@ func (a *App) cycleFocus() {
 	case qp != nil && !qp.resultsFocused && qp.result != nil:
 		qp.setResultsFocused(true)
 	default:
-		a.focusExplorer()
+		if a.explorerHidden {
+			a.focusPanels()
+			if qp != nil {
+				qp.setResultsFocused(false)
+			}
+		} else {
+			a.focusExplorer()
+		}
 	}
 }
 
@@ -76,7 +94,14 @@ func (a *App) cycleFocusReverse() {
 	case qp != nil && qp.resultsFocused:
 		qp.setResultsFocused(false)
 	default:
-		a.focusExplorer()
+		if a.explorerHidden {
+			a.focusPanels()
+			if qp != nil {
+				qp.setResultsFocused(qp.result != nil)
+			}
+		} else {
+			a.focusExplorer()
+		}
 	}
 }
 

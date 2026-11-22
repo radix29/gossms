@@ -228,7 +228,12 @@ failed peer connection never retries with another server's credentials.
 
 ## Object Explorer
 
-**Group by Schema** (View menu, **Alt+G**, or the button at the right end of
+The `[x]` in the top-right corner, after Group by Schema, hides Object Explorer without
+disconnecting or clearing its tree. **View > Object Explorer** shows and
+focuses it when hidden, or only focuses it when already visible. Reopening
+restores its previous width; hidden, it leaves the full width to the panels.
+
+**Group by Schema** (View menu, **Alt+G**, or the button before `[x]` in
 the Object Explorer title: `[⋮]` flat, `[Σ]` grouped) lists Tables, Views,
 Synonyms, Stored Procedures, Functions and Sequences under one node per schema,
 as SSMS does, and so do the System, File, External and Graph Tables folders,
