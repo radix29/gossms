@@ -1,0 +1,9 @@
+# Preserve byte-exact fixtures, including intentional CRLF test inputs.
+/internal/format/testdata/** -text
+/internal/tui/sqlparse/testdata/*.golden -text
+/internal/cli/testdata/*.golden -text
+/internal/cli/cmd/testdata/*.golden -text
+/internal/cli/output/testdata/*.golden -text
+
+# Embedded agent-guide sections use LF-delimited markers and examples.
+/internal/cli/agent/guide/*.md text eol=lf
