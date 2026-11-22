@@ -576,38 +576,18 @@ func TestSQLKeywordCompletionAcceptsPhrase(t *testing.T) {
 					t.Fatal("keyword popup did not open")
 				}
 				qp.editor.HandleKey(tcell.NewEventKey(accept.key, "", tcell.ModNone))
-				want := tt.want
-				if accept.key == tcell.KeyEnter && softAtAlias[want] {
-					// Where an alias may be typed, Enter is a newline (CompletionItem.Soft).
-					want = tt.before + tt.typed + "\n" + tt.after
-				}
-				if got := qp.editor.Text(); got != want {
-					t.Fatalf("Text() = %q, want %q", got, want)
+				if got := qp.editor.Text(); got != tt.want {
+					t.Fatalf("Text() = %q, want %q", got, tt.want)
 				}
 			})
 		}
 	}
 }
 
-// softAtAlias lists TestSQLKeywordCompletionAcceptsPhrase's cases typed where a
-// new alias could start: Tab takes the keyword, Enter does not.
-var softAtAlias = map[string]bool{
-	"CREATE FUNCTION dbo.f() RETURNS INT AS BEGIN RETURN (SELECT Id FROM dbo.Customers WHERE ); END": true,
-	"SELECT * FROM dbo.Customers WHERE Id IS DISTINCT FROM 1":                                        true,
-	"SELECT * FROM dbo.Customers OUTER APPLY ":                                                       true,
-	"SELECT Name FROM dbo.Customers ORDER BY ":                                                       true,
-	"SELECT Name FROM dbo.Customers ORDER BY Name":                                                   true,
-	"SELECT Name FROM dbo.Customers GROUP /* keep */ BY Name":                                        true,
-}
-
-// A one-letter alias that a keyword starts ("o" / OUTER APPLY, "c" / CROSS
-// JOIN, "o" / ON) stays an alias when Enter ends the line, and Enter after a
-// space or "*" is a newline, not the first keyword offered ("=", FROM).
-func TestSQLKeywordCompletionEnterKeepsAliasAndNewline(t *testing.T) {
+// Enter after a space or "*" is a newline, not the first keyword offered
+// ("=", FROM).
+func TestSQLKeywordCompletionEnterWithNothingTypedIsNewline(t *testing.T) {
 	for _, before := range []string{
-		"SELECT * FROM dbo.Customers o",
-		"SELECT * FROM dbo.Customers c",
-		"SELECT * FROM dbo.Customers c JOIN dbo.Orders o",
 		"SELECT * FROM dbo.Customers WHERE Name ",
 		"SELECT *",
 	} {
@@ -621,6 +601,29 @@ func TestSQLKeywordCompletionEnterKeepsAliasAndNewline(t *testing.T) {
 		qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
 		if got := qp.editor.Text(); got != before+"\n" {
 			t.Errorf("Text() = %q, want %q", got, before+"\n")
+		}
+	}
+}
+
+// A started keyword commits on Enter even where the word could be a new
+// alias (docs/decisions.md, Enter commits a keyword at an alias position):
+// "FROM t WH" Enter is WHERE, as "FROM t WHERE Id = 1 GR" Enter is GROUP BY.
+func TestSQLKeywordCompletionEnterCommitsAtAliasPosition(t *testing.T) {
+	for _, tt := range []struct{ typed, want string }{
+		{"SELECT * FROM dbo.Customers WH", "SELECT * FROM dbo.Customers WHERE "},
+		{"SELECT * FROM dbo.Customers GR", "SELECT * FROM dbo.Customers GROUP BY "},
+		{"SELECT * FROM dbo.Customers c JOIN dbo.Orders o", "SELECT * FROM dbo.Customers c JOIN dbo.Orders ON "},
+	} {
+		qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		for _, r := range tt.typed {
+			qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+		}
+		if !qp.editor.OverlayActive() {
+			t.Fatalf("%q: keyword popup did not open", tt.typed)
+		}
+		qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+		if got := qp.editor.Text(); got != tt.want {
+			t.Errorf("%q: Text() = %q, want %q", tt.typed, got, tt.want)
 		}
 	}
 }
@@ -1570,4 +1573,182 @@ func TestSQLCompletionUserDefinedTypes(t *testing.T) {
 			t.Fatalf("items %v, want system types only", labels(items))
 		}
 	})
+}
+
+// An unqualified user-defined type resolves as the server resolves it: the
+// default schema, then dbo, never another schema (B2); and user-defined types
+// match like catalog names, anywhere in the name and after an open '[' (B3).
+func TestSQLCompletionUserTypeResolution(t *testing.T) {
+	newPanel := func(t *testing.T, defaultSchema string) *QueryPanel {
+		qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		inv := qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "testdb")]
+		inv.defaultSchema = defaultSchema
+		inv.catalog.Types = []gosmo.CatalogType{
+			{Schema: "a", Name: "Dup", Kind: gosmo.CatalogTableType},
+			{Schema: "dbo", Name: "Dup", Kind: gosmo.CatalogAliasType},
+			{Schema: "dbo", Name: "PostalAddress", Kind: gosmo.CatalogAliasType},
+			{Schema: "dbo", Name: "Phone", Kind: gosmo.CatalogAliasType},
+			{Schema: "x", Name: "Elsewhere", Kind: gosmo.CatalogAliasType},
+			{Schema: "x", Name: "Mine", Kind: gosmo.CatalogTableType},
+			{Schema: "dbo", Name: "Mine", Kind: gosmo.CatalogAliasType},
+		}
+		return qp
+	}
+	for _, tt := range []struct {
+		sql, defaultSchema string
+		want, not          []string
+	}{
+		// B2: a.Dup sorts first but is not where "Dup" resolves.
+		{"CREATE TABLE dbo.T (Home Dup |", "", []string{"NULL", "NOT NULL"}, nil},
+		{"CREATE PROCEDURE dbo.p @rows Dup |", "", []string{"AS", "OUTPUT"}, []string{"READONLY"}},
+		{"DECLARE @x Dup |", "", []string{"="}, nil},
+		// Only in a third schema: unresolved, no follow-up. (A parameter
+		// takes any unknown one-word name as a type, so still gets AS/OUTPUT,
+		// never READONLY.)
+		{"CREATE TABLE dbo.T (Home Elsewhere |", "", nil, []string{"NULL", "NOT NULL"}},
+		{"CREATE PROCEDURE dbo.p @m Mine |", "y", []string{"AS", "OUTPUT"}, []string{"READONLY"}},
+		// The default schema comes before dbo.
+		{"CREATE PROCEDURE dbo.p @m Mine |", "x", []string{"READONLY"}, []string{"OUTPUT"}},
+		{"CREATE PROCEDURE dbo.p @m Mine |", "", []string{"AS", "OUTPUT"}, []string{"READONLY"}},
+		// B3: contains, and after an open '['.
+		{"CREATE TABLE dbo.T (Home addr|", "", []string{"dbo.PostalAddress"}, []string{"dbo.Phone"}},
+		{"CREATE TABLE dbo.T (Home [ph|", "", []string{"dbo.Phone"}, []string{"dbo.PostalAddress", "INT", "NULL"}},
+		{"CREATE TABLE dbo.T (Home [ph|]", "", []string{"dbo.Phone"}, nil},
+		{"CREATE TABLE dbo.T (Home dbo.addr|", "", []string{"dbo.PostalAddress"}, []string{"dbo.Phone"}},
+		{"CREATE TABLE dbo.T (Home dbo.[ph|", "", []string{"dbo.Phone"}, []string{"dbo.PostalAddress", "dbo.Customers"}},
+		{"CREATE PROCEDURE dbo.p @h [ph|", "", []string{"dbo.Phone"}, []string{"INT"}},
+		{"DECLARE @x [ph|", "", []string{"dbo.Phone"}, []string{"INT"}},
+		// '[' outside a type position keeps the catalog answer.
+		{"SELECT * FROM [Cus|", "", []string{"dbo.Customers"}, []string{"dbo.Phone"}},
+	} {
+		t.Run(tt.defaultSchema+" "+tt.sql, func(t *testing.T) {
+			qp := newPanel(t, tt.defaultSchema)
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			for _, label := range tt.want {
+				if !containsLabel(items, label) {
+					t.Errorf("%q missing: %v", label, labels(items))
+				}
+			}
+			for _, label := range tt.not {
+				if containsLabel(items, label) {
+					t.Errorf("%q offered: %v", label, labels(items))
+				}
+			}
+		})
+	}
+	t.Run("a mid-name hit is Partial", func(t *testing.T) {
+		qp := newPanel(t, "")
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home addr|")
+		items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		for _, item := range items {
+			if item.Label == "dbo.PostalAddress" && !item.Partial {
+				t.Fatalf("item = %+v, want Partial", item)
+			}
+		}
+	})
+	t.Run("an open bracket is replaced with the qualified name", func(t *testing.T) {
+		qp := newPanel(t, "")
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home [ph|")
+		items, replace := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if len(items) != 1 || items[0].Text != "dbo.Phone" || replace != len("CREATE TABLE dbo.T (Home ") {
+			t.Fatalf("items %+v at %d", items, replace)
+		}
+	})
+	t.Run("an open bracket after a schema is replaced with the bare name", func(t *testing.T) {
+		qp := newPanel(t, "")
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home dbo.[ph|")
+		items, replace := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if len(items) != 1 || items[0].Text != "Phone" || replace != len("CREATE TABLE dbo.T (Home dbo.") {
+			t.Fatalf("items %+v at %d", items, replace)
+		}
+	})
+}
+
+// TestSQLCompletionDataTypePositions covers the data-type positions outside
+// CREATE TABLE and routine headers (dataTypePosition): each offers types, not
+// the object list, and the follow-up after a written type.
+func TestSQLCompletionDataTypePositions(t *testing.T) {
+	newPanel := func(t *testing.T) *QueryPanel {
+		qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		inv := qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "testdb")]
+		inv.catalog.Types = []gosmo.CatalogType{
+			{Schema: "dbo", Name: "Phone", Kind: gosmo.CatalogAliasType},
+			{Schema: "geo", Name: "Point 3", Kind: gosmo.CatalogClrType},
+			{Schema: "dbo", Name: "Rows", Kind: gosmo.CatalogTableType},
+		}
+		return qp
+	}
+	objects := []string{"dbo.Customers", "dbo.vActiveCustomers", "sales.Region", "dbo"}
+	for _, tt := range []struct {
+		sql       string
+		want, not []string
+	}{
+		// DECLARE: scalar, alias, CLR and table types, TABLE and CURSOR; no
+		// text/ntext/image (Msg 2739).
+		{"DECLARE @x |", []string{"INT", "ROWVERSION", "dbo.Phone", "geo.[Point 3]", "dbo.Rows", "TABLE", "CURSOR"}, append([]string{"TEXT", "NTEXT", "IMAGE"}, objects...)},
+		{"DECLARE @x i|", []string{"INT"}, objects},
+		{"DECLARE @x AS i|", []string{"INT"}, objects},
+		{"DECLARE @x ph|", []string{"dbo.Phone"}, objects},
+		{"DECLARE @a INT = 1, @b |", []string{"INT", "dbo.Phone"}, objects},
+		{"DECLARE @a INT = dbo.f(1, 2), @b |", []string{"INT"}, objects},
+		{"DECLARE @x INT |", []string{"="}, append([]string{"INT"}, objects...)},
+		{"DECLARE @x VARCHAR(10) |", []string{"="}, objects},
+		{"DECLARE @x NVARCHAR(|", []string{"MAX"}, objects},
+		{"DECLARE @t dbo.Rows |", nil, append([]string{"="}, objects...)},
+		{"DECLARE @t TABLE |", nil, objects},
+		{"DECLARE @t TABLE (a i|", []string{"INT"}, objects},
+		{"DECLARE @t TABLE (a INT, b |", []string{"INT", "dbo.Phone"}, append([]string{"dbo.Rows"}, objects...)},
+		{"DECLARE @t TABLE (a INT |", []string{"NULL", "NOT NULL"}, objects},
+		{"CREATE PROCEDURE dbo.p AS BEGIN DECLARE @x |", []string{"INT", "dbo.Phone"}, objects},
+		// CAST/CONVERT: system and CLR types, never alias or table types.
+		{"SELECT CAST(1 AS |", []string{"INT", "geo.[Point 3]"}, append([]string{"dbo.Phone", "dbo.Rows", "TABLE"}, objects...)},
+		{"SELECT TRY_CAST('1' AS d|", []string{"DATE", "DECIMAL"}, objects},
+		{"SELECT CAST(Name AS NVARCHAR(| FROM dbo.Customers", []string{"MAX"}, []string{"Name"}},
+		{"SELECT CONVERT(i|", []string{"INT"}, objects},
+		{"SELECT TRY_CONVERT(|", []string{"INT", "geo.[Point 3]"}, append([]string{"dbo.Phone"}, objects...)},
+		{"SELECT CAST((SELECT TOP (1) Id AS x FROM dbo.Orders) AS |", []string{"INT"}, objects},
+		// ALTER TABLE: system, alias and CLR types; NULL/NOT NULL after.
+		{"ALTER TABLE dbo.T ADD c i|", []string{"INT"}, objects},
+		{"ALTER TABLE dbo.T ADD c |", []string{"INT", "dbo.Phone", "geo.[Point 3]"}, append([]string{"dbo.Rows"}, objects...)},
+		{"ALTER TABLE dbo.T ADD a INT, b |", []string{"INT"}, objects},
+		{"ALTER TABLE dbo.T ADD c INT |", []string{"NULL", "NOT NULL"}, objects},
+		{"ALTER TABLE dbo.T ALTER COLUMN c n|", []string{"NVARCHAR", "NCHAR"}, objects},
+		{"ALTER TABLE dbo.T ALTER COLUMN c NVARCHAR(20) NOT |", []string{"NULL"}, []string{"NOT NULL"}},
+		// CREATE TYPE … FROM: system base types only (Msg 222 and kin).
+		{"CREATE TYPE dbo.X FROM n|", []string{"NVARCHAR", "NUMERIC"}, objects},
+		{"CREATE TYPE dbo.X FROM |", []string{"INT", "TEXT"}, append([]string{"XML", "SYSNAME", "GEOGRAPHY", "ROWVERSION", "dbo.Phone", "geo.[Point 3]"}, objects...)},
+		{"CREATE TYPE dbo.X FROM INT |", []string{"NULL", "NOT NULL"}, objects},
+		// Qualified: the schema's types the position takes.
+		{"DECLARE @x dbo.|", []string{"dbo.Phone", "dbo.Rows"}, []string{"dbo.Customers"}},
+		{"SELECT CAST(1 AS geo.|", []string{"geo.[Point 3]"}, nil},
+		{"SELECT CAST(1 AS dbo.|", nil, []string{"dbo.Phone", "dbo.Customers"}},
+		{"ALTER TABLE dbo.T ADD c dbo.|", []string{"dbo.Phone"}, []string{"dbo.Rows", "dbo.Customers"}},
+		// Negative rows: positions that keep today's answer.
+		{"SELECT CAST(N| AS INT) FROM dbo.Customers", []string{"Name"}, []string{"INT", "NVARCHAR"}},
+		{"SELECT CONVERT(INT, N|) FROM dbo.Customers", []string{"Name"}, []string{"NVARCHAR"}},
+		{"SELECT CONVERT(N|", nil, []string{"Name"}},
+		{"SELECT CAST(Id AS INT) FROM |", []string{"dbo.Customers"}, []string{"INT"}},
+		{"DECLARE c CURSOR FOR SELECT | FROM dbo.Customers", []string{"Name"}, []string{"INT"}},
+		{"DECLARE @x INT = | FROM dbo.Customers", nil, []string{"INT", "="}},
+		{"DECLARE @x INT\nSELECT | FROM dbo.Customers", []string{"Name"}, []string{"INT"}},
+		{"ALTER TABLE |", []string{"dbo.Customers"}, []string{"INT"}},
+		{"SELECT * FROM dbo.|", []string{"dbo.Customers"}, []string{"dbo.Phone"}},
+	} {
+		t.Run(tt.sql, func(t *testing.T) {
+			qp := newPanel(t)
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			for _, label := range tt.want {
+				if !containsLabel(items, label) {
+					t.Errorf("%q missing: %v", label, labels(items))
+				}
+			}
+			for _, label := range tt.not {
+				if containsLabel(items, label) {
+					t.Errorf("%q offered: %v", label, labels(items))
+				}
+			}
+		})
+	}
 }

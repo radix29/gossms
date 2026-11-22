@@ -137,6 +137,11 @@ func (s *dmlSplitter) advance(t Token) bool {
 		if temporalFrom || (s.prevKeyword == "DISTINCT" && (s.prevPrevKw == "IS" || s.prevPrevKw == "NOT")) {
 			break
 		}
+		if s.prevKeyword == "CREATE" {
+			// CREATE TYPE s.n FROM base_type: an alias type's base, not a
+			// FROM-first query (TYPE and the name are not keywords).
+			break
+		}
 		starts = !s.started || (s.fromSeen && s.querySource)
 		if starts || continuesUnion || s.pendingMainSelect {
 			s.pendingMainSelect = false

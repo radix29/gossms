@@ -191,15 +191,8 @@ func (d *NewRoleDialog) buildPages(pf *nrolePrefetch) {
 	// not exist yet. Reads (the Add search, a table's columns) go through the
 	// prefetched database; the GRANTs address it by DatabaseRef, as the CREATE
 	// does, and the role by its typed name.
-	d.forms[3], d.applyFns[3] = buildSecurablesMatrix(d, pf.database, nil, nil, nil, pf.securables,
-		securableFinder(pf.database), 8, 12,
-		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission string) error {
-			return applySecurable(ctx, sc.Server.DatabaseRef(dbName), verb, opts, s, permission, d.objectName())
-		},
-		func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission, column string) error {
-			return applyColumnSecurable(ctx, sc.Server.DatabaseRef(dbName), verb, opts, s, permission, column, d.objectName())
-		},
-	)
+	d.forms[3], d.applyFns[3] = buildSecurablesMatrix(d, pf.database, securablesSeed{}, pf.securables,
+		securableFinder(pf.database), newPrincipalSecurablesTarget(sc, dbName, d.objectName))
 
 	// A database role is classed as USER in sp_addextendedproperty's level names,
 	// as on Database Role Properties.

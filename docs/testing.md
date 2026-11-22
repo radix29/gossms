@@ -145,7 +145,10 @@ a bug. `internal/fileutil`, `internal/config` and `internal/cli/audit` take
 10–45 s there and are the first to fail under full-suite load; rerun them
 alone (`scripts/wintest.sh test -count=3 ./internal/fileutil/
 ./internal/config/ ./internal/cli/audit/`) before calling a failure real.
-`-race` cannot run there (no C compiler; `CGO_ENABLED=0`).
+`-race` cannot run there (no C compiler; `CGO_ENABLED=0`). Instrument
+`WithLock` with stats only: reading the lock file opens a handle without
+`FILE_SHARE_DELETE`, the holder's remove fails, and the probe manufactures
+the very "locked" failures it is chasing (issue #56; it did, 20 of 20).
 
 **A timing test over pure channels and timers runs in `synctest.Test`.** The
 bubble's clock is fake, so a window holds exactly the ticks the schedule

@@ -162,10 +162,18 @@ func TestAppendParallelProcesses(t *testing.T) {
 		}
 		cmds = append(cmds, c)
 	}
+	// Wait for every child before failing: one left running would still be
+	// creating and removing the lock while TempDir's cleanup walks the
+	// directory, and its error buries the real one.
+	failed := false
 	for _, c := range cmds {
 		if err := c.Wait(); err != nil {
-			t.Fatalf("child: %v: %s", err, c.Stderr)
+			t.Errorf("child: %v: %s", err, c.Stderr)
+			failed = true
 		}
+	}
+	if failed {
+		t.FailNow()
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -293,10 +301,17 @@ func TestAppendRotationLosesNothing(t *testing.T) {
 			errs <- nil
 		}()
 	}
+	// Collect every writer before failing, so none is still writing while
+	// TempDir's cleanup runs.
+	var failed bool
 	for range writers {
 		if err := <-errs; err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			failed = true
 		}
+	}
+	if failed {
+		t.FailNow()
 	}
 	old, cur := readCommands(t, path+Rotated), readCommands(t, path)
 	if len(old) == 0 || len(cur) == 0 {

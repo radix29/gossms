@@ -149,14 +149,10 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 				return nil, nil, err
 			}
 
-			f, apply := buildSecurablesMatrix(d, database, initial, entries, colEntries, candidates, find, 8, 12,
-				func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission string) error {
-					return applySecurable(ctx, database, verb, opts, s, permission, *principal)
-				},
-				func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission, column string) error {
-					return applyColumnSecurable(ctx, database, verb, opts, s, permission, column, *principal)
-				},
-			)
+			f, apply := buildSecurablesMatrix(d, database,
+				securablesSeed{initial: initial, entries: entries, colEntries: colEntries},
+				candidates, find,
+				func() (*gosmo.Database, string) { return database, *principal })
 			return f, apply, nil
 		},
 	}
@@ -187,11 +183,35 @@ type pageActionRunner interface {
 	runPageActionOnce(inFlight *bool, fn func(ctx context.Context) error, onDone func(err error))
 }
 
-// securableApplyFn applies one object/schema/database-scoped state change, and
-// columnApplyFn one column-scoped change — the securables-page counterparts of
-// permApplyFn, which carries no securable.
-type securableApplyFn func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission string) error
-type columnApplyFn func(ctx context.Context, verb gosmo.PermissionVerb, opts gosmo.PermissionOptions, s securable, permission, column string) error
+// securablesTarget names, at apply time, the database the page's GRANTs address
+// and the principal they are for. Properties returns the prefetched database
+// and the loaded principal; a New dialog returns a DatabaseRef (the by-name
+// read would not work under Script Changes) and the name typed so far.
+type securablesTarget func() (*gosmo.Database, string)
+
+// newPrincipalSecurablesTarget is a New Database Role / New Application Role
+// dialog's target: the database by DatabaseRef, as the CREATE addresses it, and
+// the principal by the name typed when the dialog applies.
+func newPrincipalSecurablesTarget(sc *db.ServerConn, dbName string, name func() string) securablesTarget {
+	return func() (*gosmo.Database, string) { return sc.Server.DatabaseRef(dbName), name() }
+}
+
+// securablesSeed is what a Securables page starts from: initial is every
+// securable the principal already has an explicit grant or deny on, entries and
+// colEntries the object- and column-level grants themselves. A create dialog
+// passes the zero value — the principal does not exist yet.
+type securablesSeed struct {
+	initial    []securable
+	entries    []*gosmo.PrincipalSecurable
+	colEntries []*gosmo.ColumnPermissionEntry
+}
+
+// The Securables page's top two grid heights, in rows. Every caller used the
+// same pair; the column grid below is a fixed 8.
+const (
+	securablesGridHeight  = 8
+	securablesPermsHeight = 12
+)
 
 // securableFindFn searches the server for addable securables whose name contains
 // term, returning at most securableSearchLimit+1 — the extra row is how the page
@@ -217,11 +237,10 @@ type securableEntryKey struct{ secKey, permission string }
 // Add picker and the apply. The top two grids' row indices address the *View
 // filter indexes; the full lists stay in securables and the edit maps.
 type securablesMatrix struct {
-	d          pageActionRunner
-	database   *gosmo.Database
-	find       securableFindFn
-	applyFn    securableApplyFn
-	colApplyFn columnApplyFn
+	d        pageActionRunner
+	database *gosmo.Database
+	find     securableFindFn
+	target   securablesTarget
 
 	existing   map[securableEntryKey]gosmo.PermissionState
 	securables []securable
@@ -280,20 +299,21 @@ type securablesMatrix struct {
 // inverse of buildPermissionsMatrix, which is "one securable, every principal"
 // to this one's "one principal, every securable".
 //
-// initial is every securable the principal already has an explicit grant or deny
-// on; candidates seeds the Add picker and find repopulates it from the server as
-// the user types. applyFn and colApplyFn route to the right gosmo call for the
-// selected securable's Type. database is only read, for a table's columns.
+// seed is what the principal already holds (zero for a create dialog);
+// candidates seeds the Add picker and find repopulates it from the server as
+// the user types. target is called at apply time for the database and principal
+// the GRANTs address; applySecurable and applyColumnSecurable route to the right
+// gosmo call for each securable's Type. database is only read, for a table's
+// columns.
 func buildSecurablesMatrix(
-	d pageActionRunner, database *gosmo.Database,
-	initial []securable, entries []*gosmo.PrincipalSecurable, colEntries []*gosmo.ColumnPermissionEntry,
-	candidates []securable, find securableFindFn, securablesHeight, permsHeight int,
-	applyFn securableApplyFn, colApplyFn columnApplyFn,
+	d pageActionRunner, database *gosmo.Database, seed securablesSeed,
+	candidates []securable, find securableFindFn, target securablesTarget,
 ) (*propsheet.Form, propApply) {
+	entries, colEntries := seed.entries, seed.colEntries
 	p := &securablesMatrix{
-		d: d, database: database, find: find, applyFn: applyFn, colApplyFn: colApplyFn,
+		d: d, database: database, find: find, target: target,
 		existing:         make(map[securableEntryKey]gosmo.PermissionState, len(entries)),
-		securables:       append([]securable(nil), initial...),
+		securables:       append([]securable(nil), seed.initial...),
 		editsBySecurable: make(map[string][]*securableEdit),
 		colEdits:         make(map[string]*columnEdit),
 		selected:         -1,
@@ -376,8 +396,8 @@ func buildSecurablesMatrix(
 		}
 	})
 
-	securablesRow := propsheet.NewGridRow(p.securableGrid, securablesHeight)
-	permsRow := propsheet.NewGridRow(p.permGrid, permsHeight)
+	securablesRow := propsheet.NewGridRow(p.securableGrid, securablesGridHeight)
+	permsRow := propsheet.NewGridRow(p.permGrid, securablesPermsHeight)
 	colsRow := propsheet.NewGridRow(p.colGrid, 8)
 
 	// Both grids report the page's whole dirty state: the sheet asks each row,
@@ -665,13 +685,14 @@ func (p *securablesMatrix) revertAll() {
 // output between presses. editsFor is only called with a securable from the
 // securables slice.
 func (p *securablesMatrix) apply(ctx context.Context) error {
+	database, principal := p.target()
 	for _, s := range p.securables {
 		for _, e := range p.editsBySecurable[s.key()] {
 			if e.current == e.orig {
 				continue
 			}
 			verb, opts := permTransition(e.orig, e.current)
-			if err := p.applyFn(ctx, verb, opts, e.sec, e.permission); err != nil {
+			if err := applySecurable(ctx, database, verb, opts, e.sec, e.permission, principal); err != nil {
 				return err
 			}
 		}
@@ -682,7 +703,7 @@ func (p *securablesMatrix) apply(ctx context.Context) error {
 			continue
 		}
 		verb, opts := permTransition(e.orig, e.current)
-		if err := p.colApplyFn(ctx, verb, opts, e.sec, e.permission, e.column); err != nil {
+		if err := applyColumnSecurable(ctx, database, verb, opts, e.sec, e.permission, e.column, principal); err != nil {
 			return err
 		}
 	}

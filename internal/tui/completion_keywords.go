@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 
-	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/sqltext"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/tuikit/controls/editor"
@@ -13,9 +12,12 @@ import (
 // keywordCandidates supplements identifiers with SQL keywords and expressions.
 // It recognizes common clauses and DDL headers, not the full T-SQL grammar.
 // sourceComplete reports a keyword-only position, where catalog identifiers
-// are not valid continuations.
+// are not valid continuations. With an open '[' at from (prefix is what
+// follows it), only a data-type position answers, with its user-defined
+// types: no keyword or system type is written bracketed.
 func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, query *sqlparse.Query, from, cursor int, prefix string) (items []editor.CompletionItem, sourceComplete bool) {
-	if sqlparse.HasSigil(prefix) || from < len(buf) && (buf[from] == '[' || buf[from] == '"') ||
+	bracket := from < len(buf) && buf[from] == '['
+	if sqlparse.HasSigil(prefix) || from < len(buf) && buf[from] == '"' ||
 		cursor < len(buf) && (sqltext.IsWordContinue(buf[cursor]) || buf[cursor] == '.') {
 		return nil, false
 	}
@@ -32,6 +34,9 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 			cc.only, cc.choices, columnType = true, types, true
 		}
 	}
+	if bracket && !columnType {
+		return nil, false
+	}
 	// CREATE OR ALTER (2016 SP1) and DROP … IF EXISTS (2016) are at the
 	// supported floor (docs/open-threads.md § Version support), so every
 	// server is offered both; the WINDOW clause is SQL Server 2022's, gated
@@ -39,7 +44,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	f := cc.frame
 	statement, statementStart := keywordDMLStatement(f.tokens)
 	defer func() {
-		if !sourceComplete {
+		if !sourceComplete && !bracket {
 			if cc.scalar && strings.HasPrefix("CASE", strings.ToUpper(prefix)) {
 				items = append(items, caseCompletionItem(buf, cursor))
 			}
@@ -51,12 +56,6 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	}()
 	s := keywordScope{buf: buf, from: from, fabric: fabric, cc: cc, f: f, clause: cc.clause,
 		statement: statement, statementStart: statementStart, ddlAction: ddlAction, ddlTail: ddlTail}
-	// aliasable: the word being typed may be a new alias ("FROM Orders o"), so
-	// a keyword it starts (OUTER APPLY) is Soft: Tab takes it, Enter is a
-	// newline. A reserved word typed in full ("where") can't be an alias. With
-	// nothing typed ("WHERE o.name |"), every keyword is Soft the same way: Enter
-	// at the end of a line is a line break, not "=".
-	aliasable := false
 	clause := cc.clause
 	if cc.only {
 		s.choices, s.sourceComplete = cc.choices, true
@@ -80,7 +79,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 		s.complete, s.tail = keywordExpressionComplete(buf, expressionStart, from, clause)
 		s.sourceComplete = s.complete && (clause == "FROM" || clause == "JOIN")
 		s.applyClauseRules()
-		aliasable = s.aliasChoices(prefix)
+		s.aliasChoices()
 		if fabric && cc.selectStart < 0 && s.complete && (clause == "FROM" || clause == "ON") {
 			s.choices = append(s.choices, "SELECT")
 		}
@@ -106,13 +105,22 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	if nextToken.Kind == sqltext.KindWord {
 		nextWord = strings.ToUpper(string(buf[nextToken.Start:nextToken.End]))
 	}
-	prefixUpper := strings.ToUpper(prefix)
+	prefixUpper, prefixLower := strings.ToUpper(prefix), strings.ToLower(prefix)
 	for _, candidate := range choices {
 		if typ, ok := userTypes.userType(candidate); ok && columnType {
-			// Typed as either the qualified or the bare name.
-			if strings.HasPrefix(strings.ToUpper(candidate), prefixUpper) || strings.HasPrefix(strings.ToUpper(typ.Name), prefixUpper) {
-				items = append(items, editor.CompletionItem{Text: candidate, Label: candidate, Detail: ddlUserTypeDetail(typ), Soft: prefix == ""})
+			// Typed as the start of the qualified name, or anywhere in the
+			// bare one as catalog names match (nameMatch).
+			match, partial := strings.HasPrefix(strings.ToUpper(candidate), prefixUpper), false
+			if !match {
+				match, partial = nameMatch(typ.Name, prefixLower)
 			}
+			if match {
+				items = append(items, editor.CompletionItem{Text: candidate, Label: candidate, Detail: ddlUserTypeDetail(typ),
+					Soft: prefix == "", Partial: partial})
+			}
+			continue
+		}
+		if bracket {
 			continue
 		}
 		function := strings.HasSuffix(candidate, "(")
@@ -154,7 +162,11 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 			text, before = ", "+text, s.jsonBefore
 		}
 		items = append(items, editor.CompletionItem{Text: text, Label: label, Detail: "keyword", ReplaceBefore: before,
-			AppendSpace: !columnType && clause != "DATEPART", Soft: aliasable || prefix == ""})
+			// With nothing typed ("WHERE o.name |") a keyword is Soft: Enter at the
+			// end of a line is a line break, not "=". A started word commits on
+			// Enter even where it could be a new alias ("FROM Orders o"):
+			// docs/decisions.md, Enter commits a keyword at an alias position.
+			AppendSpace: !columnType && clause != "DATEPART", Soft: prefix == ""})
 	}
 	return items, sourceComplete
 }
@@ -408,21 +420,19 @@ func nextClauseChoices(s *keywordScope) []string {
 	return nil
 }
 
-// aliasChoices adds AS where the finished expression may take an alias and
-// reports whether the typed word may itself be that alias.
-func (s *keywordScope) aliasChoices(prefix string) (aliasable bool) {
+// aliasChoices adds AS where the finished expression may take an alias.
+func (s *keywordScope) aliasChoices() {
 	if !s.complete || s.clause != "SELECT" && s.clause != "FROM" && s.clause != "JOIN" {
-		return false
+		return
 	}
 	aliasTokens := s.f.tokens
 	if s.clause == "SELECT" {
 		aliasTokens = keywordProjection(aliasTokens[s.cc.selectStart:])
 	}
 	if !keywordAliasPosition(aliasTokens, s.cc.clauseStart) {
-		return false
+		return
 	}
 	s.choices = append(s.choices, "AS")
-	return prefix != "" && !gosmo.IsReservedKeyword(prefix)
 }
 
 // trailingClauseChoices adds the clauses that may follow the current one in
@@ -472,7 +482,7 @@ func dmlClauseChoices(choices []string, tokens []sqlparse.Token, statement strin
 		if len(tail) > 0 && keywordIs(tail[0], "FROM") {
 			sources := 0
 			for i, tok := range tail {
-				if keywordIs(tok, "FROM") && !keywordDistinctFrom(tail, i) {
+				if keywordIs(tok, "FROM") && !sqlparse.IsDistinctFrom(tail, i) {
 					sources++
 				}
 			}
@@ -514,7 +524,7 @@ futureScan:
 			}
 			depth--
 		default:
-			if depth == 0 && !tok.Quoted && !keywordDistinctFrom(tokens, i) {
+			if depth == 0 && !tok.Quoted && !sqlparse.IsDistinctFrom(tokens, i) {
 				future[strings.ToUpper(tok.Text)] = true
 			}
 		}

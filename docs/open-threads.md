@@ -21,7 +21,7 @@ column fails the whole read and `go test ./...` says nothing. Expected
 refusals: every on-prem major refuses the seven Azure-only reads (six DMVs
 plus database-scoped XEvent sessions); 13 also refuses six 2017+ reads with
 `ErrUnsupportedVersion` (two Query Store wait reads, three external-library
-reads, graph tables). Last run on 13: 439 calls, 0 failed.
+reads, graph tables). Last run on 13 (2026-11-22): 442 calls, 0 failed.
 Compare failures, not call totals (those vary with each instance's
 logins/jobs). Zero failures proves nothing if a read was never reached — log
 the `call` labels to confirm.
@@ -61,7 +61,12 @@ support); this section covers only the environment.
   `TestRefusedDialOnCaseSensitiveServerMovesMASTER`. To check: connect with
   `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
-  Document's keyword case (below) waits on the same instance.
+  Document's keyword case (below) waits on the same instance, as does gosmo's
+  `Database.BackupRefusal` on a `DatabaseRef` (names under the server's
+  collation since review 2026-11-22-4 B4, pinned offline by
+  `TestDatabaseBackupRefusal`'s CS cases): create user databases `TempDB` and
+  `Master`, and see a differential/log backup of each go through, not refused
+  as tempdb's or master's.
 
 - **No SQL database in Fabric (EngineEdition 12) has ever been connected.**
   gosmo counts it as Azure (version gates treat its 12.x as newest) and as
@@ -101,6 +106,19 @@ support); this section covers only the environment.
   queue behind the stuck one). Re-driven on win10cli 2026-11-22 with Ditto
   running, over RDP in Git Bash/mintty: 40 Ctrl+C/Ctrl+V cycles at 80 ms and a
   paced 10-paste run, no freeze, UI live throughout; not reproduced.
+
+## File lock (`fileutil.WithLock`): what is left
+
+- **Starvation past the 10 s cap is possible, not seen since the fix**
+  (issue #56, 2026-11-22). The priority marker has no memory, so a waiter
+  that keeps losing the race for it on a loaded host fails with "is busy:
+  waited 10s". Seen once per 8-run round under full-suite load on win10cli
+  before the release retry and the stat-before-clock fix; none in 80 runs
+  after. If it recurs, record each failing waiter's marker tries and wins
+  before revisiting the ticket
+  queue `docs/decisions.md` declined — that is the user's call.
+- **A holder that runs past `lockWait` under load still fails its waiters as
+  "locked"** — by design: from outside it looks like a stuck holder.
 
 ## Format Document: what is left
 
@@ -150,6 +168,13 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   that delay before its error. No portable way found to tell it from the
   Windows transient (a handle open without FILE_SHARE_DELETE, on either
   path); `WithLock`'s create no longer has this (it checks the lock exists).
+
+## tuikit: what is left
+
+- **`controls/treeview.go` `TreeView.HandleMouse` is 147 lines**, the
+  longest in tuikit. Split it by zone (scrollbar, expander, row) as
+  `PanelManager.HandleMouse` was, when a change lands there anyway — not on
+  its own, since it needs a mouse drive of every tree (OE, dialogs) after.
 
 ## Fix order
 

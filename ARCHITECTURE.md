@@ -378,6 +378,7 @@ gossms/
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
 │       ├── completion_keywords.go   # contextual SQL keywords, aggregates and multiword clauses/windows, connection-scoped Fabric syntax
 │       ├── completion_ddl.go        # CREATE/ALTER/DROP headers: table column types, routine signatures and their first body keywords
+│       ├── completion_datatypes.go  # data-type positions elsewhere: DECLARE, CAST/CONVERT, ALTER TABLE columns, CREATE TYPE … FROM
 │       ├── completion_builtins.go   # the built-in function table (kind, call shape, version, Fabric) and the keyword lists indexed from it
 │       ├── completion_expressions.go # lightweight shared expression context: clause/frame analysis, CASE, DATEPART, scalar positions
 │       ├── completion_calls.go      # suffix-preserving call edits and function templates for completed built-ins

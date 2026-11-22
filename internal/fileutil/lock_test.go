@@ -2,12 +2,14 @@ package fileutil
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -84,22 +86,132 @@ func TestWithLockTakesOverAStaleLock(t *testing.T) {
 	}
 }
 
-// A live holder past lockWait makes WithLock fail without running fn, and
-// leaves the holder's lock alone.
+// withLockTimings sets lockWait and lockMaxWait for one test.
+func withLockTimings(t *testing.T, wait, maxWait time.Duration) {
+	oldWait, oldMax := lockWait, lockMaxWait
+	lockWait, lockMaxWait = wait, maxWait
+	t.Cleanup(func() { lockWait, lockMaxWait = oldWait, oldMax })
+}
+
+// A live holder that keeps the lock past lockWait makes WithLock fail without
+// running fn, and leaves the holder's lock alone. It fails at lockWait, not
+// lockMaxWait: an unchanged lock is no progress.
 func TestWithLockGivesUpOnALiveHolder(t *testing.T) {
-	defer func(w time.Duration) { lockWait = w }(lockWait)
-	lockWait = 50 * time.Millisecond
+	withLockTimings(t, 50*time.Millisecond, 5*time.Second)
 
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path+".lock", nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	ran := false
-	if err := WithLock(path, func() error { ran = true; return nil }); err == nil || ran {
-		t.Fatalf("WithLock under a live lock: err %v, ran %v; want an error and fn not run", err, ran)
+	start := time.Now()
+	err := WithLock(path, func() error { ran = true; return nil })
+	if err == nil || ran || !strings.Contains(err.Error(), "locked by another gossms instance") {
+		t.Fatalf("WithLock under a live lock: err %v, ran %v; want the locked error and fn not run", err, ran)
+	}
+	if took := time.Since(start); took >= lockMaxWait/2 {
+		t.Errorf("WithLock took %v to give up on a stuck holder; want about lockWait (%v), well under lockMaxWait (%v)", took, lockWait, lockMaxWait)
 	}
 	if _, err := os.Stat(path + ".lock"); err != nil {
 		t.Errorf("the live holder's lock was removed: %v", err)
+	}
+}
+
+// Issue #56: a waiter behind a moving queue does not time out, however long
+// the queue makes it wait in all. Each of 24 workers waits behind about 23
+// 100 ms holds, past lockWait, so timing the caller's own wait fails this on
+// every OS with no load needed. lockWait is fifteen holds, not one: on a
+// loaded Windows host a 30 ms hold took over 100 ms, and a 100 ms one over
+// 400 ms, which is a stuck holder by that lockWait's measure.
+func TestWithLockWaitsBehindAMovingQueue(t *testing.T) {
+	withLockTimings(t, 1500*time.Millisecond, 30*time.Second)
+	path := filepath.Join(t.TempDir(), "config.json")
+	const workers, rounds = 24, 2
+	var inside, overlaps atomic.Int32
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*rounds)
+	for range workers {
+		wg.Go(func() {
+			for range rounds {
+				errs <- WithLock(path, func() error {
+					if inside.Add(1) > 1 {
+						overlaps.Add(1)
+					}
+					time.Sleep(100 * time.Millisecond)
+					inside.Add(-1)
+					return nil
+				})
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	failed := 0
+	for err := range errs {
+		if err != nil {
+			if failed++; failed == 1 {
+				t.Error(err)
+			}
+		}
+	}
+	if failed > 0 {
+		t.Errorf("%d of %d takes failed behind a moving queue", failed, workers*rounds)
+	}
+	if n := overlaps.Load(); n > 0 {
+		t.Errorf("%d holders ran fn while another held the lock", n)
+	}
+}
+
+// A queue that keeps moving without ever reaching this waiter (another
+// waiter's marker always stands it back) fails at lockMaxWait with the busy
+// error, not the stuck-holder one.
+func TestWithLockGivesUpAtTheCapWhenBusy(t *testing.T) {
+	withLockTimings(t, 100*time.Millisecond, 500*time.Millisecond)
+	path := filepath.Join(t.TempDir(), "config.json")
+	lock, wait := path+".lock", path+".lock.wait"
+	// take refreshes the marker, so blockedByPriority never drops it as
+	// abandoned (2*lockWait), and takes the lock as a new holder.
+	take := func() error {
+		if err := os.WriteFile(wait, []byte("other"), 0o600); err != nil {
+			return err
+		}
+		if took, err := createLockFile(lock, "churn"); err != nil || !took {
+			return fmt.Errorf("churn create: took %v, err %v", took, err)
+		}
+		return nil
+	}
+	if err := take(); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	churned := make(chan struct{})
+	go func() {
+		defer close(churned)
+		for {
+			time.Sleep(20 * time.Millisecond)
+			releaseLockFile(lock, "churn")
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := take(); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	start := time.Now()
+	ran := false
+	err := WithLock(path, func() error { ran = true; return nil })
+	took := time.Since(start)
+	close(stop)
+	<-churned
+	if err == nil || ran || !strings.Contains(err.Error(), "is busy") {
+		t.Fatalf("WithLock behind a moving queue it never reaches: err %v, ran %v; want the busy error", err, ran)
+	}
+	if took < lockMaxWait {
+		t.Errorf("WithLock gave up after %v; want at least lockMaxWait (%v)", took, lockMaxWait)
 	}
 }
 
@@ -253,17 +365,38 @@ func TestABargingHolderCannotStarveAWaiter(t *testing.T) {
 }
 
 // Another waiter's fresh priority marker makes a caller stand back even with
-// the lock free; giving up leaves the marker to its owner.
+// the lock free, until the marker is old enough to count as abandoned
+// (2*lockWait): a free lock is progress, so the caller does not give up first.
 func TestAPriorityMarkerMakesOthersStandBack(t *testing.T) {
-	defer func(w time.Duration) { lockWait = w }(lockWait)
-	lockWait = 50 * time.Millisecond
+	withLockTimings(t, 50*time.Millisecond, 5*time.Second)
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path+".lock.wait", []byte("other"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	ran := false
+	start := time.Now()
+	if err := WithLock(path, func() error { ran = true; return nil }); err != nil || !ran {
+		t.Fatalf("WithLock behind an owner-less marker: err %v, ran %v; want fn run once the marker aged out", err, ran)
+	}
+	// The marker's ModTime predates start, by a timestamp tick at most.
+	if took := time.Since(start); took < 3*lockWait/2 {
+		t.Errorf("WithLock ran fn after %v; want it to stand back for about 2*lockWait (%v)", took, 2*lockWait)
+	}
+}
+
+// Giving up on a stuck holder while another waiter owns the marker leaves the
+// marker to its owner.
+func TestGivingUpLeavesAnothersMarker(t *testing.T) {
+	withLockTimings(t, 50*time.Millisecond, 5*time.Second)
+	path := filepath.Join(t.TempDir(), "config.json")
+	for _, f := range []string{path + ".lock", path + ".lock.wait"} {
+		if err := os.WriteFile(f, []byte("other"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ran := false
 	if err := WithLock(path, func() error { ran = true; return nil }); err == nil || ran {
-		t.Fatalf("WithLock behind another's marker: err %v, ran %v; want an error and fn not run", err, ran)
+		t.Fatalf("WithLock behind a stuck holder and another's marker: err %v, ran %v; want an error and fn not run", err, ran)
 	}
 	if data, err := os.ReadFile(path + ".lock.wait"); err != nil || string(data) != "other" {
 		t.Errorf("the other waiter's marker = %q, %v; want it kept", data, err)
@@ -309,5 +442,34 @@ func TestAnAbandonedPriorityMarkerIsIgnored(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".lock.wait"); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("abandoned marker left behind: stat err %v", err)
+	}
+}
+
+// An outside handle on the lock file at release (on Windows, os.Open shares
+// no delete, as an antivirus scan's may not) delays the remove; release
+// retries rather than leaving the lock for every saver to stall behind until
+// lockStale. On other OSes the remove succeeds at once.
+func TestReleaseOutlastsABriefOutsideHandle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	lock := path + ".lock"
+	closed := make(chan struct{})
+	err := WithLock(path, func() error {
+		f, err := os.Open(lock)
+		if err != nil {
+			return err
+		}
+		go func() {
+			defer close(closed)
+			time.Sleep(50 * time.Millisecond)
+			f.Close()
+		}()
+		return nil
+	})
+	<-closed
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(lock); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("lock file after a briefly held outside handle: stat err %v, want not-exist", err)
 	}
 }

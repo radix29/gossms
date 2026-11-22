@@ -78,24 +78,41 @@ func ddlColumnDefinitionChoices(tokens []sqlparse.Token, types ddlTypes) ([]stri
 	if len(column) == 1 {
 		return types.withUser(ddlDataTypes(types.fabric), false), true
 	}
-	end, typ, ok := types.match(column, 1)
-	if !ok || typ.Kind == gosmo.CatalogTableType {
-		return nil, true
+	return ddlNullabilityChoices(column[1:], types), true
+}
+
+// ddlNullabilityChoices completes after a column's data type, written at
+// rest[0]: NULL and NOT NULL once the type and its length are, NULL after a
+// NOT. A table type takes neither.
+func ddlNullabilityChoices(rest []sqlparse.Token, types ddlTypes) []string {
+	end, typ, ok := types.match(rest, 0)
+	if !ok || typ != nil && typ.Kind == gosmo.CatalogTableType {
+		return nil
 	}
-	if end < len(column) && column[end].Kind == sqlparse.TokenParenOpen {
-		close := slices.IndexFunc(column[end+1:], func(tok sqlparse.Token) bool { return tok.Kind == sqlparse.TokenParenClose })
+	end, ok = ddlSkipTypeLength(rest, end)
+	if !ok {
+		return nil
+	}
+	if end == len(rest) {
+		return []string{"NULL", "NOT NULL"}
+	}
+	if end+1 == len(rest) && keywordIs(rest[end], "NOT") {
+		return []string{"NULL"}
+	}
+	return nil
+}
+
+// ddlSkipTypeLength steps end, the index after a data type's name, past its
+// "(length)"; ok is false while that is still open.
+func ddlSkipTypeLength(tokens []sqlparse.Token, end int) (int, bool) {
+	if end < len(tokens) && tokens[end].Kind == sqlparse.TokenParenOpen {
+		close := slices.IndexFunc(tokens[end+1:], func(tok sqlparse.Token) bool { return tok.Kind == sqlparse.TokenParenClose })
 		if close < 0 {
-			return nil, true
+			return end, false
 		}
 		end += close + 2
 	}
-	if end == len(column) {
-		return []string{"NULL", "NOT NULL"}, true
-	}
-	if end+1 == len(column) && keywordIs(column[end], "NOT") {
-		return []string{"NULL"}, true
-	}
-	return nil, true
+	return end, true
 }
 
 // ddlTypes is what a DDL data-type position offers: the system types for the
@@ -107,6 +124,10 @@ type ddlTypes struct {
 	fabric    bool
 	user      []gosmo.CatalogType
 	collation string
+	// schemas is where an unqualified type name resolves after the system
+	// types, in the server's order: the login's default schema, then dbo
+	// (completionInventory.qualifierSchemas). Never another schema.
+	schemas []string
 }
 
 // ddlTypes is the type set p's database offers a DDL data-type position.
@@ -115,9 +136,8 @@ func (p *QueryPanel) ddlTypes() ddlTypes {
 	if t.fabric || p.app == nil {
 		return t
 	}
-	inv := p.app.completion.inventories[completionInventoryKey(p.conn.Opts, p.database)]
-	if inv != nil && !inv.loading && inv.err == nil && inv.catalog != nil {
-		t.user, t.collation = inv.catalog.Types, inv.collation
+	if inv := p.currentInventory(); inv != nil {
+		t.user, t.collation, t.schemas = inv.catalog.Types, inv.collation, inv.qualifierSchemas("")
 	}
 	return t
 }
@@ -150,6 +170,16 @@ func (t ddlTypes) withUser(names []string, table bool) []string {
 	return names
 }
 
+// withKind appends the user-defined types of one kind to names.
+func (t ddlTypes) withKind(names []string, kind gosmo.CatalogTypeKind) []string {
+	for _, typ := range t.user {
+		if typ.Kind == kind {
+			names = append(names, ddlUserTypeLabel(typ))
+		}
+	}
+	return names
+}
+
 // userType is the user-defined type offered as label, if one is.
 func (t ddlTypes) userType(label string) (gosmo.CatalogType, bool) {
 	for _, typ := range t.user {
@@ -162,29 +192,33 @@ func (t ddlTypes) userType(label string) (gosmo.CatalogType, bool) {
 
 // match finds the data type written at tokens[at]: a system type or an
 // unqualified user-defined one (one token), or schema.type (three). end is
-// the index after it; typ is the user-defined type matched, zero for a
-// system one. Names compare under the database collation.
-func (t ddlTypes) match(tokens []sqlparse.Token, at int) (end int, typ gosmo.CatalogType, ok bool) {
+// the index after it; typ is the user-defined type matched, nil for a
+// system one. Names compare under the database collation. An unqualified
+// name resolves as the server does: system type, then t.schemas in order —
+// a type of that name in any other schema is not it.
+func (t ddlTypes) match(tokens []sqlparse.Token, at int) (end int, typ *gosmo.CatalogType, ok bool) {
 	if at >= len(tokens) || tokens[at].Kind != sqlparse.TokenIdent {
-		return 0, typ, false
+		return 0, nil, false
 	}
 	if at+2 < len(tokens) && tokens[at+1].Kind == sqlparse.TokenDot && tokens[at+2].Kind == sqlparse.TokenIdent {
-		for _, u := range t.user {
+		for i, u := range t.user {
 			if gosmo.SameName(t.collation, u.Schema, tokens[at].Text) && gosmo.SameName(t.collation, u.Name, tokens[at+2].Text) {
-				return at + 3, u, true
+				return at + 3, &t.user[i], true
 			}
 		}
-		return 0, typ, false
+		return 0, nil, false
 	}
 	if slices.ContainsFunc(ddlDataTypes(t.fabric), func(name string) bool { return keywordIs(tokens[at], strings.TrimSuffix(name, "(")) }) {
-		return at + 1, typ, true
+		return at + 1, nil, true
 	}
-	for _, u := range t.user {
-		if gosmo.SameName(t.collation, u.Name, tokens[at].Text) {
-			return at + 1, u, true
+	for _, schema := range t.schemas {
+		for i, u := range t.user {
+			if gosmo.SameName(t.collation, u.Schema, schema) && gosmo.SameName(t.collation, u.Name, tokens[at].Text) {
+				return at + 1, &t.user[i], true
+			}
 		}
 	}
-	return 0, typ, false
+	return 0, nil, false
 }
 
 // qualifiedTypeCandidates answers "schema.|" where a DDL data type goes: that
@@ -212,8 +246,11 @@ func (p *QueryPanel) qualifiedTypeCandidates(buf []rune, tokens []sqlparse.Token
 			continue
 		}
 		handled = true
-		if gosmo.SameName(types.collation, typ.Schema, schema.Text) && strings.HasPrefix(strings.ToUpper(typ.Name), strings.ToUpper(prefix)) {
-			item.Text, item.Soft = gosmo.QuoteNameIfNeeded(typ.Name), prefix == ""
+		if !gosmo.SameName(types.collation, typ.Schema, schema.Text) {
+			continue
+		}
+		if ok, partial := nameMatch(typ.Name, strings.ToLower(prefix)); ok {
+			item.Text, item.Soft, item.Partial = gosmo.QuoteNameIfNeeded(typ.Name), prefix == "", partial
 			items = append(items, item)
 		}
 	}
@@ -224,6 +261,27 @@ func (p *QueryPanel) qualifiedTypeCandidates(buf []rune, tokens []sqlparse.Token
 func ddlRoutineDataTypes(fabric bool) []string {
 	return slices.DeleteFunc(ddlDataTypes(fabric), func(name string) bool {
 		return name == "IMAGE" || name == "NTEXT" || name == "TEXT" || name == "ROWVERSION"
+	})
+}
+
+// ddlVariableDataTypes is the system types a local variable takes: not text,
+// ntext or image (Msg 2739).
+func ddlVariableDataTypes(fabric bool) []string {
+	return slices.DeleteFunc(ddlDataTypes(fabric), func(name string) bool {
+		return name == "IMAGE" || name == "NTEXT" || name == "TEXT"
+	})
+}
+
+// ddlAliasBaseTypes is the system types CREATE TYPE … FROM takes: not the
+// CLR, XML, JSON and vector types, rowversion or sysname (Msgs 222, 15226,
+// 13657, 42212 on SQL Server 2025).
+func ddlAliasBaseTypes(fabric bool) []string {
+	return slices.DeleteFunc(ddlDataTypes(fabric), func(name string) bool {
+		switch name {
+		case "GEOGRAPHY", "GEOMETRY", "HIERARCHYID", "JSON", "ROWVERSION", "SYSNAME", "VECTOR(", "XML":
+			return true
+		}
+		return false
 	})
 }
 
@@ -313,7 +371,7 @@ func ddlParameterChoices(buf []rune, tokens []sqlparse.Token, from int, function
 	if !ok {
 		typeEnd = at + 1
 	}
-	if typ.Kind == gosmo.CatalogTableType && typ.Name != "" && typeEnd == len(param) {
+	if typ != nil && typ.Kind == gosmo.CatalogTableType && typeEnd == len(param) {
 		return []string{"READONLY"}, false
 	}
 	afterType := keywordNextToken(buf, param[typeEnd-1].Start).End
