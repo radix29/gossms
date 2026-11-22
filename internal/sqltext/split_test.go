@@ -150,6 +150,7 @@ func TestStatementAtLeaderVerbs(t *testing.T) {
 		"throw 50000, 'x', 1", "return", "goto lbl", "break", "continue", "revert", "setuser",
 		"disable trigger tr on t", "enable trigger tr on t", "readtext t.c @p 0 1", "writetext t.c @p 'x'",
 		"updatetext t.c @p 0 0 'x'", "add signature to p by certificate c", "copy into t from 'u'",
+		"add counter signature to p by certificate c", "add sensitivity classification to t.c with (rank = high)",
 		"set nocount off",
 	}
 	for _, p := range prevs {
@@ -178,6 +179,8 @@ func TestStatementAtLeaderVerbs(t *testing.T) {
 		"alter database d\nset recovery simple",
 		"merge t using s on 1 = 1\nwhen matched then update set a = 1",
 		"create trigger tr on t\nafter update as select 1",
+		"copy into t\nfrom 'u'",
+		"alter table t\nadd counter int",
 	} {
 		lines := [][]rune{[]rune(strings.Split(src, "\n")[0]), []rune(strings.Split(src, "\n")[1])}
 		if r, _, _, _, _ := StatementAt(lines, 1, 0); r != 0 {

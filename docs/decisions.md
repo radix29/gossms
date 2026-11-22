@@ -1602,7 +1602,7 @@ it from the string 'NULL'.
   never sees — and match an ADO.NET application's instead. Matching SSMS is the
   choice; `TestLiveSessionOpensWithArithAbortOn` pins it.
 - **A `sql_variant` cell is rendered from its value, not its inner type**.
-  go-mssqldb v1.11.2 decodes the inner type and drops
+  go-mssqldb v1.12.0 (checked) decodes the inner type and drops
   it, so `query.appendVariant` infers: a `[]byte` spelling a decimal literal is
   decimal/money digits (a `varbinary` variant that happens to spell one shows
   as text too — accepted), a nameless fixed zone is a `datetimeoffset`, and
@@ -1720,7 +1720,7 @@ it from the string 'NULL'.
   references to 44 symbols). Splitting an oversized *file* is separate and
   governed by `CLAUDE.md` § Coding conventions.
 - **`mssql.ServerError` is fatal-only, so gosmo's `IsRetryable` treating it as
-  retryable is right.** go-mssqldb v1.11.2 (checked): its doc says
+  retryable is right.** go-mssqldb v1.12.0 (checked): its doc says
   fatal/severs the connection, and both rows loops routing token errors through
   `Conn.checkBadConn` still "Ignore non-fatal server errors". Cited by symbol —
   lines move.
@@ -2665,3 +2665,8 @@ down.
   (`probeUmask`), not read with `syscall.Umask`: that is POSIX-only (a
   `runtime.GOOS`/build-tag split) and sets the mask to read it, racing every
   concurrent create. A failed probe means no mask.
+- **`fileutil.RemoveStaleTemps` may delete a user's own `x.sql.tmp123`**
+  older than `StaleTempAge` beside a file gossms saves: the name is exactly
+  the `CreateTemp` pattern a crashed save leaves, and the two can't be told
+  apart. Not tracked as a bug: such a name is vanishingly rare, while each
+  leftover of `config.json` is a full copy with encrypted passwords.

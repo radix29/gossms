@@ -149,7 +149,10 @@ gossms query run -p dev --file fix.sql --allow write --max-rows-affected 10
 
 The rollback run reports `rowsAffected` and leaves nothing changed; show it
 to the user. The last run commits only when at most 10 rows change, and
-rolls back otherwise (exit 7).
+rolls back otherwise (exit 7). It refuses (exit 7, nothing sent) a write
+whose table has a trigger or a cascading foreign key, whose changes the
+server does not count; `rowsAffected` misses them in the rollback run too,
+so check the related tables before running without the limit.
 
 ### Back up before a risky change
 

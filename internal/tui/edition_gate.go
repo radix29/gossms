@@ -92,11 +92,11 @@ func gateAzure(item controls.MenuItem, sc *db.ServerConn) controls.MenuItem {
 // An Azure edition takes both. On a boxed instance the syntax arrived in SQL
 // Server 2022 (major 16), for an instance Entra has been configured on through
 // Azure Arc; 2016-2019 refuse it outright, so offering it there only lets the user
-// fill the page in to be refused. The Azure test comes first because an Azure
-// edition's VersionMajor (12 on a Managed Instance) is not its feature level. No
+// fill the page in to be refused. AtLeast counts an Azure edition as newest:
+// its VersionMajor (12 on a Managed Instance) is not its feature level. No
 // server info answers yes, per gate.AllowsOn's fail-open rule.
 func entraPrincipalsOffered(info *gosmo.ServerInfo) bool {
-	return info == nil || info.IsAzure() || info.VersionMajor >= 16
+	return info.AtLeast(gosmo.SQLServer2022)
 }
 
 // resourceGovernorHidden reports whether Management leaves out the Resource
@@ -155,7 +155,7 @@ func resourceGovernorSupported(info *gosmo.ServerInfo) bool {
 	case gosmo.EngineEnterprise, gosmo.EngineAzureManagedInst:
 		return true
 	case gosmo.EngineStandard:
-		return info.VersionMajor >= int(gosmo.SQLServer2025)
+		return info.AtLeast(gosmo.SQLServer2025)
 	}
 	return false
 }

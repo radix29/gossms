@@ -138,6 +138,21 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"IF 1 = 1 UPDATE STATISTICS t WITH SAMPLE 10 PERCENT", ddl},
 		{"BEGIN TRY UPDATE STATISTICS t END TRY BEGIN CATCH END CATCH", ddl},
 		{"ADD SIGNATURE TO p BY CERTIFICATE c", ddl},
+		// B2 (review 2026-11-22): a database or table trigger stays ddl.
+		{"DROP TRIGGER tr", ddl},
+		{"DROP TRIGGER IF EXISTS s.a, s.b", ddl},
+		{"DROP TRIGGER tr ON DATABASE", ddl},
+		{"DISABLE TRIGGER tr ON DATABASE", ddl},
+		{"ENABLE TRIGGER ALL ON DATABASE", ddl},
+		{"ALTER TABLE t DISABLE TRIGGER ALL", ddl},
+		// B3: a sensitivity label is ddl (DROP SENSITIVITY CLASSIFICATION is);
+		// COPY INTO is one write statement, its FROM included.
+		{"ADD SENSITIVITY CLASSIFICATION TO dbo.t.c WITH (LABEL = 'x')", ddl},
+		{"SELECT 1; ADD SENSITIVITY CLASSIFICATION TO dbo.t.c, dbo.t.d WITH (RANK = HIGH)", ddl},
+		{"SELECT 1\nADD SENSITIVITY CLASSIFICATION TO dbo.t.c WITH (LABEL = 'x')", ddl},
+		{"IF 1=1 ADD SENSITIVITY CLASSIFICATION TO dbo.t.c WITH (LABEL = 'x')", ddl},
+		{"DROP SENSITIVITY CLASSIFICATION FROM dbo.t.c", ddl},
+		{"COPY INTO t FROM 'https://x/y.csv' WITH (FILE_TYPE = 'CSV')", write},
 
 		// admin
 		{"KILL 53", admin},
@@ -199,6 +214,20 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"BEGIN TRY MOVE CONVERSATION @a TO @b END TRY BEGIN CATCH END CATCH", write},
 		{"SEND ON CONVERSATION @h ('x')", write},
 		{"CREATE TRIGGER tr ON ALL SERVER FOR CREATE_DATABASE AS PRINT 1", admin},
+		// B2 (review 2026-11-22): dropping or switching off a server trigger (a
+		// LOGON audit or access control) is admin, as creating one is.
+		{"CREATE OR ALTER TRIGGER [tr] ON ALL SERVER FOR LOGON AS ROLLBACK", admin},
+		{"DROP TRIGGER tr ON ALL SERVER", admin},
+		{"DROP TRIGGER IF EXISTS tr ON ALL SERVER", admin},
+		{"DROP TRIGGER a, [b] ON ALL SERVER", admin},
+		{"DISABLE TRIGGER tr ON ALL SERVER", admin},
+		{"enable trigger [tr] on all server", admin},
+		{"DISABLE TRIGGER ALL ON ALL SERVER", admin},
+		{"ENABLE TRIGGER a, b ON ALL SERVER", admin},
+		{"IF 1=1 DISABLE TRIGGER tr ON ALL SERVER", admin},
+		{"IF 1=1 DROP TRIGGER tr ON ALL SERVER", admin},
+		{"BEGIN TRY ENABLE TRIGGER ALL ON ALL SERVER END TRY BEGIN CATCH END CATCH", admin},
+		{"SELECT 1; DROP TRIGGER tr ON ALL SERVER", admin},
 		{"INSERT #t EXEC sp_configure", admin},
 		{"EXEC sp_addmessage 50001, 16, N'x'", admin},
 	} {
@@ -304,7 +333,8 @@ func TestClassifyMergedStatementsAreFloored(t *testing.T) {
 		{"SELECT 1\nENABLE TRIGGER tr ON t", "", ddl},
 		{"PRINT 'x'\nWRITETEXT t.c @p 'x'", "", write},
 		{"SELECT 1\nUPDATETEXT t.c @p 0 0 'x'", "", write},
-		{"SET NOCOUNT ON\nDISABLE TRIGGER tr ON ALL SERVER", "", ddl},
+		{"SET NOCOUNT ON\nDISABLE TRIGGER tr ON ALL SERVER", "", admin},
+		{"SELECT 1\nDROP TRIGGER tr ON ALL SERVER", "", admin},
 		{"PRINT 1 THROW 50000, 'x', 1", "", read},
 		{"IF UPDATE(a) PRINT 1", "", read},
 		// INTO in a subquery is no SELECT … INTO, but still floored.
@@ -437,6 +467,27 @@ func TestClassifyFlags(t *testing.T) {
 		{"RESTORE DATABASE d FROM DISK = 'x'", FlagNotInTransaction},
 		{"RECONFIGURE", FlagNotInTransaction},
 		{"CREATE FULLTEXT CATALOG c", FlagNotInTransaction},
+		{"KILL 53", FlagNotInTransaction},
+		{"KILL STATS JOB 9", FlagNotInTransaction},
+		{"DBCC SHRINKFILE(1)", FlagNotInTransaction},
+		{"DBCC SHRINKDATABASE(d)", FlagNotInTransaction},
+		{"CREATE INDEX ix ON t(a) WITH (ONLINE = ON, RESUMABLE = ON)", FlagNotInTransaction},
+		{"CREATE UNIQUE INDEX ix ON t(a) WITH (online=on,resumable=on)", FlagNotInTransaction},
+		{"ALTER INDEX ALL ON dbo.t REBUILD WITH (ONLINE = ON, RESUMABLE = ON)", FlagNotInTransaction},
+		{"ALTER TABLE t ADD CONSTRAINT pk PRIMARY KEY (a) WITH (ONLINE = ON, RESUMABLE = ON)", FlagNotInTransaction},
+		{"ALTER INDEX ix ON dbo.t RESUME", FlagNotInTransaction},
+		{"ALTER INDEX [ix] ON [dbo].[t] PAUSE", FlagNotInTransaction},
+		{"ALTER INDEX ALL ON t ABORT", FlagNotInTransaction},
+		{"CREATE EVENT SESSION s ON SERVER ADD EVENT sqlserver.sql_batch_completed", FlagNotInTransaction},
+		{"ALTER EVENT SESSION s ON SERVER STATE = START", FlagNotInTransaction},
+		{"DROP EVENT SESSION s ON SERVER", FlagNotInTransaction},
+		// Nested behind IF, or merged into the statement before: the floor flags it.
+		{"IF 1 = 1 KILL 53", FlagNotInTransaction},
+		{"IF 1 = 1 ALTER DATABASE d SET ONLINE", FlagNotInTransaction},
+		{"IF 1 = 1 BACKUP LOG d TO DISK = 'x'", FlagNotInTransaction},
+		{"IF 1 = 1 DROP EVENT SESSION s ON SERVER", FlagNotInTransaction},
+		{"IF 1 = 1 ALTER INDEX ix ON t RESUME", FlagNotInTransaction},
+		{"IF 1 = 1 DBCC SHRINKFILE(1)", FlagNotInTransaction},
 		{"SET NOCOUNT ON", FlagNoCount},
 		{"SET XACT_ABORT, NOCOUNT ON", FlagNoCount},
 		{"EXEC (@sql)", FlagDynamic},
@@ -471,6 +522,14 @@ func TestClassifyFlags(t *testing.T) {
 		{"ALTER TABLE t ADD c int", 0},
 		{"SELECT 'BEGIN TRAN'", 0},
 		{"EXEC p @x OUTPUT", FlagExec}, // an output parameter is no OUTPUT clause
+		// These run inside a transaction (live, 17): no not-in-transaction.
+		{"CHECKPOINT", 0},
+		{"DBCC CHECKDB", 0},
+		{"CREATE INDEX ix ON t(a) WITH (ONLINE = ON, RESUMABLE = OFF)", 0},
+		{"ALTER INDEX ix ON t REBUILD WITH (ONLINE = ON)", 0},
+		{"ALTER INDEX ix ON t REORGANIZE", 0},
+		{"CREATE EVENT NOTIFICATION n ON DATABASE FOR CREATE_TABLE TO SERVICE 's', 'current database'", 0},
+		{"SELECT resumable, abort, pause FROM t", 0},
 	} {
 		if got := Classify(tt.script).Flags; got != tt.want {
 			t.Errorf("Classify(%q).Flags = %v, want %v", tt.script, got.Names(), tt.want.Names())
@@ -594,6 +653,9 @@ func TestClassifyReasons(t *testing.T) {
 		{"EXEC sp_rename 'd', 'd2', 'DATABASE'", "sp_rename @objtype DATABASE renames a database"},
 		{"EXEC sp_send_dbmail", "procedure sp_send_dbmail is an msdb procedure, administration"},
 		{"RAISERROR('x', 16, 1) WITH LOG", "RAISERROR … WITH LOG writes the server error log (line 1)"},
+		{"DROP TRIGGER tr ON ALL SERVER", "a server-scoped trigger"},
+		{"DISABLE TRIGGER tr ON ALL SERVER", "a server-scoped trigger"},
+		{"SELECT 1 AS\nDROP TRIGGER tr ON ALL SERVER", "a server-scoped trigger (line 2)"},
 	} {
 		if got := Classify(tt.script).Statements[0].Reason; got != tt.want {
 			t.Errorf("Classify(%q) reason = %q, want %q", tt.script, got, tt.want)

@@ -377,7 +377,11 @@ gossms/
 │       ├── completion_load.go       # the one lazy-load lifecycle every IntelliSense cache shares: latest + timeout, panic eviction, closed-connection eviction, popup refresh
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
 │       ├── completion_keywords.go   # contextual SQL keywords, aggregates and multiword clauses/windows, connection-scoped Fabric syntax
-│       ├── completion_expressions.go # lightweight shared expression context, predicate operands and suffix-preserving call edits
+│       ├── completion_ddl.go        # CREATE/ALTER/DROP headers: table column types, routine signatures and their first body keywords
+│       ├── completion_builtins.go   # the built-in function table (kind, call shape, version, Fabric) and the keyword lists indexed from it
+│       ├── completion_expressions.go # lightweight shared expression context: clause/frame analysis, CASE, DATEPART, scalar positions
+│       ├── completion_calls.go      # suffix-preserving call edits and function templates for completed built-ins
+│       ├── completion_predicates.go # predicate scanning: operand/operator positions and the operator choices after them
 │       ├── completion_spatial.go    # spatial constructors and methods for catalog columns and declared scalar variables
 │       ├── completion_relations.go  # resolves FROM-scope refs (CTEs, derived tables) to columns, with depth/cycle guards
 │       ├── completion_crossdb.go    # cross-database names: the per-server database directory, HAS_DBACCESS-gated loads of another database's inventory, "db.schema." chains

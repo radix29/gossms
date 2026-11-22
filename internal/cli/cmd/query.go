@@ -511,6 +511,22 @@ func (d Deps) runScript(ctx context.Context, inv *spec.Invocation, in scriptInpu
 	defer cancel()
 	timedOut := func() bool { return ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded) }
 
+	if run.limited {
+		// The offline check passed; what each write's target does beyond its
+		// own rows needs the server (checkWriteTargets).
+		blocked, err := checkWriteTargets(rctx, c.conn.Server, sc, in.script, policy)
+		switch {
+		case timedOut():
+			return res, nil, timeoutError(run.timeout)
+		case err != nil:
+			return res, nil, readError(err)
+		case blocked != nil:
+			b, err := blockedResult(blocked)
+			res.Fields = b.Fields
+			return res, nil, err
+		}
+	}
+
 	var setup []string
 	if len(run.statistics) > 0 {
 		setup = append(setup, "SET STATISTICS "+strings.Join(run.statistics, ", ")+" ON;")

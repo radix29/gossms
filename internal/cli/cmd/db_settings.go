@@ -164,7 +164,7 @@ func (d Deps) dbScopedConfigGet(ctx context.Context, inv *spec.Invocation) (*out
 // in SQL Server 2017, and gosmo reads false for every row on 2016. An unread
 // version or an Azure one counts as newest, as gosmo's gates count it.
 func scopedDefaultKnown(info *gosmo.ServerInfo) bool {
-	return info == nil || info.IsAzure() || info.VersionMajor == 0 || info.VersionMajor >= int(gosmo.SQLServer2017)
+	return info.AtLeast(gosmo.SQLServer2017)
 }
 
 // scopedConfigSet is rows as list's and get's result set.
@@ -629,14 +629,25 @@ func dbSetTermination(inv *spec.Invocation, changes []dbSetChange) (gosmo.Termin
 	return gosmo.TerminationRollbackImmediate, nil
 }
 
+// compatCeiling is the highest compatibility level the server takes, its
+// major version × 10, or 0 when that is not known: no server info, an unread
+// version, or an Azure edition, whose VersionMajor (12 on a Managed Instance)
+// is not its feature level. A 0 leaves the level to the server.
+func compatCeiling(info *gosmo.ServerInfo) int {
+	if info == nil || info.IsAzure() {
+		return 0
+	}
+	return info.VersionMajor * 10
+}
+
 // checkCompatLevels is USAGE_ERROR for a compatibility level above the
-// server's own (its major version × 10). An Azure server or an unread
-// version is left to the server.
+// server's own (compatCeiling). An Azure server or an unread version is left
+// to the server.
 func checkCompatLevels(changes []dbSetChange, info *gosmo.ServerInfo) error {
-	if info == nil || info.IsAzure() || info.VersionMajor < int(gosmo.SQLServer2016) {
+	top := compatCeiling(info)
+	if top == 0 {
 		return nil
 	}
-	top := info.VersionMajor * 10
 	for _, c := range changes {
 		if n, _ := strconv.Atoi(c.value); dbSetKeys[c.key].kind == dbSetCompat && n > top {
 			return usageError(fmt.Sprintf("COMPATIBILITY_LEVEL %d is above this server's %d", n, top),

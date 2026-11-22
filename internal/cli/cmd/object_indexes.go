@@ -84,6 +84,9 @@ func (d Deps) lookupTableOrView(ctx context.Context, inv *spec.Invocation, res *
 		tv.table, err = dbase.TableByName(ctx, o.Schema, o.Name)
 	case kindView:
 		tv.view, err = dbase.ViewByName(ctx, o.Schema, o.Name)
+	case kindSystemTable:
+		done()
+		return nil, tableOrView{}, nil, systemTableError(o)
 	default:
 		done()
 		return nil, tableOrView{}, nil, usageError(

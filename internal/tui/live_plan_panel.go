@@ -55,7 +55,7 @@ const liveSessionRefusedNote = "No live plan: reading sys.dm_exec_query_profiles
 // SQL Server 2019 (major 15) and on Azure. No server info answers yes, per
 // gate.AllowsOn's fail-open rule.
 func lightweightProfilingByDefault(info *gosmo.ServerInfo) bool {
-	return info == nil || info.IsAzure() || info.VersionMajor >= 15
+	return info.AtLeast(gosmo.SQLServer2019)
 }
 
 // liveSessionIdleNote says why session spid shows no plan, and keeps waiting:

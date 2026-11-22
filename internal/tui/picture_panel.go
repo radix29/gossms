@@ -50,6 +50,10 @@ type PicturePanel struct {
 	// ascii renders with gotuipic.ModeASCII instead of the default sextants,
 	// for a terminal font without the U+1FB00 block (Config.PictureASCII).
 	ascii bool
+	// bright and contrast are the tone steps (0 = the picture as stored),
+	// each pictureToneStep apart: brightness adds step*0.1, contrast scales
+	// by 1+step*0.1. Per picture, not remembered.
+	bright, contrast int
 	// zoomCols is the art's width in cells while zoomed; 0 fits the view.
 	zoomCols int
 	// vp is the zoomed art's scroll (the art cell at the view's top-left)
@@ -78,6 +82,8 @@ type PicturePanel struct {
 type pictureKey struct {
 	ascii      bool
 	cols, w, h int
+	bright     int
+	contrast   int
 }
 
 // pictureZone is what claimed a Button1 gesture in the panel.
@@ -90,6 +96,14 @@ const (
 	pzBar
 )
 
+// pictureToneStep is one brightness / contrast step; pictureToneMax bounds the
+// steps either way (brightness +-1 is the library's whole range, contrast
+// reaches 0 = flat gray at -10).
+const (
+	pictureToneStep = 0.1
+	pictureToneMax  = 10
+)
+
 // Toolbar cell indexes, in buildPictureTools' order.
 const (
 	picToolFit = iota
@@ -97,6 +111,11 @@ const (
 	picToolZoomIn
 	picToolZoomOut
 	picToolMode
+	picToolBrighter
+	picToolDarker
+	picToolMoreContrast
+	picToolLessContrast
+	picToolResetTone
 	picToolSave
 )
 
@@ -251,14 +270,18 @@ func (pp *PicturePanel) render() *gotuipic.Art {
 	if !pp.ready() || area.W <= 0 || area.H <= 0 {
 		return nil
 	}
-	key := pictureKey{ascii: pp.ascii, cols: pp.zoomCols}
+	key := pictureKey{ascii: pp.ascii, cols: pp.zoomCols, bright: pp.bright, contrast: pp.contrast}
 	if !pp.zoomed() {
 		key.w, key.h = area.W, area.H
 	}
 	if pp.art != nil && key == pp.artKey {
 		return pp.art
 	}
-	opts := []gotuipic.Option{gotuipic.WithMode(pp.mode())}
+	opts := []gotuipic.Option{
+		gotuipic.WithMode(pp.mode()),
+		gotuipic.WithBrightness(float64(pp.bright) * pictureToneStep),
+		gotuipic.WithContrast(1 + float64(pp.contrast)*pictureToneStep),
+	}
 	if pp.zoomed() {
 		opts = append(opts, gotuipic.WithWidth(pp.zoomCols))
 	} else {
@@ -377,6 +400,19 @@ func (pp *PicturePanel) toggleMode() {
 		cfg.PictureASCII = pp.ascii
 		pp.app.saveConfig(nil)
 	}
+	pp.refreshToolLabels()
+}
+
+// adjustTone moves brightness and contrast by whole steps; both zero resets.
+func (pp *PicturePanel) adjustTone(dBright, dContrast int) {
+	pp.bright = core.Clamp(pp.bright+dBright, -pictureToneMax, pictureToneMax)
+	pp.contrast = core.Clamp(pp.contrast+dContrast, -pictureToneMax, pictureToneMax)
+	pp.refreshToolLabels()
+}
+
+// resetTone restores the picture's own brightness and contrast.
+func (pp *PicturePanel) resetTone() {
+	pp.bright, pp.contrast = 0, 0
 	pp.refreshToolLabels()
 }
 

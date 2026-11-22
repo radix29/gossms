@@ -19,6 +19,11 @@ func (pp *PicturePanel) buildTools() {
 		{Label: "Zoom +", Action: func() { pp.zoomBy(1) }},
 		{Label: "Zoom -", Action: func() { pp.zoomBy(-1) }},
 		{Action: pp.toggleMode},
+		{Label: "Bright +", Action: func() { pp.adjustTone(1, 0) }},
+		{Label: "Bright -", Action: func() { pp.adjustTone(-1, 0) }},
+		{Label: "Contrast +", Action: func() { pp.adjustTone(0, 1) }},
+		{Label: "Contrast -", Action: func() { pp.adjustTone(0, -1) }},
+		{Label: "Reset", Action: pp.resetTone},
 		{Label: "Save As...", Action: func() { pp.app.savePicturePanel(pp, true) }},
 	}
 	pp.tools.Disabled, pp.tools.Reason, pp.tools.Status = pp.toolDisabled, pp.toolReason, pp.app.setStatus
@@ -50,7 +55,8 @@ func (pp *PicturePanel) toolReason(i int) string {
 	return "no picture decoded"
 }
 
-// HandleKey: + / - zoom, 0 or f fits, 1 shows actual size, m switches mode,
+// HandleKey: + / - zoom, b / B brighter / darker, c / C more / less contrast,
+// r resets both, 0 or f fits, 1 shows actual size, m switches mode,
 // arrows / PgUp / PgDn / Home / End pan a zoomed picture.
 func (pp *PicturePanel) HandleKey(ev *tcell.EventKey) bool {
 	// The scroll keys are claimed even when nothing moves (the view keeps
@@ -74,6 +80,16 @@ func (pp *PicturePanel) HandleKey(ev *tcell.EventKey) bool {
 			pp.tools.RunCell(picToolActual)
 		case "m", "M":
 			pp.tools.RunCell(picToolMode)
+		case "b":
+			pp.tools.RunCell(picToolBrighter)
+		case "B":
+			pp.tools.RunCell(picToolDarker)
+		case "c":
+			pp.tools.RunCell(picToolMoreContrast)
+		case "C":
+			pp.tools.RunCell(picToolLessContrast)
+		case "r", "R":
+			pp.tools.RunCell(picToolResetTone)
 		default:
 			return false
 		}

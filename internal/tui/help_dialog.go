@@ -116,6 +116,8 @@ var helpLines = []string{
 	"  m           Sextant / ASCII art: ASCII is the fallback for a",
 	"              terminal font without the U+1FB00 sextant glyphs",
 	"              (remembered for every picture)",
+	"  b / B       Brighter / darker (r resets)",
+	"  c / C       More / less contrast (r resets)",
 	"  Ctrl+S      Save the picture's original bytes to a file",
 	"",
 	"IntelliSense (autocomplete)",

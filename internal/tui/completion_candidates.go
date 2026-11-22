@@ -228,8 +228,8 @@ func findCatalogFunction(inv, sysInv *completionInventory, schema, name string) 
 // memberCandidates resolves "qualifier.prefix": qualifier is tried first as
 // a FROM-scope alias/table/CTE/derived table (-> that relation's columns),
 // then as a schema name in the connected database (-> every table/view in
-// it), then as a schema name in the sys-schema inventory ("sys" being the
-// only one that ever matters there), then as a database name (-> that
+// it), then as a schema name in the sys-schema inventory ("sys" or
+// INFORMATION_SCHEMA), then as a database name (-> that
 // database's schemas, see databaseInventory), and last as a linked server
 // (-> its databases, see linkedChainCandidates). Nothing matching returns nil,
 // closing the popup rather than showing something wrong; wait reports that
@@ -245,7 +245,7 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 		if objs, ok := sysInv.bySchema.Get(qualifier); ok {
 			return p.objectItems(objs, prefix), false
 		}
-		if sysInv.loading && strings.EqualFold(qualifier, "sys") {
+		if sysInv.loading && (strings.EqualFold(qualifier, "sys") || strings.EqualFold(qualifier, "INFORMATION_SCHEMA")) {
 			return []editor.CompletionItem{loadingCompletionItem}, false
 		}
 	}
