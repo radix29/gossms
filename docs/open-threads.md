@@ -61,7 +61,12 @@ support); this section covers only the environment.
   `TestRefusedDialOnCaseSensitiveServerMovesMASTER`. To check: connect with
   `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
-  Document's keyword case (below) waits on the same instance.
+  Document's keyword case (below) waits on the same instance, as does gosmo's
+  `Database.BackupRefusal` on a `DatabaseRef` (names under the server's
+  collation since review 2026-11-22-4 B4, pinned offline by
+  `TestDatabaseBackupRefusal`'s CS cases): create user databases `TempDB` and
+  `Master`, and see a differential/log backup of each go through, not refused
+  as tempdb's or master's.
 
 - **No SQL database in Fabric (EngineEdition 12) has ever been connected.**
   gosmo counts it as Azure (version gates treat its 12.x as newest) and as
@@ -163,6 +168,13 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   that delay before its error. No portable way found to tell it from the
   Windows transient (a handle open without FILE_SHARE_DELETE, on either
   path); `WithLock`'s create no longer has this (it checks the lock exists).
+
+## tuikit: what is left
+
+- **`controls/treeview.go` `TreeView.HandleMouse` is 147 lines**, the
+  longest in tuikit. Split it by zone (scrollbar, expander, row) as
+  `PanelManager.HandleMouse` was, when a change lands there anyway — not on
+  its own, since it needs a mouse drive of every tree (OE, dialogs) after.
 
 ## Fix order
 

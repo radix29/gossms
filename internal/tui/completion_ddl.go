@@ -136,8 +136,7 @@ func (p *QueryPanel) ddlTypes() ddlTypes {
 	if t.fabric || p.app == nil {
 		return t
 	}
-	inv := p.app.completion.inventories[completionInventoryKey(p.conn.Opts, p.database)]
-	if inv != nil && !inv.loading && inv.err == nil && inv.catalog != nil {
+	if inv := p.currentInventory(); inv != nil {
 		t.user, t.collation, t.schemas = inv.catalog.Types, inv.collation, inv.qualifierSchemas("")
 	}
 	return t

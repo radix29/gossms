@@ -168,6 +168,18 @@ func completionInventoryKey(opts config.Connection, database string) string {
 	return sysCompletionInventoryKey(opts) + "\x00" + database
 }
 
+// currentInventory is p's database's inventory when it is ready to read: nil
+// while it is missing, loading (a refresh included, which keeps the previous
+// catalog) or failed. Unlike ensureCompletionInventory it never starts a load,
+// so a lookup outside baseCompletionCandidates's own gate cannot either.
+func (p *QueryPanel) currentInventory() *completionInventory {
+	inv := p.app.completion.inventories[completionInventoryKey(p.conn.Opts, p.database)]
+	if inv == nil || inv.loading || inv.err != nil || inv.catalog == nil {
+		return nil
+	}
+	return inv
+}
+
 // ensureCompletionInventory returns the current inventory for sc+database,
 // possibly still loading or holding the last attempt's error, starting a
 // background load if there is no entry.

@@ -482,7 +482,7 @@ func dmlClauseChoices(choices []string, tokens []sqlparse.Token, statement strin
 		if len(tail) > 0 && keywordIs(tail[0], "FROM") {
 			sources := 0
 			for i, tok := range tail {
-				if keywordIs(tok, "FROM") && !keywordDistinctFrom(tail, i) {
+				if keywordIs(tok, "FROM") && !sqlparse.IsDistinctFrom(tail, i) {
 					sources++
 				}
 			}
@@ -524,7 +524,7 @@ futureScan:
 			}
 			depth--
 		default:
-			if depth == 0 && !tok.Quoted && !keywordDistinctFrom(tokens, i) {
+			if depth == 0 && !tok.Quoted && !sqlparse.IsDistinctFrom(tokens, i) {
 				future[strings.ToUpper(tok.Text)] = true
 			}
 		}

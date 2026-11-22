@@ -101,7 +101,7 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 			stack[len(stack)-1].tokens = append(stack[len(stack)-1].tokens, tok)
 		default:
 			f.tokens = append(f.tokens, tok)
-			if !tok.Quoted && !keywordDistinctFrom(f.tokens, len(f.tokens)-1) {
+			if !tok.Quoted && !sqlparse.IsDistinctFrom(f.tokens, len(f.tokens)-1) {
 				switch strings.ToUpper(tok.Text) {
 				case "SELECT":
 					f.having = false
@@ -173,7 +173,7 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 	}
 	var cases []caseArm
 	for i, tok := range f.tokens {
-		if tok.Quoted || keywordDistinctFrom(f.tokens, i) {
+		if tok.Quoted || sqlparse.IsDistinctFrom(f.tokens, i) {
 			continue
 		}
 		word := strings.ToUpper(tok.Text)
@@ -280,18 +280,14 @@ func (p *QueryPanel) sourceFunctionKnown(tokens []sqlparse.Token) bool {
 	if len(tokens) >= 3 && tokens[len(tokens)-2].Kind == sqlparse.TokenDot {
 		schema = tokens[len(tokens)-3].Text
 	}
-	inv := p.app.completion.inventories[completionInventoryKey(p.conn.Opts, p.database)]
+	inv := p.currentInventory()
 	sys := p.app.completion.sysInventories[sysCompletionInventoryKey(p.conn.Opts)]
 	return findCatalogFunction(inv, sys, schema, name.Text) != nil
 }
 
-func keywordDistinctFrom(tokens []sqlparse.Token, i int) bool {
-	return sqlparse.IsDistinctFrom(tokens, i)
-}
-
 func completionStartsSource(tokens []sqlparse.Token, i int) bool {
 	return keywordIs(tokens[i], "JOIN") || keywordIs(tokens[i], "APPLY") ||
-		keywordIs(tokens[i], "FROM") && !keywordDistinctFrom(tokens, i)
+		keywordIs(tokens[i], "FROM") && !sqlparse.IsDistinctFrom(tokens, i)
 }
 
 func completionEndsSource(tokens []sqlparse.Token, i int) bool {
@@ -453,7 +449,7 @@ func scalarParenthesizedPosition(buf []rune, parent, current []sqlparse.Token, s
 	}
 	source, fromList, grouping, insertTarget := false, false, false, false
 	for i, tok := range parent {
-		if keywordDistinctFrom(parent, i) {
+		if sqlparse.IsDistinctFrom(parent, i) {
 			continue
 		}
 		if completionEndsSource(parent, i) {
