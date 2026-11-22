@@ -1,0 +1,3 @@
+# Preserve byte-exact fixtures, including intentional CRLF test inputs.
+/internal/format/testdata/** -text
+/internal/tui/sqlparse/testdata/*.golden -text
