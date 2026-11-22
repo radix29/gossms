@@ -549,7 +549,7 @@ func rotateLog(path string, limit int64) error {
 	if err != nil || fi.Size() <= limit {
 		return nil
 	}
-	if err := os.Rename(path, path+".1"); err != nil {
+	if err := fileutil.Rename(path, path+".1"); err != nil {
 		return fmt.Errorf("rotating a %d-byte log: %w", fi.Size(), err)
 	}
 	return nil

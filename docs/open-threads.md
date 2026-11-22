@@ -89,7 +89,7 @@ support); this section covers only the environment.
   `@@VERSION`; if either differs, make it the test in `detectFabricDW` and
   keep the hostname only as the fallback.
 
-## Windows clipboard: what is left
+## Windows test run: what is left\n\nFindings and run history: `docs/windows-testing.md`. Open: `-race` needs a C\ncompiler on win10cli; the lock is unfair under heavy contention on slow disks.\n\n## Windows clipboard: what is left
 
 - **One clipboard-manager run hung** (2026-11-18, before the message-only
   owner, and before a test timeout was armed, so no stack); 16 later runs and

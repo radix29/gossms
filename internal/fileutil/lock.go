@@ -42,18 +42,28 @@ func WithLock(path string, fn func() error) error {
 	lock := resolveSymlink(path) + ".lock"
 	token := strconv.Itoa(os.Getpid()) + " " + rand.Text()
 	deadline := time.Now().Add(lockWait)
+	var denied error
 	for {
 		took, err := createLockFile(lock, token)
-		if err != nil {
+		if err != nil && !errors.Is(err, fs.ErrPermission) {
 			return err
 		}
 		if took {
 			break
 		}
+		// Windows reports ERROR_ACCESS_DENIED, not "exists", for an
+		// O_EXCL create against a lock file that is delete-pending (the
+		// holder just removed it, or a handle is still open). That is
+		// contention, so keep waiting; only a denial that outlasts the
+		// deadline (a genuinely unwritable directory) is returned, as itself.
+		denied = err
 		if isStaleLock(lock) && breakStaleLock(lock, token) {
 			continue
 		}
 		if time.Now().After(deadline) {
+			if denied != nil {
+				return denied
+			}
 			return fmt.Errorf("%s is locked by another gossms instance (remove %s if none is running)", path, lock)
 		}
 		time.Sleep(lockPoll)

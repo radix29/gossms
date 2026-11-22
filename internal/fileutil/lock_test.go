@@ -18,6 +18,10 @@ func TestWithLockSerializesReadModifyWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	const workers, rounds = 4, 50
+	// Each hold costs two fsyncs (~25 ms on a slow Windows disk) and the lock
+	// is unfair, so a waiter can starve past the 2 s default under load.
+	defer func(w time.Duration) { lockWait = w }(lockWait)
+	lockWait = time.Minute
 	var wg sync.WaitGroup
 	errs := make(chan error, workers*rounds)
 	for range workers {

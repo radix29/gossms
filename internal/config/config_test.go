@@ -322,8 +322,8 @@ func TestLoadCorruptFileReturnsEmptyConfig(t *testing.T) {
 // An existing but unreadable config must not be saved over: an empty Config
 // written back would destroy a file that's still fine.
 func TestLoadRefusesToSaveOverAnUnreadableConfig(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("running as root: a 0000 file is still readable")
+	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+		t.Skip("a 0000 file is still readable (root) or mode bits do not gate reads (Windows)")
 	}
 	cfgDir := scratchConfigDir(t)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
@@ -398,7 +398,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat config dir: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o700 {
 		t.Errorf("config dir permissions = %o, want 0700", perm)
 	}
 
@@ -485,7 +485,7 @@ func TestSaveIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("config.json mode = %04o, want 0600", perm)
 	}
 
@@ -1113,7 +1113,7 @@ func TestOpenLogFileRotatesOnlyPastTheLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("fresh log mode = %v, want 0600", fi.Mode().Perm())
 	}
 }

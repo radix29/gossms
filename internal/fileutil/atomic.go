@@ -97,7 +97,7 @@ func (s *Stream) Commit() error {
 		os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, s.path); err != nil {
+	if err := Rename(tmp, s.path); err != nil {
 		os.Remove(tmp)
 		return err
 	}
@@ -375,4 +375,25 @@ func syncDir(dir string) {
 	}
 	_ = d.Sync()
 	d.Close()
+}
+
+// renameRetry bounds how long Rename keeps retrying a denied rename. A variable
+// so tests can shorten it.
+var renameRetry = 500 * time.Millisecond
+
+// Rename is os.Rename that rides out a transient denial. On Windows, replacing
+// a file another process holds open without FILE_SHARE_DELETE (a second gossms
+// in Load, antivirus, a search indexer) fails with ERROR_ACCESS_DENIED until
+// that handle closes a few milliseconds later; surfacing it fails a save that
+// a retry completes. A denial that outlasts renameRetry (a read-only
+// directory, anywhere) is returned as itself.
+func Rename(oldpath, newpath string) error {
+	deadline := time.Now().Add(renameRetry)
+	for {
+		err := os.Rename(oldpath, newpath)
+		if err == nil || !errors.Is(err, fs.ErrPermission) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
