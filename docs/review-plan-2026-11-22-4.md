@@ -54,7 +54,12 @@ Severity is ordered by what a user can lose, not by effort.
   the dead `Name` test is gone; `TestLiveVersionSweep` on 13: 442 calls, 0
   failed; driven on win10cli: READONLY, NULL/NOT NULL and `=` after alias,
   table and system types).
-- **W5 — A2**: `buildSecurablesMatrix`'s 12 positional parameters.
+- **W5 — A2**: done (`buildSecurablesMatrix(d, database, securablesSeed,
+  candidates, find, securablesTarget)`; heights are constants; `apply` calls
+  `applySecurable`/`applyColumnSecurable` itself; the New dialogs share
+  `newPrincipalSecurablesTarget`; driven on win10cli, Script Changes only:
+  New Database Role scripts `CREATE ROLE` then `GRANT ALTER TO` the typed
+  name, Role Properties on `public` scripts an object and a column GRANT).
 - **W6 — B4** (gosmo): `BackupRefusal` compares a `Ref`'s name case-blind.
 - **W7 — N2**: nits.
 - **W8 — R1**: release notes for gossms, gosmo and tuikit (only if the user
@@ -86,29 +91,6 @@ master's. Fails closed (refuses a valid backup), and no CS server exists here
 nil `Info()` on a test fake); the
 documented "by name" fallback stays. Offline test with a fake CS server
 info. Add the case to the open-threads CS-server list for a live check.
-
----
-
-## Architecture, simplification, refactoring
-
-### A2 — `buildSecurablesMatrix` takes 12 positional parameters, two always the same
-
-**Where:** `internal/tui/securables_matrix.go` `buildSecurablesMatrix`;
-callers `securables_matrix.go` (Properties), `new_role_dialog.go`,
-`new_application_role_dialog.go` (the clone `dupl` reports).
-
-**What:** every caller passes `8, 12` for the heights and the same pair of
-closures, `applySecurable`/`applyColumnSecurable` over a database and a
-principal name; only how the principal and database are obtained differs
-(`*principal` vs `d.objectName()`, the prefetched database vs
-`DatabaseRef(dbName)`).
-
-**Plan:** `buildSecurablesMatrix(d, database, seed securablesSeed, candidates,
-find, target func() (*gosmo.Database, string))` — `securablesSeed` holds
-`initial`/`entries`/`colEntries` (zero for a create dialog), the heights
-become constants, and the two apply closures are built inside from
-`target`. The create dialogs' 10-line clones go. Tests: the Securables page
-tests for Database Role, Application Role and their New dialogs.
 
 ---
 

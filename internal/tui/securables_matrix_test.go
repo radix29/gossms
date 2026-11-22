@@ -21,7 +21,7 @@ func TestSecurableSearchSurvivesAPanickingSearch(t *testing.T) {
 		}
 		return []securable{{Type: "TABLE", Schema: "dbo", Name: "Orders"}}, nil
 	}
-	f, _ := buildSecurablesMatrix(d, nil, nil, nil, nil, nil, find, 8, 12, nil, nil)
+	f, _ := buildSecurablesMatrix(d, nil, securablesSeed{}, nil, find, nil)
 
 	typeInto(t, f, "Search to add", "a")
 	drainUntil(t, a, func() bool { return calls.Load() == 1 }, "the first search to run")
