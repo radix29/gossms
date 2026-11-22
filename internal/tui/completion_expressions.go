@@ -48,9 +48,10 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 	stack := []completionFrame{{start: start}}
 	for _, tok := range tokens {
 		if tok.Start < start {
-			if tok.Kind == sqlparse.TokenParenOpen {
+			switch tok.Kind {
+			case sqlparse.TokenParenOpen:
 				c.queryDepth++
-			} else if tok.Kind == sqlparse.TokenParenClose {
+			case sqlparse.TokenParenClose:
 				c.queryDepth--
 			}
 			continue

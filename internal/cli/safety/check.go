@@ -171,11 +171,13 @@ func (st Statement) Describe() string {
 	var b strings.Builder
 	b.WriteString(st.Leader)
 	if st.Object != "" {
-		b.WriteString(" " + st.Object)
+		b.WriteString(" ")
+		b.WriteString(st.Object)
 	}
 	fmt.Fprintf(&b, " (line %d)", st.Line)
 	if st.Reason != "" {
-		b.WriteString(": " + st.Reason)
+		b.WriteString(": ")
+		b.WriteString(st.Reason)
 	}
 	return b.String()
 }
