@@ -59,6 +59,7 @@ func WithLock(path string, fn func() error) error {
 	start := time.Now()
 	deadline := start.Add(lockWait)
 	var denied error
+	absentDenials := 0 // consecutive denied creates with no lock file there
 	prioritized := false
 	defer func() {
 		if prioritized {
@@ -88,8 +89,20 @@ func WithLock(path string, fn func() error) error {
 		// O_EXCL create against a lock file that is delete-pending (the
 		// holder just removed it, or a handle is still open). That is
 		// contention, so keep waiting; only a denial that outlasts the
-		// deadline (a genuinely unwritable directory) is returned, as itself.
+		// deadline is returned, as itself. A denial with no lock file there
+		// at all is the directory refusing the create (read-only, anywhere),
+		// not contention: seen on two tries in a row (the second rules out a
+		// delete-pending lock finishing in between), it is returned at once
+		// rather than after lockWait — a CLI command's audit write is
+		// synchronous, and would stall that long on every run.
 		denied = err
+		if err != nil && lockAbsent(lock) {
+			if absentDenials++; absentDenials >= 2 {
+				return err
+			}
+		} else {
+			absentDenials = 0
+		}
 		if isStaleLock(lock) && breakStaleLock(lock, token) {
 			continue
 		}
@@ -142,6 +155,13 @@ func blockedByPriority(wait string) bool {
 		return false
 	}
 	return true
+}
+
+// lockAbsent reports whether lock certainly does not exist. Any other stat
+// error counts as present: on Windows a delete-pending lock refuses opens.
+func lockAbsent(lock string) bool {
+	_, err := os.Stat(lock)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // claimPriority creates the priority marker wait holding token, reporting

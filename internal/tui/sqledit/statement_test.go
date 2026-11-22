@@ -480,6 +480,9 @@ func TestSelectStatementAtCursorLeaderBoundaries(t *testing.T) {
 			"SELECT a FROM t ORDER BY a OFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY"},
 		{"trigger UPDATE()", "‸IF UPDATE(a) OR UPDATE(b) RETURN", "IF UPDATE(a) OR UPDATE(b) RETURN"},
 		{"BULK INSERT", "‸BULK INSERT t FROM 'f'\nSELECT 1", "BULK INSERT t FROM 'f'"},
+		{"WRITETEXT BULK", "‸WRITETEXT BULK dbo.t.x @p 'z'\nSELECT 1", "WRITETEXT BULK dbo.t.x @p 'z'"},
+		{"UPDATETEXT BULK", "‸UPDATETEXT BULK dbo.t.x @p 0 NULL 'z'\nSELECT 1", "UPDATETEXT BULK dbo.t.x @p 0 NULL 'z'"},
+		{"BULK INSERT after WRITETEXT", "WRITETEXT dbo.t.x @p 'z'\n‸BULK INSERT t FROM 'f'", "BULK INSERT t FROM 'f'"},
 		{"INNER MERGE JOIN", "‸SELECT * FROM a INNER MERGE JOIN b ON a.x = b.x", "SELECT * FROM a INNER MERGE JOIN b ON a.x = b.x"},
 		{"keyword-named variable", "‸SELECT @Delete = 1, @Drop = 2", "SELECT @Delete = 1, @Drop = 2"},
 	}

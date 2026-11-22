@@ -92,7 +92,8 @@ var notBefore = map[string]map[string]bool{
 
 // onlyBefore names, per leader, the only next tokens that make it a statement:
 // DISABLE/ENABLE TRIGGER, ADD [COUNTER] SIGNATURE, ADD SENSITIVITY
-// CLASSIFICATION, COPY INTO. Elsewhere they are clauses
+// CLASSIFICATION, COPY INTO, BULK INSERT (WRITETEXT BULK and UPDATETEXT BULK
+// are one statement). Elsewhere they are clauses
 // (ALTER TABLE ... ADD c int) or plain names. ENABLE, DISABLE and ADD are never
 // a statement inside an ALTER, whose own clauses they are.
 var onlyBefore = map[string]map[string]bool{
@@ -100,6 +101,7 @@ var onlyBefore = map[string]map[string]bool{
 	"DISABLE": {"TRIGGER": true},
 	"ADD":     {"SIGNATURE": true, "COUNTER": true, "SENSITIVITY": true},
 	"COPY":    {"INTO": true},
+	"BULK":    {"INSERT": true},
 }
 
 // flowVerbs are the leaders that are usually an IF/WHILE/ELSE body, which

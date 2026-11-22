@@ -2,8 +2,10 @@ package fileutil
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
@@ -265,6 +267,28 @@ func TestAPriorityMarkerMakesOthersStandBack(t *testing.T) {
 	}
 	if data, err := os.ReadFile(path + ".lock.wait"); err != nil || string(data) != "other" {
 		t.Errorf("the other waiter's marker = %q, %v; want it kept", data, err)
+	}
+}
+
+// A directory that refuses the lock's create, with no lock file in it, is not
+// contention: WithLock returns the denial at once, not after lockWait.
+func TestWithLockFailsFastInAnUnwritableDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory the POSIX mode bits can make read-only, as non-root")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o700)
+	start := time.Now()
+	ran := false
+	err := WithLock(filepath.Join(dir, "config.json"), func() error { ran = true; return nil })
+	if !errors.Is(err, fs.ErrPermission) || ran {
+		t.Fatalf("WithLock = %v, ran %v; want a permission error and fn not run", err, ran)
+	}
+	if took := time.Since(start); took >= lockWait/2 {
+		t.Errorf("WithLock took %v to report the denial; want well under lockWait (%v)", took, lockWait)
 	}
 }
 

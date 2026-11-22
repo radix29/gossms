@@ -124,6 +124,15 @@ func TestCheckMaxRowsAffectedBlindSpots(t *testing.T) {
 		{"WAITFOR (RECEIVE * FROM dbo.q), TIMEOUT 100", true},
 		{"WRITETEXT dbo.t.x @p 'z'", true},
 		{"UPDATETEXT dbo.t.x @p 0 NULL 'z'", true},
+		{"RECEIVE @h = conversation_handle FROM dbo.q", true},
+		{"IF @p IS NOT NULL WRITETEXT BULK dbo.t.x @p 'z'", true},
+		// A column of the name is counted like any other.
+		{"UPDATE t SET receive = 1 WHERE id = 1", false},
+		{"UPDATE t SET a = 1 WHERE receive IS NULL", false},
+		{"UPDATE t SET a = x.receive FROM t JOIN x ON x.id = t.id", false},
+		{"UPDATE t SET writetext = 1", false},
+		{"DELETE t WHERE updatetext = 1", false},
+		{"UPDATE t SET a = 1 FROM t WHERE updatetext IN (SELECT writetext FROM dbo.u)", false},
 	} {
 		b := Check(Classify(tt.script), Policy{Allow: admin, Transaction: true, MaxRowsAffected: true})
 		if (b != nil) != tt.blocked {

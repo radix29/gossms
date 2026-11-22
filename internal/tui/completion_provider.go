@@ -308,7 +308,7 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 	}
 	// Statements stacked with no ';' between them still lex as one
 	// ';'/GO-delimited span; narrow to the DML statement holding the cursor so
-	// a bare column cc doesn't pick up FROM refs from an unrelated
+	// a bare column context doesn't pick up FROM refs from an unrelated
 	// statement above or below it. The forward lex stops at the next statement
 	// rather than running to the next ';' or GO (see
 	// sqlparse.NarrowStatementForward).
@@ -517,7 +517,7 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 	case pending:
 		return []editor.CompletionItem{loadingCompletionItem}, replaceFrom, post
 	case len(rels) == 0:
-		// Column cc but nothing resolvable FROM'd yet: no columns to
+		// Column context but nothing resolvable FROM'd yet: no columns to
 		// pull, so fall back to the object list.
 		return p.tableCandidates(inv, sysInv, nil, bindings, prefix), replaceFrom, post
 	default:

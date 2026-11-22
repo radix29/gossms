@@ -437,6 +437,20 @@ func TestClassifyLineCountsThroughLiterals(t *testing.T) {
 	}
 }
 
+// WRITETEXT BULK / UPDATETEXT BULK are one statement: BULK starts one only
+// before INSERT (it was read as a BULK INSERT into ".t.x").
+func TestClassifyTextVerbBulkIsOneStatement(t *testing.T) {
+	for _, script := range []string{"WRITETEXT BULK dbo.t.x @p 'z'", "UPDATETEXT BULK dbo.t.x @p 0 NULL 'z'"} {
+		sc := Classify(script)
+		if n := len(sc.Statements); n != 1 {
+			t.Fatalf("%q: statements = %d, want 1: %+v", script, n, sc.Statements)
+		}
+		if st := sc.Statements[0]; st.Class != write || !st.Flags.Has(FlagUncounted) {
+			t.Errorf("%q = %+v, want one uncounted write", script, st)
+		}
+	}
+}
+
 // P2-10: a module batch is one ddl statement; its body's COMMIT, NOCOUNT or
 // dynamic SQL raise no flag. A statement before it in the batch is its own.
 func TestClassifyModuleBatch(t *testing.T) {

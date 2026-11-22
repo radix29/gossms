@@ -642,11 +642,66 @@ func floor(st *Statement, toks []token) {
 				st.Writes = append(st.Writes, wr)
 			}
 		}
-		if v.name == "RECEIVE" || v.name == "WRITETEXT" || v.name == "UPDATETEXT" {
+		if uncountedVerb(toks, i, v.name) {
 			st.Flags |= FlagUncounted
 		}
 		st.raise(c, "keyword "+v.name+at)
 	}
+}
+
+// uncountedVerb reports whether toks[i], the verb name, is RECEIVE, WRITETEXT
+// or UPDATETEXT used as one (FlagUncounted), not a column of that name. The
+// floor raises a bare column named receive to write regardless (fail-safe);
+// the flag would also make --max-rows-affected refuse a plain counted
+// UPDATE t SET receive = 1, so it takes the verb's shape:
+//
+//   - WRITETEXT/UPDATETEXT [BULK] table.column …: a dotted name of two or
+//     more parts follows. A column of that name is followed by FROM, a
+//     comma, an operator — never a dotted name.
+//   - RECEIVE [TOP (n)] columns FROM queue: TOP, *, or a word or quoted
+//     name follows, and the word is not a select list's (after SELECT, a
+//     comma, SET, BY, DISTINCT or a dot). A word that only continues an
+//     expression (FROM, AS, IS, AND …) is a column's. What remains
+//     ambiguous (receive * 2) counts as the verb, the safe side.
+func uncountedVerb(toks []token, i int, name string) bool {
+	at := func(k int) token {
+		if k >= 0 && k < len(toks) {
+			return toks[k]
+		}
+		return token{}
+	}
+	switch name {
+	case "WRITETEXT", "UPDATETEXT":
+		j := i + 1
+		if at(j).is("BULK") {
+			j++
+		}
+		n, _, ok := readName(toks, j)
+		return ok && len(n.parts) >= 2
+	case "RECEIVE":
+		prev, next := at(i-1), at(i+1)
+		if prev.punct(".") || prev.punct(",") || prev.is("SELECT") || prev.is("SET") ||
+			prev.is("BY") || prev.is("DISTINCT") {
+			return false
+		}
+		switch {
+		case next.is("TOP") || next.punct("*") || next.kind == sqltext.KindQuotedIdent:
+			return true
+		case next.kind == sqltext.KindWord:
+			return !receiveColumnFollowers[next.word]
+		}
+	}
+	return false
+}
+
+// receiveColumnFollowers are words that follow a column named receive but
+// never the RECEIVE verb, whose next token is TOP, * or a column.
+var receiveColumnFollowers = map[string]bool{
+	"FROM": true, "AS": true, "IS": true, "IN": true, "LIKE": true, "BETWEEN": true,
+	"NOT": true, "AND": true, "OR": true, "COLLATE": true, "ASC": true, "DESC": true,
+	"WHEN": true, "THEN": true, "ELSE": true, "END": true, "WHERE": true, "GROUP": true,
+	"ORDER": true, "HAVING": true, "UNION": true, "EXCEPT": true, "INTERSECT": true,
+	"FOR": true, "OPTION": true, "INTO": true, "ON": true, "JOIN": true,
 }
 
 // notInTransaction reports whether toks[i] begins a statement SQL Server

@@ -141,6 +141,15 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
+- **A column named `receive` (bare, unquoted) floors its statement to write**
+  (`floor` matches verbs anywhere): `SELECT receive FROM t` classifies write.
+  Fail-safe, pre-existing; `uncountedVerb` keeps it from also tripping
+  `--max-rows-affected`.
+- **`fileutil.Rename` retries any permission denial for up to 500 ms**, so
+  on Linux a persistent one (log rotation in a read-only directory) costs
+  that delay before its error. No portable way found to tell it from the
+  Windows transient (a handle open without FILE_SHARE_DELETE, on either
+  path); `WithLock`'s create no longer has this (it checks the lock exists).
 
 ## Fix order
 
