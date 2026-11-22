@@ -68,9 +68,14 @@ type PicturePanel struct {
 	dragZone core.Gesture[pictureZone]
 	// dragFrom is the last pointer position of a pan drag, the mouseDragging
 	// latch for the view: set on the press, cleared on release.
-	dragging   bool
-	dragFrom   [2]int
+	dragging bool
+	dragFrom [2]int
+	// renderFail is the last render's error, shown in the view, and failKey
+	// the state it failed for: render does not retry that state, or a
+	// refused conversion (up to DefaultMaxCells cells at the zoom cap) would
+	// run again on every frame while its error is on screen.
 	renderFail string
+	failKey    pictureKey
 
 	// filePath is where Save last wrote the picture, so a second Ctrl+S
 	// writes there without prompting.
@@ -104,7 +109,7 @@ const (
 	pictureToneMax  = 10
 )
 
-// Toolbar cell indexes, in buildPictureTools' order.
+// Toolbar cell indexes, in buildTools' order.
 const (
 	picToolFit = iota
 	picToolActual
@@ -212,6 +217,7 @@ func (pp *PicturePanel) setDecoded(pic decodedPicture, err error) {
 		return
 	}
 	pp.data, pp.format, pp.flat = pic.data, pic.format, pic.flat
+	pp.renderFail = "" // a new picture may render where the old one failed
 }
 
 // Title returns the panel's tab title (Panel interface).
@@ -277,6 +283,9 @@ func (pp *PicturePanel) render() *gotuipic.Art {
 	if pp.art != nil && key == pp.artKey {
 		return pp.art
 	}
+	if pp.renderFail != "" && key == pp.failKey {
+		return nil
+	}
 	opts := []gotuipic.Option{
 		gotuipic.WithMode(pp.mode()),
 		gotuipic.WithBrightness(float64(pp.bright) * pictureToneStep),
@@ -289,7 +298,7 @@ func (pp *PicturePanel) render() *gotuipic.Art {
 	}
 	art, err := gotuipic.Convert(pp.flat, opts...)
 	if err != nil {
-		pp.renderFail = err.Error()
+		pp.renderFail, pp.failKey = err.Error(), key
 		pp.art, pp.glyphs = nil, nil
 		return nil
 	}
@@ -403,17 +412,44 @@ func (pp *PicturePanel) toggleMode() {
 	pp.refreshToolLabels()
 }
 
-// adjustTone moves brightness and contrast by whole steps; both zero resets.
+// adjustTone moves brightness and contrast by whole steps and says where they
+// now stand. A step the clamp refuses says so: a key that silently does
+// nothing at the limit reads as broken.
 func (pp *PicturePanel) adjustTone(dBright, dContrast int) {
-	pp.bright = core.Clamp(pp.bright+dBright, -pictureToneMax, pictureToneMax)
-	pp.contrast = core.Clamp(pp.contrast+dContrast, -pictureToneMax, pictureToneMax)
-	pp.refreshToolLabels()
+	bright := core.Clamp(pp.bright+dBright, -pictureToneMax, pictureToneMax)
+	contrast := core.Clamp(pp.contrast+dContrast, -pictureToneMax, pictureToneMax)
+	switch {
+	case dBright != 0 && bright == pp.bright:
+		pp.app.setStatus(fmt.Sprintf("Brightness at its %s (%+d)", toneLimit(dBright), bright))
+		return
+	case dContrast != 0 && contrast == pp.contrast:
+		pp.app.setStatus(fmt.Sprintf("Contrast at its %s (%+d)", toneLimit(dContrast), contrast))
+		return
+	}
+	pp.bright, pp.contrast = bright, contrast
+	pp.app.setStatus(pp.toneText())
 }
+
+// toneLimit names the end of the tone range a step in direction d runs into.
+func toneLimit(d int) string {
+	if d > 0 {
+		return "maximum"
+	}
+	return "minimum"
+}
+
+// toneText is the tone steps as the status line and toolbar show them.
+func (pp *PicturePanel) toneText() string {
+	return fmt.Sprintf("Brightness %+d, contrast %+d", pp.bright, pp.contrast)
+}
+
+// toned reports whether brightness or contrast is off the picture's own.
+func (pp *PicturePanel) toned() bool { return pp.bright != 0 || pp.contrast != 0 }
 
 // resetTone restores the picture's own brightness and contrast.
 func (pp *PicturePanel) resetTone() {
 	pp.bright, pp.contrast = 0, 0
-	pp.refreshToolLabels()
+	pp.app.setStatus("Brightness and contrast reset")
 }
 
 // scrollBy pans the zoomed art.

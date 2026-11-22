@@ -98,12 +98,12 @@ func (p *QueryPanel) spatialStaticCandidates(buf []rune, tokens []sqlparse.Token
 		keywordNextToken(buf[:from], second.End).Kind != sqltext.KindEnd {
 		return nil, false
 	}
-	context := p.analyzeCompletionContext(buf[:tok.Start], tokens, q, tok.Start)
-	if !context.scalar {
+	cc := p.analyzeCompletionContext(buf[:tok.Start], tokens, q, tok.Start)
+	if !cc.scalar {
 		return nil, true
 	}
 	methods := append(slices.Clone(spatialConstructors), "Null")
-	if context.aggregate {
+	if cc.aggregate {
 		methods = append(methods, spatialAggregates...)
 	}
 	return spatialCompletionItems(methods, buf, cursor, prefix), true

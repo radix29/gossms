@@ -35,7 +35,8 @@ func (pp *PicturePanel) drawToolbar(s tcell.Screen) {
 	}
 }
 
-// infoText is the toolbar's summary: format, pixel size, byte size and zoom.
+// infoText is the toolbar's summary: format, pixel size, byte size, zoom and,
+// once changed, the tone steps.
 func (pp *PicturePanel) infoText() string {
 	if !pp.ready() {
 		return ""
@@ -49,7 +50,11 @@ func (pp *PicturePanel) infoText() string {
 	if !pp.zoomed() {
 		zoom = "Fit " + zoom
 	}
-	return strings.Join(append(parts, zoom), " · ")
+	parts = append(parts, zoom)
+	if pp.toned() {
+		parts = append(parts, pp.toneText())
+	}
+	return strings.Join(parts, " · ")
 }
 
 // drawView paints the picture area: a message while there is no art, the art

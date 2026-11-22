@@ -42,17 +42,27 @@ func (pp *PicturePanel) refreshToolLabels() {
 }
 
 // toolDisabled reports whether cell i is inert: every cell needs a decoded
-// picture except the mode switch, which is a preference.
+// picture except the mode switch, which is a preference, and Reset needs a
+// tone to undo.
 func (pp *PicturePanel) toolDisabled(i int) bool {
-	return i != picToolMode && !pp.ready()
+	switch {
+	case i == picToolMode:
+		return false
+	case !pp.ready():
+		return true
+	}
+	return i == picToolResetTone && !pp.toned()
 }
 
 // toolReason says why a cell is withheld.
 func (pp *PicturePanel) toolReason(i int) string {
-	if !pp.toolDisabled(i) || pp.loading {
+	switch {
+	case !pp.toolDisabled(i) || pp.loading:
 		return ""
+	case !pp.ready():
+		return "no picture decoded"
 	}
-	return "no picture decoded"
+	return "brightness and contrast are the picture's own"
 }
 
 // HandleKey: + / - zoom, b / B brighter / darker, c / C more / less contrast,
