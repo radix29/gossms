@@ -1683,8 +1683,7 @@ it from the string 'NULL'.
   Keywords are deliberately excluded: a fully typed `from⏎` still commits
   `FROM ` (upper-cased, with its space), as
   `TestSQLKeywordCompletionKeepsFullyTypedKeywords` pins.
-- **Enter commits a keyword at an alias position** (2026-11-23,
-  `docs/completion-enter-at-alias-position.md`). `FROM mytable WH⏎` gives
+- **Enter commits a keyword at an alias position** (2026-11-23). `FROM mytable WH⏎` gives
   `WHERE `, as Tab does. e6083d5 had made a started word Soft wherever a new
   alias could be typed, so `FROM Orders o⏎` kept the alias instead of taking
   `OUTER APPLY`; in use that made Enter seem to work on some keywords and not

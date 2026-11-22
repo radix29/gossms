@@ -115,7 +115,7 @@ support); this section covers only the environment.
   waited 10s". Seen once per 8-run round under full-suite load on win10cli
   before the release retry and the stat-before-clock fix; none in 80 runs
   after. If it recurs, record each failing waiter's marker tries and wins
-  (`docs/issue-56-windows-lock-timeout.md` § F) before revisiting the ticket
+  before revisiting the ticket
   queue `docs/decisions.md` declined — that is the user's call.
 - **A holder that runs past `lockWait` under load still fails its waiters as
   "locked"** — by design: from outside it looks like a stuck holder.
