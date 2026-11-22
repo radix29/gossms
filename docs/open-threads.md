@@ -102,6 +102,19 @@ support); this section covers only the environment.
   running, over RDP in Git Bash/mintty: 40 Ctrl+C/Ctrl+V cycles at 80 ms and a
   paced 10-paste run, no freeze, UI live throughout; not reproduced.
 
+## File lock (`fileutil.WithLock`): what is left
+
+- **Starvation past the 10 s cap is possible, not seen since the fix**
+  (issue #56, 2026-11-22). The priority marker has no memory, so a waiter
+  that keeps losing the race for it on a loaded host fails with "is busy:
+  waited 10s". Seen once per 8-run round under full-suite load on win10cli
+  before the release retry and the stat-before-clock fix; none in 80 runs
+  after. If it recurs, record each failing waiter's marker tries and wins
+  (`docs/issue-56-windows-lock-timeout.md` § F) before revisiting the ticket
+  queue `docs/decisions.md` declined — that is the user's call.
+- **A holder that runs past `lockWait` under load still fails its waiters as
+  "locked"** — by design: from outside it looks like a stuck holder.
+
 ## Format Document: what is left
 
 Settled design: `docs/decisions.md` § Format Document.

@@ -1769,6 +1769,21 @@ it from the string 'NULL'.
   jittered 5→50 ms backoff, tried first, made it worse (win10cli: 10/10
   failures against 0/10). A FIFO ticket queue was declined as more crash
   cases for the same result. Not FIFO: one waiter is prioritised at a time.
+- **`fileutil.WithLock` times out on the lock's lack of progress, not on
+  the caller's own wait, with a 10 s cap** (2026-11-22, issue #56). With
+  several waiters the marker's next owner is whoever wins the race, so on a
+  loaded Windows host a waiter lost for `lockWait` (2 s) behind a moving
+  queue and the CLI dropped an audit line. Now `lockWait` is how long the
+  lock file may stay unchanged (stat only — reading the token would open
+  handles that block the holder's remove on Windows); past `lockMaxWait`
+  (10 s) a moving queue gives a distinct "busy" error. Simply raising
+  `lockWait` was declined: a wedged live holder would stall every saver for
+  the whole wait. Ageing the marker (oldest waiter wins) was declined: it
+  needs reads of the marker, the same handle problem. A lock seen absent is
+  progress on every poll (a slow waiter can see it absent twice with holders
+  in between), and release retries a failed remove for up to `lockWait`: on
+  win10cli under load the antivirus held the new lock open past one 5 ms
+  retry, and the leftover lock failed every waiter as stuck.
 - **`widgets.InputField.HandleKey` keeps its exception to the `HandleKey`
   rule**. It claims every key it binds, Left at column 0
   and Right at the end included, where grid/editor/tree/list hand edge keys to

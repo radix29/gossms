@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -12,8 +13,11 @@ import (
 
 // Lock timings. Variables so tests can shorten them.
 var (
-	// lockWait is how long WithLock waits for a live holder before giving up.
+	// lockWait is how long WithLock waits while the lock makes no progress
+	// (the same holder keeps it) before giving up on a stuck holder.
 	lockWait = 2 * time.Second
+	// lockMaxWait caps WithLock's whole wait, however much the queue moves.
+	lockMaxWait = 10 * time.Second
 	// lockStale is the age past which a lock file is taken as left by a
 	// crashed process (a holder's read-merge-write takes milliseconds).
 	lockStale = 10 * time.Second
@@ -50,14 +54,43 @@ var (
 // when it gives up. The marker decides who goes next, never mutual exclusion
 // (the lock file alone does that), so its races cost fairness, not safety.
 //
-// If a live holder keeps the lock past lockWait, WithLock returns an error
-// without running fn; callers keep their pending changes for the next save.
+// WithLock gives up, without running fn, when the lock has made no progress
+// for lockWait — the same holder has kept it, so it is stuck or crashed — or
+// when the whole wait passes lockMaxWait; callers keep their pending changes
+// for the next save. Progress is the lock seen absent, or changed since the
+// last poll (it appeared, or is a new file with a new ModTime): every new
+// holder creates a fresh one. Absent counts on every poll, not only as a
+// change: a waiter that polls rarely under load can see it absent twice with
+// holders in between, and a free lock is never a stuck holder. Timing this
+// caller's own wait instead failed waiters behind a moving queue (issue #56):
+// the marker holds one waiter at a time and its next owner is whoever wins
+// the race, so with several waiters on a loaded Windows host one could lose
+// for lockWait while every hold was short. Progress is read with os.Stat only, never by reading the token: a
+// read opens a handle without FILE_SHARE_DELETE on Windows, and polling
+// waiters would make the holder's remove fail.
 func WithLock(path string, fn func() error) error {
 	lock := resolveSymlink(path) + ".lock"
 	token := strconv.Itoa(os.Getpid()) + " " + rand.Text()
 	wait := lock + ".wait"
 	start := time.Now()
-	deadline := start.Add(lockWait)
+	lastProgress := start
+	seen := statLock(lock)
+	// timedOut watches the lock for progress and reports which deadline,
+	// if any, has passed: stuck (no progress for lockWait) or busy (the cap).
+	timedOut := func() (stuck, busy bool) {
+		s := statLock(lock)
+		now := time.Now() // after the stat: a stat that stalls under load must not date what it saw
+		if s != seen || s == (lockState{}) {
+			seen, lastProgress = s, now
+		}
+		return now.Sub(lastProgress) > lockWait, now.Sub(start) > lockMaxWait
+	}
+	giveUp := func(stuck bool) error {
+		if stuck {
+			return fmt.Errorf("%s is locked by another gossms instance (remove %s if none is running)", path, lock)
+		}
+		return fmt.Errorf("%s is busy: waited %v behind other gossms instances", path, lockMaxWait)
+	}
 	var denied error
 	absentDenials := 0 // consecutive denied creates with no lock file there
 	prioritized := false
@@ -68,8 +101,8 @@ func WithLock(path string, fn func() error) error {
 	}()
 	for {
 		if !prioritized && blockedByPriority(wait) {
-			if time.Now().After(deadline) {
-				return fmt.Errorf("%s is locked by another gossms instance (remove %s if none is running)", path, lock)
+			if stuck, busy := timedOut(); stuck || busy {
+				return giveUp(stuck)
 			}
 			time.Sleep(lockPoll)
 			continue
@@ -89,7 +122,7 @@ func WithLock(path string, fn func() error) error {
 		// O_EXCL create against a lock file that is delete-pending (the
 		// holder just removed it, or a handle is still open). That is
 		// contention, so keep waiting; only a denial that outlasts the
-		// deadline is returned, as itself. A denial with no lock file there
+		// deadlines is returned, as itself. A denial with no lock file there
 		// at all is the directory refusing the create (read-only, anywhere),
 		// not contention: seen on two tries in a row (the second rules out a
 		// delete-pending lock finishing in between), it is returned at once
@@ -106,11 +139,11 @@ func WithLock(path string, fn func() error) error {
 		if isStaleLock(lock) && breakStaleLock(lock, token) {
 			continue
 		}
-		if time.Now().After(deadline) {
+		if stuck, busy := timedOut(); stuck || busy {
 			if denied != nil {
 				return denied
 			}
-			return fmt.Errorf("%s is locked by another gossms instance (remove %s if none is running)", path, lock)
+			return giveUp(stuck)
 		}
 		if !prioritized && time.Since(start) >= lockPriorityAfter {
 			prioritized = claimPriority(wait, token)
@@ -141,10 +174,13 @@ func createLockFile(lock, token string) (bool, error) {
 
 // blockedByPriority reports whether another waiter holds the priority marker
 // wait. Called only by a caller that does not hold it. A marker older than
-// twice lockWait outlived its owner (an owner gives up and removes it within
-// lockWait), so it is removed and ignored; until then a waiter that crashed
-// holding it makes saves fail as "locked", as a crashed holder does. A stat
-// error counts as absent: on Windows a marker being deleted refuses opens.
+// twice lockWait outlived its owner (everyone else stands back, so the owner
+// takes the next release, or gives up after lockWait with no progress), so it
+// is removed and ignored — that costs fairness, never exclusion. Until then a
+// waiter that crashed holding it delays saves: over a free lock they wait the
+// marker out (a free lock is progress), behind a held one they fail as
+// "locked" once that holder is stuck. A stat error counts as absent: on
+// Windows a marker being deleted refuses opens.
 func blockedByPriority(wait string) bool {
 	fi, err := os.Stat(wait)
 	if err != nil {
@@ -155,6 +191,30 @@ func blockedByPriority(wait string) bool {
 		return false
 	}
 	return true
+}
+
+// lockState is what statLock saw of a lock file. Two holders' files differ in
+// ModTime unless the filesystem's timestamps are too coarse to tell them
+// apart; then a waiter falls back to failing after lockWait, never to two
+// holders at once (the O_EXCL create alone decides that).
+type lockState struct {
+	exists, unknown bool
+	mod             time.Time
+}
+
+// statLock reads lock's state with a stat, which opens no handle. Any error
+// but not-exist is unknown: on Windows a delete-pending lock refuses opens,
+// so a change into it reads as progress. Only the change: a stat that keeps
+// failing (a directory that refuses it) must not pass for a moving queue.
+func statLock(lock string) lockState {
+	fi, err := os.Stat(lock)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return lockState{}
+	case err != nil:
+		return lockState{unknown: true}
+	}
+	return lockState{exists: true, mod: fi.ModTime()}
 }
 
 // lockAbsent reports whether lock certainly does not exist. Any other stat
@@ -207,8 +267,27 @@ func breakStaleLock(lock, token string) bool {
 // releaseLockFile removes lock if it still holds token. A holder that overran
 // lockStale may have had its lock broken and retaken; that lock is the new
 // holder's to remove.
+//
+// gossms's waiters only create and stat a lock, never open it, so a failed
+// remove means an outside process has a handle open without
+// FILE_SHARE_DELETE — on a loaded Windows host, the antivirus scanning the
+// file just created (issue #56: the remove failed, and so did one retry 5 ms
+// later). It is retried every lockPoll for up to lockWait and logged if it
+// still fails: a lock left behind stalls every saver until it goes stale
+// (lockStale), and waiters read the unchanged lock as a stuck holder.
 func releaseLockFile(lock, token string) {
-	if data, err := os.ReadFile(lock); err == nil && string(data) == token {
-		os.Remove(lock)
+	data, err := os.ReadFile(lock)
+	if err != nil || string(data) != token {
+		return
+	}
+	for deadline := time.Now().Add(lockWait); ; time.Sleep(lockPoll) {
+		err := os.Remove(lock)
+		if err == nil || errors.Is(err, fs.ErrNotExist) {
+			return
+		}
+		if time.Now().After(deadline) {
+			log.Printf("fileutil: releasing %s: %v; left in place until it is taken as abandoned", lock, err)
+			return
+		}
 	}
 }

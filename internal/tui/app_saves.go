@@ -124,9 +124,10 @@ func (a *App) saveTracked(done func(error)) {
 //
 // wait bounds the waits, not the synchronous save of a change asked for after
 // the in-flight one: that save can overrun the deadline by up to the file
-// lock's wait (fileutil.lockWait) plus the write. Accepted at exit — it is the
-// only copy of the user's latest change, and abandoning it would cut the write
-// off mid-fsync to save at most a couple of seconds.
+// lock's wait (fileutil.lockMaxWait, 10 s, and only while other instances keep
+// taking the lock; a stuck holder fails it after fileutil.lockWait) plus the
+// write. Accepted at exit — it is the only copy of the user's latest change,
+// and abandoning it would cut the write off mid-fsync.
 func (a *App) FlushSaves(wait time.Duration) {
 	if a == nil || a.cfg == nil {
 		return
