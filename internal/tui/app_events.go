@@ -52,7 +52,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 
 	// Explorer splitter resize (Ctrl+Left/Right), only with explorer focus so
 	// the editor keeps word jump.
-	if a.focus == focusOnExplorer && a.explorerSplit.HandleKey(ev) {
+	if !a.explorerHidden && a.focus == focusOnExplorer && a.explorerSplit.HandleKey(ev) {
 		a.layoutAll()
 		return false
 	}
@@ -158,7 +158,9 @@ func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
 		if a.panels.HandleKey(ev) {
 			return true, false
 		}
-		a.focusExplorer()
+		if !a.explorerHidden {
+			a.focusExplorer()
+		}
 		return true, false
 	case tcell.KeyBacktab:
 		// Some terminals send Shift+Tab as Backtab instead of KeyTab+ModShift.
@@ -320,14 +322,14 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	}
 
 	// Explorer/panel splitter drag.
-	if a.explorerSplit.HandleMouse(ev) {
+	if !a.explorerHidden && a.explorerSplit.HandleMouse(ev) {
 		a.gestureOwner.Arm(ev, ownerSplitter)
 		a.layoutAll()
 		return
 	}
 
 	left := a.explorerSplit.FirstRect()
-	if mx < left.Right() {
+	if !a.explorerHidden && mx < left.Right() {
 		a.gestureOwner.Arm(ev, ownerExplorer)
 		if a.focus != focusOnExplorer {
 			a.focusExplorer()
@@ -422,11 +424,13 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 func (a *App) routeGesture(ev *tcell.EventMouse, region appGestureOwner) {
 	switch region {
 	case ownerSplitter:
-		if a.explorerSplit.HandleMouse(ev) {
+		if !a.explorerHidden && a.explorerSplit.HandleMouse(ev) {
 			a.layoutAll()
 		}
 	case ownerExplorer:
-		a.explorer.HandleMouse(ev)
+		if !a.explorerHidden {
+			a.explorer.HandleMouse(ev)
+		}
 	case ownerPanels:
 		a.panels.HandleMouse(ev)
 	}

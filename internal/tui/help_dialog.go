@@ -50,6 +50,7 @@ var helpLines = []string{
 	"              (Tools > XEvent Profiler also has TSQL)",
 	"",
 	"Object Explorer",
+	"  [x]         Hide pane; View > Object Explorer shows and focuses it",
 	"  Arrow keys  Navigate tree",
 	"  Enter/+     Expand node",
 	"  -           Collapse node",

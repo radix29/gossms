@@ -100,6 +100,7 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 		func() bool { return app.groupBySchema },
 		func() { app.toggleGroupBySchema() })
 	oe.view.SetTitleButtonTip("Group by Schema (Alt+G)")
+	oe.view.SetCloseButton(app.hideExplorer)
 	oe.view.OnRightClick = oe.handleRightClick
 	oe.view.OnActivate = oe.handleActivate
 	return oe
