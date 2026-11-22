@@ -1572,6 +1572,96 @@ func TestSQLCompletionUserDefinedTypes(t *testing.T) {
 	})
 }
 
+// An unqualified user-defined type resolves as the server resolves it: the
+// default schema, then dbo, never another schema (B2); and user-defined types
+// match like catalog names, anywhere in the name and after an open '[' (B3).
+func TestSQLCompletionUserTypeResolution(t *testing.T) {
+	newPanel := func(t *testing.T, defaultSchema string) *QueryPanel {
+		qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		inv := qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, "testdb")]
+		inv.defaultSchema = defaultSchema
+		inv.catalog.Types = []gosmo.CatalogType{
+			{Schema: "a", Name: "Dup", Kind: gosmo.CatalogTableType},
+			{Schema: "dbo", Name: "Dup", Kind: gosmo.CatalogAliasType},
+			{Schema: "dbo", Name: "PostalAddress", Kind: gosmo.CatalogAliasType},
+			{Schema: "dbo", Name: "Phone", Kind: gosmo.CatalogAliasType},
+			{Schema: "x", Name: "Elsewhere", Kind: gosmo.CatalogAliasType},
+			{Schema: "x", Name: "Mine", Kind: gosmo.CatalogTableType},
+			{Schema: "dbo", Name: "Mine", Kind: gosmo.CatalogAliasType},
+		}
+		return qp
+	}
+	for _, tt := range []struct {
+		sql, defaultSchema string
+		want, not          []string
+	}{
+		// B2: a.Dup sorts first but is not where "Dup" resolves.
+		{"CREATE TABLE dbo.T (Home Dup |", "", []string{"NULL", "NOT NULL"}, nil},
+		{"CREATE PROCEDURE dbo.p @rows Dup |", "", []string{"AS", "OUTPUT"}, []string{"READONLY"}},
+		{"DECLARE @x Dup |", "", []string{"="}, nil},
+		// Only in a third schema: unresolved, no follow-up. (A parameter
+		// takes any unknown one-word name as a type, so still gets AS/OUTPUT,
+		// never READONLY.)
+		{"CREATE TABLE dbo.T (Home Elsewhere |", "", nil, []string{"NULL", "NOT NULL"}},
+		{"CREATE PROCEDURE dbo.p @m Mine |", "y", []string{"AS", "OUTPUT"}, []string{"READONLY"}},
+		// The default schema comes before dbo.
+		{"CREATE PROCEDURE dbo.p @m Mine |", "x", []string{"READONLY"}, []string{"OUTPUT"}},
+		{"CREATE PROCEDURE dbo.p @m Mine |", "", []string{"AS", "OUTPUT"}, []string{"READONLY"}},
+		// B3: contains, and after an open '['.
+		{"CREATE TABLE dbo.T (Home addr|", "", []string{"dbo.PostalAddress"}, []string{"dbo.Phone"}},
+		{"CREATE TABLE dbo.T (Home [ph|", "", []string{"dbo.Phone"}, []string{"dbo.PostalAddress", "INT", "NULL"}},
+		{"CREATE TABLE dbo.T (Home [ph|]", "", []string{"dbo.Phone"}, nil},
+		{"CREATE TABLE dbo.T (Home dbo.addr|", "", []string{"dbo.PostalAddress"}, []string{"dbo.Phone"}},
+		{"CREATE TABLE dbo.T (Home dbo.[ph|", "", []string{"dbo.Phone"}, []string{"dbo.PostalAddress", "dbo.Customers"}},
+		{"CREATE PROCEDURE dbo.p @h [ph|", "", []string{"dbo.Phone"}, []string{"INT"}},
+		{"DECLARE @x [ph|", "", []string{"dbo.Phone"}, []string{"INT"}},
+		// '[' outside a type position keeps the catalog answer.
+		{"SELECT * FROM [Cus|", "", []string{"dbo.Customers"}, []string{"dbo.Phone"}},
+	} {
+		t.Run(tt.defaultSchema+" "+tt.sql, func(t *testing.T) {
+			qp := newPanel(t, tt.defaultSchema)
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			for _, label := range tt.want {
+				if !containsLabel(items, label) {
+					t.Errorf("%q missing: %v", label, labels(items))
+				}
+			}
+			for _, label := range tt.not {
+				if containsLabel(items, label) {
+					t.Errorf("%q offered: %v", label, labels(items))
+				}
+			}
+		})
+	}
+	t.Run("a mid-name hit is Partial", func(t *testing.T) {
+		qp := newPanel(t, "")
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home addr|")
+		items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		for _, item := range items {
+			if item.Label == "dbo.PostalAddress" && !item.Partial {
+				t.Fatalf("item = %+v, want Partial", item)
+			}
+		}
+	})
+	t.Run("an open bracket is replaced with the qualified name", func(t *testing.T) {
+		qp := newPanel(t, "")
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home [ph|")
+		items, replace := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if len(items) != 1 || items[0].Text != "dbo.Phone" || replace != len("CREATE TABLE dbo.T (Home ") {
+			t.Fatalf("items %+v at %d", items, replace)
+		}
+	})
+	t.Run("an open bracket after a schema is replaced with the bare name", func(t *testing.T) {
+		qp := newPanel(t, "")
+		lines, row, col := linesAndCursor(t, "CREATE TABLE dbo.T (Home dbo.[ph|")
+		items, replace := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if len(items) != 1 || items[0].Text != "Phone" || replace != len("CREATE TABLE dbo.T (Home dbo.") {
+			t.Fatalf("items %+v at %d", items, replace)
+		}
+	})
+}
+
 // TestSQLCompletionDataTypePositions covers the data-type positions outside
 // CREATE TABLE and routine headers (dataTypePosition): each offers types, not
 // the object list, and the follow-up after a written type.

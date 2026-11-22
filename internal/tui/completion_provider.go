@@ -292,14 +292,16 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 		}
 		tokens, batchStart = sqlparse.TokensFrom(tokens, start), start
 	}
-	if state == sqlparse.LexNormal && !hasQualifier && len(chain) == 0 {
+	// An open '[' reaches the routine and data-type paths too: there it
+	// starts a user-defined type name (keywordCandidates).
+	if !hasQualifier && len(chain) == 0 {
 		if routine := routineCompletionTokens(buf, pre, rowStart+replaceFrom); len(routine) > 0 {
 			if keywords, only := p.keywordCandidates(buf, routine, nil, rowStart+replaceFrom, upTo, prefix); only {
 				return keywords, replaceFrom, post
 			}
 		}
 	}
-	if state == sqlparse.LexNormal && len(chain) == 1 {
+	if len(chain) == 1 {
 		if routine := routineCompletionTokens(buf, pre, rowStart+replaceFrom); len(routine) > 0 {
 			if types, handled := p.qualifiedTypeCandidates(buf, routine, nil, rowStart+replaceFrom, upTo, prefix); handled {
 				return types, replaceFrom, post
@@ -348,9 +350,14 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 		}
 		memberAccess = tok.Kind == sqlparse.TokenDot
 	}
-	if action, objectType, _ := ddlCompletionTarget(tokens, rowStart+replaceFrom); state == sqlparse.LexNormal && len(chain) == 1 &&
+	if action, objectType, _ := ddlCompletionTarget(tokens, rowStart+replaceFrom); len(chain) == 1 &&
 		(action == "CREATE" && objectType == "TABLE" || qualifiedDataTypePosition(buf, stmtTokens, rowStart+replaceFrom)) {
 		if types, handled := p.qualifiedTypeCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix); handled {
+			return types, replaceFrom, post
+		}
+	}
+	if state == sqlparse.LexBracket && !hasQualifier && len(chain) == 0 && !memberAccess {
+		if types, only := p.keywordCandidates(buf[:stmtEnd], stmtTokens, scope.Query, rowStart+replaceFrom, upTo, prefix); only {
 			return types, replaceFrom, post
 		}
 	}

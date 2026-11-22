@@ -40,12 +40,10 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W2 — B2 + B3**: an unqualified user-defined type resolves through the
-  default schema, then dbo; type names match the way catalog names do
-  (contains, bracketed prefix).
+- **W2 — B2 + B3**: done (default schema then dbo; `nameMatch` and open-`[`
+  positions; `TestSQLCompletionUserTypeResolution`; driven on win10cli).
 - **W3 — A1**: split `baseCompletionCandidates` (339 lines) into phases, which
-  B1 (done, W1) and B2 both touch. Do it right after B2 so the split moves
-  tested code.
+  B1 (done, W1) and B2 (done, W2) both touch.
 - **W4 — A3 + N1** (gosmo): `CatalogTypeKind` gets a zero "unknown" value;
   `catalog()` takes a struct; `SystemCatalog` stops sending a query that
   can't return rows. Rerun `TestLiveVersionSweep` on 13.
@@ -64,45 +62,6 @@ commits but the user.
 ---
 
 ## Bugs
-
-### B2 — an unqualified user-defined type resolves to the first schema alphabetically
-
-**Where:** `completion_ddl.go` `ddlTypes.match` (unqualified branch).
-
-**What:** with `a.Dup` (table type) and `dbo.Dup` (alias type), `CREATE TABLE
-dbo.T (Home Dup ‸` offers nothing (it matched `a.Dup`, a table type) and
-`CREATE PROCEDURE dbo.p @rows Dup ‸` offers `READONLY`. SQL Server resolves
-an unqualified type name as system type, then the caller's default schema,
-then dbo — never another schema; so the right answers are `NULL`/`NOT NULL`
-and `AS`/`OUTPUT`. `inv.defaultSchema` is already loaded
-(`completion_inventory.go`).
-
-`ddlTypes.match` also serves `completion_datatypes.go` since W1 (DECLARE,
-`DECLARE @t TABLE (`, ALTER TABLE columns), so the fix reaches those too.
-
-**Fix:** `ddlTypes` carries `defaultSchema` (set in `QueryPanel.ddlTypes`);
-the unqualified branch tries the default schema, then `dbo`, under
-`SameName`, and matches nothing else. Tests: the two probes above, plus a
-type only in a third schema, unqualified (no match: no follow-up offered).
-
-### B3 — user-defined types match by prefix only, and never after a `[`
-
-**Where:** `completion_keywords.go` (`keywordCandidates`, the
-`userTypes.userType` branch) and `completion_ddl.go`
-`qualifiedTypeCandidates`.
-
-**What:** catalog names match by `nameMatch` (contains, ASCII fast path,
-`Partial` for a mid-name hit). User-defined types use
-`strings.HasPrefix(strings.ToUpper(…))` on the label or the bare name, so
-`CREATE TABLE dbo.T (Home addr‸` does not find `dbo.PostalAddress`, and
-`Home [ph‸` finds no `dbo.Phone`. The types are the only names in
-completion that behave this way.
-
-**Fix:** match `typ.Name` with `nameMatch(…, strings.ToLower(prefix))` and
-set `Partial` as `tableCandidates` does; and let a type position reached in
-bracket state (`LexBracket` in `baseCompletionCandidates`, which skips the
-keyword path today) offer the types with the bracket already open. Tests:
-`addr‸`, `[ph‸`, `dbo.addr‸`, `dbo.[ph‸`.
 
 ### B4 — gosmo `BackupRefusal` takes a user database named `TempDB` for tempdb
 
@@ -141,6 +100,9 @@ answers. Observed costs:
   CREATE TABLE only; the routine-signature case reaches the same answer by
   another path (the keyword list). B1 added a third: `qualifiedDataTypePosition`
   widens the `qualifiedTypeCandidates` gate in `baseCompletionCandidates`.
+  B3 (W2) lifted the `LexNormal` gate off the routine and qualified-type
+  calls and added a `LexBracket` call to `keywordCandidates`, which answers
+  only a data-type position there.
 - `slices.Contains([]string{"TABLE", "VIEW", "PROCEDURE", "FUNCTION"}, …)`
   builds a slice per keystroke.
 - `rowStart+replaceFrom` is recomputed in ~10 places.

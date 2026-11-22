@@ -13,9 +13,12 @@ import (
 // keywordCandidates supplements identifiers with SQL keywords and expressions.
 // It recognizes common clauses and DDL headers, not the full T-SQL grammar.
 // sourceComplete reports a keyword-only position, where catalog identifiers
-// are not valid continuations.
+// are not valid continuations. With an open '[' at from (prefix is what
+// follows it), only a data-type position answers, with its user-defined
+// types: no keyword or system type is written bracketed.
 func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, query *sqlparse.Query, from, cursor int, prefix string) (items []editor.CompletionItem, sourceComplete bool) {
-	if sqlparse.HasSigil(prefix) || from < len(buf) && (buf[from] == '[' || buf[from] == '"') ||
+	bracket := from < len(buf) && buf[from] == '['
+	if sqlparse.HasSigil(prefix) || from < len(buf) && buf[from] == '"' ||
 		cursor < len(buf) && (sqltext.IsWordContinue(buf[cursor]) || buf[cursor] == '.') {
 		return nil, false
 	}
@@ -32,6 +35,9 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 			cc.only, cc.choices, columnType = true, types, true
 		}
 	}
+	if bracket && !columnType {
+		return nil, false
+	}
 	// CREATE OR ALTER (2016 SP1) and DROP … IF EXISTS (2016) are at the
 	// supported floor (docs/open-threads.md § Version support), so every
 	// server is offered both; the WINDOW clause is SQL Server 2022's, gated
@@ -39,7 +45,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	f := cc.frame
 	statement, statementStart := keywordDMLStatement(f.tokens)
 	defer func() {
-		if !sourceComplete {
+		if !sourceComplete && !bracket {
 			if cc.scalar && strings.HasPrefix("CASE", strings.ToUpper(prefix)) {
 				items = append(items, caseCompletionItem(buf, cursor))
 			}
@@ -106,13 +112,22 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	if nextToken.Kind == sqltext.KindWord {
 		nextWord = strings.ToUpper(string(buf[nextToken.Start:nextToken.End]))
 	}
-	prefixUpper := strings.ToUpper(prefix)
+	prefixUpper, prefixLower := strings.ToUpper(prefix), strings.ToLower(prefix)
 	for _, candidate := range choices {
 		if typ, ok := userTypes.userType(candidate); ok && columnType {
-			// Typed as either the qualified or the bare name.
-			if strings.HasPrefix(strings.ToUpper(candidate), prefixUpper) || strings.HasPrefix(strings.ToUpper(typ.Name), prefixUpper) {
-				items = append(items, editor.CompletionItem{Text: candidate, Label: candidate, Detail: ddlUserTypeDetail(typ), Soft: prefix == ""})
+			// Typed as the start of the qualified name, or anywhere in the
+			// bare one as catalog names match (nameMatch).
+			match, partial := strings.HasPrefix(strings.ToUpper(candidate), prefixUpper), false
+			if !match {
+				match, partial = nameMatch(typ.Name, prefixLower)
 			}
+			if match {
+				items = append(items, editor.CompletionItem{Text: candidate, Label: candidate, Detail: ddlUserTypeDetail(typ),
+					Soft: prefix == "", Partial: partial})
+			}
+			continue
+		}
+		if bracket {
 			continue
 		}
 		function := strings.HasSuffix(candidate, "(")

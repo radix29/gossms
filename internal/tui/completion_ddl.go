@@ -124,6 +124,10 @@ type ddlTypes struct {
 	fabric    bool
 	user      []gosmo.CatalogType
 	collation string
+	// schemas is where an unqualified type name resolves after the system
+	// types, in the server's order: the login's default schema, then dbo
+	// (completionInventory.qualifierSchemas). Never another schema.
+	schemas []string
 }
 
 // ddlTypes is the type set p's database offers a DDL data-type position.
@@ -134,7 +138,7 @@ func (p *QueryPanel) ddlTypes() ddlTypes {
 	}
 	inv := p.app.completion.inventories[completionInventoryKey(p.conn.Opts, p.database)]
 	if inv != nil && !inv.loading && inv.err == nil && inv.catalog != nil {
-		t.user, t.collation = inv.catalog.Types, inv.collation
+		t.user, t.collation, t.schemas = inv.catalog.Types, inv.collation, inv.qualifierSchemas("")
 	}
 	return t
 }
@@ -190,7 +194,9 @@ func (t ddlTypes) userType(label string) (gosmo.CatalogType, bool) {
 // match finds the data type written at tokens[at]: a system type or an
 // unqualified user-defined one (one token), or schema.type (three). end is
 // the index after it; typ is the user-defined type matched, zero for a
-// system one. Names compare under the database collation.
+// system one. Names compare under the database collation. An unqualified
+// name resolves as the server does: system type, then t.schemas in order —
+// a type of that name in any other schema is not it.
 func (t ddlTypes) match(tokens []sqlparse.Token, at int) (end int, typ gosmo.CatalogType, ok bool) {
 	if at >= len(tokens) || tokens[at].Kind != sqlparse.TokenIdent {
 		return 0, typ, false
@@ -206,9 +212,11 @@ func (t ddlTypes) match(tokens []sqlparse.Token, at int) (end int, typ gosmo.Cat
 	if slices.ContainsFunc(ddlDataTypes(t.fabric), func(name string) bool { return keywordIs(tokens[at], strings.TrimSuffix(name, "(")) }) {
 		return at + 1, typ, true
 	}
-	for _, u := range t.user {
-		if gosmo.SameName(t.collation, u.Name, tokens[at].Text) {
-			return at + 1, u, true
+	for _, schema := range t.schemas {
+		for _, u := range t.user {
+			if gosmo.SameName(t.collation, u.Schema, schema) && gosmo.SameName(t.collation, u.Name, tokens[at].Text) {
+				return at + 1, u, true
+			}
 		}
 	}
 	return 0, typ, false
@@ -239,8 +247,11 @@ func (p *QueryPanel) qualifiedTypeCandidates(buf []rune, tokens []sqlparse.Token
 			continue
 		}
 		handled = true
-		if gosmo.SameName(types.collation, typ.Schema, schema.Text) && strings.HasPrefix(strings.ToUpper(typ.Name), strings.ToUpper(prefix)) {
-			item.Text, item.Soft = gosmo.QuoteNameIfNeeded(typ.Name), prefix == ""
+		if !gosmo.SameName(types.collation, typ.Schema, schema.Text) {
+			continue
+		}
+		if ok, partial := nameMatch(typ.Name, strings.ToLower(prefix)); ok {
+			item.Text, item.Soft, item.Partial = gosmo.QuoteNameIfNeeded(typ.Name), prefix == "", partial
 			items = append(items, item)
 		}
 	}
