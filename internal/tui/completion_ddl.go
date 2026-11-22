@@ -86,7 +86,7 @@ func ddlColumnDefinitionChoices(tokens []sqlparse.Token, types ddlTypes) ([]stri
 // NOT. A table type takes neither.
 func ddlNullabilityChoices(rest []sqlparse.Token, types ddlTypes) []string {
 	end, typ, ok := types.match(rest, 0)
-	if !ok || typ.Kind == gosmo.CatalogTableType {
+	if !ok || typ != nil && typ.Kind == gosmo.CatalogTableType {
 		return nil
 	}
 	end, ok = ddlSkipTypeLength(rest, end)
@@ -193,33 +193,33 @@ func (t ddlTypes) userType(label string) (gosmo.CatalogType, bool) {
 
 // match finds the data type written at tokens[at]: a system type or an
 // unqualified user-defined one (one token), or schema.type (three). end is
-// the index after it; typ is the user-defined type matched, zero for a
+// the index after it; typ is the user-defined type matched, nil for a
 // system one. Names compare under the database collation. An unqualified
 // name resolves as the server does: system type, then t.schemas in order —
 // a type of that name in any other schema is not it.
-func (t ddlTypes) match(tokens []sqlparse.Token, at int) (end int, typ gosmo.CatalogType, ok bool) {
+func (t ddlTypes) match(tokens []sqlparse.Token, at int) (end int, typ *gosmo.CatalogType, ok bool) {
 	if at >= len(tokens) || tokens[at].Kind != sqlparse.TokenIdent {
-		return 0, typ, false
+		return 0, nil, false
 	}
 	if at+2 < len(tokens) && tokens[at+1].Kind == sqlparse.TokenDot && tokens[at+2].Kind == sqlparse.TokenIdent {
-		for _, u := range t.user {
+		for i, u := range t.user {
 			if gosmo.SameName(t.collation, u.Schema, tokens[at].Text) && gosmo.SameName(t.collation, u.Name, tokens[at+2].Text) {
-				return at + 3, u, true
+				return at + 3, &t.user[i], true
 			}
 		}
-		return 0, typ, false
+		return 0, nil, false
 	}
 	if slices.ContainsFunc(ddlDataTypes(t.fabric), func(name string) bool { return keywordIs(tokens[at], strings.TrimSuffix(name, "(")) }) {
-		return at + 1, typ, true
+		return at + 1, nil, true
 	}
 	for _, schema := range t.schemas {
-		for _, u := range t.user {
+		for i, u := range t.user {
 			if gosmo.SameName(t.collation, u.Schema, schema) && gosmo.SameName(t.collation, u.Name, tokens[at].Text) {
-				return at + 1, u, true
+				return at + 1, &t.user[i], true
 			}
 		}
 	}
-	return 0, typ, false
+	return 0, nil, false
 }
 
 // qualifiedTypeCandidates answers "schema.|" where a DDL data type goes: that
@@ -372,7 +372,7 @@ func ddlParameterChoices(buf []rune, tokens []sqlparse.Token, from int, function
 	if !ok {
 		typeEnd = at + 1
 	}
-	if typ.Kind == gosmo.CatalogTableType && typ.Name != "" && typeEnd == len(param) {
+	if typ != nil && typ.Kind == gosmo.CatalogTableType && typeEnd == len(param) {
 		return []string{"READONLY"}, false
 	}
 	afterType := keywordNextToken(buf, param[typeEnd-1].Start).End

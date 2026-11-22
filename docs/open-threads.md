@@ -21,7 +21,7 @@ column fails the whole read and `go test ./...` says nothing. Expected
 refusals: every on-prem major refuses the seven Azure-only reads (six DMVs
 plus database-scoped XEvent sessions); 13 also refuses six 2017+ reads with
 `ErrUnsupportedVersion` (two Query Store wait reads, three external-library
-reads, graph tables). Last run on 13: 439 calls, 0 failed.
+reads, graph tables). Last run on 13 (2026-11-22): 442 calls, 0 failed.
 Compare failures, not call totals (those vary with each instance's
 logins/jobs). Zero failures proves nothing if a read was never reached — log
 the `call` labels to confirm.

@@ -275,7 +275,7 @@ func dataTypeChoices(buf []rune, tokens []sqlparse.Token, from int, types ddlTyp
 		if end < len(rest) {
 			return nil, false, false
 		}
-		if typ.Kind == gosmo.CatalogTableType {
+		if typ != nil && typ.Kind == gosmo.CatalogTableType {
 			return nil, false, true
 		}
 		// Operators are not tokens: "= 1" leaves the tokens as they were.

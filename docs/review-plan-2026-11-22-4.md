@@ -47,9 +47,13 @@ Severity is ordered by what a user can lose, not by effort.
   `positionalCandidates`, `catalogCandidates`, `relationCandidates`; one
   `ddlCompletionTarget` call; driven on win10cli against the pre-split binary,
   identical popups).
-- **W4 — A3 + N1** (gosmo): `CatalogTypeKind` gets a zero "unknown" value;
-  `catalog()` takes a struct; `SystemCatalog` stops sending a query that
-  can't return rows. Rerun `TestLiveVersionSweep` on 13.
+- **W4 — A3 + N1**: done (gosmo `CatalogAliasType = iota + 1`, zero is no
+  kind; `catalog(ctx, catalogQuery{...})`; an empty `types` skips the
+  sys.types read, so `SystemCatalog` sends five result sets;
+  `ddlTypes.match` returns `*gosmo.CatalogType`, nil for a system type, and
+  the dead `Name` test is gone; `TestLiveVersionSweep` on 13: 442 calls, 0
+  failed; driven on win10cli: READONLY, NULL/NOT NULL and `=` after alias,
+  table and system types).
 - **W5 — A2**: `buildSecurablesMatrix`'s 12 positional parameters.
 - **W6 — B4** (gosmo): `BackupRefusal` compares a `Ref`'s name case-blind.
 - **W7 — N2**: nits.
@@ -106,42 +110,9 @@ become constants, and the two apply closures are built inside from
 `target`. The create dialogs' 10-line clones go. Tests: the Securables page
 tests for Database Role, Application Role and their New dialogs.
 
-### A3 — gosmo `CatalogTypeKind`'s zero value is a real kind
-
-**Where:** `~/go/gosmo/catalog.go` (`CatalogAliasType = iota`); consumer
-`completion_ddl.go` `ddlParameterChoices` (`typ.Kind ==
-gosmo.CatalogTableType && typ.Name != ""`).
-
-**What:** a zero `CatalogType` reads as an alias type, so a caller holding
-"no user type matched" must test `Name` to tell it apart. In gossms the
-`Name` test on that line is dead (a table kind is never the zero value), and
-`ddlTypes.match` returns a zero `CatalogType` for a system type, which reads as
-"alias type".
-
-**Fix (breaking):** start the kinds at 1 (`CatalogAliasType CatalogTypeKind =
-iota + 1`), keeping the SQL CASE in `catalogTypesSelect` in step (it writes
-the Go constants); have `ddlTypes.match` return `*gosmo.CatalogType` (nil for
-a system type) and drop the `Name` test. CHANGELOG entry under v0.4.0 when
-the user asks for one.
-
 ---
 
 ## Nits
-
-### N1 — gosmo `catalog()` shape and a query that can't return rows
-
-- `~/go/gosmo/catalog.go`: `catalog(ctx, v, where, fnWhere, aggWhere,
-  typeWhere string)` — four positional where-strings, the next family makes
-  five. A `catalogQuery{views, objects, functions, aggregates, types}` struct
-  literal per caller reads better and can't transpose two arguments.
-- `SystemCatalog` sends `t.is_user_defined = 1 AND t.schema_id = 4`, which its
-  own doc comment says is always empty. Send `1 = 0` (keeps the six result
-  sets in order) or skip the result set when `types` is empty; one less
-  scan of `sys.types` per completion warm-up.
-- After any change to the batch: `TestLiveVersionSweep` on
-  `win10cli\SQL2016` (13), as docs/open-threads.md § Version support asks —
-  the new `sys.types` result set has not been swept yet. Note that
-  `catalog()` is one batch, so a refusal there fails every completion read.
 
 ### N2 — small ones
 
