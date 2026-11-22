@@ -215,9 +215,11 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 	}
 	// DML splitting leaves non-DML headers together. Also recognize the next
 	// statement after a table definition while its leader is only a prefix.
+	// Every DML ender is a tokenizer keyword, and a keyword token's Text is
+	// already upper-cased: no per-token ToUpper on every keystroke.
 	if slices.ContainsFunc(tokens, func(tok sqlparse.Token) bool {
-		return !tok.Quoted && (sqltext.EndsDML(strings.ToUpper(tok.Text)) ||
-			keywordIs(tok, "EXEC") || keywordIs(tok, "EXECUTE"))
+		return tok.Kind == sqlparse.TokenKeyword && sqltext.EndsDML(tok.Text) ||
+			keywordIs(tok, "EXEC") || keywordIs(tok, "EXECUTE")
 	}) {
 		start := keywordStatementStart(buf, tokens[0].Start, rowStart+replaceFrom)
 		current := sqlparse.TokensFrom(tokens, start)

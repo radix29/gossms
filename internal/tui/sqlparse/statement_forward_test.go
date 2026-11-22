@@ -224,3 +224,23 @@ func TestNarrowStatementForwardStopsEarly(t *testing.T) {
 		t.Errorf("%d forward tokens kept, want only the cursor's statement's", len(tail))
 	}
 }
+
+// TestDMLEndersAreKeywords pins what NarrowToDMLStatement and the completion
+// provider's DML-ender scan rely on to test t.Text without upper-casing it:
+// every sqltext.EndsDML word, in any case, is a TokenKeyword whose Text is
+// the upper-case spelling, and a quoted one is not a keyword (O1).
+func TestDMLEndersAreKeywords(t *testing.T) {
+	buf := []rune("declare Create aLTER drop TRUNCATE [create]")
+	toks, _, _, _ := TokenizeRange(buf, 0, len(buf), false)
+	if len(toks) != 6 {
+		t.Fatalf("got %d tokens, want 6: %+v", len(toks), toks)
+	}
+	for _, tok := range toks[:5] {
+		if tok.Kind != TokenKeyword || !sqltext.EndsDML(tok.Text) {
+			t.Errorf("%+v: want a keyword token sqltext.EndsDML accepts", tok)
+		}
+	}
+	if q := toks[5]; q.Kind == TokenKeyword || !q.Quoted {
+		t.Errorf("%+v: a bracketed [create] must be a quoted identifier", q)
+	}
+}

@@ -85,8 +85,9 @@ func readWrite(toks []token, i int) (Write, bool) {
 	}
 	sub := toks[i:]
 	at := dmlTargetIndex(sub)
-	parts, _, ok := nameAt(sub, at)
-	w.Target = objectName(sub, at)
+	n, _, ok := readName(sub, at)
+	parts := n.parts
+	w.Target = n.raw
 	switch {
 	case at < len(sub) && (sub[at].is("OPENQUERY") || sub[at].is("OPENROWSET") || sub[at].is("OPENDATASOURCE")):
 		w.Target, w.Unresolvable = sub[at].word, "a rowset function's target, which the check cannot read"
@@ -147,30 +148,6 @@ func dmlTargetIndex(toks []token) int {
 	return i
 }
 
-// nameAt reads the dotted name starting at toks[i], each part unquoted with
-// its case kept, and the index after it; an omitted part (db..t) is "". ok is false when toks[i]
-// starts no name, or the name runs into one more part than T-SQL allows.
-func nameAt(toks []token, i int) (parts []string, next int, ok bool) {
-	expect := true
-	for ; i < len(toks); i++ {
-		t := toks[i]
-		switch {
-		case expect && t.kind == sqltext.KindWord:
-			parts, expect = append(parts, t.raw), false
-		case expect && t.kind == sqltext.KindQuotedIdent:
-			parts, expect = append(parts, t.word), false
-		case t.punct("."):
-			if expect {
-				parts = append(parts, "")
-			}
-			expect = true
-		default:
-			return parts, i, len(parts) > 0 && !expect
-		}
-	}
-	return parts, i, len(parts) > 0 && !expect
-}
-
 // cteNamed reports whether toks, a statement, opens with WITH and defines a
 // common table expression called name: WITH name [(cols)] AS (…), compared
 // without case, as the server compares identifiers under a case-insensitive
@@ -203,12 +180,6 @@ func cteNamed(toks []token, name string) bool {
 	return false
 }
 
-// aliasName is a FROM-clause table name an alias stands for.
-type aliasName struct {
-	raw   string
-	parts []string
-}
-
 // aliasOf looks in toks, from index from on, for alias defined in the FROM
 // clause of the statement at depth d — FROM or JOIN, or a comma after FROM,
 // then a table name, then [AS] alias — and returns the name it stands for.
@@ -216,7 +187,7 @@ type aliasName struct {
 // result (FROM (SELECT …) alias, CROSS APPLY f(x) alias), whose base tables
 // are unknowable, or stands for two different names; found when one table
 // name was found.
-func aliasOf(toks []token, from, d int, alias string) (name aliasName, derived, found bool) {
+func aliasOf(toks []token, from, d int, alias string) (name dottedName, derived, found bool) {
 	inFrom := false
 	for j := from; j < len(toks); j++ {
 		t := toks[j]
@@ -239,7 +210,7 @@ func aliasOf(toks []token, from, d int, alias string) (name aliasName, derived, 
 			k--
 		}
 		if toks[k].punct(")") {
-			return aliasName{}, true, false
+			return dottedName{}, true, false
 		}
 		if !isIdent(toks[k]) {
 			continue
@@ -256,17 +227,12 @@ func aliasOf(toks []token, from, d int, alias string) (name aliasName, derived, 
 		if p := toks[start-1]; !(p.is("FROM") || p.is("JOIN") || p.punct(",")) {
 			continue
 		}
-		parts, _, ok := nameAt(toks, start)
+		n, _, ok := readName(toks, start)
 		if !ok {
 			continue
 		}
-		var raw strings.Builder
-		for _, t := range toks[start : k+1] {
-			raw.WriteString(t.raw)
-		}
-		n := aliasName{raw: raw.String(), parts: parts}
 		if found && !strings.EqualFold(n.raw, name.raw) {
-			return aliasName{}, true, false
+			return dottedName{}, true, false
 		}
 		name, found = n, true
 	}
@@ -289,11 +255,11 @@ func aliasText(t token) string {
 // one name of one to four parts.
 func NameParts(s string) (parts []string, ok bool) {
 	toks, _ := lexBatch(s, 0)
-	parts, next, ok := nameAt(toks, 0)
-	if !ok || len(parts) > 4 || next != len(toks) {
+	n, next, ok := readName(toks, 0)
+	if !ok || len(n.parts) > 4 || next != len(toks) {
 		return nil, false
 	}
-	return parts, true
+	return n.parts, true
 }
 
 // UseDatabases is every database a USE statement in script names, in order,

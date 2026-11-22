@@ -261,6 +261,9 @@ func TestClassifyReadProcedureQualification(t *testing.T) {
 		{"EXEC [evil].[sp_help]", write},
 		{"EXEC srv.db.evil.sp_who", write},
 		{"INSERT #t EXEC evil.sp_who2", write},
+		// A @variable part is part of the name (readName), not its end:
+		// the procedure is "@x", not sp_who.
+		{"EXEC sp_who.@x", write},
 		{"EXEC sp_who", read},
 		{"EXEC dbo.sp_who", read},
 		{"EXEC db.dbo.sp_who", read},

@@ -1641,3 +1641,25 @@ func BenchmarkCompletion20kNoSemicolon(b *testing.B) {
 		qp.sqlCompletionCandidates(req)
 	}
 }
+
+// BenchmarkCompletionLowercaseLongStatement is one keystroke at the end of a
+// ~2000-token lower-case SELECT (O1): the DML-ender scan over every token
+// before the cursor used to upper-case each one, one allocation per token.
+func BenchmarkCompletionLowercaseLongStatement(b *testing.B) {
+	qp := newTestQueryPanelWithInventory(b, "TestDB", testCustomersOrders())
+	var sb strings.Builder
+	sb.WriteString("select c.name from dbo.customers c where c.id = 0")
+	for i := range 250 {
+		fmt.Fprintf(&sb, " and c.name <> 'x%d'", i)
+	}
+	sb.WriteString(" and c.")
+	line := []rune(sb.String())
+	req := completionReq([][]rune{line}, 0, len(line))
+	if items, _ := qp.sqlCompletionCandidates(req); !containsLabel(items, "Email") {
+		b.Fatalf("no Email column offered: %v", labels(items))
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		qp.sqlCompletionCandidates(req)
+	}
+}
