@@ -809,6 +809,38 @@ func TestSQLCompletionSysSchemaAliasColumnsResolve(t *testing.T) {
 	}
 }
 
+// TestSQLCompletionInformationSchemaViews pins I1: SystemCatalog carries
+// INFORMATION_SCHEMA's views beside sys's, so the schema completes, its views
+// complete after it (whatever its case), and a view's columns resolve.
+func TestSQLCompletionInformationSchemaViews(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	sysKey := sysCompletionInventoryKey(qp.conn.Opts)
+	cat := sysCatalogFixture()
+	cat.Schemas = []string{"INFORMATION_SCHEMA", "sys"}
+	cat.Objects = append([]gosmo.CatalogObject{{
+		ObjectID: 200, Schema: "INFORMATION_SCHEMA", Name: "TABLES", Type: gosmo.CatalogView,
+		Columns: []gosmo.CatalogColumn{
+			{Name: "TABLE_SCHEMA", DataType: "nvarchar"},
+			{Name: "TABLE_NAME", DataType: "sysname"},
+		},
+	}}, cat.Objects...)
+	qp.app.completion.sysInventories[sysKey] = newCompletionInventory(cat)
+
+	for _, tc := range []struct{ text, want string }{
+		{"SELECT * FROM INFO|", "INFORMATION_SCHEMA"},
+		{"SELECT * FROM INFORMATION_SCHEMA.|", "INFORMATION_SCHEMA.TABLES"},
+		{"SELECT * FROM information_schema.TAB|", "INFORMATION_SCHEMA.TABLES"},
+		{"SELECT t.| FROM INFORMATION_SCHEMA.TABLES t", "TABLE_NAME"},
+		{"SELECT INFORMATION_SCHEMA.TABLES.| FROM INFORMATION_SCHEMA.TABLES", "TABLE_NAME"},
+	} {
+		lines, row, col := linesAndCursor(t, tc.text)
+		items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if !containsLabel(items, tc.want) {
+			t.Errorf("%q: items %v missing %q", tc.text, labels(items), tc.want)
+		}
+	}
+}
+
 func TestSQLCompletionSysSchemaListedButObjectsNotUnqualified(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	sysKey := sysCompletionInventoryKey(qp.conn.Opts)

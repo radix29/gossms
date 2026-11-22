@@ -77,6 +77,7 @@ var continuesAfter = map[string]bool{
 var fromClauseLeaders = map[string]bool{
 	"SELECT": true, "FROM": true, "WITH": true, "INSERT": true, "UPDATE": true, "DELETE": true, "MERGE": true,
 	"CREATE": true, "ALTER": true, "DROP": true, "RESTORE": true, "FETCH": true, "BULK": true,
+	"COPY": true,
 }
 
 // notBefore names, per leader, the next tokens that make it no statement:
@@ -90,13 +91,14 @@ var notBefore = map[string]map[string]bool{
 }
 
 // onlyBefore names, per leader, the only next tokens that make it a statement:
-// DISABLE/ENABLE TRIGGER, ADD SIGNATURE, COPY INTO. Elsewhere they are clauses
+// DISABLE/ENABLE TRIGGER, ADD [COUNTER] SIGNATURE, ADD SENSITIVITY
+// CLASSIFICATION, COPY INTO. Elsewhere they are clauses
 // (ALTER TABLE ... ADD c int) or plain names. ENABLE, DISABLE and ADD are never
 // a statement inside an ALTER, whose own clauses they are.
 var onlyBefore = map[string]map[string]bool{
 	"ENABLE":  {"TRIGGER": true},
 	"DISABLE": {"TRIGGER": true},
-	"ADD":     {"SIGNATURE": true},
+	"ADD":     {"SIGNATURE": true, "COUNTER": true, "SENSITIVITY": true},
 	"COPY":    {"INTO": true},
 }
 

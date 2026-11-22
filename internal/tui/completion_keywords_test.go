@@ -683,31 +683,23 @@ func TestSQLCompletionDDLDialects(t *testing.T) {
 	}
 }
 
+// CREATE OR ALTER (2016 SP1) and DROP … IF EXISTS (2016) are at the supported
+// floor, so they are offered whatever version the server reports — below the
+// floor too, where gossms warns at connect rather than trimming completions.
 func TestSQLCompletionDDLSyntaxVersions(t *testing.T) {
-	for _, tt := range []struct {
-		version           string
-		orAlter, ifExists bool
-	}{
-		{"12.0.2000.0", false, false},
-		{"13.0.1601.5", false, true},
-		{"13.0.4001.0", true, true},
-		{"14.0.1000.169", true, true},
-	} {
-		t.Run(tt.version, func(t *testing.T) {
-			sc, _ := newGConnAtVersion(t, tt.version)
+	for _, version := range []string{"12.0.2000.0", "13.0.1601.5", "13.0.4001.0", "14.0.1000.169"} {
+		t.Run(version, func(t *testing.T) {
+			sc, _ := newGConnAtVersion(t, version)
 			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 			qp.conn.Server = sc.Server
-			for _, syntax := range []struct {
-				sql, label string
-				want       bool
-			}{
-				{"CREATE or|", "OR ALTER", tt.orAlter},
-				{"DROP TABLE if|", "IF EXISTS", tt.ifExists},
+			for _, syntax := range []struct{ sql, label string }{
+				{"CREATE or|", "OR ALTER"},
+				{"DROP TABLE if|", "IF EXISTS"},
 			} {
 				lines, row, col := linesAndCursor(t, syntax.sql)
 				items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
-				if got := containsLabel(items, syntax.label); got != syntax.want {
-					t.Fatalf("%s present=%v, want %v in %v", syntax.label, got, syntax.want, labels(items))
+				if !containsLabel(items, syntax.label) {
+					t.Fatalf("%s missing from %v", syntax.label, labels(items))
 				}
 			}
 		})

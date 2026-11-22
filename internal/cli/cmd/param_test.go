@@ -154,3 +154,67 @@ func TestParseParamTooLong(t *testing.T) {
 		}
 	}
 }
+
+// A length-less string or binary type is length 1 in a declaration: the
+// server would receive the value's first character.
+func TestParseParamRefusesALengthlessType(t *testing.T) {
+	for _, typ := range []string{"char", "varchar", "nchar", "nvarchar", "binary", "varbinary", "NVARCHAR"} {
+		value := "Smith"
+		if strings.HasSuffix(strings.ToLower(typ), "binary") {
+			value = "0xAABB"
+		}
+		_, err := parseParam("n=" + value + ":" + typ)
+		want := strings.ToLower(typ) + " needs a length"
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", typ, err, want)
+		}
+	}
+	for _, raw := range []string{"n=S:nvarchar(1)", "n=S:char(1)", "b=0xAA:binary(1)"} {
+		if _, err := parseParam(raw); err != nil {
+			t.Errorf("%q: %v", raw, err)
+		}
+	}
+}
+
+// The server rounds a decimal with more places than its scale, silently; a
+// bare decimal is decimal(18,0).
+func TestParseParamDecimalFits(t *testing.T) {
+	for _, tt := range []struct {
+		raw  string
+		want string // "" accepted, else a substring of the error
+	}{
+		{"d=12:decimal", ""},
+		{"d=12.5:decimal", "1 decimal place; decimal(18,0) keeps 0"},
+		{"d=12.0:decimal", ""}, // a trailing zero changes nothing
+		{"d=123.45:decimal(5,2)", ""},
+		{"d=123.456:decimal(5,2)", "3 decimal places"},
+		{"d=1234.5:decimal(5,2)", "4 digits before the point; decimal(5,2) keeps 3"},
+		{"d=0123.45:decimal(5,2)", ""}, // leading zero
+		{"d=999:numeric(3)", ""},
+		{"d=1000:numeric(3)", "numeric(3,0) keeps 3"},
+		{"d=-123.45:decimal(5,2)", ""},
+		{"d=-1234.5:decimal(5,2)", "4 digits"},
+		{"d=+123.45:decimal(5,2)", ""},
+		{"d= 1.5 :decimal(2,1)", ""},
+		{"d=.5:decimal(1,1)", ""},
+		{"d=5.:decimal(1)", ""},
+		{"d=" + strings.Repeat("9", 38) + ":decimal(38)", ""},
+		{"d=1e3:decimal", ""},      // not a decimal literal: the server refuses it
+		{"d=1,5:decimal(9,2)", ""}, // likewise
+		{"d=1:decimal(0)", "wrong arguments"},
+		{"d=1:decimal(39)", "wrong arguments"},
+		{"d=1:decimal(2,3)", "wrong arguments"},
+	} {
+		_, err := parseParam(tt.raw)
+		switch {
+		case tt.want == "" && err != nil:
+			t.Errorf("%q: %v", tt.raw, err)
+		case tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)):
+			t.Errorf("%q: %v, want %q", tt.raw, err, tt.want)
+		case err != nil:
+			if e, ok := err.(*output.Error); !ok || e.Code != output.CodeUsageError {
+				t.Errorf("%q: not a usage error: %v", tt.raw, err)
+			}
+		}
+	}
+}

@@ -24,7 +24,7 @@ var readLeaders = map[string]bool{
 // containing one anywhere outside literals, comments and quoted identifiers —
 // so one nested behind IF, ELSE, WHILE or BEGIN, where the statement splitter
 // does not cut, still counts. A verb that is also a common name (SEND, MOVE,
-// GET, END, ADD) is listed only as the phrase it begins, as NEXT VALUE FOR is,
+// GET, END, ADD, COPY) is listed only as the phrase it begins, as NEXT VALUE FOR is,
 // so a column named after it stays read; a single word that is a column name
 // over-classifies, and the reason names the word. The longest phrase at a
 // position wins.
@@ -43,10 +43,12 @@ var verbs = map[string]spec.Class{
 	"SEND ON CONVERSATION": spec.ClassWrite, "MOVE CONVERSATION": spec.ClassWrite,
 	"GET CONVERSATION": spec.ClassWrite, "END CONVERSATION": spec.ClassWrite,
 	"BEGIN DIALOG": spec.ClassWrite, "BEGIN CONVERSATION": spec.ClassWrite,
+	"COPY INTO": spec.ClassWrite, // Fabric Warehouse and Synapse's bulk load
 
 	"CREATE": spec.ClassDDL, "ALTER": spec.ClassDDL, "DROP": spec.ClassDDL,
 	"TRUNCATE": spec.ClassDDL, "DISABLE": spec.ClassDDL, "ENABLE": spec.ClassDDL,
 	"ADD SIGNATURE": spec.ClassDDL, "ADD COUNTER SIGNATURE": spec.ClassDDL,
+	"ADD SENSITIVITY CLASSIFICATION": spec.ClassDDL,
 
 	"KILL": spec.ClassAdmin, "SHUTDOWN": spec.ClassAdmin, "BACKUP": spec.ClassAdmin,
 	"RESTORE": spec.ClassAdmin, "GRANT": spec.ClassAdmin, "DENY": spec.ClassAdmin,

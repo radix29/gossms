@@ -525,8 +525,7 @@ func (p *QueryPanel) builtinCompletionSupported(label string) bool {
 	if builtin.since == 0 || p.conn.Server == nil {
 		return true
 	}
-	info := p.conn.Server.Info()
-	return info == nil || info.IsAzure() || info.VersionMajor == 0 || info.VersionMajor >= builtin.since
+	return p.conn.Server.Info().AtLeast(builtin.since)
 }
 
 func scalarAssignmentPosition(buf []rune, tokens []sqlparse.Token, from int) bool {

@@ -95,7 +95,11 @@ support); this section covers only the environment.
   owner, and before a test timeout was armed, so no stack); 16 later runs and
   every run since the owner change did not reproduce it. Likely the probe's
   own format listener, unproven. If a Windows user reports a frozen copy,
-  suspect this first.
+  suspect this first. Since 2026-11-22 such a hang no longer takes Paste
+  with it: tuikit's `Dispatcher.Paste` waits at most `toolTimeout + 1s` for
+  earlier copies, then reads what the clipboard holds (later copies still
+  queue behind the stuck one). Not yet re-run on win10cli with a clipboard
+  manager.
 
 ## Format Document: what is left
 

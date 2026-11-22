@@ -291,15 +291,32 @@ func moduleStatement(toks []token) Statement {
 		i++
 	}
 	st.Object = objectName(toks, i+1)
-	// A server-scoped DDL trigger: CREATE TRIGGER t ON ALL SERVER.
-	if obj == "TRIGGER" {
-		for j := i + 1; j+2 < len(toks) && !toks[j].is("AS"); j++ {
-			if toks[j].is("ON") && toks[j+1].is("ALL") && toks[j+2].is("SERVER") {
-				st.Class, st.Reason = spec.ClassAdmin, "a server-scoped trigger"
-			}
-		}
+	if obj == "TRIGGER" && onAllServer(toks, i+1) {
+		st.Class, st.Reason = spec.ClassAdmin, serverTriggerReason
 	}
 	return st
+}
+
+// serverTriggerReason is the reason a statement on a server-scoped trigger
+// gives for its admin class.
+const serverTriggerReason = "a server-scoped trigger"
+
+// onAllServer reports whether the trigger name(s) starting at toks[from] are
+// followed by ON ALL SERVER: CREATE TRIGGER t ON ALL SERVER, DROP TRIGGER
+// [IF EXISTS] a, b ON ALL SERVER, DISABLE TRIGGER ALL ON ALL SERVER. Such a
+// trigger is often an audit or a LOGON access control, so creating, dropping
+// or switching one off is administration, not ddl.
+func onAllServer(toks []token, from int) bool {
+	for j := from; j < len(toks); j++ {
+		switch t := toks[j]; {
+		case t.is("ON"):
+			return j+2 < len(toks) && toks[j+1].is("ALL") && toks[j+2].is("SERVER")
+		case t.kind == sqltext.KindWord || t.kind == sqltext.KindQuotedIdent || t.punct(".") || t.punct(","):
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // objectName reads the possibly dotted name starting at toks[i], as written;
@@ -427,6 +444,9 @@ func leaderRule(st *Statement, toks []token, first bool) {
 		st.Class, st.Leader, st.Object = spec.ClassDDL, "TRUNCATE TABLE", objectName(toks, 2)
 	case "DISABLE", "ENABLE":
 		st.Class, st.Leader = spec.ClassDDL, w+" TRIGGER"
+		if next(1).is("TRIGGER") && onAllServer(toks, 2) {
+			st.Class, st.Reason = spec.ClassAdmin, serverTriggerReason
+		}
 	case "BACKUP", "RESTORE":
 		st.Class, st.Flags = spec.ClassAdmin, FlagNotInTransaction
 		if n := next(1); n.kind == sqltext.KindWord {
@@ -461,6 +481,13 @@ func leaderRule(st *Statement, toks []token, first bool) {
 		setStatement(st, toks)
 	default:
 		if verbLeader(st, toks) { // GRANT, KILL, SEND ON CONVERSATION, …
+			// ADD SIGNATURE TO p, ADD SENSITIVITY CLASSIFICATION TO s.t.c, COPY INTO t
+			switch n := len(strings.Fields(st.Leader)); {
+			case w == "ADD" && next(n).is("TO"):
+				st.Object = objectName(toks, n+1)
+			case w == "COPY":
+				st.Object = objectName(toks, n)
+			}
 			return
 		}
 		if readLeaders[w] {
@@ -567,6 +594,9 @@ func createAlterDrop(st *Statement, toks []token) {
 	if adminObjects[obj] {
 		st.Class = spec.ClassAdmin
 		st.Reason = verb + " " + obj + " is administration"
+	}
+	if obj == "TRIGGER" && onAllServer(toks, i+1) {
+		st.Class, st.Reason = spec.ClassAdmin, serverTriggerReason
 	}
 	if notInTransactionObjects[obj] {
 		st.Flags |= FlagNotInTransaction
@@ -889,6 +919,12 @@ func floor(st *Statement, toks []token) {
 				st.raise(c, "keyword "+w+" "+obj+at)
 				continue
 			}
+		}
+		// DROP/DISABLE/ENABLE TRIGGER … ON ALL SERVER merged or nested behind IF
+		// is admin, as the leader rules make it.
+		if (w == "DROP" || w == "DISABLE" || w == "ENABLE") && next.is("TRIGGER") && onAllServer(toks, i+2) {
+			st.raise(spec.ClassAdmin, serverTriggerReason+at)
+			continue
 		}
 		st.raise(c, "keyword "+v.name+at)
 	}

@@ -189,6 +189,8 @@ func (s *dataSource) resolve(ctx context.Context, arg string, res *output.Result
 	switch s.kind = kindOfDesc(s.obj.TypeDesc); s.kind {
 	case kindTable, kindView:
 		return nil
+	case kindSystemTable:
+		return systemTableError(s.obj)
 	}
 	hint := "Give a table or a view."
 	if s.obj.Type == "SN" {

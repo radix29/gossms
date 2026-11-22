@@ -45,6 +45,8 @@ func (d Deps) objectDescribe(ctx context.Context, inv *spec.Invocation) (*output
 		describe = describeSynonym
 	case kindSequence:
 		describe = describeSequence
+	case kindSystemTable:
+		return res, systemTableError(o)
 	}
 	if describe != nil {
 		if err := describe(ctx, dbase, o, res); err != nil {

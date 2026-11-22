@@ -138,6 +138,21 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"IF 1 = 1 UPDATE STATISTICS t WITH SAMPLE 10 PERCENT", ddl},
 		{"BEGIN TRY UPDATE STATISTICS t END TRY BEGIN CATCH END CATCH", ddl},
 		{"ADD SIGNATURE TO p BY CERTIFICATE c", ddl},
+		// B2 (review 2026-11-22): a database or table trigger stays ddl.
+		{"DROP TRIGGER tr", ddl},
+		{"DROP TRIGGER IF EXISTS s.a, s.b", ddl},
+		{"DROP TRIGGER tr ON DATABASE", ddl},
+		{"DISABLE TRIGGER tr ON DATABASE", ddl},
+		{"ENABLE TRIGGER ALL ON DATABASE", ddl},
+		{"ALTER TABLE t DISABLE TRIGGER ALL", ddl},
+		// B3: a sensitivity label is ddl (DROP SENSITIVITY CLASSIFICATION is);
+		// COPY INTO is one write statement, its FROM included.
+		{"ADD SENSITIVITY CLASSIFICATION TO dbo.t.c WITH (LABEL = 'x')", ddl},
+		{"SELECT 1; ADD SENSITIVITY CLASSIFICATION TO dbo.t.c, dbo.t.d WITH (RANK = HIGH)", ddl},
+		{"SELECT 1\nADD SENSITIVITY CLASSIFICATION TO dbo.t.c WITH (LABEL = 'x')", ddl},
+		{"IF 1=1 ADD SENSITIVITY CLASSIFICATION TO dbo.t.c WITH (LABEL = 'x')", ddl},
+		{"DROP SENSITIVITY CLASSIFICATION FROM dbo.t.c", ddl},
+		{"COPY INTO t FROM 'https://x/y.csv' WITH (FILE_TYPE = 'CSV')", write},
 
 		// admin
 		{"KILL 53", admin},
@@ -199,6 +214,20 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"BEGIN TRY MOVE CONVERSATION @a TO @b END TRY BEGIN CATCH END CATCH", write},
 		{"SEND ON CONVERSATION @h ('x')", write},
 		{"CREATE TRIGGER tr ON ALL SERVER FOR CREATE_DATABASE AS PRINT 1", admin},
+		// B2 (review 2026-11-22): dropping or switching off a server trigger (a
+		// LOGON audit or access control) is admin, as creating one is.
+		{"CREATE OR ALTER TRIGGER [tr] ON ALL SERVER FOR LOGON AS ROLLBACK", admin},
+		{"DROP TRIGGER tr ON ALL SERVER", admin},
+		{"DROP TRIGGER IF EXISTS tr ON ALL SERVER", admin},
+		{"DROP TRIGGER a, [b] ON ALL SERVER", admin},
+		{"DISABLE TRIGGER tr ON ALL SERVER", admin},
+		{"enable trigger [tr] on all server", admin},
+		{"DISABLE TRIGGER ALL ON ALL SERVER", admin},
+		{"ENABLE TRIGGER a, b ON ALL SERVER", admin},
+		{"IF 1=1 DISABLE TRIGGER tr ON ALL SERVER", admin},
+		{"IF 1=1 DROP TRIGGER tr ON ALL SERVER", admin},
+		{"BEGIN TRY ENABLE TRIGGER ALL ON ALL SERVER END TRY BEGIN CATCH END CATCH", admin},
+		{"SELECT 1; DROP TRIGGER tr ON ALL SERVER", admin},
 		{"INSERT #t EXEC sp_configure", admin},
 		{"EXEC sp_addmessage 50001, 16, N'x'", admin},
 	} {
@@ -304,7 +333,8 @@ func TestClassifyMergedStatementsAreFloored(t *testing.T) {
 		{"SELECT 1\nENABLE TRIGGER tr ON t", "", ddl},
 		{"PRINT 'x'\nWRITETEXT t.c @p 'x'", "", write},
 		{"SELECT 1\nUPDATETEXT t.c @p 0 0 'x'", "", write},
-		{"SET NOCOUNT ON\nDISABLE TRIGGER tr ON ALL SERVER", "", ddl},
+		{"SET NOCOUNT ON\nDISABLE TRIGGER tr ON ALL SERVER", "", admin},
+		{"SELECT 1\nDROP TRIGGER tr ON ALL SERVER", "", admin},
 		{"PRINT 1 THROW 50000, 'x', 1", "", read},
 		{"IF UPDATE(a) PRINT 1", "", read},
 		// INTO in a subquery is no SELECT … INTO, but still floored.
@@ -594,6 +624,9 @@ func TestClassifyReasons(t *testing.T) {
 		{"EXEC sp_rename 'd', 'd2', 'DATABASE'", "sp_rename @objtype DATABASE renames a database"},
 		{"EXEC sp_send_dbmail", "procedure sp_send_dbmail is an msdb procedure, administration"},
 		{"RAISERROR('x', 16, 1) WITH LOG", "RAISERROR … WITH LOG writes the server error log (line 1)"},
+		{"DROP TRIGGER tr ON ALL SERVER", "a server-scoped trigger"},
+		{"DISABLE TRIGGER tr ON ALL SERVER", "a server-scoped trigger"},
+		{"SELECT 1 AS\nDROP TRIGGER tr ON ALL SERVER", "a server-scoped trigger (line 2)"},
 	} {
 		if got := Classify(tt.script).Statements[0].Reason; got != tt.want {
 			t.Errorf("Classify(%q) reason = %q, want %q", tt.script, got, tt.want)

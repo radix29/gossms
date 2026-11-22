@@ -75,6 +75,40 @@ func TestQueryClassifyAllow(t *testing.T) {
 	}
 }
 
+// B2/B3 of the 2026-11-22 review: a server trigger's DROP/DISABLE is admin,
+// so --allow ddl blocks it; ADD SENSITIVITY CLASSIFICATION is ddl, so --allow
+// write blocks it; COPY INTO is one write statement naming its target.
+func TestQueryClassifyServerTriggerAndSensitivity(t *testing.T) {
+	for _, tt := range []struct{ script, allow, detected, stmt string }{
+		{"DROP TRIGGER audit_logon ON ALL SERVER", "ddl", "admin", "DROP TRIGGER audit_logon (line 1): a server-scoped trigger"},
+		{"IF 1=1 DISABLE TRIGGER ALL ON ALL SERVER", "ddl", "admin", "DISABLE TRIGGER (line 1): a server-scoped trigger"},
+		{"ADD SENSITIVITY CLASSIFICATION TO dbo.t.c WITH (LABEL = 'x')", "write", "ddl",
+			"ADD SENSITIVITY CLASSIFICATION dbo.t.c (line 1)"},
+	} {
+		r := runWith(t, "", nil, "query", "classify", "-Q", tt.script, "--allow", tt.allow)
+		if r.exit != 7 {
+			t.Errorf("%q --allow %s: exit %d\n%s", tt.script, tt.allow, r.exit, r.stdout)
+			continue
+		}
+		for _, want := range []string{"DETECTED_CLASS: " + tt.detected + "\n", "STATEMENTS: " + tt.stmt + "\n"} {
+			if !strings.Contains(r.stdout, want) {
+				t.Errorf("%q: lacks %q:\n%s", tt.script, want, r.stdout)
+			}
+		}
+	}
+	r := runWith(t, "", nil, "query", "classify", "-Q", "COPY INTO dbo.t FROM 'https://x/y.csv' WITH (FILE_TYPE = 'CSV')", "-o", "json")
+	if r.exit != 0 {
+		t.Fatalf("COPY INTO: exit %d\n%s%s", r.exit, r.stdout, r.stderr)
+	}
+	env := envelope(t, r.stdout)
+	if data := env["data"].(map[string]any); data["detectedClass"] != "write" || data["statementCount"] != "1" {
+		t.Errorf("COPY INTO data: %v", data)
+	}
+	if row := env["resultSets"].([]any)[0].(map[string]any)["rows"].([]any)[0].([]any); row[4] != "COPY INTO" || row[5] != "dbo.t" {
+		t.Errorf("COPY INTO row: %v", row)
+	}
+}
+
 // Exactly one SQL source; each decodes to the same script.
 func TestSQLInput(t *testing.T) {
 	const script = "UPDATE t SET a = N'é'"

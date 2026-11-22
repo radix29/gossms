@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/sqltext"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/tuikit/controls/editor"
@@ -220,13 +221,10 @@ func (p *QueryPanel) sqlCompletionCandidates(req editor.CompletionRequest) (item
 				keywords[i] = reuseDistinctCompletionTail(keywords[i], buf, upTo)
 			}
 		}
-		if p.conn.Server != nil {
-			info := p.conn.Server.Info()
-			if info != nil && !info.IsAzure() && info.VersionMajor != 0 && info.VersionMajor < 16 {
-				keywords = slices.DeleteFunc(keywords, func(item editor.CompletionItem) bool {
-					return strings.Contains(item.Label, "DISTINCT FROM")
-				})
-			}
+		if p.conn.Server != nil && !p.conn.Server.Info().AtLeast(gosmo.SQLServer2022) {
+			keywords = slices.DeleteFunc(keywords, func(item editor.CompletionItem) bool {
+				return strings.Contains(item.Label, "DISTINCT FROM")
+			})
 		}
 		if sourceComplete {
 			return keywords, replaceFrom

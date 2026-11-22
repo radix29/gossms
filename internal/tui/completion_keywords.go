@@ -32,14 +32,10 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 			context.only, context.choices, columnType = true, types, true
 		}
 	}
-	orAlter, ifExists, namedWindow := true, true, true
-	if p.conn.Server != nil {
-		if info := p.conn.Server.Info(); info != nil && !info.IsAzure() && info.VersionMajor != 0 {
-			ifExists = info.VersionMajor >= 13
-			orAlter = info.VersionMajor > 13 || info.VersionMajor == 13 && info.VersionBuild >= 4001
-			namedWindow = info.VersionMajor >= 16
-		}
-	}
+	// CREATE OR ALTER (2016 SP1) and DROP … IF EXISTS (2016) are at the
+	// supported floor (docs/open-threads.md § Version support), so every
+	// server is offered both; the WINDOW clause is SQL Server 2022's.
+	namedWindow := p.conn.Server == nil || p.conn.Server.Info().AtLeast(gosmo.SQLServer2022)
 	f := context.frame
 	statement, statementStart := keywordDMLStatement(f.tokens)
 	defer func() {
@@ -96,29 +92,23 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 					choices = append(choices, "TYPE", "SYNONYM")
 				}
 			}
-			if keywordIs(last, "CREATE") && orAlter {
+			if keywordIs(last, "CREATE") {
 				choices = append(choices, "OR ALTER")
 			}
 		case len(f.tokens) == 2 && keywordIs(f.tokens[0], "CREATE") && keywordIs(last, "OR"):
 			sourceComplete = true
-			if orAlter {
-				choices = []string{"ALTER"}
-			}
+			choices = []string{"ALTER"}
 		case len(f.tokens) == 3 && keywordIs(f.tokens[0], "CREATE") && keywordIs(f.tokens[1], "OR") && keywordIs(last, "ALTER"):
 			sourceComplete = true
-			if orAlter {
-				choices = []string{"VIEW", "PROCEDURE", "FUNCTION"}
-				if !fabric {
-					choices = append(choices, "TRIGGER")
-				}
+			choices = []string{"VIEW", "PROCEDURE", "FUNCTION"}
+			if !fabric {
+				choices = append(choices, "TRIGGER")
 			}
-		case ddlAction == "DROP" && len(ddlTail) == 0 && ifExists:
+		case ddlAction == "DROP" && len(ddlTail) == 0:
 			choices = []string{"IF EXISTS"}
 		case ddlAction == "DROP" && len(ddlTail) == 1 && keywordIs(ddlTail[0], "IF"):
 			sourceComplete = true
-			if ifExists {
-				choices = []string{"EXISTS"}
-			}
+			choices = []string{"EXISTS"}
 		case clause == "" && keywordIs(f.tokens[0], "UPDATE") && complete &&
 			keywordAliasPosition(keywordProjection(f.tokens[1:]), f.start):
 			choices, sourceComplete = []string{"SET"}, true
@@ -900,7 +890,7 @@ const (
 type completionBuiltin struct {
 	name        string
 	kind        builtinKind
-	since       int
+	since       gosmo.ServerVersion
 	noWarehouse bool
 }
 
