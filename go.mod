@@ -10,7 +10,7 @@ require (
 	github.com/microsoft/go-mssqldb v1.12.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/radix29/gosmo v0.3.0
-	github.com/radix29/gotuipic v0.0.3
+	github.com/radix29/gotuipic v0.0.4
 	github.com/radix29/tuikit v0.0.3
 	golang.org/x/image v0.48.0
 	golang.org/x/term v0.48.0
