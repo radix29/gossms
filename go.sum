@@ -50,8 +50,8 @@ github.com/microsoft/go-mssqldb v1.12.0 h1:Jwg/8jz2MKlFOYf4Oj7wMOQuTpCLrP4PIx0aI
 github.com/microsoft/go-mssqldb v1.12.0/go.mod h1:iYsISdcqI4Tf8x/JwwkHfBu5pxtSD6lSJB8tCrOoo6E=
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c/go.mod h1:7rwL4CYBLnjLxUqIJNnCWiEdr3bn6IUYi15bNlnbCCU=
-github.com/radix29/gotuipic v0.0.2 h1:xUuRoaYqHht+YFSymH8sWXYnuSlcN26vfTbmgeX1WTU=
-github.com/radix29/gotuipic v0.0.2/go.mod h1:D9UKJVYbXUntvQ+ZPSHr3yGRJjQjlh0ZCmhKi5y5i6E=
+github.com/radix29/gotuipic v0.0.3 h1:fTkQTW9aYDQ6TzYcAT6JEMUkcPWD/xZpsufElGz97MA=
+github.com/radix29/gotuipic v0.0.3/go.mod h1:6aNtZpYYOJvDUl/pV/iPZ9zJU0GoDMNidM8rcGK5kxA=
 github.com/shopspring/decimal v1.6.0 h1:DcTwjCj4tJPLuGZYsR9W0hyX9pQwMIkdo26Ig1T9xX4=
 github.com/shopspring/decimal v1.6.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
