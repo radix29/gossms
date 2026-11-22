@@ -94,7 +94,7 @@ func xePropsConn(t *testing.T, name string) (*db.ServerConn, *gFake) {
 	responses := xeSessionByName(name)
 	responses = append(responses, xeCatalogResponses()...)
 	responses = append(responses, xeEventColumnResponses()...)
-	responses = append(responses, gEmpty("sys.dm_xe_object_columns", "sys.dm_os_sys_memory", "cpu_count, hyperthread_ratio")...) // the memory read is the status bar's, racing the test
+	responses = append(responses, gEmpty("sys.dm_xe_object_columns")...)
 	return newGConn(t, responses...)
 }
 

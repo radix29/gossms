@@ -2665,3 +2665,8 @@ down.
   (`probeUmask`), not read with `syscall.Umask`: that is POSIX-only (a
   `runtime.GOOS`/build-tag split) and sets the mask to read it, racing every
   concurrent create. A failed probe means no mask.
+- **`fileutil.RemoveStaleTemps` may delete a user's own `x.sql.tmp123`**
+  older than `StaleTempAge` beside a file gossms saves: the name is exactly
+  the `CreateTemp` pattern a crashed save leaves, and the two can't be told
+  apart. Not tracked as a bug: such a name is vanishingly rare, while each
+  leftover of `config.json` is a full copy with encrypted passwords.

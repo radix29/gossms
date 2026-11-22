@@ -106,6 +106,15 @@ all with a catch-all rule) and wait for the load to finish
 with no rules, its read failed the test only when it beat the test's end:
 `TestPropertiesApplyReloadsTheFolderListingTheObject` failed about 1 run in 20.
 
+**With a Detail Browser installed, every selection starts a fetch** — and
+`AddRoot` selects the server node, whose fetch ends on an unscripted
+disk-volume read. Selecting another node cancels it, but not always before
+that read: `TestSessionPropertiesApplyReloadsTheSessionsTargets` failed about
+1 run in 300. Build the tree first, then set `a.detailBrowser`
+(`newReloadTree`, `xeSavedTree`). A flake's stray read: hang a temporary
+`OnFunc` rule on its text that logs `debug.Stack()` — the driver runs on the
+caller's goroutine, so the stack names the load.
+
 **A test package that can save config sandboxes `os.UserConfigDir` in
 `TestMain`** (`internal/tui/main_test.go` sets `XDG_CONFIG_HOME`, `HOME`,
 `AppData` to a temp dir). Without it, any `saveConfig` writes the developer's
