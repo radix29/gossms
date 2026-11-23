@@ -166,6 +166,14 @@ Settled design: `docs/decisions.md` § Format Document.
   Windows transient (a handle open without FILE_SHARE_DELETE, on either
   path); `WithLock`'s create no longer has this (it checks the lock exists).
 
+## Code size: what is left
+
+- **Five property-page builders run past 200 lines** (2026-11-23 review N1):
+  `pageRGGroups` (324), `pageMailProfiles` (264), `pageMailAccounts` (218),
+  `buildSymmetricKeyEncryptionForm` (218), `pageLoginUserMapping` (217). Not
+  worth a change on their own; the next change that lands in one splits it
+  (grid, detail form, apply), as CLAUDE.md does for 900-line files.
+
 ## Fix order
 
 Outstanding work by priority. Each item points to where

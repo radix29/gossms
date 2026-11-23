@@ -359,7 +359,14 @@ func completionStartsSource(tokens []sqlparse.Token, i int) bool {
 }
 
 func completionEndsSource(tokens []sqlparse.Token, i int) bool {
-	return !tokens[i].Quoted && slices.Contains([]string{"SELECT", "WHERE", "GROUP", "ORDER", "HAVING", "QUALIFY", "SET", "VALUES", "UNION", "EXCEPT", "INTERSECT"}, strings.ToUpper(tokens[i].Text))
+	if tokens[i].Quoted {
+		return false
+	}
+	switch strings.ToUpper(tokens[i].Text) {
+	case "SELECT", "WHERE", "GROUP", "ORDER", "HAVING", "QUALIFY", "SET", "VALUES", "UNION", "EXCEPT", "INTERSECT":
+		return true
+	}
+	return false
 }
 
 func caseCompletionItem(buf []rune, cursor int) editor.CompletionItem {

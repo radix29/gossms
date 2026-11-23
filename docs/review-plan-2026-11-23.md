@@ -35,7 +35,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W8 — N1**: nits.
 - **W9 — R1**: release notes for gossms, gosmo and tuikit (only if the user
   asks: CLAUDE.md keeps CHANGELOG/RELEASE edits out of fixes).
 - **W10**: move what stays undone to `docs/open-threads.md`, then delete
@@ -45,28 +44,6 @@ Each step: build in the library first when one is involved (`go test ./...`
 there), then `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
 then `go test ./...`, then drive the built binary (`docs/testing.md`). Nobody
 commits but the user.
-
----
-
-## Nits
-
-### N1 — small ones
-
-- `internal/tui/securables_matrix.go`: the column grid's height is still a
-  bare `8` beside the two new named constants; name it
-  (`securablesColumnsHeight`) and drop "the column grid below is a fixed 8"
-  from their comment.
-- `internal/tui/completion_expressions.go` `completionEndsSource` builds an
-  eleven-element slice on every call inside a token loop; a package-level
-  set (or a `switch`) does the same with no allocation.
-- `internal/tui/help_dialog.go`: the new "[x] Hide pane" line is the only
-  F1 entry describing a mouse target rather than a key; phrase it as the
-  others ("View > Object Explorer  Show/focus; [x] on its border hides it").
-- Long property-page builders (`pageRGGroups` 324 lines, `pageMailProfiles`
-  264, `pageMailAccounts` 218, `buildSymmetricKeyEncryptionForm` 218,
-  `pageLoginUserMapping` 217): not worth a change on their own; add one
-  `docs/open-threads.md` line so the next change in any of them splits it
-  (grid, detail form, apply), as CLAUDE.md does for 900-line files.
 
 ---
 
