@@ -35,11 +35,11 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W1 — B1 + B2**: Object Explorer hide follow-ups (reveal on connect; View
-  > Refresh and Alt+G while hidden).
 - **W2 — A1** (tuikit + gossms): a collapsible `layout.Splitter` pane, so
-  `explorerHidden` stops being checked at eight call sites. Do it right after
-  W1, while the feature is fresh, and drive it once for both.
+  `explorerHidden` stops being checked at eight call sites (nine since W1
+  greyed View > Refresh). Do it next, while the feature is fresh; W1's
+  `TestConnectRevealsHiddenExplorer` and `TestHiddenExplorerGreysViewRefresh`
+  must pass unchanged.
 - **W3 — B3 + A2**: version gates through gosmo's `ServerInfo.AtLeast`, the
   Details pane's tempdb rows on Managed Instance with them, and a gossms test
   that keeps hand comparisons out.
@@ -67,40 +67,6 @@ commits but the user.
 ---
 
 ## Bugs
-
-### B1 — connecting while Object Explorer is hidden adds an invisible server
-
-**Where:** `internal/tui/app_connections.go`, the connect callback
-(`a.explorer.ExpandNode(a.explorer.AddRoot(...))`); `internal/tui/app_focus.go`
-`hideExplorer`.
-
-**What:** with the explorer closed through its `[x]`, F9 / File > Connect
-succeeds, the status bar says "Connected to …", and the new server lands in a
-tree nobody can see. Nothing reveals it; the user has to know View > Object
-Explorer. SSMS shows Object Explorer when it connects from it. The commit
-that added hiding drove close/restore/focus cycling, not a connect while
-hidden.
-
-**Fix:** split `focusExplorer`'s un-hide into `showExplorer()` (clear the
-flag, `layoutAll`) and call it from the connect callback before `AddRoot`.
-Focus stays where it is: a connect from a query panel's Change Connection
-must not pull focus off the editor (check which connect paths share this
-callback — `connectForQueryPanel` does not reach `AddRoot`). Test: hide,
-connect through a fake dial, assert `!a.explorerHidden` and the root drawn.
-
-### B2 — explorer-only actions still run while it is hidden
-
-**Where:** `internal/tui/menu.go` View menu (`Refresh`, `Group by Schema`),
-`internal/tui/app_events.go` Alt+G.
-
-**What:** View > Refresh is enabled on `a.explorer.Selected() != nil` and
-refreshes a node in the hidden tree; Alt+G regroups it with no visible
-effect. Harmless but silent — `docs/ui-rules.md` context-gating says an
-action that cannot act visibly should be greyed or say so.
-
-**Fix:** add `!a.explorerHidden` to Refresh's `Enabled`. Leave Group by
-Schema enabled (it is a persistent view setting whose ✓ the menu shows), so
-toggling it while hidden is legitimate.
 
 ### B3 — the Details pane drops Resource Governor's tempdb rows on Managed Instance
 
@@ -163,8 +129,9 @@ splitter key, splitter mouse (twice), explorer hit test, gesture routing,
 plain Tab, draw, overlay draw — plus a special `layoutAll` branch, and the
 two focus-cycle functions grew mirrored hidden branches. Each new
 explorer-region path (a future drag target, a new key) must remember the
-flag, which is how B2 happened. Hiding one side of a split is a widget
-mechanic, which CLAUDE.md puts in tuikit.
+flag, which is how View > Refresh came to act on a hidden tree (fixed in
+W1). Hiding one side of a split is a widget mechanic, which CLAUDE.md puts
+in tuikit.
 
 **Fix:** tuikit `Splitter.SetCollapsed(SplitFirst|SplitSecond|SplitNone)` (or
 `SetFirstHidden(bool)`): `FirstRect` empty and `SecondRect` the whole rect

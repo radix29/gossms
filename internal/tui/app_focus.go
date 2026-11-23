@@ -21,13 +21,20 @@ func (f appFocus) String() string {
 }
 
 func (a *App) focusExplorer() {
+	a.showExplorer()
+	a.focus = focusOnExplorer
+	a.explorer.Focus(true)
+	a.syncActivePanelFocus()
+}
+
+// showExplorer un-hides Object Explorer without moving focus: a connect
+// reveals the tree it adds to (addServerRoot), as SSMS does, but must not pull
+// the keyboard off the editor.
+func (a *App) showExplorer() {
 	if a.explorerHidden {
 		a.explorerHidden = false
 		a.layoutAll()
 	}
-	a.focus = focusOnExplorer
-	a.explorer.Focus(true)
-	a.syncActivePanelFocus()
 }
 
 func (a *App) hideExplorer() {
