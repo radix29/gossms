@@ -292,9 +292,9 @@ func TestMaxOutputBytesDropsTrailingRows(t *testing.T) {
 // The text helpers behind D10 and P2-12.
 func TestCells(t *testing.T) {
 	for in, want := range map[string]bool{"0": true, "-0": true, "12": true, "1.5": true, "1E+300": true, "-1.5E-05": true,
-		"1e5": true, "": false, "01": false, ".5": false, "1.": false, "+1": false, "1E": false, "NaN": false, "Inf": false, "1 ": false} {
-		if got := isJSONNumber(in); got != want {
-			t.Errorf("isJSONNumber(%q) = %v", in, got)
+		"1e5": true, "9007199254740991": true, "-9007199254740991": true, "9007199254740992": false, "-9007199254740993": false, "12345678901234567": false, "": false, "01": false, ".5": false, "1.": false, "+1": false, "1E": false, "NaN": false, "Inf": false, "1 ": false} {
+		if got := export.JSONNumberText(in); got != want {
+			t.Errorf("JSONNumberText(%q) = %v", in, got)
 		}
 	}
 	for _, tt := range []struct {

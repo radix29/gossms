@@ -41,7 +41,7 @@ func jsonCell(c *string, k cellKind, width int) any {
 	switch {
 	case c == nil:
 		return nil
-	case k == kindNumber && isJSONNumber(*c):
+	case k == kindNumber && export.JSONNumberText(*c):
 		return json.RawMessage(*c)
 	case k == kindBool && *c == "1":
 		return true
@@ -52,8 +52,6 @@ func jsonCell(c *string, k cellKind, width int) any {
 	}
 	return clip(*c, width)
 }
-
-func isJSONNumber(s string) bool { return export.IsJSONNumber(s) }
 
 // clip cuts s to width characters (runes) and marks what it cut:
 // "abc…[+1,234 chars]". width 0 keeps everything. A count of characters, not

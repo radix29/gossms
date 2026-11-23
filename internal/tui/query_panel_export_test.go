@@ -55,8 +55,8 @@ func TestExportResultsWritesTheActiveSetAsShown(t *testing.T) {
 	want := `[
 {"name":"beta","n":9,"amount":"10.50"},
 {"name":null,"n":100,"amount":"2.00"},
-{"name":"delta","n":9007199254740992,"amount":"0.10"},
-{"name":"gamma","n":9007199254740993,"amount":null},
+{"name":"delta","n":"9007199254740992","amount":"0.10"},
+{"name":"gamma","n":"9007199254740993","amount":null},
 {"name":"Alpha","n":null,"amount":"-3.25"}
 ]
 `

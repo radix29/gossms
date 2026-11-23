@@ -38,6 +38,28 @@ func KindOf(t string) Kind {
 	return KindString
 }
 
+// maxSafeInt is 2^53-1, the largest integer a double (so most JSON parsers,
+// jq 1.6, JavaScript) reads back exactly.
+const maxSafeInt = "9007199254740991"
+
+// JSONNumberText reports whether s may be written as a bare JSON number: it
+// is IsJSONNumber and, for integer text, within +-(2^53-1). A bigint beyond
+// that would be silently rounded by a reader, so it is written as a string,
+// as decimal is. Floats keep going through as numbers (already doubles).
+func JSONNumberText(s string) bool {
+	if !IsJSONNumber(s) {
+		return false
+	}
+	if strings.ContainsAny(s, ".eE") {
+		return true
+	}
+	d := strings.TrimPrefix(s, "-")
+	if len(d) != len(maxSafeInt) {
+		return len(d) < len(maxSafeInt)
+	}
+	return d <= maxSafeInt
+}
+
 // IsJSONNumber reports whether s is a number in JSON's grammar:
 // -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?. The grid's float text
 // ("0.5", "1E+300", "-1.5E-05") always is; the check keeps a stray value
@@ -172,7 +194,7 @@ func (j *JSONWriter) WriteRecord(cells []string, isNull []bool) error {
 		}
 		c := cells[i]
 		switch k := j.kinds[i]; {
-		case k == KindNumber && IsJSONNumber(c):
+		case k == KindNumber && JSONNumberText(c):
 			j.w.WriteString(c)
 		case k == KindBool && c == "1":
 			j.w.WriteString("true")

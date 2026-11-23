@@ -167,3 +167,28 @@ func TestWriteTableCSVIsRecordWritersSet(t *testing.T) {
 		}
 	}
 }
+
+// A bigint past 2^53-1 is a string: a JSON reader would round it.
+func TestJSONNumberText(t *testing.T) {
+	for in, want := range map[string]bool{
+		"9007199254740991": true, "-9007199254740991": true, "42": true, "0.5": true, "1E+300": true, "-0": true,
+		"9007199254740992": false, "-9007199254740992": false, "9007199254740993": false, "12345678901234567": false,
+		"01": false, "": false,
+	} {
+		if got := JSONNumberText(in); got != want {
+			t.Errorf("JSONNumberText(%q) = %v", in, got)
+		}
+	}
+}
+
+func TestWriteTableJSONBigintPastSafeIsAString(t *testing.T) {
+	var b bytes.Buffer
+	tbl := tableOf{rows: [][]string{{"9007199254740993"}, {"42"}, {"NULL"}}, nulls: map[[2]int]bool{{2, 0}: true}}
+	if err := WriteTable(&b, FormatJSON, []string{"big"}, []string{"bigint"}, tbl); err != nil {
+		t.Fatal(err)
+	}
+	want := "[\n{\"big\":\"9007199254740993\"},\n{\"big\":42},\n{\"big\":null}\n]\n"
+	if b.String() != want {
+		t.Errorf("got\n%s\nwant\n%s", b.String(), want)
+	}
+}

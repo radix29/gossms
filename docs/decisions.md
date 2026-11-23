@@ -1354,7 +1354,7 @@ it from the string 'NULL'.
   empty string are the same for that one shape.
 - **Results to Text:** "NULL", as SSMS shows it.
 - **Export Results (grid menus, File menu):** CSV/TSV as Results To File;
-  JSON `null` (int/float numbers, bit true/false, decimal and money strings —
+  JSON `null` (int/float numbers (an integer beyond ±2^53−1 a string), bit true/false, decimal and money strings —
   the command line's json rules, `export.KindOf`); XML an empty element with
   `xsi:nil="true"`, FOR XML ELEMENTS XSINIL's shape, column names encoded as
   FOR XML encodes them (`Unit_x0020_Price`) and made unique like JSON keys.
@@ -1996,7 +1996,7 @@ another library. The command definitions it reads are the same data help and
 apart, and no dependency tree arrives whose flag model would still need mapping
 onto the schema. The grammar is `docs/cli.md` § Syntax.
 
-## Command-line safety and output: what phase 2 settled — do not re-raise
+## Command-line safety and output — settled, do not re-raise
 
 The contract is `docs/cli.md`; these are the alternatives turned down.
 
@@ -2043,7 +2043,7 @@ The contract is `docs/cli.md`; these are the alternatives turned down.
   written; an existing file is refused without `--force`, since the command
   line never prompts.
 
-## Command-line discovery and the agent guide: what phase 3 settled — do not re-raise
+## Command-line discovery and the agent guide — settled, do not re-raise
 
 The contract is `docs/cli.md` § Discovery, § Commands and § Agent guide;
 these are the alternatives turned down.
@@ -2069,7 +2069,7 @@ these are the alternatives turned down.
   a result set of sections would be clipped by `--max-col-width`. Keeping a
   `--format` and rejecting `-o` would be two spellings of one idea.
 
-## Command-line storage reporting: what phase 4 settled — do not re-raise
+## Command-line storage reporting — settled, do not re-raise
 
 The contract is `docs/cli.md` § Storage and § Commands; these are the
 alternatives turned down.
@@ -2099,7 +2099,7 @@ alternatives turned down.
   rows the filters keep. A `--warn-free-pct` was an option nobody asked for;
   `--max-free-pct` is the filter that answers "which files are nearly full".
 
-## Command-line writes and server configuration: what phase 5 settled — do not re-raise
+## Command-line writes and server configuration — settled, do not re-raise
 
 The contract is `docs/cli.md` § Server configuration, § Writes and
 § Commands; these are the alternatives turned down.
@@ -2145,7 +2145,7 @@ The contract is `docs/cli.md` § Server configuration, § Writes and
   `--confirm <db>`. `USER_ACCESS`, `OFFLINE` and `ONLINE` are left to the
   administration commands.
 
-## Command-line plans, scripting and data: what phase 6 settled — do not re-raise
+## Command-line plans, scripting and data — settled, do not re-raise
 
 The contract is `docs/cli.md` § Execution plans, § Scripting, § Data and
 § Commands; these are the alternatives turned down.
@@ -2204,7 +2204,7 @@ The contract is `docs/cli.md` § Execution plans, § Scripting, § Data and
   `PERMISSION_DENIED`, exit 9. SHOWPLAN (`plan estimated/actual`) and VIEW
   DEFINITION (`script object`) are database-wide and are listed.
 
-## Command-line monitoring and Extended Events: what phase 7 settled — do not re-raise
+## Command-line monitoring and Extended Events — settled, do not re-raise
 
 The contract is `docs/cli.md` § Monitoring, § Extended Events and
 § Commands; these are the alternatives turned down.
@@ -2249,7 +2249,7 @@ The contract is `docs/cli.md` § Monitoring, § Extended Events and
   server-side predicate; a client-side filter language (`internal/xevent`'s)
   is not offered.
 
-## Command-line administration: what phase 8 settled — do not re-raise
+## Command-line administration — settled, do not re-raise
 
 The contract is `docs/cli.md` § Security, § Agent jobs, § Maintenance,
 § Writes, § Audit log and § Commands; these are the alternatives turned
@@ -2261,7 +2261,7 @@ down.
   `db create/drop` are `admin`; `index-rebuild` and `update-stats` are
   `ddl`, and the classifier matches: `UPDATE STATISTICS` is `ddl` wherever
   it stands (inside a merged statement too), and so are `sp_updatestats` and
-  `sp_createstats` (`ddlProcs`). Phase 7's "classes
+  `sp_createstats` (`ddlProcs`). The rule "classes
   follow what the server changes" was turned down here: it would make
   `checkdb` and VERIFYONLY `read`, the two routes would disagree (an agent
   could lower its class by picking the other one), and a `read` profile

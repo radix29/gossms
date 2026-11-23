@@ -439,7 +439,8 @@ CLI_SCHEMA: 1.0
   that removed rows), `null` when whole. With `--out-file` the rows are in the
   file and `rows` is `[]`.
 - A cell is typed by its column's SQL type: `int`, `bigint`, `smallint`,
-  `tinyint`, `real`, `float` a number; `bit` `true`/`false`; NULL `null`;
+  `tinyint`, `real`, `float` a number (an integer beyond ±2^53−1 is a string,
+  as a parser would round it); `bit` `true`/`false`; NULL `null`;
   everything else — `decimal`, `numeric` and `money` included, which most
   parsers would round as a float — the grid's text as a string. A column of
   type `json` (`xevent capture`'s `data`) holds a document, written as a
