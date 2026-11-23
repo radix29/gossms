@@ -35,8 +35,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W6 — A5**: split `analyzeCompletionContext` into phases, as W3 of the
-  last plan did for `baseCompletionCandidates`.
 - **W7 — A6** (tuikit): `DataGrid.SetSourceReordered` reads a nil `newPerm`
   as the identity, as it already reads a nil `oldPerm`.
 - **W8 — N1**: nits.
@@ -53,29 +51,6 @@ commits but the user.
 ---
 
 ## Architecture and refactoring
-
-### A5 — split `analyzeCompletionContext`
-
-**Where:** `internal/tui/completion_expressions.go`
-`QueryPanel.analyzeCompletionContext` (234 lines, the longest function in
-the completion code).
-
-**What:** one function does five things in sequence: the DDL/data-type early
-outs, the parenthesis frame walk (with aggregate/analytic/window flags per
-frame), the parenthesized-position classification (JSON path, DATEPART,
-scalar), the CASE-arm and clause scan over the innermost frame, and the
-final per-clause scalar/aggregate decision. Recent fixes (#57, the
-user-type work) each landed in a different phase; the function's opening
-comment describes none of them. It also calls `p.ddlTypes()` twice per
-keystroke (cheap — no win on its own).
-
-**Fix:** as the last plan's W3 did for `baseCompletionCandidates`:
-`completionFrames(buf, tokens, start, from) []completionFrame`,
-`parenthesizedPosition(…)`, `clauseScan(f) (clause, start, cases…)`,
-`classifyPosition(…)`, each with a doc comment naming what it decides; one
-`ddlTypes()` call. Pure moves, so the 1,754-line keyword test and the
-expression tests are the safety net; drive the same completion positions as
-W3 against the pre-split binary and compare popups.
 
 ### A6 — tuikit `SetSourceReordered`: a nil `newPerm` means "every row is gone"
 
