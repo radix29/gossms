@@ -31,8 +31,7 @@ import (
 type App struct {
 	screen tcell.Screen
 
-	explorerSplit  *layout.Splitter
-	explorerHidden bool
+	explorerSplit *layout.Splitter
 
 	explorer *ObjectExplorer
 	panels   *layout.PanelManager
@@ -393,13 +392,10 @@ func (a *App) layoutAll() {
 	a.toolbar.SetBounds(labelsEnd, 0, w-labelsEnd)
 	a.explorerSplit.SetBounds(0, menuH, w, contentH)
 
+	// A hidden explorer is a collapsed first pane: an empty FirstRect, and
+	// the panels get the whole width.
 	left := a.explorerSplit.FirstRect()
 	right := a.explorerSplit.SecondRect()
-	if a.explorerHidden {
-		a.explorer.SetBounds(0, 0, 0, 0)
-		a.panels.SetBounds(0, menuH, w, contentH)
-		return
-	}
 	a.explorer.SetBounds(left.X, left.Y, left.W, left.H)
 	a.panels.SetBounds(right.X, right.Y, right.W, right.H)
 }
@@ -417,8 +413,8 @@ func (a *App) draw() {
 
 	a.menuBar.Draw(s)
 	a.toolbar.Draw(s)
-	if !a.explorerHidden {
-		a.explorerSplit.Draw(s)
+	a.explorerSplit.Draw(s)
+	if !a.explorerHidden() {
 		a.explorer.Draw(s)
 	}
 	a.panels.Draw(s)
@@ -444,7 +440,7 @@ func (a *App) draw() {
 	// menu dropdown and context menu extend into.
 	a.menuBar.DrawOverlay(s)
 	a.toolbar.DrawOverlay(s)
-	if !a.explorerHidden {
+	if !a.explorerHidden() {
 		a.explorer.DrawOverlay(s)
 	}
 	a.drawDragGhost(s, w)

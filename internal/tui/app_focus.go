@@ -31,17 +31,26 @@ func (a *App) focusExplorer() {
 // reveals the tree it adds to (addServerRoot), as SSMS does, but must not pull
 // the keyboard off the editor.
 func (a *App) showExplorer() {
-	if a.explorerHidden {
-		a.explorerHidden = false
+	if a.explorerHidden() {
+		a.explorerSplit.SetCollapsed(layout.CollapseNone)
 		a.layoutAll()
 	}
 }
 
+// hideExplorer collapses the explorer's side of the split (the [x] on its
+// border). The splitter keeps its ratio for showExplorer, and while collapsed
+// takes no key or mouse event and gives the panels the whole width.
 func (a *App) hideExplorer() {
-	a.explorerHidden = true
+	a.explorerSplit.SetCollapsed(layout.CollapseFirst)
 	a.drag.Cancel()
 	a.focusPanels()
 	a.layoutAll()
+}
+
+// explorerHidden reports whether the [x] hid Object Explorer. The nil check
+// is for the test fixtures that build an App with no splitter.
+func (a *App) explorerHidden() bool {
+	return a.explorerSplit != nil && a.explorerSplit.Collapsed() == layout.CollapseFirst
 }
 
 func (a *App) focusPanels() {
@@ -77,14 +86,7 @@ func (a *App) cycleFocus() {
 	case qp != nil && !qp.resultsFocused && qp.result != nil:
 		qp.setResultsFocused(true)
 	default:
-		if a.explorerHidden {
-			a.focusPanels()
-			if qp != nil {
-				qp.setResultsFocused(false)
-			}
-		} else {
-			a.focusExplorer()
-		}
+		a.cycleToExplorer(qp, false)
 	}
 }
 
@@ -101,14 +103,21 @@ func (a *App) cycleFocusReverse() {
 	case qp != nil && qp.resultsFocused:
 		qp.setResultsFocused(false)
 	default:
-		if a.explorerHidden {
-			a.focusPanels()
-			if qp != nil {
-				qp.setResultsFocused(qp.result != nil)
-			}
-		} else {
-			a.focusExplorer()
-		}
+		a.cycleToExplorer(qp, true)
+	}
+}
+
+// cycleToExplorer is the focus cycles' step onto Object Explorer. A hidden
+// explorer is skipped: the cycle wraps to the panels' first stop, the editor
+// going forward, the results pane (when there are any) in reverse.
+func (a *App) cycleToExplorer(qp *QueryPanel, reverse bool) {
+	if !a.explorerHidden() {
+		a.focusExplorer()
+		return
+	}
+	a.focusPanels()
+	if qp != nil {
+		qp.setResultsFocused(reverse && qp.result != nil)
 	}
 }
 

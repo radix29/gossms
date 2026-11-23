@@ -35,11 +35,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W2 — A1** (tuikit + gossms): a collapsible `layout.Splitter` pane, so
-  `explorerHidden` stops being checked at eight call sites (nine since W1
-  greyed View > Refresh). Do it next, while the feature is fresh; W1's
-  `TestConnectRevealsHiddenExplorer` and `TestHiddenExplorerGreysViewRefresh`
-  must pass unchanged.
 - **W3 — B3 + A2**: version gates through gosmo's `ServerInfo.AtLeast`, the
   Details pane's tempdb rows on Managed Instance with them, and a gossms test
   that keeps hand comparisons out.
@@ -117,34 +112,6 @@ case-insensitive by definition and stay.
 ---
 
 ## Architecture and refactoring
-
-### A1 — a collapsible Splitter pane in tuikit instead of `explorerHidden` checks
-
-**Where:** `~/go/tuikit/layout/splitter.go`; `internal/tui/app.go`
-(`layoutAll`, `draw`), `internal/tui/app_events.go` (four checks),
-`internal/tui/app_focus.go` (`cycleFocus`, `cycleFocusReverse`).
-
-**What:** hiding the explorer added `!a.explorerHidden` to eight places —
-splitter key, splitter mouse (twice), explorer hit test, gesture routing,
-plain Tab, draw, overlay draw — plus a special `layoutAll` branch, and the
-two focus-cycle functions grew mirrored hidden branches. Each new
-explorer-region path (a future drag target, a new key) must remember the
-flag, which is how View > Refresh came to act on a hidden tree (fixed in
-W1). Hiding one side of a split is a widget mechanic, which CLAUDE.md puts
-in tuikit.
-
-**Fix:** tuikit `Splitter.SetCollapsed(SplitFirst|SplitSecond|SplitNone)` (or
-`SetFirstHidden(bool)`): `FirstRect` empty and `SecondRect` the whole rect
-while collapsed, `Draw` draws no bar, `HandleKey`/`HandleMouse` return false
-(a release still resets the drag latch), and `Ratio` is kept for the restore.
-gossms then keeps one `explorerHidden()` accessor reading the splitter, the
-draw guard for the explorer itself, and the focus rule; everything that hit-
-tests through `FirstRect` gets the right answer for free. Fold the two
-focus-cycle hidden branches into one helper (`cycleWithoutExplorer(forward)`).
-Tests: tuikit `splitter_test.go` for collapse/restore/ratio/latch; gossms's
-existing `app_focus_test.go` and `explorer_group_schema_test.go` hide tests
-must pass unchanged. Drive: hide, resize the terminal, drag where the bar
-was, Ctrl+Left/Right, restore — ratio kept.
 
 ### A2 — version gates through `ServerInfo.AtLeast`, enforced by a test
 
@@ -286,6 +253,6 @@ not move.
 gossms is 110 commits past `v0.2.1` and `CHANGELOG.md`'s newest section is
 0.2.1 (the command line, completion, safety, hide-explorer work among them);
 tuikit is past `v0.0.3` with no `CHANGELOG.md` at all, though CLAUDE.md says
-it is released like gosmo, and its new API (`SetCloseButton`, plus A1/A3/A6
-if taken) needs an entry; gosmo is past `v0.3.0`. Unchanged from the last
+it is released like gosmo, and its new API (`SetCloseButton`,
+`Splitter.SetCollapsed` from A1, plus A3/A6 if taken) needs an entry; gosmo is past `v0.3.0`. Unchanged from the last
 plan's R1 except for the counts. Only on request (CLAUDE.md § Repo hygiene).

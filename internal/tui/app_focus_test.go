@@ -20,11 +20,11 @@ func TestHiddenExplorerIsSkippedByFocusCycles(t *testing.T) {
 	for _, cycle := range []func(){a.cycleFocus, a.cycleFocusReverse} {
 		qp.setResultsFocused(false)
 		cycle()
-		if !qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden {
+		if !qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden() {
 			t.Fatal("hidden-explorer focus cycle did not move from editor to results")
 		}
 		cycle()
-		if qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden {
+		if qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden() {
 			t.Fatal("hidden-explorer focus cycle did not return to the editor")
 		}
 	}
@@ -34,7 +34,7 @@ func TestHiddenExplorerIsNotReopenedByTabFallback(t *testing.T) {
 	a := newDragTestApp(t, 0)
 	a.hideExplorer()
 	a.handleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-	if !a.explorerHidden || a.focus != focusOnPanels {
+	if !a.explorerHidden() || a.focus != focusOnPanels {
 		t.Fatal("Tab from an empty panel area reopened the hidden explorer")
 	}
 }
@@ -46,7 +46,7 @@ func TestConnectRevealsHiddenExplorer(t *testing.T) {
 	a.panels.AddPanel(NewQueryPanel(a, "Query 1"))
 	a.hideExplorer()
 	n := a.addServerRoot(&db.ServerConn{Opts: config.Connection{Server: "newsrv"}})
-	if a.explorerHidden || a.focus != focusOnPanels || a.explorer.view.Focused() {
+	if a.explorerHidden() || a.focus != focusOnPanels || a.explorer.view.Focused() {
 		t.Fatal("connect did not reveal the explorer, or took focus from the panels")
 	}
 	if a.explorer.Selected() != n || a.explorer.view.Bounds().W == 0 {

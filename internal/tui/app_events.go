@@ -52,7 +52,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 
 	// Explorer splitter resize (Ctrl+Left/Right), only with explorer focus so
 	// the editor keeps word jump.
-	if !a.explorerHidden && a.focus == focusOnExplorer && a.explorerSplit.HandleKey(ev) {
+	if a.focus == focusOnExplorer && a.explorerSplit.HandleKey(ev) {
 		a.layoutAll()
 		return false
 	}
@@ -158,7 +158,7 @@ func (a *App) handleGlobalKey(ev *tcell.EventKey) (handled, quit bool) {
 		if a.panels.HandleKey(ev) {
 			return true, false
 		}
-		if !a.explorerHidden {
+		if !a.explorerHidden() {
 			a.focusExplorer()
 		}
 		return true, false
@@ -321,15 +321,16 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 
-	// Explorer/panel splitter drag.
-	if !a.explorerHidden && a.explorerSplit.HandleMouse(ev) {
+	// Explorer/panel splitter drag. A collapsed splitter (explorer hidden)
+	// takes nothing, and its empty FirstRect fails the hit test below.
+	if a.explorerSplit.HandleMouse(ev) {
 		a.gestureOwner.Arm(ev, ownerSplitter)
 		a.layoutAll()
 		return
 	}
 
 	left := a.explorerSplit.FirstRect()
-	if !a.explorerHidden && mx < left.Right() {
+	if mx < left.Right() {
 		a.gestureOwner.Arm(ev, ownerExplorer)
 		if a.focus != focusOnExplorer {
 			a.focusExplorer()
@@ -424,13 +425,13 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 func (a *App) routeGesture(ev *tcell.EventMouse, region appGestureOwner) {
 	switch region {
 	case ownerSplitter:
-		if !a.explorerHidden && a.explorerSplit.HandleMouse(ev) {
+		if a.explorerSplit.HandleMouse(ev) {
 			a.layoutAll()
 		}
 	case ownerExplorer:
-		if !a.explorerHidden {
-			a.explorer.HandleMouse(ev)
-		}
+		// Still routed after the [x] hid the explorer mid-gesture: its
+		// bounds are empty, and the release clears its own press latch.
+		a.explorer.HandleMouse(ev)
 	case ownerPanels:
 		a.panels.HandleMouse(ev)
 	}
