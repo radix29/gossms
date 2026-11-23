@@ -206,11 +206,12 @@ type securablesSeed struct {
 	colEntries []*gosmo.ColumnPermissionEntry
 }
 
-// The Securables page's top two grid heights, in rows. Every caller used the
-// same pair; the column grid below is a fixed 8.
+// The Securables page's grid heights, in rows: securables, their permissions,
+// and the column grid below them.
 const (
-	securablesGridHeight  = 8
-	securablesPermsHeight = 12
+	securablesGridHeight    = 8
+	securablesPermsHeight   = 12
+	securablesColumnsHeight = 8
 )
 
 // securableFindFn searches the server for addable securables whose name contains
@@ -398,7 +399,7 @@ func buildSecurablesMatrix(
 
 	securablesRow := propsheet.NewGridRow(p.securableGrid, securablesGridHeight)
 	permsRow := propsheet.NewGridRow(p.permGrid, securablesPermsHeight)
-	colsRow := propsheet.NewGridRow(p.colGrid, 8)
+	colsRow := propsheet.NewGridRow(p.colGrid, securablesColumnsHeight)
 
 	// Both grids report the page's whole dirty state: the sheet asks each row,
 	// and a column edit made while the middle grid is clean would otherwise

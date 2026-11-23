@@ -301,7 +301,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 			// REQUIRED_SYNCHRONIZED_SECONDARIES_TO_COMMIT is SQL Server 2017+; before
 			// it the row would only offer a SET the server cannot parse. Left off,
 			// it is never dirty, so apply never sends it.
-			if agClusterTypeChoosable(serverMajor(sc)) {
+			if agClusterTypeChoosable(sc.Server.Info()) {
 				rows = append(rows, requiredSyncRow)
 			}
 			rows = append(rows,

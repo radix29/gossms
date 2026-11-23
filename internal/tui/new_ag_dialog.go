@@ -90,11 +90,11 @@ type newAGPrefetch struct {
 	primaryName     string
 	primaryEndpoint string
 
-	// major is the instance's major version (0 unknown = newest). Below SQL
+	// info is the instance's version (nil or unread = newest). Below SQL
 	// Server 2017 every group is WSFC and has no required-sync setting, and
 	// contained groups are 2022+; the General page offers only what CREATE
 	// there can parse.
-	major int
+	info *gosmo.ServerInfo
 
 	// blocker is why a group cannot be created from this instance at all (Always On
 	// disabled, or no usable database mirroring endpoint); empty if none. Reported
@@ -175,7 +175,7 @@ func (d *NewAGDialog) show(sc *db.ServerConn, node *explorerNode) {
 }
 
 func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*newAGPrefetch, error) {
-	pf := &newAGPrefetch{primaryName: sc.Server.Name(), existingGroups: newNameSet(serverCollation(sc)), major: serverMajor(sc)}
+	pf := &newAGPrefetch{primaryName: sc.Server.Name(), existingGroups: newNameSet(serverCollation(sc)), info: sc.Server.Info()}
 
 	if info := sc.Server.Info(); info != nil && !info.IsHADREnabled {
 		pf.blocker = fmt.Sprintf("Always On availability groups are not enabled on %s. Enable the feature and restart the instance first — on Linux, `mssql-conf set hadr.hadrenabled 1`.", sc.Opts.Server)

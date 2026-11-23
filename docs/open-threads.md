@@ -80,7 +80,13 @@ support); this section covers only the environment.
   collation since review 2026-11-22-4 B4, pinned offline by
   `TestDatabaseBackupRefusal`'s CS cases): create user databases `TempDB` and
   `Master`, and see a differential/log backup of each go through, not refused
-  as tempdb's or master's.
+  as tempdb's or master's. The CLI's server-collation checks (review
+  2026-11-23 B4, pinned offline by `TestSecurityGrantDatabaseCaseSensitive`
+  and `TestDBDropCaseSensitive`) wait on it too: connected to `sales`,
+  `security grant CONNECT --on DATABASE::Sales` is refused; `db drop Sales`
+  is not refused as the connection's own database, nor blocked by an AG
+  holding `sales`. (`db table-sizes --schema` compares under the
+  *database's* collation — a `_CS_` user database on any instance checks it.)
 
 - **No SQL database in Fabric (EngineEdition 12) has ever been connected.**
   gosmo counts it as Azure (version gates treat its 12.x as newest) and as
@@ -110,27 +116,20 @@ support); this section covers only the environment.
 
 ## Windows clipboard: what is left
 
-- **One clipboard-manager run hung** (2026-11-18, before the message-only
-  owner, and before a test timeout was armed, so no stack); 16 later runs and
-  every run since the owner change did not reproduce it. Likely the probe's
-  own format listener, unproven. If a Windows user reports a frozen copy,
-  suspect this first. Since 2026-11-22 such a hang no longer takes Paste
-  with it: tuikit's `Dispatcher.Paste` waits at most `toolTimeout + 1s` for
-  earlier copies, then reads what the clipboard holds (later copies still
-  queue behind the stuck one). Re-driven on win10cli 2026-11-22 with Ditto
-  running, over RDP in Git Bash/mintty: 40 Ctrl+C/Ctrl+V cycles at 80 ms and a
-  paced 10-paste run, no freeze, UI live throughout; not reproduced.
+- **One clipboard-manager run hung** (2026-11-18, no stack captured); not
+  reproduced since (16 runs, then 40 Ctrl+C/Ctrl+V cycles and a paced 10-paste
+  run on win10cli with Ditto, 2026-11-22). Likely the probe's own format
+  listener, unproven. If a Windows user reports a frozen copy, suspect this
+  first. A hang no longer takes Paste with it: tuikit's `Dispatcher.Paste`
+  waits at most `toolTimeout + 1s` for earlier copies.
 
 ## File lock (`fileutil.WithLock`): what is left
 
-- **Starvation past the 10 s cap is possible, not seen since the fix**
-  (issue #56, 2026-11-22). The priority marker has no memory, so a waiter
-  that keeps losing the race for it on a loaded host fails with "is busy:
-  waited 10s". Seen once per 8-run round under full-suite load on win10cli
-  before the release retry and the stat-before-clock fix; none in 80 runs
-  after. If it recurs, record each failing waiter's marker tries and wins
-  before revisiting the ticket
-  queue `docs/decisions.md` declined — that is the user's call.
+- **Starvation past the 10 s cap is possible, not seen since the fix** (issue
+  #56). The priority marker has no memory, so a waiter that keeps losing the
+  race for it on a loaded host fails with "is busy: waited 10s". If it
+  recurs, record each failing waiter's marker tries and wins before revisiting
+  the ticket queue `docs/decisions.md` declined — that is the user's call.
 - **A holder that runs past `lockWait` under load still fails its waiters as
   "locked"** — by design: from outside it looks like a stuck holder.
 
@@ -138,14 +137,12 @@ support); this section covers only the environment.
 
 Settled design: `docs/decisions.md` § Format Document.
 
-- **Keyword case on a case-sensitive *server* is untried.** Run live in a
-  `Latin1_General_CS_AS` database only, where INT, VARCHAR, XML, SYSNAME and
-  the built-ins resolve case-insensitively; `sysname` and the CLR types are
-  left alone because a CS server collation was not available to check them.
+- **Keyword case on a case-sensitive *server* is untried** — see Environment
+  (no case-sensitive server collation). Run live in a `Latin1_General_CS_AS`
+  *database* only; `sysname` and the CLR types are left alone for want of a CS
+  server to check them.
 
 ## Command line: what is left
-
-The phase plan and its as-built record are `todo/comm-params.md` § 15.
 
 - **Kerberos (`AuthWindows` off Windows) not dialled live since go-mssqldb
   v1.12.0** swapped `jcmturner/gokrb5` for the `go-krb5/krb5` fork — no KDC is
@@ -183,12 +180,13 @@ The phase plan and its as-built record are `todo/comm-params.md` § 15.
   Windows transient (a handle open without FILE_SHARE_DELETE, on either
   path); `WithLock`'s create no longer has this (it checks the lock exists).
 
-## tuikit: what is left
+## Code size: what is left
 
-- **`controls/treeview.go` `TreeView.HandleMouse` is 147 lines**, the
-  longest in tuikit. Split it by zone (scrollbar, expander, row) as
-  `PanelManager.HandleMouse` was, when a change lands there anyway — not on
-  its own, since it needs a mouse drive of every tree (OE, dialogs) after.
+- **Five property-page builders run past 200 lines** (2026-11-23 review N1):
+  `pageRGGroups` (324), `pageMailProfiles` (264), `pageMailAccounts` (218),
+  `buildSymmetricKeyEncryptionForm` (218), `pageLoginUserMapping` (217). Not
+  worth a change on their own; the next change that lands in one splits it
+  (grid, detail form, apply), as CLAUDE.md does for 900-line files.
 
 ## Fix order
 
@@ -243,7 +241,11 @@ work; close an item by deleting it when fixed.
   under, `databaseCollation`): live on 13/14/17 with a contained `_CS_`
   database, never on MI, nor on an Azure SQL Database created `WITH
   CATALOG_COLLATION` (none in the estate) — `TestLiveCatalogCollation` and
-  `TestLiveGatedColumnsMatchTheCatalog` on MI.
+  `TestLiveGatedColumnsMatchTheCatalog` on MI. And the Details pane's
+  workload-group "Max tempdb data" rows (2026-11-23 review B3): now gated
+  through `serverAtLeast`, so MI shows them with both limits unset — driven
+  on 13 (hidden) and 17 (shown), fake-driver-tested on edition 8
+  (`TestWorkloadGroupDetailTempdbRowsFollowAtLeast`), never seen on MI.
 - **V5 — Resource Governor, Database Mail and backup compression edition
   gates never met a real refusal.** Every
   instance in the estate is Developer, so Resource Governor's rule

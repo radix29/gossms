@@ -122,9 +122,14 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   comparing `VersionMajor`/`VersionBuild`.** They count nil, an unread
   version and an Azure edition (12 on a Managed Instance) as newest, as
   gosmo's own gates do; the eight hand-written forms they replaced spelled
-  that four ways, one missing the unread case. `TestVersionGatesGoThroughAtLeast`
-  enforces it. `serverMajor` (a 0-for-unknown major, for compat-level lists
-  and the like) is a separate, older idiom.
+  that four ways, one missing the unread case. In `internal/tui`,
+  `serverAtLeast(sc, v)` is the same with a nil connection counted as newest.
+  `TestVersionGatesGoThroughAtLeast` enforces it, including the derived
+  `major >= int(gosmo.X)` form (the 2026-11-23 review's B3: nine copies, one
+  without the `== 0`, hid Resource Governor's tempdb rows on Managed
+  Instance). `serverMajor` (a 0-for-unknown major) is only for a caller that
+  consumes the number itself — `compatItemsFor`'s table, the XEvent Advanced
+  page's known-on-prem `major >= 17 && !azure` (allow-listed, V3).
 - **Gate an edition refusal only when it's compile-time.** `CREATE REMOTE
   SERVICE BINDING` on MI (Msg 41906) aborts the whole batch before anything
   runs, hence `azureRefusedScriptVerbs`. `CREATE`/`ALTER ROUTE` with
@@ -166,6 +171,19 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   call it, and New Login and Login Properties scripted passwords in clear. A
   secret in T-SQL gossms writes itself (not through gosmo) needs the same
   placeholder, by hand.
+- **Compare SQL Server names under the scope's collation, never with
+  `strings.EqualFold`.** `gosmo.SameName` (or `nameSet`/`nameMap` in the TUI)
+  under the server's collation for databases, logins, server roles and
+  availability groups; the database's catalog collation (`databaseCollation`
+  in the TUI, `catalogCollation` in the CLI) for schemas, objects, users and
+  everything else that lives in it; msdb's for Agent. On a `_CS_` server
+  `DATABASE::sales` is not `Sales` — a case-blind check let a database-scoped
+  GRANT pass and land on the connection's database (review 2026-11-23 B4).
+  `EqualFold` stays only for names case-insensitive by definition: system
+  type names, XEvent package/object names, host and DNS names, gossms profile
+  names. A lookup that falls back to a case-blind match only when the exact
+  one misses and only when it is unique (the CLI's `matchName`) is a
+  convenience over catalog spelling, not a comparison, and may keep it.
 - **Never give a procedure installed outside `master` an `sp_` prefix** — `sp_`
   falls back to `master`: `CREATE OR ALTER dbo.sp_x` in tempdb fails "Invalid
   object name", and `DROP PROCEDURE IF EXISTS dbo.sp_x` in tempdb **deleted

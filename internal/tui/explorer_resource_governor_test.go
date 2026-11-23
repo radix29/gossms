@@ -399,3 +399,34 @@ func TestResourceGovernorDetailDegradesEachHalfAlone(t *testing.T) {
 		t.Errorf("disabled + pending = %q", got["Reconfiguration pending"])
 	}
 }
+
+// B3 of the 2026-11-23 review: the Details pane gated the two tempdb rows on
+// a hand `major >= 2025` that forgot Azure, so a Managed Instance (VersionMajor
+// 12, an 18.x engine) with both limits unset lost the rows its Properties page
+// offers. A known pre-2025 instance with both unset still omits them.
+func TestWorkloadGroupDetailTempdbRowsFollowAtLeast(t *testing.T) {
+	ctx := context.Background()
+	group := fakeResponse{match: rgGroupList, cols: 14, rows: [][]driver.Value{rgGroup(257, "adhoc", 256, "reports")}}
+	for _, tc := range []struct {
+		name    string
+		edition int64
+		version string
+		want    bool
+	}{
+		{"Managed Instance", 8, "12.0.2000.8", true},
+		{"SQL Server 2025", 3, "17.0.1000.7", true},
+		{"SQL Server 2022", 3, "16.0.4085.2", false},
+	} {
+		denied := errors.New("Msg 300, VIEW SERVER STATE permission was denied")
+		sc := newGConnEdition(t, tc.edition, tc.version, group,
+			fakeResponse{match: rgPoolStatsRead, err: denied}, fakeResponse{match: rgGrpStatsRead, err: denied})
+		_, rows, err := workloadGroupDetail(ctx, sc, &explorerNode{data: nodeData{Name: "adhoc"}})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		got := slices.ContainsFunc(rows, func(r []string) bool { return len(r) > 0 && r[0] == "Max tempdb data %" })
+		if got != tc.want {
+			t.Errorf("%s: tempdb rows shown = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

@@ -256,7 +256,7 @@ func availabilityGroupOf(ctx context.Context, srv *gosmo.Server, info *gosmo.Ser
 		if err != nil {
 			return "", err
 		}
-		if slices.ContainsFunc(dbs, func(d *gosmo.AvailabilityDatabase) bool { return strings.EqualFold(d.DatabaseName, name) }) {
+		if slices.ContainsFunc(dbs, func(d *gosmo.AvailabilityDatabase) bool { return gosmo.SameName(info.Collation, d.DatabaseName, name) }) {
 			return ag.Name, nil
 		}
 	}
@@ -292,7 +292,7 @@ func (d Deps) dbDrop(ctx context.Context, inv *spec.Invocation) (*output.Result,
 	if err != nil {
 		return res, readError(err)
 	}
-	if strings.EqualFold(current, db.Name) {
+	if gosmo.SameName(serverCollation(srv), current, db.Name) {
 		return res, usageError(name+" is the connection's own database",
 			"Connect to another database to drop it: add -d master.")
 	}

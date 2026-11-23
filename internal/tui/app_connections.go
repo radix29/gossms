@@ -63,7 +63,7 @@ func (a *App) connectServer(ctx context.Context, opts config.Connection, phase f
 			sc.SetPeerCredentials(a.peerCredentialsFor)
 			a.connections = append(a.connections, sc)
 			// Expanded immediately, as SSMS opens a new connection.
-			a.explorer.ExpandNode(a.explorer.AddRoot(sc.Label(), sc))
+			a.explorer.ExpandNode(a.addServerRoot(sc))
 			info := sc.Server.Info()
 			a.setStatus(fmt.Sprintf("Connected to %s  |  %s %s", opts.Server, info.Edition, info.ProductVersion))
 			a.warnIfUnsupported(info)
@@ -72,6 +72,13 @@ func (a *App) connectServer(ctx context.Context, opts config.Connection, phase f
 			a.rememberConnection(opts)
 		})
 	})
+}
+
+// addServerRoot adds sc's root to Object Explorer, showing the explorer first
+// if its [x] hid it: otherwise a connect lands in a tree nobody can see.
+func (a *App) addServerRoot(sc *db.ServerConn) *explorerNode {
+	a.showExplorer()
+	return a.explorer.AddRoot(sc.Label(), sc)
 }
 
 // warnIfUnsupported tells the user, once per connect, that the instance is

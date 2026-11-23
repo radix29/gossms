@@ -1,0 +1,59 @@
+# Review plan, 2026-11-23
+
+A review of gossms, `~/go/gosmo` and `~/go/tuikit` after the 2026-11-22
+fourth pass closed, covering what landed since: the hide-Object-Explorer
+feature (`0974549`, with tuikit's `TreeView.SetCloseButton`), the securables
+matrix refactor (`f336265`), gosmo's `BackupRefusal` collation fix and
+catalog-types work, and tuikit's `SetSourceReordered` speed-up. Nothing is
+fixed yet. Close an item by deleting it; delete this file with the last one.
+gosmo and tuikit may break back-compat where an item says so (CHANGELOG
+entry when the user asks for one).
+
+**Method.** `go vet`, `staticcheck` (default gate and `-checks all` without
+ST1000/3/20-22), `deadcode -test`, `govulncheck`, `go list -m -u` and
+`go test ./...` in all three repos; `dupl -t 120` over all three; a ranking
+of every non-test function by length; a read of the commits since
+2026-11-22 in each repo; and greps across gossms for the rules CLAUDE.md
+and `docs/db-rules.md` state (bare goroutines, `context.Background()`,
+version comparisons, case-blind name comparisons). No server was contacted
+and the binary was not driven: every fix still needs the `docs/testing.md`
+drive.
+
+**What came out clean.** Build, vet, both staticcheck gates, govulncheck and
+every test in all three repos. No direct dependency has a newer version.
+`deadcode` lists gosmo's `QSStatistics` and 28 tuikit exports with no
+in-repo caller — library surface, kept deliberately (CLAUDE.md). `dupl -t
+120` re-finds only pairs `docs/decisions.md` § Code and dependency hygiene
+already settles. No file is over 900 non-test lines in any repo. The one
+bare `go` in `internal/tui` (`app_saves.go`) and every `context.Background()`
+root carry their documented reason. The securables refactor is behaviour-
+preserving (the Properties target still dereferences the loaded principal at
+apply time). Format Document is guarded at run time by `verify`, so no probe
+was spent there.
+
+Severity is ordered by what a user can lose, not by effort.
+
+## Recommended implementation order
+
+- **W9 — R1**: release notes for gossms, gosmo and tuikit (only if the user
+  asks: CLAUDE.md keeps CHANGELOG/RELEASE edits out of fixes).
+- **W10**: move what stays undone to `docs/open-threads.md`, then delete
+  this file.
+
+Each step: build in the library first when one is involved (`go test ./...`
+there), then `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
+then `go test ./...`, then drive the built binary (`docs/testing.md`). Nobody
+commits but the user.
+
+---
+
+## Release
+
+### R1 — three repos carry unreleased work with no release notes
+
+gossms is 110 commits past `v0.2.1` and `CHANGELOG.md`'s newest section is
+0.2.1 (the command line, completion, safety, hide-explorer work among them);
+tuikit is past `v0.0.3` with no `CHANGELOG.md` at all, though CLAUDE.md says
+it is released like gosmo, and its new API (`SetCloseButton`,
+`Splitter.SetCollapsed` from A1, A3's title-row rule (the buttons win, the title truncates with `…`), plus A6: `SetSourceReordered` reads a nil `newPerm` as the identity) needs an entry; gosmo is past `v0.3.0`. Unchanged from the last
+plan's R1 except for the counts. Only on request (CLAUDE.md § Repo hygiene).

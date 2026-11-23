@@ -33,10 +33,9 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 			// offering one the instance lacks leaves a row that can only fail
 			// on Apply: CUSTOM capture mode and the QUERY_CAPTURE_POLICY it
 			// writes are SQL Server 2019 and later, WAIT_STATS_CAPTURE_MODE is
-			// 2017 and later. An unread version (0) is treated as newest.
-			major := serverMajor(sc)
-			hasCustomPolicy := major == 0 || major >= int(gosmo.SQLServer2019)
-			hasWaitStats := major == 0 || major >= int(gosmo.SQLServer2017)
+			// 2017 and later. An unread version (or Azure) is treated as newest.
+			hasCustomPolicy := serverAtLeast(sc, gosmo.SQLServer2019)
+			hasWaitStats := serverAtLeast(sc, gosmo.SQLServer2017)
 
 			stateItems := []string{"OFF", "READ_ONLY", "READ_WRITE"}
 			captureItems := []string{"NONE", "AUTO", "ALL", "CUSTOM"}

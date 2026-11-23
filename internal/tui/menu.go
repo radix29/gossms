@@ -104,7 +104,9 @@ func (a *App) buildMenus() []controls.Menu {
 				Checked: func() bool { return a.groupBySchema }},
 			{Divider: true},
 			{Label: "Refresh", Shortcut: "F5", Action: func() { a.refreshSelected() },
-				Enabled: func() bool { return a.explorer.Selected() != nil }},
+				// Greyed while hidden: it would refresh a tree nobody sees.
+				// Group by Schema stays live — a view setting its ✓ shows.
+				Enabled: func() bool { return !a.explorerHidden() && a.explorer.Selected() != nil }},
 		}},
 		{Label: "Query", Items: []controls.MenuItem{
 			{Label: "New Query", Shortcut: "Ctrl+N", Action: func() { a.newQueryPanel() }},

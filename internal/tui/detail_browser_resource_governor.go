@@ -292,8 +292,10 @@ func workloadGroupDetail(ctx context.Context, sc *dbconn.ServerConn, node *explo
 		"Max requests", zeroAs(g.GroupMaxRequests, "Unlimited"),
 	}
 	// SQL Server 2025's tempdb governance; both nil before it, where the
-	// rows would only say "not limited" of a limit that cannot be set.
-	if g.GroupMaxTempdbDataPercent != nil || g.GroupMaxTempdbDataMB != nil || serverMajor(sc) >= int(gosmo.SQLServer2025) {
+	// rows would only say "not limited" of a limit that cannot be set. An
+	// unread version and Azure count as newest: a Managed Instance reports
+	// VersionMajor 12 while running an engine that has the limits.
+	if g.GroupMaxTempdbDataPercent != nil || g.GroupMaxTempdbDataMB != nil || serverAtLeast(sc, gosmo.SQLServer2025) {
 		pairs = append(pairs,
 			"Max tempdb data %", optionalFloatText(g.GroupMaxTempdbDataPercent),
 			"Max tempdb data MB", optionalFloatText(g.GroupMaxTempdbDataMB))

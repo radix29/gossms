@@ -31,17 +31,25 @@ type completionContext struct {
 	choices                      []string
 }
 
+// completionCaseArm is one open CASE in clauseScan: when is where the
+// current searched WHEN's condition starts (-1 outside a condition).
+type completionCaseArm struct {
+	when     int
+	searched bool
+}
+
+// analyzeCompletionContext classifies the cursor position at from. Its
+// phases run in a fixed order, each either answering or passing on: the
+// data-type positions (completionTypeChoices), the parenthesis frame walk
+// (completionFrames), a parenthesized position's argument
+// (parenthesizedPosition), an empty predicate subquery, the clause and CASE
+// scan of the innermost frame (clauseScan), an open CASE arm (caseArmPosition)
+// and finally the clause's own scalar/aggregate decision (classifyPosition).
+//
 // Keep the existing structural parser; inspect raw spans only where its
 // reduced tokens omit expression operands, literals or operators.
 func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Token, query *sqlparse.Query, from int) (c completionContext) {
-	action, objectType, tail := ddlCompletionTarget(tokens, from)
-	if action != "DROP" && (objectType == "PROCEDURE" || objectType == "FUNCTION") {
-		if choices, datatype, handled := ddlRoutineChoices(buf, tail, objectType, from, p.ddlTypes()); handled {
-			c.choices, c.datatype, c.only = choices, datatype, true
-			return
-		}
-	}
-	if choices, datatype, handled := dataTypeChoices(buf, tokens, from, p.ddlTypes()); handled {
+	if choices, datatype, handled := p.completionTypeChoices(buf, tokens, from); handled {
 		c.choices, c.datatype, c.only = choices, datatype, true
 		return
 	}
@@ -49,14 +57,57 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 	if query != nil {
 		start = query.Start
 	}
-	stack := []completionFrame{{start: start}}
+	fabric := p.conn.IsFabricDW()
+	stack, queryDepth := completionFrames(buf, tokens, start, from, fabric)
+	c.frame, c.selectStart, c.queryDepth = stack[len(stack)-1], -1, queryDepth
+	f := c.frame
+	if len(stack) > 1 && !f.window && !f.predicate && !f.subquery && p.parenthesizedPosition(buf, stack, from, fabric, &c) {
+		return
+	}
+	if f.subquery && len(f.tokens) == 0 {
+		c.choices, c.only = []string{"SELECT"}, true
+		if fabric {
+			c.choices = append(c.choices, "FROM")
+		}
+		return
+	}
+	cases := c.clauseScan(buf)
+	if c.caseArmPosition(buf, from, cases) || c.parenthesized {
+		return
+	}
+	c.classifyPosition(buf, from, fabric)
+	return
+}
+
+// completionTypeChoices answers the positions that take only a data type: a
+// CREATE/ALTER PROCEDURE or FUNCTION header, then any other data-type
+// position (dataTypeChoices). handled means the caller offers choices alone.
+func (p *QueryPanel) completionTypeChoices(buf []rune, tokens []sqlparse.Token, from int) (choices []string, datatype, handled bool) {
+	types := p.ddlTypes()
+	action, objectType, tail := ddlCompletionTarget(tokens, from)
+	if action != "DROP" && (objectType == "PROCEDURE" || objectType == "FUNCTION") {
+		if choices, datatype, handled := ddlRoutineChoices(buf, tail, objectType, from, types); handled {
+			return choices, datatype, true
+		}
+	}
+	return dataTypeChoices(buf, tokens, from, types)
+}
+
+// completionFrames walks the tokens of the statement starting at start, up to
+// from, into a stack of parenthesis frames; the last is the cursor's. Each
+// frame carries whether it is a window spec, a predicate or predicate
+// subquery, and whether aggregates and analytic functions are allowed in it,
+// inherited from its parent and narrowed by the call or clause that opened
+// it. queryDepth counts the parentheses open before start.
+func completionFrames(buf []rune, tokens []sqlparse.Token, start, from int, fabric bool) (stack []completionFrame, queryDepth int) {
+	stack = []completionFrame{{start: start}}
 	for _, tok := range tokens {
 		if tok.Start < start {
 			switch tok.Kind {
 			case sqlparse.TokenParenOpen:
-				c.queryDepth++
+				queryDepth++
 			case sqlparse.TokenParenClose:
-				c.queryDepth--
+				queryDepth--
 			}
 			continue
 		}
@@ -117,7 +168,7 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 					f.aggregate, f.analytic = true, false
 				case "QUALIFY":
 					f.having = false
-					f.aggregate, f.analytic = false, len(stack) == 1 && p.conn.IsFabricDW()
+					f.aggregate, f.analytic = false, len(stack) == 1 && fabric
 				case "FROM", "JOIN", "APPLY", "WHERE", "ON", "GROUP", "SET", "VALUES":
 					f.having = false
 					f.aggregate, f.analytic = false, false
@@ -125,66 +176,69 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 			}
 		}
 	}
-	c.frame, c.selectStart = stack[len(stack)-1], -1
+	return stack, queryDepth
+}
+
+// parenthesizedPosition classifies a cursor inside a call's or expression's
+// parentheses (not a window spec, predicate or predicate subquery): a JSON
+// path argument and a DATEPART argument answer alone (done); otherwise c is
+// marked parenthesized and scalar where the argument takes an expression.
+func (p *QueryPanel) parenthesizedPosition(buf []rune, stack []completionFrame, from int, fabric bool, c *completionContext) (done bool) {
 	f := c.frame
-	if len(stack) > 1 && !f.window && !f.predicate && !f.subquery {
-		parent := stack[len(stack)-2].tokens
-		if len(parent) > 0 && (len(parent) < 2 || parent[len(parent)-2].Kind != sqlparse.TokenDot) {
-			fn := parent[len(parent)-1]
-			if keywordIs(fn, "JSON_VALUE") || keywordIs(fn, "JSON_QUERY") || keywordIs(fn, "JSON_MODIFY") {
-				commas := 0
-				for _, tok := range f.tokens {
-					if tok.Kind == sqlparse.TokenComma {
-						commas++
-					}
-				}
-				if commas == 1 {
-					c.only = true // Keep generic SQL suggestions out of the JSON path argument.
-					return
+	parent := stack[len(stack)-2].tokens
+	if len(parent) > 0 && (len(parent) < 2 || parent[len(parent)-2].Kind != sqlparse.TokenDot) {
+		fn := parent[len(parent)-1]
+		if keywordIs(fn, "JSON_VALUE") || keywordIs(fn, "JSON_QUERY") || keywordIs(fn, "JSON_MODIFY") {
+			commas := 0
+			for _, tok := range f.tokens {
+				if tok.Kind == sqlparse.TokenComma {
+					commas++
 				}
 			}
-		}
-		if parts, handled := datePartCompletionChoices(buf, parent, f.tokens, f.start, from); handled {
-			c.choices, c.only, c.clause = parts, true, "DATEPART"
-			return
-		}
-		c.parenthesized = true
-		expressionParent, expressionStart := parent, f.start
-		for i := len(stack) - 2; len(expressionParent) == 0 && i > 0; i-- {
-			expressionParent, expressionStart = stack[i-1].tokens, stack[i].start
-		}
-		c.scalar = scalarParenthesizedPosition(buf, expressionParent, f.tokens, expressionStart, from, p.conn.IsFabricDW(), p.sourceFunctionKnown(expressionParent))
-		if len(parent) > 0 && !parent[len(parent)-1].Quoted && (len(parent) < 2 || parent[len(parent)-2].Kind != sqlparse.TokenDot) {
-			name := strings.ToUpper(parent[len(parent)-1].Text)
-			for i, tok := range f.tokens {
-				if completionBuiltins[name].kind&builtinWarehouseOnly != 0 && strings.HasPrefix(name, "AI_") &&
-					keywordIs(tok, "DEFAULT") && argumentExpressionComplete(buf, f.start, tok.Start) {
-					c.scalar = !argumentExpressionComplete(buf, tok.Start+len("DEFAULT"), from)
-				}
-				if name == "AI_GENERATE_EMBEDDINGS" && i >= 3 && keywordIs(tok, "PARAMETERS") &&
-					keywordIs(f.tokens[i-3], "USE") && keywordIs(f.tokens[i-2], "MODEL") {
-					c.scalar = !argumentExpressionComplete(buf, tok.Start+len("PARAMETERS"), from)
-				}
+			if commas == 1 {
+				c.only = true // Keep generic SQL suggestions out of the JSON path argument.
+				return true
 			}
 		}
-		c.aggregate = c.scalar && f.aggregate
-		c.analytic = c.scalar && f.analytic
 	}
-	if f.subquery && len(f.tokens) == 0 {
-		c.choices, c.only = []string{"SELECT"}, true
-		if p.conn.IsFabricDW() {
-			c.choices = append(c.choices, "FROM")
+	if parts, handled := datePartCompletionChoices(buf, parent, f.tokens, f.start, from); handled {
+		c.choices, c.only, c.clause = parts, true, "DATEPART"
+		return true
+	}
+	c.parenthesized = true
+	expressionParent, expressionStart := parent, f.start
+	for i := len(stack) - 2; len(expressionParent) == 0 && i > 0; i-- {
+		expressionParent, expressionStart = stack[i-1].tokens, stack[i].start
+	}
+	c.scalar = scalarParenthesizedPosition(buf, expressionParent, f.tokens, expressionStart, from, fabric, p.sourceFunctionKnown(expressionParent))
+	if len(parent) > 0 && !parent[len(parent)-1].Quoted && (len(parent) < 2 || parent[len(parent)-2].Kind != sqlparse.TokenDot) {
+		name := strings.ToUpper(parent[len(parent)-1].Text)
+		for i, tok := range f.tokens {
+			if completionBuiltins[name].kind&builtinWarehouseOnly != 0 && strings.HasPrefix(name, "AI_") &&
+				keywordIs(tok, "DEFAULT") && argumentExpressionComplete(buf, f.start, tok.Start) {
+				c.scalar = !argumentExpressionComplete(buf, tok.Start+len("DEFAULT"), from)
+			}
+			if name == "AI_GENERATE_EMBEDDINGS" && i >= 3 && keywordIs(tok, "PARAMETERS") &&
+				keywordIs(f.tokens[i-3], "USE") && keywordIs(f.tokens[i-2], "MODEL") {
+				c.scalar = !argumentExpressionComplete(buf, tok.Start+len("PARAMETERS"), from)
+			}
 		}
-		return
 	}
+	c.aggregate = c.scalar && f.aggregate
+	c.analytic = c.scalar && f.analytic
+	return false
+}
+
+// clauseScan reads the innermost frame's tokens for the clause the cursor is
+// in (c.clause, c.clauseStart, c.selectStart, c.hasFrom, c.apply; a predicate
+// frame starts as WHERE) and returns the CASE expressions still open at the
+// cursor, outermost first. Clause keywords inside an open CASE are ignored.
+func (c *completionContext) clauseScan(buf []rune) []completionCaseArm {
+	f := c.frame
 	if f.predicate {
 		c.clause, c.clauseStart = "WHERE", f.start
 	}
-	type caseArm struct {
-		when     int
-		searched bool
-	}
-	var cases []caseArm
+	var cases []completionCaseArm
 	for i, tok := range f.tokens {
 		if tok.Quoted || sqlparse.IsDistinctFrom(f.tokens, i) {
 			continue
@@ -192,7 +246,7 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 		word := strings.ToUpper(tok.Text)
 		switch word {
 		case "CASE":
-			cases = append(cases, caseArm{-1, keywordNextIs(buf, tok.Start+len("CASE"), "WHEN")})
+			cases = append(cases, completionCaseArm{-1, keywordNextIs(buf, tok.Start+len("CASE"), "WHEN")})
 		case "END":
 			if len(cases) > 0 {
 				cases = cases[:len(cases)-1]
@@ -237,22 +291,37 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 			}
 		}
 	}
+	return cases
+}
+
+// caseArmPosition applies the innermost open CASE: inside a searched WHEN's
+// condition the clause becomes WHEN (a condition, even within parentheses);
+// in any other arm the position is a scalar value unless one is already
+// complete, and that answers (done).
+func (c *completionContext) caseArmPosition(buf []rune, from int, cases []completionCaseArm) (done bool) {
 	c.caseDepth = len(cases)
-	if len(cases) > 0 {
-		if arm := cases[len(cases)-1]; arm.when >= 0 {
-			c.clause, c.clauseStart = "WHEN", arm.when
-			c.parenthesized = false
-		} else {
-			complete, _ := keywordExpressionComplete(buf, f.tokens[len(f.tokens)-1].Start, from, "VALUE")
-			c.scalar = !complete
-			c.aggregate = c.scalar && f.aggregate
-			c.analytic = c.scalar && f.analytic
-			return
-		}
+	if len(cases) == 0 {
+		return false
 	}
-	if c.parenthesized {
-		return
+	f := c.frame
+	if arm := cases[len(cases)-1]; arm.when >= 0 {
+		c.clause, c.clauseStart = "WHEN", arm.when
+		c.parenthesized = false
+		return false
 	}
+	complete, _ := keywordExpressionComplete(buf, f.tokens[len(f.tokens)-1].Start, from, "VALUE")
+	c.scalar = !complete
+	c.aggregate = c.scalar && f.aggregate
+	c.analytic = c.scalar && f.analytic
+	return true
+}
+
+// classifyPosition is the per-clause decision for an unparenthesized cursor:
+// AS and COLLATE take a name alone; otherwise whether a scalar (and an
+// aggregate or analytic function) fits where the clause's expression is not
+// yet complete, and a predicate clause's condition position.
+func (c *completionContext) classifyPosition(buf []rune, from int, fabric bool) {
+	f := c.frame
 	if len(f.tokens) > 0 {
 		last := f.tokens[len(f.tokens)-1]
 		if keywordIs(last, "AS") || keywordIs(last, "COLLATE") {
@@ -268,18 +337,17 @@ func (p *QueryPanel) analyzeCompletionContext(buf []rune, tokens []sqlparse.Toke
 		case "SELECT":
 			c.scalar, c.aggregate = !complete && !keywordIs(last, "TOP"), !complete && !keywordIs(last, "TOP")
 		case "GROUP", "ORDER", "PARTITION":
-			c.scalar = !complete && (c.clause != "GROUP" || !p.conn.IsFabricDW())
+			c.scalar = !complete && (c.clause != "GROUP" || !fabric)
 			c.aggregate = c.scalar && f.aggregate
 		case "SET":
 			c.scalar = scalarAssignmentPosition(buf, f.tokens, from)
 		}
 	}
-	if predicateClause(c.clause) && (c.clause != "QUALIFY" || p.conn.IsFabricDW()) {
+	if predicateClause(c.clause) && (c.clause != "QUALIFY" || fabric) {
 		c.scalar, c.condition = predicateExpressionPosition(buf, c.clauseStart, from)
 		c.aggregate = c.scalar && (c.clause == "HAVING" || f.aggregate)
 	}
 	c.analytic = c.scalar && f.analytic
-	return
 }
 
 func (p *QueryPanel) sourceFunctionKnown(tokens []sqlparse.Token) bool {
@@ -304,7 +372,14 @@ func completionStartsSource(tokens []sqlparse.Token, i int) bool {
 }
 
 func completionEndsSource(tokens []sqlparse.Token, i int) bool {
-	return !tokens[i].Quoted && slices.Contains([]string{"SELECT", "WHERE", "GROUP", "ORDER", "HAVING", "QUALIFY", "SET", "VALUES", "UNION", "EXCEPT", "INTERSECT"}, strings.ToUpper(tokens[i].Text))
+	if tokens[i].Quoted {
+		return false
+	}
+	switch strings.ToUpper(tokens[i].Text) {
+	case "SELECT", "WHERE", "GROUP", "ORDER", "HAVING", "QUALIFY", "SET", "VALUES", "UNION", "EXCEPT", "INTERSECT":
+		return true
+	}
+	return false
 }
 
 func caseCompletionItem(buf []rune, cursor int) editor.CompletionItem {

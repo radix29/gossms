@@ -84,8 +84,9 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 
 	// ENCLAVE_COMPUTATIONS is SQL Server 2019 syntax and the parser rejects the
 	// whole CREATE below that, so the two controls become a note rather than a row
-	// that can only fail on Apply. An unread version (0) is treated as newest.
-	hasEnclaves := serverMajor(sc) == 0 || serverMajor(sc) >= int(gosmo.SQLServer2019)
+	// that can only fail on Apply. An unread version (or Azure) is treated as
+	// newest.
+	hasEnclaves := serverAtLeast(sc, gosmo.SQLServer2019)
 	enclaveRows := []propsheet.Row{
 		propsheet.Section("Secure enclaves"),
 		enclaveRow, signatureField,

@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/tuikit/tuikittest"
 )
 
@@ -18,11 +20,11 @@ func TestHiddenExplorerIsSkippedByFocusCycles(t *testing.T) {
 	for _, cycle := range []func(){a.cycleFocus, a.cycleFocusReverse} {
 		qp.setResultsFocused(false)
 		cycle()
-		if !qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden {
+		if !qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden() {
 			t.Fatal("hidden-explorer focus cycle did not move from editor to results")
 		}
 		cycle()
-		if qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden {
+		if qp.resultsFocused || a.focus != focusOnPanels || !a.explorerHidden() {
 			t.Fatal("hidden-explorer focus cycle did not return to the editor")
 		}
 	}
@@ -32,8 +34,52 @@ func TestHiddenExplorerIsNotReopenedByTabFallback(t *testing.T) {
 	a := newDragTestApp(t, 0)
 	a.hideExplorer()
 	a.handleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-	if !a.explorerHidden || a.focus != focusOnPanels {
+	if !a.explorerHidden() || a.focus != focusOnPanels {
 		t.Fatal("Tab from an empty panel area reopened the hidden explorer")
+	}
+}
+
+// A connect while the explorer is hidden reveals it with the new root drawn,
+// and leaves focus on the panels (connectServer's addServerRoot).
+func TestConnectRevealsHiddenExplorer(t *testing.T) {
+	a := newDragTestApp(t, 0)
+	a.panels.AddPanel(NewQueryPanel(a, "Query 1"))
+	a.hideExplorer()
+	n := a.addServerRoot(&db.ServerConn{Opts: config.Connection{Server: "newsrv"}})
+	if a.explorerHidden() || a.focus != focusOnPanels || a.explorer.view.Focused() {
+		t.Fatal("connect did not reveal the explorer, or took focus from the panels")
+	}
+	if a.explorer.Selected() != n || a.explorer.view.Bounds().W == 0 {
+		t.Fatal("new root not selected in a visible explorer")
+	}
+	a.explorer.Draw(a.screen)
+	r := a.explorer.view.Bounds()
+	var text strings.Builder
+	for y := r.Y; y < r.Y+r.H; y++ {
+		for x := r.X; x < r.X+r.W; x++ {
+			str, _, _ := a.screen.Get(x, y)
+			text.WriteString(str)
+		}
+	}
+	if !strings.Contains(text.String(), "newsrv") {
+		t.Fatal("new server root not drawn")
+	}
+}
+
+// View > Refresh is greyed while the explorer is hidden; Group by Schema is not.
+func TestHiddenExplorerGreysViewRefresh(t *testing.T) {
+	a := newDragTestApp(t, 0)
+	menus := a.buildMenus()
+	refresh := findMenuBarItem(t, menus, "View", "Refresh")
+	if !refresh.Enabled() {
+		t.Fatal("Refresh disabled with a visible selected node")
+	}
+	a.hideExplorer()
+	if refresh.Enabled() {
+		t.Fatal("Refresh enabled while the explorer is hidden")
+	}
+	if group := findMenuBarItem(t, menus, "View", "Group by Schema"); group.Enabled != nil && !group.Enabled() {
+		t.Fatal("Group by Schema greyed while the explorer is hidden")
 	}
 }
 

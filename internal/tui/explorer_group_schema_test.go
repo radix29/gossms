@@ -562,7 +562,7 @@ func TestExplorerCloseAndViewMenuRestore(t *testing.T) {
 	a.handleMouse(tcell.NewEventMouse(x+1, before.Y, tcell.Button1, tcell.ModNone))
 	a.handleMouse(tcell.NewEventMouse(x+1, before.Y+3, tcell.Button1, tcell.ModNone))
 	a.handleMouse(tcell.NewEventMouse(x+1, before.Y+3, tcell.ButtonNone, tcell.ModNone))
-	if !a.explorerHidden || a.focus != focusOnPanels || a.explorer.view.Focused() {
+	if !a.explorerHidden() || a.focus != focusOnPanels || a.explorer.view.Focused() {
 		t.Fatal("close did not hide the explorer and focus the panel")
 	}
 	if got := a.panels.Bounds(); got.X != 0 || got.W != dragTestScreenW {
@@ -573,7 +573,7 @@ func TestExplorerCloseAndViewMenuRestore(t *testing.T) {
 	}
 	item := findMenuBarItem(t, a.buildMenus(), "View", "Object Explorer")
 	item.Action()
-	if a.explorerHidden || a.focus != focusOnExplorer || !a.explorer.view.Focused() {
+	if a.explorerHidden() || a.focus != focusOnExplorer || !a.explorer.view.Focused() {
 		t.Fatal("View > Object Explorer did not show and focus the explorer")
 	}
 	if got := a.explorer.view.Bounds(); got != before || a.explorer.Selected() != selected {
@@ -581,7 +581,7 @@ func TestExplorerCloseAndViewMenuRestore(t *testing.T) {
 	}
 	a.focusPanels()
 	item.Action()
-	if a.explorerHidden || a.focus != focusOnExplorer || a.explorer.view.Bounds() != before {
+	if a.explorerHidden() || a.focus != focusOnExplorer || a.explorer.view.Bounds() != before {
 		t.Fatal("View > Object Explorer changed the visible explorer instead of focusing it")
 	}
 }
@@ -596,7 +596,7 @@ func TestHiddenExplorerDoesNotTakeSplitterMouseEvents(t *testing.T) {
 	a.handleMouse(tcell.NewEventMouse(bar, 4, tcell.Button1, tcell.ModNone))
 	a.handleMouse(tcell.NewEventMouse(bar+10, 4, tcell.Button1, tcell.ModNone))
 	a.handleMouse(tcell.NewEventMouse(bar+10, 4, tcell.ButtonNone, tcell.ModNone))
-	if !a.explorerHidden || a.focus != focusOnPanels || a.explorerSplit.Ratio() != ratio {
+	if !a.explorerHidden() || a.focus != focusOnPanels || a.explorerSplit.Ratio() != ratio {
 		t.Fatal("the hidden explorer or its splitter handled panel mouse events")
 	}
 }

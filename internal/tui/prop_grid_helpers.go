@@ -150,12 +150,29 @@ func compatItemsFor(level, major int) []string {
 	return items
 }
 
-// serverMajor is the connected instance's major version, or 0 when unknown, which
-// every version-gated helper treats as newest.
+// serverAtLeast reports whether the connected instance is v or later: gosmo's
+// ServerInfo.AtLeast, with a nil connection counting as newest too. It is the
+// one way gossms gates a feature on the server's version — an unread version
+// and an Azure edition (a Managed Instance reports VersionMajor 12 while
+// running an 18.x engine) count as newest, and a hand-written
+// `major >= int(gosmo.X)` that forgot the unread or Azure case is how the
+// Details pane hid Resource Governor's tempdb rows on Managed Instance.
+// TestVersionGatesGoThroughAtLeast keeps the hand form out.
+func serverAtLeast(sc *db.ServerConn, v gosmo.ServerVersion) bool {
+	if sc == nil || sc.Server == nil {
+		return true
+	}
+	return sc.Server.Info().AtLeast(v)
+}
+
+// serverMajor is the connected instance's major version, or 0 when unknown.
+// It is for the callers that consume the number itself (compatItemsFor's
+// table lookup, the XEvent Advanced page); a gate that only compares uses
+// serverAtLeast.
 //
 // An Azure edition is 0 too (gosmo's serverMajorVersion): a Managed Instance
 // reports 12 while running an 18.x engine, so believing it would cap
-// compatibility levels at 120 and hide the 2019 enclave options.
+// compatibility levels at 120.
 func serverMajor(sc *db.ServerConn) int {
 	if sc == nil || sc.Server == nil || sc.Server.Info() == nil || sc.Server.Info().IsAzure() {
 		return 0

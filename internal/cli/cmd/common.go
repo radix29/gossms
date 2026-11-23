@@ -78,6 +78,26 @@ func (d Deps) connectDatabase(ctx context.Context, inv *spec.Invocation, res *ou
 	return sc, dbase, nil
 }
 
+// serverCollation is the collation srv's database, login and availability
+// group names compare under (gosmo.SameName); "" — case-insensitive — when
+// its info was never read.
+func serverCollation(srv *gosmo.Server) string {
+	if srv == nil || srv.Info() == nil {
+		return ""
+	}
+	return srv.Info().Collation
+}
+
+// catalogCollation is the collation the names of what lives in d (schemas,
+// objects, users) compare under: CatalogCollation, which a partially
+// contained database fixes, else Collation. The TUI's databaseCollation.
+func catalogCollation(d *gosmo.Database) string {
+	if d.CatalogCollation != "" {
+		return d.CatalogCollation
+	}
+	return d.Collation
+}
+
 // currentDatabase is the connection's database read from the catalog; res's
 // database becomes its catalog spelling.
 func currentDatabase(ctx context.Context, srv *gosmo.Server, res *output.Result) (*gosmo.Database, error) {

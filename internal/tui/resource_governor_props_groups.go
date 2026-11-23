@@ -174,10 +174,10 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 			if len(pools) == 0 || len(groups) == 0 {
 				return nil, nil, errResourceGovernorNotVisible
 			}
-			major := serverMajor(sc)
-			// Unknown major (0) is treated as newest, as gosmo's gates do.
-			fractional := major == 0 || major >= int(gosmo.SQLServer2019)
-			tempdb := major == 0 || major >= int(gosmo.SQLServer2025)
+			// An unread version (or Azure) is treated as newest, as gosmo's
+			// gates do.
+			fractional := serverAtLeast(sc, gosmo.SQLServer2019)
+			tempdb := serverAtLeast(sc, gosmo.SQLServer2025)
 
 			loadedPools := make([]string, len(pools))
 			for i, p := range pools {

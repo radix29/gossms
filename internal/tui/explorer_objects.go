@@ -60,9 +60,9 @@ func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]
 	}
 	// The same call External Libraries gets (see loadExternalResourcesChildren):
 	// gosmo refuses the graph listing below 2017, so a folder there could only
-	// ever show that refusal. An unread major (0, which includes Azure) is
-	// treated as newest.
-	if major := serverMajor(l.sc); major == 0 || major >= int(gosmo.SQLServer2017) {
+	// ever show that refusal. An unread version (or Azure) is treated as
+	// newest.
+	if serverAtLeast(l.sc, gosmo.SQLServer2017) {
 		folders = append(folders, l.node("Graph Tables", NodeGraphTables, "", "", dbName))
 	}
 	return folders, nil

@@ -494,7 +494,10 @@ func resolveSecurable(ctx context.Context, dbase *gosmo.Database, on onSpec) (go
 			if err != nil {
 				return gosmo.Securable{}, err
 			}
-			if !strings.EqualFold(n, dbase.Name) {
+			// Under the server's collation: on a case-sensitive one
+			// DATABASE::sales is another database than Sales, and the
+			// GRANT names none — it would land on the connection's.
+			if !gosmo.SameName(serverCollation(dbase.Server()), n, dbase.Name) {
 				return gosmo.Securable{}, usageError(
 					fmt.Sprintf("--on DATABASE::%s: the connection is in database %s", gosmo.QuoteName(n), gosmo.QuoteName(dbase.Name)),
 					fmt.Sprintf("Pass -d %s, or write --on DATABASE for the connection's.", gosmo.QuoteName(n)))
