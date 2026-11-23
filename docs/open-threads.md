@@ -160,13 +160,6 @@ Settled design: `docs/decisions.md` § Format Document.
   Windows transient (a handle open without FILE_SHARE_DELETE, on either
   path); `WithLock`'s create no longer has this (it checks the lock exists).
 
-## tuikit: what is left
-
-- **`controls/treeview.go` `TreeView.HandleMouse` is 155 lines**, the
-  longest in tuikit. Split it by zone (scrollbar, expander, row) as
-  `PanelManager.HandleMouse` was, when a change lands there anyway — not on
-  its own, since it needs a mouse drive of every tree (OE, dialogs) after.
-
 ## Fix order
 
 Outstanding work by priority. Each item points to where
@@ -220,7 +213,11 @@ work; close an item by deleting it when fixed.
   under, `databaseCollation`): live on 13/14/17 with a contained `_CS_`
   database, never on MI, nor on an Azure SQL Database created `WITH
   CATALOG_COLLATION` (none in the estate) — `TestLiveCatalogCollation` and
-  `TestLiveGatedColumnsMatchTheCatalog` on MI.
+  `TestLiveGatedColumnsMatchTheCatalog` on MI. And the Details pane's
+  workload-group "Max tempdb data" rows (2026-11-23 review B3): now gated
+  through `serverAtLeast`, so MI shows them with both limits unset — driven
+  on 13 (hidden) and 17 (shown), fake-driver-tested on edition 8
+  (`TestWorkloadGroupDetailTempdbRowsFollowAtLeast`), never seen on MI.
 - **V5 — Resource Governor, Database Mail and backup compression edition
   gates never met a real refusal.** Every
   instance in the estate is Developer, so Resource Governor's rule

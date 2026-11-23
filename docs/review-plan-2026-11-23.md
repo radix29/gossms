@@ -35,12 +35,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W3 — B3 + A2**: version gates through gosmo's `ServerInfo.AtLeast`, the
-  Details pane's tempdb rows on Managed Instance with them, and a gossms test
-  that keeps hand comparisons out.
-- **W4 — A3** (tuikit): one title-row layout for `TreeView`, ending the two
-  rules for "title vs. buttons"; split `TreeView.HandleMouse` by zone in the
-  same change (the open-thread's "when a change lands there" has arrived).
 - **W5 — B4 + A4**: name comparisons under the scope's collation — the
   CLI's `--on DATABASE::`, the AG membership lookup and `--schema` — and the
   rule written down in `docs/db-rules.md`.
@@ -62,25 +56,6 @@ commits but the user.
 ---
 
 ## Bugs
-
-### B3 — the Details pane drops Resource Governor's tempdb rows on Managed Instance
-
-**Where:** `internal/tui/detail_browser_resource_governor.go` (the
-`serverMajor(sc) >= int(gosmo.SQLServer2025)` test).
-
-**What:** `serverMajor` returns 0 for every Azure edition so that callers
-can treat 0 as "newest" — and every other gate in gossms writes
-`major == 0 || major >= …`. This one doesn't, so on a Managed Instance
-(VersionMajor 12, engine 18) with both limits NULL the two "Max tempdb data"
-rows vanish, while Resource Governor Properties' Workload Groups page
-(`resource_governor_props_groups.go`, `tempdb := major == 0 || …`) shows the
-fields. It is exactly the bug class gosmo's `majorAtLeast` comment records
-(the 2026-10-21 AG-lag blanking on MI) and `TestVersionGatesGoThroughMajorAtLeast`
-forbids there; gossms has no such guard. MI is unavailable (memory), so
-this ships offline-tested only; record it under open-threads V4 for the MI
-run.
-
-**Fix:** with A2.
 
 ### B4 — CLI and AG name checks compare SQL names case-blind
 
@@ -112,59 +87,6 @@ case-insensitive by definition and stay.
 ---
 
 ## Architecture and refactoring
-
-### A2 — version gates through `ServerInfo.AtLeast`, enforced by a test
-
-**Where:** `internal/tui/prop_grid_helpers.go` `serverMajor` and its
-callers: `database_props_query_store.go`, `new_column_master_key_dialog.go`
-(calls `serverMajor` twice), `explorer_objects.go`, `explorer_external.go`,
-`new_ag_pages.go`, `resource_governor_props_groups.go`,
-`detail_browser_resource_governor.go`.
-
-**What:** gosmo exports `ServerInfo.AtLeast(v)` precisely so a caller does
-not compare `VersionMajor` by hand ("comparing VersionMajor by hand is how a
-gate ends up blanking a Managed Instance", `version_gate.go`). gossms instead
-re-derives the rule nine times as `major == 0 || major >= int(gosmo.X)`, and
-B3 is the copy that dropped the `== 0`.
-
-**Fix:** `sc.Server.Info().AtLeast(gosmo.SQLServer2019)` (nil-safe: a nil
-`*ServerInfo` counts as newest) at each gate; a small
-`serverAtLeast(sc, v)` wrapper if the nil `sc`/`Server` guard is wanted.
-`serverMajor` stays only where an int is genuinely consumed
-(`compatItemsFor`, `agClusterTypeChoosable`, the XEvent dialogs' `major`,
-`newAGPrefetch.major`) — and each of those consumers should take
-`*gosmo.ServerInfo` or a bool if all it does is compare. Add
-`TestVersionGatesGoThroughAtLeast` in `internal/tui` mirroring gosmo's
-(go/ast over non-test files: no `>=`/`<` against `int(gosmo.SQLServer…)`
-outside an allow-list). `xevent_session_advanced.go`'s
-`major >= 17 && !azure` is the deliberate "known on-prem" form (V3) — allow-
-list it with the reason.
-
-### A3 — tuikit `TreeView` title row: one layout, one rule; split `HandleMouse`
-
-**Where:** `~/go/tuikit/controls/treeview.go` (`titleButtonRect`,
-`closeButtonRect`, `Draw`, `DrawOverlay`, `HandleMouse`).
-
-**What:** the close button brought a second title-row layout. Without it,
-`titleButtonRect` hides the title button when the centred title would reach
-it ("hides rather than truncate the title", `SetTitleButton`'s doc). With it,
-the title button always shows and `Draw` truncates the title, re-implementing
-`core.DrawBoxTitle`'s centring by hand (no ellipsis). So adding `[x]` flips
-which of title and button wins at narrow widths, and `SetTitleButton`'s doc
-is wrong whenever a close button is set. `HandleMouse` grew from 147 to 154
-lines, the longest function in tuikit; `docs/open-threads.md` § tuikit asked
-for the split "when a change lands there anyway" — this is it.
-
-**Fix (author's call on the rule):** one `titleLayout()` returning the title
-span and both button rects, used by `Draw`, `DrawOverlay` and `HandleMouse`.
-Recommended rule: the buttons always win, the title truncates with `…` (the
-explorer's "Object Explorer" title matters less than its actions), and
-`SetTitleButton`'s doc says so; the alternative is to hide the title button
-first, then the close button, as the old rule did. Then split `HandleMouse`
-by zone (scrollbars, title row, row hit) as `PanelManager.HandleMouse` was,
-and delete the open-threads item. Tests: the existing title-button and
-close-button tests at widths where title and buttons collide. Drive every
-tree after (OE, dialogs' trees), as the open-thread asks.
 
 ### A4 — write down the name-comparison rule
 
@@ -254,5 +176,5 @@ gossms is 110 commits past `v0.2.1` and `CHANGELOG.md`'s newest section is
 0.2.1 (the command line, completion, safety, hide-explorer work among them);
 tuikit is past `v0.0.3` with no `CHANGELOG.md` at all, though CLAUDE.md says
 it is released like gosmo, and its new API (`SetCloseButton`,
-`Splitter.SetCollapsed` from A1, plus A3/A6 if taken) needs an entry; gosmo is past `v0.3.0`. Unchanged from the last
+`Splitter.SetCollapsed` from A1, A3's title-row rule (the buttons win, the title truncates with `…`), plus A6 if taken) needs an entry; gosmo is past `v0.3.0`. Unchanged from the last
 plan's R1 except for the counts. Only on request (CLAUDE.md § Repo hygiene).

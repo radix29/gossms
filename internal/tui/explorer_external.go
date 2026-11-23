@@ -16,8 +16,8 @@ import (
 // External Libraries is omitted outright on SQL Server 2016 and older, which
 // has no sys.external_libraries at all: gosmo refuses that read with
 // ErrUnsupportedVersion, and a folder whose only possible answer is an error
-// is worse than no folder. An unread version (0, which includes Azure — see
-// serverMajor) is treated as newest and gets the folder.
+// is worse than no folder. An unread version (or Azure — see serverAtLeast)
+// is treated as newest and gets the folder.
 func loadExternalResourcesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbName := node.data.DBName
 	if l.sc != nil && l.sc.IsFabricDW() {
@@ -29,7 +29,7 @@ func loadExternalResourcesChildren(l loaderCtx, node *explorerNode) ([]*explorer
 		l.node("External Data Sources", NodeExternalDataSources, "", "", dbName),
 		l.node("External File Formats", NodeExternalFileFormats, "", "", dbName),
 	}
-	if major := serverMajor(l.sc); major == 0 || major >= int(gosmo.SQLServer2017) {
+	if serverAtLeast(l.sc, gosmo.SQLServer2017) {
 		out = append(out, l.node("External Libraries", NodeExternalLibraries, "", "", dbName))
 	}
 	return out, nil

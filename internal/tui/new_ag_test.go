@@ -164,7 +164,7 @@ func newAGPagesOn(t *testing.T, major int) (*NewAGDialog, gosmo.CreateAvailabili
 	d.applyFns = make([]propApply, 2)
 	d.buildPages(&newAGPrefetch{
 		primaryName: "ubusql1", primaryEndpoint: "tcp://ubusql1:5022",
-		existingGroups: newNameSet(""), major: major,
+		existingGroups: newNameSet(""), info: &gosmo.ServerInfo{VersionMajor: major},
 	})
 	d.replicas = append(d.replicas, &newAGReplica{name: "ubusql2", endpointURL: "tcp://ubusql2:5022",
 		failoverMode: d.replicas[0].failoverMode, seedingMode: "AUTOMATIC"})

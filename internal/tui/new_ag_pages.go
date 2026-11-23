@@ -25,16 +25,16 @@ import (
 var agClusterTypeItems = []string{"EXTERNAL", "WSFC", "NONE"}
 
 // agClusterTypeChoosable reports whether CREATE AVAILABILITY GROUP takes a
-// CLUSTER_TYPE on an instance of this major version (0 unknown = newest). Before
-// SQL Server 2017 the clause does not parse and WSFC is the only kind there is.
-func agClusterTypeChoosable(major int) bool {
-	return major == 0 || major >= int(gosmo.SQLServer2017)
+// CLUSTER_TYPE on this instance (unread, nil or Azure = newest). Before SQL
+// Server 2017 the clause does not parse and WSFC is the only kind there is.
+func agClusterTypeChoosable(info *gosmo.ServerInfo) bool {
+	return info.AtLeast(gosmo.SQLServer2017)
 }
 
 // agContainedOffered reports whether a contained group can be created: SQL
 // Server 2022+.
-func agContainedOffered(major int) bool {
-	return major == 0 || major >= int(gosmo.SQLServer2022)
+func agContainedOffered(info *gosmo.ServerInfo) bool {
+	return info.AtLeast(gosmo.SQLServer2022)
 }
 
 func (d *NewAGDialog) buildPages(pf *newAGPrefetch) {
@@ -45,7 +45,7 @@ func (d *NewAGDialog) buildPages(pf *newAGPrefetch) {
 		// EXTERNAL where the type can be chosen (it is offered first), MANUAL on a
 		// WSFC-only instance, which has no EXTERNAL mode either.
 		failoverMode := agDefaultFailoverMode(agClusterTypeItems[0])
-		if !agClusterTypeChoosable(pf.major) {
+		if !agClusterTypeChoosable(pf.info) {
 			failoverMode = agDefaultFailoverMode("WSFC")
 		}
 		d.replicas = []*newAGReplica{{
@@ -105,8 +105,8 @@ func (d *NewAGDialog) buildGeneralPage(pf *newAGPrefetch) {
 	// Rows an older instance cannot take are left off rather than disabled:
 	// CREATE there is a syntax error for each, and the server's message names
 	// only the keyword.
-	choosable := agClusterTypeChoosable(pf.major)
-	contained := agContainedOffered(pf.major)
+	choosable := agClusterTypeChoosable(pf.info)
+	contained := agContainedOffered(pf.info)
 
 	dbGridRow, includeRow, commitDatabases := d.databaseRows()
 	replicaRows, commitReplicas := d.replicaRows()

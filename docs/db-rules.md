@@ -122,9 +122,14 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   comparing `VersionMajor`/`VersionBuild`.** They count nil, an unread
   version and an Azure edition (12 on a Managed Instance) as newest, as
   gosmo's own gates do; the eight hand-written forms they replaced spelled
-  that four ways, one missing the unread case. `TestVersionGatesGoThroughAtLeast`
-  enforces it. `serverMajor` (a 0-for-unknown major, for compat-level lists
-  and the like) is a separate, older idiom.
+  that four ways, one missing the unread case. In `internal/tui`,
+  `serverAtLeast(sc, v)` is the same with a nil connection counted as newest.
+  `TestVersionGatesGoThroughAtLeast` enforces it, including the derived
+  `major >= int(gosmo.X)` form (the 2026-11-23 review's B3: nine copies, one
+  without the `== 0`, hid Resource Governor's tempdb rows on Managed
+  Instance). `serverMajor` (a 0-for-unknown major) is only for a caller that
+  consumes the number itself — `compatItemsFor`'s table, the XEvent Advanced
+  page's known-on-prem `major >= 17 && !azure` (allow-listed, V3).
 - **Gate an edition refusal only when it's compile-time.** `CREATE REMOTE
   SERVICE BINDING` on MI (Msg 41906) aborts the whole batch before anything
   runs, hence `azureRefusedScriptVerbs`. `CREATE`/`ALTER ROUTE` with
