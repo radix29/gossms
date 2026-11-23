@@ -22,6 +22,7 @@ const (
 	dataTypeTableVariable                         // DECLARE @t TABLE ( column definitions
 	dataTypeColumn                                // ALTER TABLE … ADD c ‸, ALTER TABLE … ALTER COLUMN c ‸
 	dataTypeConversion                            // CAST(… AS ‸, TRY_CAST, CONVERT(‸, TRY_CONVERT
+	dataTypeParse                                 // PARSE/TRY_PARSE: number and date/time targets only
 	dataTypeAliasBase                             // CREATE TYPE s.n FROM ‸
 )
 
@@ -36,8 +37,8 @@ func dataTypePosition(buf []rune, tokens []sqlparse.Token, from int) (kind dataT
 		end++
 	}
 	tokens = tokens[:end]
-	if rest, ok := conversionTypeTokens(tokens); ok {
-		return dataTypeConversion, rest
+	if rest, kind := conversionTypeTokens(tokens); kind != 0 {
+		return kind, rest
 	}
 	if len(tokens) >= 2 && keywordIs(tokens[0], "CREATE") && keywordIs(tokens[1], "TYPE") {
 		if nameEnd := ddlNameEnd(tokens, 2); nameEnd < len(tokens) && keywordIs(tokens[nameEnd], "FROM") {
@@ -92,10 +93,10 @@ func ddlNameEnd(tokens []sqlparse.Token, at int) int {
 	return end
 }
 
-// conversionTypeTokens is the type argument a CAST/TRY_CAST (after its AS) or
-// CONVERT/TRY_CONVERT (before its first comma) the cursor is in has so far,
+// conversionTypeTokens is the type argument a CAST/PARSE (after its AS) or
+// CONVERT (before its first comma), including their TRY forms, has so far,
 // looking through a "(length)" being typed after it.
-func conversionTypeTokens(tokens []sqlparse.Token) ([]sqlparse.Token, bool) {
+func conversionTypeTokens(tokens []sqlparse.Token) ([]sqlparse.Token, dataTypeKind) {
 	var opens []int
 	for i, tok := range tokens {
 		switch tok.Kind {
@@ -129,15 +130,19 @@ func conversionTypeTokens(tokens []sqlparse.Token) ([]sqlparse.Token, bool) {
 			}
 		}
 		var rest []sqlparse.Token
+		kind := dataTypeConversion
 		switch strings.ToUpper(tokens[open-1].Text) {
+		case "PARSE", "TRY_PARSE":
+			kind = dataTypeParse
+			fallthrough
 		case "CAST", "TRY_CAST":
 			if as < 0 {
-				return nil, false
+				return nil, 0
 			}
 			rest = args[as+1:]
 		case "CONVERT", "TRY_CONVERT":
 			if comma {
-				return nil, false
+				return nil, 0
 			}
 			rest = args
 		default:
@@ -146,11 +151,11 @@ func conversionTypeTokens(tokens []sqlparse.Token) ([]sqlparse.Token, bool) {
 		// An outer conversion holds the cursor only through its type's
 		// "(length)": "CAST(x AS VARCHAR(‸".
 		if k < len(opens)-1 && (len(rest) < 2 || rest[0].Kind != sqlparse.TokenIdent || rest[1].Kind != sqlparse.TokenParenOpen) {
-			return nil, false
+			return nil, 0
 		}
-		return rest, true
+		return rest, kind
 	}
-	return nil, false
+	return nil, 0
 }
 
 // declareTypePosition finds a DECLARE variable's type position: the last
@@ -239,10 +244,15 @@ func dataTypeChoices(buf []rune, tokens []sqlparse.Token, from int, types ddlTyp
 		}
 		choices, handled = ddlColumnDefinitionChoices(column, types)
 		return choices, true, handled
-	case dataTypeConversion, dataTypeAliasBase:
+	case dataTypeConversion, dataTypeParse, dataTypeAliasBase:
 		system := ddlDataTypes(types.fabric)
 		if kind == dataTypeAliasBase {
 			system = ddlAliasBaseTypes(types.fabric)
+		} else if kind == dataTypeParse {
+			allowed := strings.Fields("BIGINT INT SMALLINT TINYINT DECIMAL NUMERIC FLOAT REAL SMALLMONEY MONEY DATE TIME DATETIME SMALLDATETIME DATETIME2 DATETIMEOFFSET")
+			system = slices.DeleteFunc(system, func(typ string) bool {
+				return !slices.Contains(allowed, strings.TrimSuffix(typ, "("))
+			})
 		}
 		if len(rest) == 0 {
 			if kind == dataTypeConversion {
@@ -251,8 +261,12 @@ func dataTypeChoices(buf []rune, tokens []sqlparse.Token, from int, types ddlTyp
 			}
 			return system, true, true
 		}
-		if _, ok := ddlSkipTypeLength(rest, 1); !ok {
+		end, ok := ddlSkipTypeLength(rest, 1)
+		if !ok {
 			return ddlMaxLengthChoices(rest), true, true
+		}
+		if kind == dataTypeParse && end == len(rest) {
+			return []string{"USING"}, false, true
 		}
 		if kind == dataTypeAliasBase {
 			return ddlNullabilityChoices(rest, ddlTypes{fabric: types.fabric}), true, true

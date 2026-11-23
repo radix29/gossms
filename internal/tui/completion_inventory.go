@@ -58,7 +58,8 @@ type completionInventory struct {
 	// shadow the first, so "Orders." offered orders' columns. "" (the sys-schema and
 	// linked inventories, or a failed read) folds. Matching a typed prefix stays
 	// case-insensitive regardless: a convenience, not identity.
-	collation string
+	collation     string
+	compatibility gosmo.CompatibilityLevel
 
 	// byQualifiedName indexes catalog.Objects by schema and name (see
 	// qualifiedKey), for resolving "schema.table." / "alias." member lookups.
@@ -275,10 +276,11 @@ func (p *QueryPanel) refreshCompletionCache() {
 // itself.
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, inv *completionInventory) {
 	type result struct {
-		cat        *gosmo.Catalog
-		schema     string
-		collation  string
-		procedures []*gosmo.StoredProcedure
+		cat           *gosmo.Catalog
+		schema        string
+		collation     string
+		compatibility gosmo.CompatibilityLevel
+		procedures    []*gosmo.StoredProcedure
 	}
 	srv := sc.Server
 	startCompletionLoad(a, sc, inventoryLoad(a.completion.inventories, key, inv, completionInventoryTimeout,
@@ -297,6 +299,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 			// case-insensitive database wants anyway.
 			if d, err := srv.DatabaseByName(ctx, database); err == nil {
 				r.collation = databaseCollation(d)
+				r.compatibility = d.CompatibilityLevel
 			}
 			// Procedure suggestions are optional; a refused read must not
 			// disable table/column completion.
@@ -311,6 +314,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 				return
 			}
 			inv.applyCatalog(r.cat, r.collation)
+			inv.compatibility = r.compatibility
 			inv.defaultSchema = r.schema
 			inv.procedures = r.procedures
 			a.setStatus(fmt.Sprintf("Autocomplete ready for %s (%d tables/views)", database, len(r.cat.Objects)))

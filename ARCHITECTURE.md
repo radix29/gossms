@@ -382,6 +382,8 @@ gossms/
 │       ├── completion_builtins.go   # the built-in function table (kind, call shape, version, Fabric) and the keyword lists indexed from it
 │       ├── completion_expressions.go # lightweight shared expression context: clause/frame analysis, CASE, DATEPART, scalar positions
 │       ├── completion_calls.go      # suffix-preserving call edits and function templates for completed built-ins
+│       ├── completion_function_options.go # contextual AI/JSON argument clauses and function-option completion
+│       ├── completion_bulk.go       # OPENROWSET(BULK) options and values, gated by engine, format and parser version
 │       ├── completion_predicates.go # predicate scanning: operand/operator positions and the operator choices after them
 │       ├── completion_spatial.go    # spatial constructors and methods for catalog columns and declared scalar variables
 │       ├── completion_relations.go  # resolves FROM-scope refs (CTEs, derived tables) to columns, with depth/cycle guards

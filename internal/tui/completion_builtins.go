@@ -25,12 +25,15 @@ const (
 	// only where one is (completionDataTypes), since a type name can also be
 	// a keyword elsewhere (FOR JSON).
 	builtinDataType
+	// SQL Server, Azure SQL/MI and Fabric SQL database, not Warehouse or Synapse.
+	builtinSQLOnly
 )
 
 type completionBuiltin struct {
-	name  string
-	kind  builtinKind
-	since gosmo.ServerVersion
+	name             string
+	kind             builtinKind
+	since            gosmo.ServerVersion
+	minCompatibility gosmo.CompatibilityLevel
 }
 
 // Kind, call shape and availability belong to the same entry. The slices
@@ -107,6 +110,11 @@ var builtinDefinitions = func() []completionBuiltin {
 		{name: "NULL", kind: builtinScalar | builtinBare},
 		{name: "TRY_CAST", kind: builtinScalar},
 		{name: "TRY_CONVERT", kind: builtinScalar},
+		{name: "PARSE", kind: builtinScalar},
+		{name: "TRY_PARSE", kind: builtinScalar},
+		{name: "CHOOSE", kind: builtinScalar},
+		{name: "IIF", kind: builtinScalar},
+		{name: "UNISTR", kind: builtinScalar, since: gosmo.SQLServer2025},
 		{name: "DATEADD", kind: builtinScalar},
 		{name: "DATEDIFF", kind: builtinScalar},
 		{name: "DATENAME", kind: builtinScalar},
@@ -138,6 +146,9 @@ var builtinDefinitions = func() []completionBuiltin {
 		{name: "HOST_NAME", kind: builtinScalar | builtinNoArgs},
 		{name: "ORIGINAL_LOGIN", kind: builtinScalar | builtinNoArgs},
 		{name: "CURRENT_TIMESTAMP", kind: builtinScalar | builtinBare},
+		{name: "CURRENT_DATE", kind: builtinScalar | builtinBare | builtinSQLOnly, since: gosmo.SQLServer2025},
+		{name: "CURRENT_TIMEZONE", kind: builtinScalar | builtinNoArgs, since: gosmo.SQLServer2022},
+		{name: "CURRENT_TIMEZONE_ID", kind: builtinScalar | builtinNoArgs | builtinSQLOnly, since: gosmo.SQLServer2022},
 		{name: "CURRENT_USER", kind: builtinScalar | builtinBare},
 		{name: "SESSION_USER", kind: builtinScalar | builtinBare},
 		{name: "SYSTEM_USER", kind: builtinScalar | builtinBare},
@@ -165,6 +176,26 @@ var builtinDefinitions = func() []completionBuiltin {
 		{name: "VECTOR_NORM", kind: builtinScalar | builtinNoWarehouse, since: gosmo.SQLServer2025},
 		{name: "VECTOR_NORMALIZE", kind: builtinScalar | builtinNoWarehouse, since: gosmo.SQLServer2025},
 		{name: "VECTORPROPERTY", kind: builtinScalar | builtinNoWarehouse, since: gosmo.SQLServer2025},
+		{name: "AI_ANALYZE_SENTIMENT", kind: builtinScalar | builtinWarehouseOnly},
+		{name: "AI_CLASSIFY", kind: builtinScalar | builtinWarehouseOnly},
+		{name: "AI_EXTRACT", kind: builtinScalar | builtinWarehouseOnly},
+		{name: "AI_FIX_GRAMMAR", kind: builtinScalar | builtinWarehouseOnly},
+		{name: "AI_GENERATE_RESPONSE", kind: builtinScalar | builtinWarehouseOnly},
+		{name: "AI_SUMMARIZE", kind: builtinScalar | builtinWarehouseOnly},
+		{name: "AI_TRANSLATE", kind: builtinScalar | builtinWarehouseOnly},
+		{name: "AI_GENERATE_EMBEDDINGS", kind: builtinScalar | builtinSQLOnly, since: gosmo.SQLServer2025},
+		{name: "ERROR_LINE", kind: builtinScalar | builtinNoArgs | builtinNoWarehouse},
+		{name: "ERROR_MESSAGE", kind: builtinScalar | builtinNoArgs},
+		{name: "ERROR_NUMBER", kind: builtinScalar | builtinNoArgs},
+		{name: "ERROR_PROCEDURE", kind: builtinScalar | builtinNoArgs},
+		{name: "ERROR_SEVERITY", kind: builtinScalar | builtinNoArgs},
+		{name: "ERROR_STATE", kind: builtinScalar | builtinNoArgs},
+		{name: "CONTEXT_INFO", kind: builtinScalar | builtinNoArgs | builtinNoWarehouse},
+		{name: "CURRENT_TRANSACTION_ID", kind: builtinScalar | builtinNoArgs | builtinNoWarehouse},
+		{name: "ROWCOUNT_BIG", kind: builtinScalar | builtinNoArgs | builtinNoWarehouse},
+		{name: "SCOPE_IDENTITY", kind: builtinScalar | builtinNoArgs | builtinNoWarehouse},
+		{name: "XACT_STATE", kind: builtinScalar | builtinNoArgs | builtinNoWarehouse},
+		{name: "AI_GENERATE_CHUNKS", kind: builtinTable | builtinSQLOnly, since: gosmo.SQLServer2025, minCompatibility: 170},
 		{name: "OPENJSON", kind: builtinTable},
 		{name: "OPENROWSET", kind: builtinTable},
 		{name: "STRING_SPLIT", kind: builtinTable},
@@ -183,7 +214,7 @@ var builtinDefinitions = func() []completionBuiltin {
 		{name: "DISTINCT FROM", since: gosmo.SQLServer2022},
 		{name: "NOT DISTINCT FROM", since: gosmo.SQLServer2022},
 		{name: "WINDOW", since: gosmo.SQLServer2022},
-		{name: "JSON", kind: builtinDataType | builtinNoWarehouse, since: gosmo.SQLServer2025},
+		{name: "JSON", kind: builtinDataType | builtinSQLOnly, since: gosmo.SQLServer2025},
 		{name: "VECTOR", kind: builtinDataType | builtinNoWarehouse, since: gosmo.SQLServer2025},
 	}
 	for _, name := range strings.Fields(
@@ -195,8 +226,14 @@ var builtinDefinitions = func() []completionBuiltin {
 			"OBJECTPROPERTY OBJECTPROPERTYEX COLUMNPROPERTY COL_LENGTH COL_NAME TYPE_ID TYPE_NAME TYPEPROPERTY " +
 			"DATABASEPROPERTYEX SERVERPROPERTY CONNECTIONPROPERTY SESSION_CONTEXT " +
 			"USER_ID USER_NAME SUSER_ID SUSER_NAME SUSER_SID SUSER_SNAME IS_MEMBER IS_ROLEMEMBER HAS_PERMS_BY_NAME " +
+			"COLLATIONPROPERTY PARSENAME STATS_DATE INDEX_COL INDEXKEY_PROPERTY INDEXPROPERTY COMPRESS DECOMPRESS " +
 			"HASHBYTES CHECKSUM BINARY_CHECKSUM") {
 		defs = append(defs, completionBuiltin{name: name, kind: builtinScalar})
+	}
+	for _, name := range strings.Fields(
+		"IDENT_CURRENT IDENT_INCR IDENT_SEED SQL_VARIANT_PROPERTY FORMATMESSAGE " +
+			"DATABASE_PRINCIPAL_ID SESSIONPROPERTY LOGINPROPERTY CRYPT_GEN_RANDOM") {
+		defs = append(defs, completionBuiltin{name: name, kind: builtinScalar | builtinNoWarehouse})
 	}
 	for _, typ := range []string{"geometry", "geography"} {
 		for _, method := range spatialConstructors {
