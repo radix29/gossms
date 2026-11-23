@@ -95,7 +95,7 @@ func openOutFile(o Options) (*outFile, error) {
 	f := &outFile{path: path, format: format, st: st}
 	switch format {
 	case FormatCSV, FormatTSV:
-		f.rec = newRecordWriter(st, format, o.NoHeaders)
+		f.rec = newRecordWriter(st, format, o)
 	case FormatJSONL:
 		f.jsonl = newJSONLWriter(st, 0, 0)
 	}

@@ -16,6 +16,7 @@ const (
 	optMaxOutputBytes = "max-output-bytes"
 	optNullText       = "null-text"
 	optHeaders        = "headers"
+	optNeutralize     = "csv-neutralize-formulas"
 	optMessages       = "messages"
 	optOutFile        = "out-file"
 	optForce          = "force"
@@ -37,6 +38,8 @@ func outputOptions() []spec.Option {
 			Help: "How text and markdown show NULL"},
 		{Name: optHeaders, Type: spec.TypeBool, Default: "true", Global: true,
 			Help: "Column headers in text, csv and tsv; --no-headers leaves them out"},
+		{Name: optNeutralize, Type: spec.TypeBool, Global: true,
+			Help: "csv and tsv: prefix ' to a text cell starting with = + - @, tab or CR, so a spreadsheet does not run it as a formula"},
 		{Name: optMessages, Type: spec.TypeBool, Default: "true", Global: true,
 			Help: "PRINT and informational messages; --no-messages leaves them out"},
 		{Name: optOutFile, Type: spec.TypeString, Global: true,
@@ -49,16 +52,17 @@ func outputOptions() []spec.Option {
 // renderOptions is inv's output options. A negative limit is a usage error.
 func renderOptions(inv *spec.Invocation) (output.Options, error) {
 	o := output.Options{
-		Format:         output.Format(inv.Values["output"].(string)),
-		Quiet:          inv.Values["quiet"].(bool),
-		MaxRows:        inv.Values[optMaxRows].(int),
-		MaxColWidth:    inv.Values[optMaxColWidth].(int),
-		MaxOutputBytes: int64(inv.Values[optMaxOutputBytes].(int)),
-		NullText:       inv.Values[optNullText].(string),
-		NoHeaders:      !inv.Values[optHeaders].(bool),
-		NoMessages:     !inv.Values[optMessages].(bool),
-		OutFile:        inv.Values[optOutFile].(string),
-		Force:          inv.Values[optForce].(bool),
+		Format:             output.Format(inv.Values["output"].(string)),
+		Quiet:              inv.Values["quiet"].(bool),
+		MaxRows:            inv.Values[optMaxRows].(int),
+		MaxColWidth:        inv.Values[optMaxColWidth].(int),
+		MaxOutputBytes:     int64(inv.Values[optMaxOutputBytes].(int)),
+		NullText:           inv.Values[optNullText].(string),
+		NoHeaders:          !inv.Values[optHeaders].(bool),
+		NoMessages:         !inv.Values[optMessages].(bool),
+		NeutralizeFormulas: inv.Values[optNeutralize].(bool),
+		OutFile:            inv.Values[optOutFile].(string),
+		Force:              inv.Values[optForce].(bool),
 	}
 	for _, n := range []string{optMaxRows, optMaxColWidth, optMaxOutputBytes} {
 		if v := inv.Values[n].(int); v < 0 {

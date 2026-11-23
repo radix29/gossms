@@ -128,6 +128,7 @@ close (edit distance ≤ 2), the hint is a did-you-mean: `Did you mean
 | `--max-output-bytes <n>` | | Cap on stdout (default 1048576; `0` is no cap) |
 | `--null-text <text>` | | How text and markdown show NULL (default `NULL`) |
 | `--no-headers` | | Leave out column headers (text, csv, tsv) |
+| `--csv-neutralize-formulas` | | csv and tsv: prefix `'` to a text cell a spreadsheet would run as a formula (§ `csv` and `tsv`) |
 | `--no-messages` | | Leave out PRINT and informational messages |
 | `--out-file <path>` | | Write every row to a file; stdout gets the summary |
 | `--force` | | Replace an existing `--out-file`, a `plan` command's `--plan-file` or a `script` command's `--script-file` |
@@ -483,6 +484,16 @@ terminal spells control characters out as in `text`; `--out-file` and a pipe
 keep every byte. Everything else — the header block, each set's
 marker and truncation note, messages, warnings, errors — goes to **stderr** as
 the text format's summary, on success too; the exit code carries the status. That stderr summary honours `--no-messages`.
+
+`--csv-neutralize-formulas` (off by default) guards a file meant for a
+spreadsheet against formula injection: a text cell, header included,
+starting with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading
+`'` (OWASP's rule), which Excel and LibreOffice hide. A numeric column (int,
+bigint, smallint, tinyint, real, float, decimal, numeric, money,
+smallmoney) is exempt, so `-5` stays a number. It applies to stdout and to a
+`.csv`/`.tsv` `--out-file`. Off keeps the bytes lossless, which `data import`
+relies on; on, `data import` reads the `'` back as part of the value
+(`docs/decisions.md` § CSV/TSV formula neutralization).
 
 ### `markdown`
 

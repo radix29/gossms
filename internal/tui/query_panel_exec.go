@@ -308,10 +308,12 @@ func (p *QueryPanel) startRun(queryText string, firstLine int, exportPath string
 	// goroutine; launch's postAndWake orders the two.
 	var exportErr error
 	var exportKept bool
+	// Read here, on the UI goroutine: Options may change cfg while the run goes.
+	neutralize := !p.app.cfg.ExportKeepFormulas
 	run := func(ctx context.Context, sess *query.Session) *query.Result {
 		switch {
 		case exportPath != "":
-			sink, err := newCSVSink(exportPath)
+			sink, err := newCSVSink(exportPath, neutralize)
 			if err != nil {
 				exportErr = err
 				return &query.Result{Messages: query.ErrorMessages(err)}

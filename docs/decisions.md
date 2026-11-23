@@ -1353,7 +1353,8 @@ it from the string 'NULL'.
   is skipped by readers and is the separator between sets), so NULL and an
   empty string are the same for that one shape.
 - **Results to Text:** "NULL", as SSMS shows it.
-- **Export Results (grid menus, File menu):** CSV/TSV as Results To File;
+- **Export Results (grid menus, File menu):** CSV/TSV as Results To File
+  (both neutralize formulas by default, § CSV/TSV formula neutralization);
   JSON `null` (int/float numbers (an integer beyond ±2^53−1 a string), bit true/false, decimal and money strings —
   the command line's json rules, `export.KindOf`); XML an empty element with
   `xsi:nil="true"`, FOR XML ELEMENTS XSINIL's shape, column names encoded as
@@ -1361,6 +1362,30 @@ it from the string 'NULL'.
   An xml column is escaped text, not nested markup, so the document is always
   well formed. It writes the active set only, in the order the grid shows it
   (`internal/tui/query_panel_export.go`).
+
+## CSV/TSV formula neutralization — settled, do not re-raise
+
+A CSV or TSV cell starting `=`, `+`, `-` or `@` is a formula once the file is
+opened in Excel or LibreOffice (CWE-1236), so a database value an attacker
+controls could run in a DBA's spreadsheet. Quoting does not help (a quoted
+`"=1+1"` is still a formula); the text must change, and that breaks the
+lossless round trip with `data import`. Hence a switch,
+`export.RecordWriter.NeutralizeFormulas`, rather than a new default:
+
+- **What it does:** OWASP's rule. A text cell, header included, starting
+  with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`.
+  Numeric columns (`export.KindOf`'s numbers plus decimal, numeric, money,
+  smallmoney) are exempt by declared type, so `-5` stays a number. NULL and
+  the empty string are untouched. JSON and XML never change.
+- **TUI: on by default.** Export Results and Results To File produce a file
+  a person opens in a spreadsheet. Tools > Options > "Export: neutralize
+  spreadsheet formulas" turns it off (`config.ExportKeepFormulas`, inverted
+  so a missing key keeps it on).
+- **CLI: off by default.** `--csv-neutralize-formulas` turns it on. CLI csv
+  feeds pipes and `data import`, where the bytes must round-trip exactly.
+- **Not done:** stripping the `'` on `data import` (it cannot tell a
+  neutralized cell from a value that really starts with `'`), and the
+  full-width or other look-alike characters some spreadsheets also accept.
 
 ## Format Document: how each language is formatted — settled, do not re-raise
 

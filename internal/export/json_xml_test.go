@@ -35,7 +35,7 @@ var (
 
 func TestWriteTableJSON(t *testing.T) {
 	var b bytes.Buffer
-	if err := WriteTable(&b, FormatJSON, typedCols, typedTypes, typedTable); err != nil {
+	if err := WriteTable(&b, FormatJSON, typedCols, typedTypes, typedTable, false); err != nil {
 		t.Fatal(err)
 	}
 	want := `[
@@ -53,7 +53,7 @@ func TestWriteTableJSON(t *testing.T) {
 
 func TestWriteTableJSONEmptySetIsAnEmptyArray(t *testing.T) {
 	var b bytes.Buffer
-	if err := WriteTable(&b, FormatJSON, []string{"a"}, nil, tableOf{}); err != nil {
+	if err := WriteTable(&b, FormatJSON, []string{"a"}, nil, tableOf{}, false); err != nil {
 		t.Fatal(err)
 	}
 	if b.String() != "[]\n" {
@@ -66,7 +66,7 @@ func TestWriteTableXML(t *testing.T) {
 	cols := []string{"id", "Unit Price", "note", "id", ""}
 	tbl := tableOf{rows: [][]string{{"1", "2.50", "a<b & \"c\"\r\n\tz", "x", "NULL"}, {"2", "", "NULL", "y", "z"}},
 		nulls: map[[2]int]bool{{1, 2}: true}}
-	if err := WriteTable(&b, FormatXML, cols, nil, tbl); err != nil {
+	if err := WriteTable(&b, FormatXML, cols, nil, tbl, false); err != nil {
 		t.Fatal(err)
 	}
 	want := `<?xml version="1.0" encoding="UTF-8"?>
@@ -114,7 +114,7 @@ func TestWriteTableXML(t *testing.T) {
 
 func TestWriteTableXMLEmptySetIsAnEmptyRoot(t *testing.T) {
 	var b bytes.Buffer
-	if err := WriteTable(&b, FormatXML, []string{"a"}, nil, tableOf{}); err != nil {
+	if err := WriteTable(&b, FormatXML, []string{"a"}, nil, tableOf{}, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := xml.Unmarshal(b.Bytes(), new(struct{})); err != nil || !strings.HasSuffix(b.String(), "</ResultSet>\n") {
@@ -154,7 +154,7 @@ func TestWriteTableCSVIsRecordWritersSet(t *testing.T) {
 		sep    rune
 	}{{FormatCSV, CSV}, {FormatTSV, TSV}} {
 		var got, want bytes.Buffer
-		if err := WriteTable(&got, f.format, typedCols, typedTypes, typedTable); err != nil {
+		if err := WriteTable(&got, f.format, typedCols, typedTypes, typedTable, false); err != nil {
 			t.Fatal(err)
 		}
 		rw := NewRecordWriter(&want, f.sep)
@@ -184,7 +184,7 @@ func TestJSONNumberText(t *testing.T) {
 func TestWriteTableJSONBigintPastSafeIsAString(t *testing.T) {
 	var b bytes.Buffer
 	tbl := tableOf{rows: [][]string{{"9007199254740993"}, {"42"}, {"NULL"}}, nulls: map[[2]int]bool{{2, 0}: true}}
-	if err := WriteTable(&b, FormatJSON, []string{"big"}, []string{"bigint"}, tbl); err != nil {
+	if err := WriteTable(&b, FormatJSON, []string{"big"}, []string{"bigint"}, tbl, false); err != nil {
 		t.Fatal(err)
 	}
 	want := "[\n{\"big\":\"9007199254740993\"},\n{\"big\":42},\n{\"big\":null}\n]\n"

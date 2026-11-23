@@ -28,6 +28,7 @@ type OptionsDialog struct {
 	fXECapacity    *widgets.InputField
 	fMaxFetchRows  *widgets.InputField
 	cbIntelliSense *widgets.CheckBox
+	cbNeutralize   *widgets.CheckBox
 
 	// focusable is the Tab order, top to bottom; Tab/Backtab, hit-testing and the
 	// clipboard target derive from it, so a new control is one entry here plus its
@@ -40,7 +41,7 @@ type OptionsDialog struct {
 // NewOptionsDialog creates the Options dialog.
 func NewOptionsDialog(app *App) *OptionsDialog {
 	d := &OptionsDialog{app: app}
-	d.InitModal("Options", 60, 23)
+	d.InitModal("Options", 60, 25)
 
 	styles := config.AllIconStyles()
 	labels := make([]string, len(styles))
@@ -69,7 +70,8 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	d.fXECapacity = widgets.NewInputField("Extended Events viewer holds (events):", 9, false)
 	d.fMaxFetchRows = widgets.NewInputField("Max fetch rows (0 = unlimited):", 9, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
-	d.focusable = []focusable{d.rbIconStyle, d.ddTheme, d.ddSQLStyle, d.fMaxCellLen, d.fMaxTextLen, d.fIndentWidth, d.fXECapacity, d.fMaxFetchRows, d.cbIntelliSense}
+	d.cbNeutralize = widgets.NewCheckBox("Export: neutralize spreadsheet formulas")
+	d.focusable = []focusable{d.rbIconStyle, d.ddTheme, d.ddSQLStyle, d.fMaxCellLen, d.fMaxTextLen, d.fIndentWidth, d.fXECapacity, d.fMaxFetchRows, d.cbIntelliSense, d.cbNeutralize}
 	d.ring = dialogs.FieldRing{
 		Fields:  func() []focusable { return d.focusable },
 		Buttons: func() []string { return optionsButtons },
@@ -110,6 +112,7 @@ func (d *OptionsDialog) Show() {
 	d.fXECapacity.SetValue(strconv.Itoa(config.ClampXEventStoreCapacity(d.app.cfg.XEventStoreCapacity)))
 	d.fMaxFetchRows.SetValue(strconv.Itoa(max(d.app.cfg.MaxFetchRows, 0)))
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
+	d.cbNeutralize.SetChecked(!d.app.cfg.ExportKeepFormulas)
 	d.ring.Reset()
 	d.ModalDialog.Show()
 }
@@ -147,6 +150,9 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 
 	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+16)
 	d.cbIntelliSense.Draw(s)
+
+	d.cbNeutralize.SetBounds(inner.X+1, inner.Y+18)
+	d.cbNeutralize.Draw(s)
 
 	d.DrawSeparator(s)
 	activeIdx := -1
@@ -209,14 +215,15 @@ func (d *OptionsDialog) doButton(btn int) {
 // sheets host a writable EditorRow changes with the pages.
 type editorIndentHost interface{ SetEditorIndentWidth(n int) }
 
-// apply commits all nine settings (icon style, color theme, SQL format style, max cell length, max text column
+// apply commits all ten settings (icon style, color theme, SQL format style, max cell length, max text column
 // length, indent size, the Extended Events viewer's event limit, max fetch rows,
-// IntelliSense enabled) to the config, persists it, and rebuilds the Object Explorer so the
+// IntelliSense enabled, export formula neutralization) to the config, persists it, and rebuilds the Object Explorer so the
 // icon change shows immediately. The theme needs only the palette swapped: every
 // style is read from it at draw time.
 //
 // The indent size needs one step the others don't: MaxCellLength,
-// MaxTextColumnLength and IntelliSenseDisabled are read from cfg where used, but
+// MaxTextColumnLength, IntelliSenseDisabled and ExportKeepFormulas are read
+// from cfg where used, but
 // the width lives in each Editor, so it is pushed into the open query panels and
 // property sheets (and the default new editors are seeded from) here.
 func (d *OptionsDialog) apply() {
@@ -273,6 +280,8 @@ func (d *OptionsDialog) apply() {
 		d.app.cfg.MaxFetchRows = 0
 	}
 	d.app.cfg.IntelliSenseDisabled = !d.cbIntelliSense.Checked()
+	// Read when an export or a Results To File run starts.
+	d.app.cfg.ExportKeepFormulas = !d.cbNeutralize.Checked()
 	d.app.saveConfig(func(err error) {
 		if err != nil {
 			d.app.logStatus("save config: %v", err)

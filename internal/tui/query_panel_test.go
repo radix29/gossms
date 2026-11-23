@@ -654,7 +654,7 @@ func TestCSVSinkWritesHeaderRowsAndBlankLineBetweenSets(t *testing.T) {
 		{Columns: []string{"x"}, Rows: [][]string{{"y"}}},
 	}
 
-	sink, err := newCSVSink(path)
+	sink, err := newCSVSink(path, false)
 	if err != nil {
 		t.Fatalf("newCSVSink: %v", err)
 	}
@@ -690,12 +690,35 @@ func TestCSVSinkWritesHeaderRowsAndBlankLineBetweenSets(t *testing.T) {
 	}
 }
 
+// Results To File with formula neutralization on: the sink is a
+// query.TypedRowSink, so a text cell starting = gets a ' and an int column's -5
+// does not.
+func TestCSVSinkNeutralizesFormulasByType(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.csv")
+	sink, err := newCSVSink(path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ts query.TypedRowSink = sink
+	if err := ts.BeginTypedSet([]string{"s", "n"}, []string{"nvarchar(10)", "int"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	sink.Row([]string{"=1+1", "-5"}, nil)
+	sink.EndSet(1)
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "s,n\n'=1+1,-5\n" {
+		t.Errorf("file = %q", data)
+	}
+}
+
 // A cell containing the delimiter, a quote, or a newline must come back out
 // as the same value — csv.Writer quotes it, and the streaming path must not
 // have bypassed that.
 func TestCSVSinkQuotesAwkwardCells(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "results.csv")
-	sink, err := newCSVSink(path)
+	sink, err := newCSVSink(path, false)
 	if err != nil {
 		t.Fatalf("newCSVSink: %v", err)
 	}
@@ -741,7 +764,7 @@ func TestCSVSinkQuotesAwkwardCells(t *testing.T) {
 // encoding/csv wrote it before.
 func TestCSVSinkKeepsNullEmptyAndTheStringNULLApart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "results.csv")
-	sink, err := newCSVSink(path)
+	sink, err := newCSVSink(path, false)
 	if err != nil {
 		t.Fatalf("newCSVSink: %v", err)
 	}
@@ -781,7 +804,7 @@ func TestCSVSinkKeepsNullEmptyAndTheStringNULLApart(t *testing.T) {
 // multi-column NULLs are unchanged.
 func TestCSVSinkOneColumnNullRowSurvivesACSVReader(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "results.csv")
-	sink, err := newCSVSink(path)
+	sink, err := newCSVSink(path, false)
 	if err != nil {
 		t.Fatalf("newCSVSink: %v", err)
 	}
@@ -1321,7 +1344,7 @@ func TestCSVSinkAbortKeepsAnExistingFileAndCloseReplacesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	write := func() *csvSink {
-		sink, err := newCSVSink(path)
+		sink, err := newCSVSink(path, false)
 		if err != nil {
 			t.Fatalf("newCSVSink: %v", err)
 		}
@@ -1367,7 +1390,7 @@ func TestCSVSinkFinishKeepsTheFileOnStopOrError(t *testing.T) {
 			if err := os.WriteFile(path, []byte("old\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			sink, err := newCSVSink(path)
+			sink, err := newCSVSink(path, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1413,7 +1436,7 @@ func TestCSVSinkMatchesCommandLineOutFile(t *testing.T) {
 	dir := t.TempDir()
 	tuiPath, cliPath := filepath.Join(dir, "tui.csv"), filepath.Join(dir, "cli.csv")
 
-	ts, err := newCSVSink(tuiPath)
+	ts, err := newCSVSink(tuiPath, false)
 	if err != nil {
 		t.Fatal(err)
 	}
