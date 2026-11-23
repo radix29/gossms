@@ -206,3 +206,33 @@ func TestDBTableSizesUsage(t *testing.T) {
 		}
 	}
 }
+
+// --schema compares under the database's catalog collation: on a
+// case-sensitive one `sales` is not Sales.
+func TestDBTableSizesSchemaCaseSensitive(t *testing.T) {
+	for argv, want := range map[string][]string{
+		"app --schema sales": {},
+		"app --schema Sales": {"Sales.Detail", "Sales.Header"},
+	} {
+		s := newTablesServer(t)
+		s.db("app").Collation = "Latin1_General_CS_AS"
+		res, err := runDBTableSizes(t, s, argv)
+		if err != nil {
+			t.Fatalf("%q: %v", argv, err)
+		}
+		if got := tableNames(res.Sets[0]); !slices.Equal(got, want) {
+			t.Errorf("%q: %q, want %q", argv, got, want)
+		}
+	}
+	// A contained database's fixed catalog collation wins over its own.
+	s := newTablesServer(t)
+	s.db("app").Collation = "Latin1_General_CS_AS"
+	s.db("app").CatalogCollation = "Latin1_General_100_CI_AS_KS_WS_SC"
+	res, err := runDBTableSizes(t, s, "app --schema sales")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tableNames(res.Sets[0]); len(got) != 2 {
+		t.Errorf("contained: %q, want both Sales tables", got)
+	}
+}

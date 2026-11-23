@@ -277,3 +277,23 @@ func TestDBDropOffline(t *testing.T) {
 		t.Errorf("warnings %q", res.Warnings)
 	}
 }
+
+// TestDBDropCaseSensitive: on a case-sensitive server HR is another
+// database than hr — neither the connection's own nor the one an AG holds.
+func TestDBDropCaseSensitive(t *testing.T) {
+	s := newDBServer(t)
+	s.Info.Collation = "Latin1_General_CS_AS"
+	s.Info.HADREnabled = true
+	s.current = "HR"
+	s.ags = map[string][]string{"ag1": {"app"}, "ag2": {"HR"}}
+	if _, _, err := s.run(t, "drop hr --confirm hr --allow admin --dry-run"); err != nil {
+		t.Errorf("%v", err)
+	}
+	s = newDBServer(t)
+	s.Info.Collation = "Latin1_General_CS_AS"
+	s.Info.HADREnabled = true
+	s.ags = map[string][]string{"ag2": {"hr"}}
+	if _, _, err := s.run(t, "drop hr --confirm hr --allow admin --dry-run"); errCode(err) != output.CodeBlocked {
+		t.Errorf("an exact match: %v, want BLOCKED", err)
+	}
+}

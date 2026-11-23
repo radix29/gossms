@@ -35,9 +35,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W5 — B4 + A4**: name comparisons under the scope's collation — the
-  CLI's `--on DATABASE::`, the AG membership lookup and `--schema` — and the
-  rule written down in `docs/db-rules.md`.
 - **W6 — A5**: split `analyzeCompletionContext` into phases, as W3 of the
   last plan did for `baseCompletionCandidates`.
 - **W7 — A6** (tuikit): `DataGrid.SetSourceReordered` reads a nil `newPerm`
@@ -55,54 +52,7 @@ commits but the user.
 
 ---
 
-## Bugs
-
-### B4 — CLI and AG name checks compare SQL names case-blind
-
-**Where:** `internal/cli/cmd/security_permissions.go` `resolveSecurable`
-(`--on DATABASE::name` vs. the connection's database);
-`internal/cli/cmd/db_create.go` (the AG that already holds a database);
-`internal/cli/cmd/db_table_sizes.go` (`--schema` filter).
-
-**What:** all three use `strings.EqualFold` where gossms elsewhere compares
-names with `gosmo.SameName` under the scope's collation (`name_set.go`,
-`pending_edits.go`, completion). On a case-sensitive server,
-`security grant … --on DATABASE::sales` while connected to `Sales` passes the
-check and the GRANT (emitted with no database name) lands on `Sales` — the
-wrong database. The AG lookup can name the wrong group for `sales` vs.
-`Sales`; `--schema sales` lists `Sales` too. Database and AG names compare
-under the server collation, schema names under the database's. CS-only, and
-no CS server exists here (open-threads § Environment), so low — but the first
-is a write to the wrong place.
-
-**Fix:** `gosmo.SameName(info.Collation, …)` for the database and AG names,
-the database's collation for the schema (what `connect`'s database already
-carries; check `gosmo.Database.CatalogCollation`/`Collation` and use the one
-`databaseCollation` in the TUI uses). Offline tests with a CS collation, as
-`TestDatabaseBackupRefusal`'s CS cases. Add the three to the open-threads CS
-list. The rest of the 124 `EqualFold`s were read: system type names, XE
-object names, DNS and replica host names and profile names are
-case-insensitive by definition and stay.
-
----
-
 ## Architecture and refactoring
-
-### A4 — write down the name-comparison rule
-
-**Where:** `docs/db-rules.md`.
-
-**What:** the rule B4 breaks lives only in code (`name_set.go`'s comment,
-`ARCHITECTURE.md`'s package-map row for it). A contributor reaches for
-`strings.EqualFold` — 124 uses in gossms, most legitimately — and nothing
-says which names need the collation.
-
-**Fix:** a `docs/db-rules.md` bullet: compare SQL Server object, schema,
-database and principal names with `gosmo.SameName` (or `nameSet`/`nameMap`)
-under the scope's collation — server for databases, logins, AGs; the
-database's for what lives in it; msdb's for Agent; `EqualFold` only for
-names that are case-insensitive by definition (system type names, XEvent
-package/object names, host and DNS names, gossms profile names).
 
 ### A5 — split `analyzeCompletionContext`
 

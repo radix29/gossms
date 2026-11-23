@@ -171,6 +171,19 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   call it, and New Login and Login Properties scripted passwords in clear. A
   secret in T-SQL gossms writes itself (not through gosmo) needs the same
   placeholder, by hand.
+- **Compare SQL Server names under the scope's collation, never with
+  `strings.EqualFold`.** `gosmo.SameName` (or `nameSet`/`nameMap` in the TUI)
+  under the server's collation for databases, logins, server roles and
+  availability groups; the database's catalog collation (`databaseCollation`
+  in the TUI, `catalogCollation` in the CLI) for schemas, objects, users and
+  everything else that lives in it; msdb's for Agent. On a `_CS_` server
+  `DATABASE::sales` is not `Sales` — a case-blind check let a database-scoped
+  GRANT pass and land on the connection's database (review 2026-11-23 B4).
+  `EqualFold` stays only for names case-insensitive by definition: system
+  type names, XEvent package/object names, host and DNS names, gossms profile
+  names. A lookup that falls back to a case-blind match only when the exact
+  one misses and only when it is unique (the CLI's `matchName`) is a
+  convenience over catalog spelling, not a comparison, and may keep it.
 - **Never give a procedure installed outside `master` an `sp_` prefix** — `sp_`
   falls back to `master`: `CREATE OR ALTER dbo.sp_x` in tempdb fails "Invalid
   object name", and `DROP PROCEDURE IF EXISTS dbo.sp_x` in tempdb **deleted

@@ -66,7 +66,13 @@ support); this section covers only the environment.
   collation since review 2026-11-22-4 B4, pinned offline by
   `TestDatabaseBackupRefusal`'s CS cases): create user databases `TempDB` and
   `Master`, and see a differential/log backup of each go through, not refused
-  as tempdb's or master's.
+  as tempdb's or master's. The CLI's server-collation checks (review
+  2026-11-23 B4, pinned offline by `TestSecurityGrantDatabaseCaseSensitive`
+  and `TestDBDropCaseSensitive`) wait on it too: connected to `sales`,
+  `security grant CONNECT --on DATABASE::Sales` is refused; `db drop Sales`
+  is not refused as the connection's own database, nor blocked by an AG
+  holding `sales`. (`db table-sizes --schema` compares under the
+  *database's* collation — a `_CS_` user database on any instance checks it.)
 
 - **No SQL database in Fabric (EngineEdition 12) has ever been connected.**
   gosmo counts it as Azure (version gates treat its 12.x as newest) and as

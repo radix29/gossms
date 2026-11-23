@@ -524,3 +524,24 @@ func TestSecurityPermissionIgnored(t *testing.T) {
 		t.Errorf("landed: %v %q", err, res.Warnings)
 	}
 }
+
+// TestSecurityGrantDatabaseCaseSensitive: --on DATABASE::name compares
+// under the server's collation. On a case-sensitive one APP is not the
+// connection's app, and the GRANT — which names no database — is refused
+// rather than landing on app.
+func TestSecurityGrantDatabaseCaseSensitive(t *testing.T) {
+	cat := newSecServer(t)
+	cat.Info.Collation = "Latin1_General_CS_AS"
+	_, _, err := runPerm(t, cat, "grant CONNECT --on DATABASE::APP --to etl_user --allow admin")
+	if e := wantCode(t, err, output.CodeUsageError); !strings.Contains(e.Message, "the connection is in database [app]") {
+		t.Errorf("%q", e.Message)
+	}
+	if len(cat.writes) != 0 {
+		t.Errorf("wrote %q", cat.writes)
+	}
+	cat = newSecServer(t)
+	cat.Info.Collation = "Latin1_General_CS_AS"
+	if _, _, err := runPerm(t, cat, "grant CONNECT --on DATABASE::app --to etl_user --allow admin --dry-run"); err != nil {
+		t.Errorf("exact spelling: %v", err)
+	}
+}

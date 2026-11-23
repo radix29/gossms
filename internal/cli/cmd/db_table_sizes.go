@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/cli/output"
@@ -86,7 +85,8 @@ func (d Deps) dbTableSizes(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 
 	if schema, _ := inv.Values[optSchema].(string); schema != "" {
-		tables = slices.DeleteFunc(tables, func(ts *gosmo.TableSize) bool { return !strings.EqualFold(ts.Schema, schema) })
+		under := catalogCollation(t.DB)
+		tables = slices.DeleteFunc(tables, func(ts *gosmo.TableSize) bool { return !gosmo.SameName(under, ts.Schema, schema) })
 	}
 	sortTableSizes(tables, inv.Values[optSortBy].(string))
 	if top > 0 && len(tables) > top {
