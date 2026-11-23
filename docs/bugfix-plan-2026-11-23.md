@@ -10,56 +10,19 @@ Nobody commits but the user. gosmo and tuikit are untouched by this plan: no
 defect was found in either (see "Reviewed and clean").
 
 Separate from `docs/review-plan-2026-11-23.md`, whose items W9/W10 and R1 are
-still open; none of these three is in it or in `docs/open-threads.md`.
+still open; B1 is not in it or in `docs/open-threads.md`.
 
 ## Recommended implementation order
 
-1. **B3 — Markdown cells carry inline Markdown** (small, self-contained, no
-   format-contract decision).
-2. **B1 — CSV/TSV formula injection** (last: it needs a decision from the
-   user on default and scope before any code, and touches the lossless
-   round-trip contract with `data import`).
+1. **B1 — CSV/TSV formula injection** (needs a decision from the user on
+   default and scope before any code, and touches the lossless round-trip
+   contract with `data import`).
 
 Each step: `go test ./internal/export/... ./internal/cli/...`, then
 `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
 then `go test ./...`, then drive the built binary with the repro below
 (`docs/testing.md`). Docs in the same change: `docs/cli.md` § JSON / Value
 formatting, `docs/decisions.md` § Export Results.
-
----
-
-## B3 — Markdown output lets a cell render as Markdown (links, images, emphasis)
-
-**Repro** (live):
-
-```sh
-gossms query run ... -o markdown -q \
-  -Q "SELECT N'![t](https://example.test/p.png)' img, N'[x](https://example.test)' a, N'*bold* _it_ \`code\`' e"
-# | ![t](https://example.test/p.png) | [x](https://example.test) | *bold* _it_ `code` |
-```
-
-Posted to a PR, an issue or an agent's chat, the first cell loads a remote
-image (a tracking pixel an attacker who controls a database value chooses) and
-the second is a clickable link. The cell escaper already handles `\ | & < >`
-and line breaks for exactly this reason ("a value cannot end its row or the
-table or read as HTML", `markdown.go:15`); inline Markdown was missed.
-
-**Cause.** `markdownCellReplacer` (`internal/cli/output/markdown.go:93`) escapes
-only `\ | & < >`, tab/form-feed and the line-break family.
-
-**Fix.** Backslash-escape the inline-Markdown specials in the same one-pass
-replacer: `` ` `` `*` `_` `[` `]` `!` `~` and `#`/`-`/`+`/`>`... are
-block-level and cannot start a cell inside a table row, so leave those. A
-CommonMark backslash before `[`, `]`, `!`, `*`, `_`, `` ` ``, `~` is a literal
-character, so no HTML entity is needed and existing `\` doubling stays first.
-The `Verbatim` fenced blocks and the `--no-headers` rule are unchanged.
-Check the rendered table in a GitHub-flavoured renderer once (the existing
-tests pin text only).
-
-**Tests.** `markdownCell` table: each special, a literal `\` before one
-(`\*` → `\\\*`), an already-entity `&lt;`, the `<br>` for a line break still
-unescaped, a plain identifier unchanged (`order_id` → `order\_id` is the
-accepted cost; note it in `docs/cli.md`).
 
 ---
 

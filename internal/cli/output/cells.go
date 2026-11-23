@@ -64,23 +64,31 @@ func jsonCell(c *string, k cellKind, width int) any {
 // is always shorter than the whole one, and a cell is never longer than
 // width plus its marker.
 func clip(s string, width int) string {
+	kept, marker := clipParts(s, width)
+	return kept + marker
+}
+
+// clipParts is clip's result split into the text kept and the marker ("" when
+// nothing was cut), so a renderer that escapes cell text (markdownCell) can
+// leave the marker, which is gossms's annotation and not data, unescaped.
+func clipParts(s string, width int) (kept, marker string) {
 	if width <= 0 || len(s) <= width {
-		return s
+		return s, ""
 	}
 	n := utf8.RuneCountInString(s)
 	if n <= width {
-		return s
+		return s, ""
 	}
-	marker := clipMarker(n - width)
+	marker = clipMarker(n - width)
 	if n-width <= utf8.RuneCountInString(marker) {
-		return s
+		return s, ""
 	}
 	cut := 0
 	for range width {
 		_, size := utf8.DecodeRuneInString(s[cut:])
 		cut += size
 	}
-	return s[:cut] + marker
+	return s[:cut], marker
 }
 
 // clipMarker is clip's mark for m characters cut: "…[+1 char]",

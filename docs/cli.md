@@ -490,7 +490,11 @@ The text envelope with each set as a GitHub table, after a blank line: `|`
 and `\` escaped, `&`, `<` and `>` as `&amp;`, `&lt;` and `&gt;` (GitHub
 renders HTML in a cell, so an `xml` value would otherwise vanish), line
 breaks as `<br>` — the only markup a cell holds, so a value containing the
-text `<br>` reads `&lt;br&gt;`. Read raw, the source shows the entities.
+text `<br>` reads `&lt;br&gt;`. The inline-Markdown characters
+`` ` `` `*` `_` `[` `]` `!` `~` are backslash-escaped, so a value cannot
+render as an image, a link, emphasis or code once posted; the cost is that
+the raw source reads `order\_id` for a column named `order_id`. Read raw,
+the source shows the entities and escapes.
 `--no-headers` does not apply (a GitHub table needs its header row).
 
 ### Limits

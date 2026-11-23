@@ -84,13 +84,19 @@ func markdownTable(head []string, rows [][]string, ncols int) []string {
 // markdownCell is a cell made safe inside a GitHub table row. GitHub renders
 // inline HTML in a cell, so &, < and > become entities: unescaped, an xml
 // column's <root a="1"/> renders as nothing, &lt; reads as <, and a value
-// holding the text <br> would look like a line break. One pass, so the <br>
-// written for a line break stays markup and an & is never escaped twice.
+// holding the text <br> would look like a line break. The inline-Markdown
+// specials ` * _ [ ] ! ~ are backslash-escaped (a literal character in
+// CommonMark), so a database value cannot render as a remote image, a link,
+// emphasis or code when the table is posted to a PR or a chat; the
+// block-level ones (# - + > and list digits) cannot start a cell inside a row,
+// so they stay bare. One pass, so the <br> written for a line break stays
+// markup and an & or \ is never escaped twice.
 func markdownCell(s string) string {
 	return markdownCellReplacer.Replace(strings.ReplaceAll(textutil.Visible(s), "\r\n", "\n"))
 }
 
 var markdownCellReplacer = strings.NewReplacer(`\`, `\\`, "|", `\|`,
+	"`", "\\`", "*", `\*`, "_", `\_`, "[", `\[`, "]", `\]`, "!", `\!`, "~", `\~`,
 	"&", "&amp;", "<", "&lt;", ">", "&gt;",
 	"\n", "<br>", "\r", "<br>", "\t", " ", "\v", " ", "\f", " ",
 	"\u0085", "<br>", "\u2028", "<br>", "\u2029", "<br>")
