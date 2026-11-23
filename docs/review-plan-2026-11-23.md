@@ -35,8 +35,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W7 — A6** (tuikit): `DataGrid.SetSourceReordered` reads a nil `newPerm`
-  as the identity, as it already reads a nil `oldPerm`.
 - **W8 — N1**: nits.
 - **W9 — R1**: release notes for gossms, gosmo and tuikit (only if the user
   asks: CLAUDE.md keeps CHANGELOG/RELEASE edits out of fixes).
@@ -47,27 +45,6 @@ Each step: build in the library first when one is involved (`go test ./...`
 there), then `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
 then `go test ./...`, then drive the built binary (`docs/testing.md`). Nobody
 commits but the user.
-
----
-
-## Architecture and refactoring
-
-### A6 — tuikit `SetSourceReordered`: a nil `newPerm` means "every row is gone"
-
-**Where:** `~/go/tuikit/controls/datagrid_sort.go` `SetSourceReordered`.
-
-**What:** a nil `oldPerm` is documented as the identity, but a nil `newPerm`
-silently means the opposite: `slices.Index(nil, orig)` and an empty `at`
-drop the cursor's row and every mark. Both gossms callers
-(`detail_browser_sort.go`, `query_panel_sort.go`) build an explicit identity
-today, so nothing is broken, but a host that clears its sort by passing nil
-(the natural spelling, and the one `oldPerm` invites) loses the selection.
-tuikit has users besides gossms (CLAUDE.md).
-
-**Fix:** treat nil `newPerm` as the identity over `rows.Len()` (build `at`
-from it, or short-circuit `pos` to `r < rows.Len()`), say so in the doc
-comment, and add the nil case to `datagrid_sort_test.go`. The bench should
-not move.
 
 ---
 
@@ -101,5 +78,5 @@ gossms is 110 commits past `v0.2.1` and `CHANGELOG.md`'s newest section is
 0.2.1 (the command line, completion, safety, hide-explorer work among them);
 tuikit is past `v0.0.3` with no `CHANGELOG.md` at all, though CLAUDE.md says
 it is released like gosmo, and its new API (`SetCloseButton`,
-`Splitter.SetCollapsed` from A1, A3's title-row rule (the buttons win, the title truncates with `…`), plus A6 if taken) needs an entry; gosmo is past `v0.3.0`. Unchanged from the last
+`Splitter.SetCollapsed` from A1, A3's title-row rule (the buttons win, the title truncates with `…`), plus A6: `SetSourceReordered` reads a nil `newPerm` as the identity) needs an entry; gosmo is past `v0.3.0`. Unchanged from the last
 plan's R1 except for the counts. Only on request (CLAUDE.md § Repo hygiene).
