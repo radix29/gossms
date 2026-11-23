@@ -1006,7 +1006,7 @@ func TestSQLCompletionLoadingShowsPlaceholder(t *testing.T) {
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
 
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
-	if got, want := labels(items), []string{"GENERATE_SERIES", "OPENJSON", "OPENROWSET", "REGEXP_MATCHES", "REGEXP_SPLIT_TO_TABLE", "STRING_SPLIT", "VECTOR_SEARCH", loadingCompletionItem.Label}; !slices.Equal(got, want) ||
+	if got, want := labels(items), []string{"AI_GENERATE_CHUNKS", "GENERATE_SERIES", "OPENJSON", "OPENROWSET", "REGEXP_MATCHES", "REGEXP_SPLIT_TO_TABLE", "STRING_SPLIT", "VECTOR_SEARCH", loadingCompletionItem.Label}; !slices.Equal(got, want) ||
 		!items[len(items)-1].Placeholder {
 		t.Fatalf("items = %+v, want built-in TVFs followed by the loading placeholder", items)
 	}

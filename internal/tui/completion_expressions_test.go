@@ -191,7 +191,25 @@ func TestSQLExpressionCompletionAccepts(t *testing.T) {
 		{"SELECT ", "current_t", "", "SELECT CURRENT_TIMESTAMP|"},
 		{"SELECT ", "current_u", "", "SELECT CURRENT_USER|"},
 		{"SELECT ", "session_u", "", "SELECT SESSION_USER|"},
+		{"SELECT ", "current_da", "", "SELECT CURRENT_DATE|"},
+		{"SELECT ", "current_timezone_i", "", "SELECT CURRENT_TIMEZONE_ID()|"},
+		{"SELECT ", "error_mess", "", "SELECT ERROR_MESSAGE()|"},
+		{"SELECT ", "scope_ident", "", "SELECT SCOPE_IDENTITY()|"},
+		{"SELECT ", "ai_generate_em", "", "SELECT AI_GENERATE_EMBEDDINGS(|)"},
+		{"SELECT ", "ai_generate_em", " /* keep */ (Name USE MODEL embedding_model)", "SELECT AI_GENERATE_EMBEDDINGS /* keep */ (|Name USE MODEL embedding_model)"},
+		{"SELECT * FROM ", "ai_generate_ch", "", "SELECT * FROM AI_GENERATE_CHUNKS(|)"},
+		{"SELECT ", "unistr", "", "SELECT UNISTR(|)"},
+		{"SELECT PARSE(Name AS ", "dateti", ")", "SELECT PARSE(Name AS DATETIME2|)"},
+		{"SELECT TRY_PARSE(Name AS ", "int", ")", "SELECT TRY_PARSE(Name AS INT|)"},
 		{"SELECT * FROM ", "generate_s", "", "SELECT * FROM GENERATE_SERIES(|)"},
+		{"SELECT * FROM ", "openr", "", "SELECT * FROM OPENROWSET(BULK '|')"},
+		{"SELECT * FROM ", "openr", " AS src", "SELECT * FROM OPENROWSET(BULK '|') AS src"},
+		{"SELECT N'\u4e2d' AS [Name]\nFROM ", "openr", "", "SELECT N'\u4e2d' AS [Name]\nFROM OPENROWSET(BULK '|')"},
+		{"SELECT * FROM dbo.Customers CROSS APPLY (SELECT * FROM ", "openr", ") AS src", "SELECT * FROM dbo.Customers CROSS APPLY (SELECT * FROM OPENROWSET(BULK '|')) AS src"},
+		{"SELECT * FROM ", "openr", " /* keep */ (", "SELECT * FROM OPENROWSET /* keep */ (|"},
+		{"SELECT * FROM ", "openr", "()", "SELECT * FROM OPENROWSET(|)"},
+		{"SELECT * FROM ", "openr", " /* keep */ (BULK 'x', SINGLE_CLOB) AS src", "SELECT * FROM OPENROWSET /* keep */ (|BULK 'x', SINGLE_CLOB) AS src"},
+		{"SELECT * FROM ", "openr", "('MSOLEDBSQL', 'Server=example;', 'SELECT 1') AS src", "SELECT * FROM OPENROWSET(|'MSOLEDBSQL', 'Server=example;', 'SELECT 1') AS src"},
 		{"SELECT * FROM dbo.Customers CROSS APPLY GENERATE_SERIES(1,10) AS g WHERE g.", "val", "", "SELECT * FROM dbo.Customers CROSS APPLY GENERATE_SERIES(1,10) AS g WHERE g.value|"},
 		{"SELECT * FROM dbo.Customers CROSS APPLY STRING_SPLIT(Name, ',') AS g WHERE g.", "val", "", "SELECT * FROM dbo.Customers CROSS APPLY STRING_SPLIT(Name, ',') AS g WHERE g.value|"},
 		{"SELECT DATEADD(", "da", ", 1, GETDATE())", "SELECT DATEADD(DAY|, 1, GETDATE())"},
@@ -337,6 +355,7 @@ func TestSQLRecentBuiltinCompletions(t *testing.T) {
 		{"2022", 16, 3, false},
 		{"2025", 17, 3, false},
 		{"Azure", 12, 5, false},
+		{"Fabric SQL database", 12, 12, false},
 		{"Fabric", 12, 11, true},
 	} {
 		for _, fn := range []struct {
@@ -357,6 +376,9 @@ func TestSQLRecentBuiltinCompletions(t *testing.T) {
 			{"JSON_CONTAINS", 17, false},
 			{"VECTOR_DISTANCE", 17, false}, {"VECTOR_NORM", 17, false},
 			{"VECTOR_NORMALIZE", 17, false}, {"VECTORPROPERTY", 17, false},
+			{"UNISTR", 17, true}, {"CURRENT_DATE", 17, false},
+			{"CURRENT_TIMEZONE", 16, true}, {"CURRENT_TIMEZONE_ID", 16, false},
+			{"AI_GENERATE_EMBEDDINGS", 17, false},
 		} {
 			for _, prefix := range []string{"SELECT ", "SELECT * FROM dbo.Customers WHERE Id = "} {
 				t.Run(engine.name+"/"+prefix+fn.name, func(t *testing.T) {
@@ -364,7 +386,7 @@ func TestSQLRecentBuiltinCompletions(t *testing.T) {
 					switch {
 					case engine.fabric:
 						qp.conn.Server = fabricConn(t).Server
-					case engine.edition == 5:
+					case engine.edition == 5 || engine.edition == 12:
 						sc, _ := newGConnOnAzure(t, engine.edition)
 						qp.conn.Server = sc.Server
 					default:
@@ -373,11 +395,123 @@ func TestSQLRecentBuiltinCompletions(t *testing.T) {
 					}
 					lines, row, col := linesAndCursor(t, prefix+strings.ToLower(fn.name)+"|")
 					items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
-					want := (engine.edition == 5 || engine.fabric || engine.major >= fn.major) && (!engine.fabric || fn.fabric)
+					want := (engine.edition == 5 || engine.edition == 12 || engine.fabric || engine.major >= fn.major) && (!engine.fabric || fn.fabric)
 					if got := containsLabel(items, fn.name); got != want {
 						t.Fatalf("%s present=%v, want %v in %v", fn.name, got, want, labels(items))
 					}
 				})
+			}
+		}
+	}
+}
+
+func TestSQLAICompletionDialects(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		edition     int
+		fabric, sql bool
+	}{
+		{"SQL Server", 3, false, true},
+		{"Azure SQL", 5, false, true},
+		{"Managed Instance", 8, false, true},
+		{"Fabric SQL database", 12, false, true},
+		{"Fabric Warehouse", 11, true, false},
+		{"Synapse dedicated", 6, false, false},
+		{"Synapse serverless", 11, false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			qp := newTestQueryPanelWithFunctions(t)
+			if tt.fabric {
+				qp.conn.Server = fabricConn(t).Server
+			} else {
+				sc, _ := newGConnAtVersion(t, "17.0.2000.0")
+				qp.conn.Server = sc.Server
+				qp.conn.Server.Info().EngineEdition = gosmo.EngineEdition(tt.edition)
+			}
+			for _, fn := range strings.Fields("AI_ANALYZE_SENTIMENT AI_CLASSIFY AI_EXTRACT AI_FIX_GRAMMAR AI_GENERATE_RESPONSE AI_SUMMARIZE AI_TRANSLATE AI_GENERATE_EMBEDDINGS AI_GENERATE_CHUNKS") {
+				for _, source := range []bool{false, true} {
+					sql := "SELECT " + strings.ToLower(fn) + "|"
+					if source {
+						sql = "SELECT * FROM " + strings.ToLower(fn) + "|"
+					}
+					lines, row, col := linesAndCursor(t, sql)
+					items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+					want := tt.fabric && !source
+					switch fn {
+					case "AI_GENERATE_EMBEDDINGS":
+						want = tt.sql && !source
+					case "AI_GENERATE_CHUNKS":
+						want = tt.sql && source
+					}
+					if got := containsLabel(items, fn); got != want {
+						t.Errorf("%s: present=%v, want %v; items=%v", sql, got, want, labels(items))
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSQLChunkCompletionCompatibility(t *testing.T) {
+	for _, compat := range []gosmo.CompatibilityLevel{0, 160, 170} {
+		for _, version := range []string{"16.0.2000.0", "17.0.2000.0"} {
+			t.Run(fmt.Sprintf("%s/%d", version, compat), func(t *testing.T) {
+				qp := newTestQueryPanelWithFunctions(t)
+				sc, _ := newGConnAtVersion(t, version)
+				qp.conn.Server = sc.Server
+				qp.app.completion.inventories[completionInventoryKey(qp.conn.Opts, qp.database)].compatibility = compat
+				lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.Customers CROSS APPLY ai_generate_ch|")
+				items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+				want := version[0:2] == "17" && compat != 160
+				if got := containsLabel(items, "AI_GENERATE_CHUNKS"); got != want {
+					t.Fatalf("present=%v, want %v; items=%v", got, want, labels(items))
+				}
+			})
+		}
+	}
+}
+
+func TestSQLWarehouseCompletionWithoutEditionMetadata(t *testing.T) {
+	qp := newTestQueryPanelWithFunctions(t)
+	qp.conn.Server = fabricConn(t).Server
+	qp.conn.Server.Info().EngineEdition = 0
+	qp.conn.Server.Info().VersionMajor = 0
+	if !qp.conn.IsFabricDW() {
+		t.Fatal("fixture lost its hostname-derived Warehouse classification")
+	}
+	for _, tt := range []struct{ sql, label string }{
+		{"SELECT ai_generate_em|", "AI_GENERATE_EMBEDDINGS"},
+		{"SELECT current_da|", "CURRENT_DATE"},
+		{"SELECT * FROM ai_generate_ch|", "AI_GENERATE_CHUNKS"},
+		{"SELECT JSON_VALUE(Name, '$.x' |)", "RETURNING"},
+	} {
+		lines, row, col := linesAndCursor(t, tt.sql)
+		items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+		if containsLabel(items, tt.label) {
+			t.Errorf("Warehouse offers SQL-only %s without edition metadata", tt.label)
+		}
+	}
+}
+
+func TestSQLAddedBuiltinFamilies(t *testing.T) {
+	for _, fabric := range []bool{false, true} {
+		qp := newTestQueryPanelWithFunctions(t)
+		if fabric {
+			qp.conn.Server = fabricConn(t).Server
+		}
+		for _, family := range []struct {
+			names  string
+			fabric bool
+		}{
+			{"PARSE TRY_PARSE CHOOSE IIF COLLATIONPROPERTY PARSENAME STATS_DATE INDEX_COL INDEXKEY_PROPERTY INDEXPROPERTY COMPRESS DECOMPRESS ERROR_MESSAGE ERROR_NUMBER ERROR_PROCEDURE ERROR_SEVERITY ERROR_STATE", true},
+			{"ERROR_LINE CONTEXT_INFO CURRENT_TRANSACTION_ID ROWCOUNT_BIG SCOPE_IDENTITY XACT_STATE IDENT_CURRENT IDENT_INCR IDENT_SEED SQL_VARIANT_PROPERTY FORMATMESSAGE DATABASE_PRINCIPAL_ID SESSIONPROPERTY LOGINPROPERTY CRYPT_GEN_RANDOM", false},
+		} {
+			for _, fn := range strings.Fields(family.names) {
+				lines, row, col := linesAndCursor(t, "SELECT "+strings.ToLower(fn)+"| FROM dbo.Customers")
+				items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+				if got, want := containsLabel(items, fn), !fabric || family.fabric; got != want {
+					t.Errorf("fabric=%v %s: present=%v, want %v", fabric, fn, got, want)
+				}
 			}
 		}
 	}
@@ -623,6 +757,13 @@ func FuzzSQLExpressionCompletion(f *testing.F) {
 		"CREATE FUNCTION dbo.f() RETURNS int AS BEGIN IF 1=0 RETURN 0; SELECT @x=Id FROM dbo.Customers wh",
 		"EXEC @rc = dbo.GetCu",
 		"UPDATE dbo.Customers SET Name.WRITE(N'x', 0, 1) wh",
+		"SELECT * FROM OPENROWSET(BULK N'x.parquet', FORMAT = N'PARQUET', MAXERRORS = 2)",
+		"SELECT * FROM OPENROWSET(BULK 'x', ORDER(Id DESC, Name ASC) UNIQUE) WITH (Id INT, doc NVARCHAR(MAX))",
+		"SELECT AI_GENERATE_EMBEDDINGS(Name USE MODEL model PARAMETERS JSON_OBJECT('dimensions': 755))",
+		"SELECT * FROM AI_GENERATE_CHUNKS(SOURCE = Name, CHUNK_TYPE = FIXED, CHUNK_SIZE = 50)",
+		"SELECT JSON_ARRAYAGG(Name ORDER BY Id DESC, Name ASC ABSENT ON NULL RETURNING JSON)",
+		"SELECT JSON_QUERY(Name, '$.x[*]' WITH ARRAY WRAPPER), JSON_VALUE(Name, '$.x' RETURNING NVARCHAR(MAX))",
+		"SELECT TRY_PARSE(Name AS DECIMAL(18,2) USING 'en-US')",
 	} {
 		f.Add(sql, len([]rune(sql)))
 	}
