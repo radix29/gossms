@@ -431,6 +431,15 @@ func (p *QueryPanel) scopeCompletionPosition(pos *completionPosition) {
 // qualifiedDataTypePosition), and keywords. Keywords that leave room for
 // catalog names are armed on post instead of returned.
 func (p *QueryPanel) positionalCandidates(pos *completionPosition, post *completionPost) ([]editor.CompletionItem, bool) {
+	var options []editor.CompletionItem
+	if pos.state == sqlparse.LexNormal && !pos.hasQualifier && len(pos.chain) == 0 &&
+		!pos.memberAccess && !sqlparse.HasSigil(pos.prefix) {
+		var only bool
+		options, only = p.functionOptionCandidates(pos.stmt, pos.stmtTokens, pos.at, pos.upTo, pos.prefix)
+		if only {
+			return options, true
+		}
+	}
 	if pos.cc.only && len(pos.cc.choices) == 0 {
 		return nil, true
 	}
@@ -455,6 +464,7 @@ func (p *QueryPanel) positionalCandidates(pos *completionPosition, post *complet
 		}
 	case sqlparse.LexNormal:
 		keywords, sourceComplete := p.keywordCandidates(pos.stmt, pos.stmtTokens, pos.scope.Query, pos.at, pos.upTo, pos.prefix)
+		keywords = append(options, keywords...)
 		for i := range keywords {
 			if strings.HasSuffix(keywords[i].Label, "DISTINCT FROM") {
 				keywords[i] = reuseDistinctCompletionTail(keywords[i], pos.buf, pos.upTo)

@@ -455,6 +455,16 @@ of the script, later GO batches included, and the results status line says so) a
 IntelliSense. Unsaved query tabs are recovered to the `recovered` folder beside
 `config.json` after a crash.
 
+Built-in completion distinguishes Fabric Warehouse/SQL analytics endpoint AI
+functions from SQL Server/Azure SQL/Fabric SQL database embeddings and chunking.
+Argument suggestions include `OPENROWSET(BULK)` options by engine, file format
+and parser version, AI `ON ERROR`, and JSON null-handling and return clauses.
+Selecting `OPENROWSET` starts `OPENROWSET(BULK '')` with the caret inside the quotes.
+`SINGLE_BLOB`, `SINGLE_CLOB` and `SINGLE_NCLOB` are not offered on Fabric
+Warehouse/SQL analytics endpoints. Known database compatibility levels also
+filter chunking; service policies, permissions and external-model setup remain
+the server's authority.
+
 Saved passwords are encrypted with AES-256-GCM using `gossms.key` in the same
 folder; delete both files to reset. Editing a connection's server, port, user,
 authentication or encryption settings by hand invalidates its saved password.

@@ -211,6 +211,19 @@ func (p *QueryPanel) parenthesizedPosition(buf []rune, stack []completionFrame, 
 		expressionParent, expressionStart = stack[i-1].tokens, stack[i].start
 	}
 	c.scalar = scalarParenthesizedPosition(buf, expressionParent, f.tokens, expressionStart, from, fabric, p.sourceFunctionKnown(expressionParent))
+	if len(parent) > 0 && !parent[len(parent)-1].Quoted && (len(parent) < 2 || parent[len(parent)-2].Kind != sqlparse.TokenDot) {
+		name := strings.ToUpper(parent[len(parent)-1].Text)
+		for i, tok := range f.tokens {
+			if completionBuiltins[name].kind&builtinWarehouseOnly != 0 && strings.HasPrefix(name, "AI_") &&
+				keywordIs(tok, "DEFAULT") && argumentExpressionComplete(buf, f.start, tok.Start) {
+				c.scalar = !argumentExpressionComplete(buf, tok.Start+len("DEFAULT"), from)
+			}
+			if name == "AI_GENERATE_EMBEDDINGS" && i >= 3 && keywordIs(tok, "PARAMETERS") &&
+				keywordIs(f.tokens[i-3], "USE") && keywordIs(f.tokens[i-2], "MODEL") {
+				c.scalar = !argumentExpressionComplete(buf, tok.Start+len("PARAMETERS"), from)
+			}
+		}
+	}
 	c.aggregate = c.scalar && f.aggregate
 	c.analytic = c.scalar && f.analytic
 	return false
@@ -573,7 +586,7 @@ func scalarParenthesizedPosition(buf []rune, parent, current []sqlparse.Token, s
 	if name == "INDEX" {
 		return false
 	}
-	if name == "CAST" || name == "TRY_CAST" {
+	if name == "CAST" || name == "TRY_CAST" || name == "PARSE" || name == "TRY_PARSE" {
 		if slices.ContainsFunc(current, func(tok sqlparse.Token) bool { return keywordIs(tok, "AS") }) {
 			return false
 		}
@@ -600,8 +613,20 @@ func (p *QueryPanel) builtinCompletionSupported(label string, datatype bool) boo
 		builtin = completionDataTypes[label]
 	}
 	fabric := p.conn.IsFabricDW()
-	if fabric && builtin.kind&builtinNoWarehouse != 0 || !fabric && builtin.kind&builtinWarehouseOnly != 0 {
+	if fabric && builtin.kind&(builtinNoWarehouse|builtinSQLOnly) != 0 || !fabric && builtin.kind&builtinWarehouseOnly != 0 {
 		return false
+	}
+	if builtin.kind&builtinSQLOnly != 0 && p.conn.Server != nil {
+		info := p.conn.Server.Info()
+		if info.IsAzure() && !info.IsDatabaseScoped() && !info.IsManagedInstance() {
+			return false
+		}
+	}
+	if builtin.minCompatibility != 0 {
+		inv := p.app.completion.inventories[completionInventoryKey(p.conn.Opts, p.database)]
+		if inv != nil && inv.compatibility != 0 && inv.compatibility < builtin.minCompatibility {
+			return false
+		}
 	}
 	if builtin.since == 0 || p.conn.Server == nil {
 		return true

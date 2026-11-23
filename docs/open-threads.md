@@ -3,6 +3,20 @@
 Open work only. Add an item when something is knowingly left undone; close it
 by deleting it. Settled answers move to `docs/decisions.md`, not history here.
 
+## Built-in completion: service prerequisites
+
+- **AI completion does not probe Managed Instance update policy.** The catalog
+  has server edition/version and database compatibility, not the MI policy.
+  `AI_GENERATE_EMBEDDINGS` needs Always-up-to-date; `AI_GENERATE_CHUNKS` needs
+  SQL Server 2025 or Always-up-to-date. Suggestions on MI can therefore precede
+  the required policy. External-model setup, permissions and preview rollout
+  are likewise not capability-probed. Unknown compatibility follows the
+  existing fail-open completion policy; refreshing the inventory refreshes it.
+- **The new AI and BULK argument suggestions are documentation-checked and
+  editor-tested, not executed against live Fabric/Azure services.** Fabric's
+  OPENROWSET documentation lists DATA_SOURCE in its syntax but explicitly
+  marks it unavailable under limitations; completion follows the limitation.
+
 ## Version support: the policy, and how it is held
 
 Target: **SQL Server 2016 SP1 and later** (SP1 because `procedure.go`,

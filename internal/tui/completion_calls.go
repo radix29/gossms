@@ -40,6 +40,10 @@ func completionCallEdit(buf []rune, cursor int, label string, rebuild bool) (tex
 		return text, end, caret, true
 	}
 	text += string(buf[cursor:consumed])
+	if label == "OPENROWSET" {
+		text += "(BULK '')"
+		return text, consumed, len([]rune(text)) - len("')"), true
+	}
 	if label == "VALUES" || strings.HasSuffix(label, "EXISTS") {
 		text += " "
 	}

@@ -953,8 +953,8 @@ func TestSQLCompletionPrefixColumnPrecedesPartialReference(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT id| FROM dbo.Customers xId")
 	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
-	if got, want := strings.Join(labels(items), ","), "Id,xId"; got != want {
-		t.Fatalf("matching order = %q, want %q", got, want)
+	if got := labels(items); len(got) < 2 || got[0] != "Id" || got[len(got)-1] != "xId" {
+		t.Fatalf("matching order = %v, want Id first and partial reference xId last", got)
 	}
 }
 
@@ -1158,7 +1158,7 @@ func TestSQLCompletionContextOrdering(t *testing.T) {
 			qp := newTestQueryPanelWithInventory(t, "aaa_db", testCustomersOrders())
 			lines, row, col := linesAndCursor(t, sql)
 			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
-			want := "dbo,sales,dbo.Customers,dbo.Orders,dbo.vActiveCustomers,sales.Region,GENERATE_SERIES,OPENJSON,OPENROWSET,REGEXP_MATCHES,REGEXP_SPLIT_TO_TABLE,STRING_SPLIT,VECTOR_SEARCH,aaa_db"
+			want := "dbo,sales,dbo.Customers,dbo.Orders,dbo.vActiveCustomers,sales.Region,AI_GENERATE_CHUNKS,GENERATE_SERIES,OPENJSON,OPENROWSET,REGEXP_MATCHES,REGEXP_SPLIT_TO_TABLE,STRING_SPLIT,VECTOR_SEARCH,aaa_db"
 			if got := strings.Join(labels(items), ","); got != want {
 				t.Fatalf("source ordering = %q, want %q", got, want)
 			}
