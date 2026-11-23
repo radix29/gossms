@@ -380,6 +380,10 @@ type Config struct {
 	// included (query.WithMaxRows). Zero means unlimited; Load turns negatives
 	// into zero.
 	MaxFetchRows int `json:"max_fetch_rows"`
+	// ExportKeepFormulas turns off Results To File's and Export Results'
+	// formula neutralization (export.RecordWriter.NeutralizeFormulas) for CSV
+	// and TSV. Inverted so the zero value keeps the protection on.
+	ExportKeepFormulas bool `json:"export_keep_formulas,omitempty"`
 	// PictureASCII renders pictures in result cells as ASCII art instead of
 	// block sextants (U+1FB00), for a terminal font that lacks those glyphs.
 	// The picture panel's Mode switch sets it.

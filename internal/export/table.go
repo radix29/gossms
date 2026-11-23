@@ -21,10 +21,11 @@ type Table interface {
 }
 
 // WriteTable writes t, a result set with the given columns and declared types
-// (types matter to JSON only, and may be nil), to w in format f: CSV and TSV
-// as RecordWriter writes a set (header row, then the rows), JSON as
-// JSONWriter, XML as XMLWriter.
-func WriteTable(w io.Writer, f Format, columns, types []string, t Table) error {
+// (may be nil), to w in format f: CSV and TSV as RecordWriter writes a set
+// (header row, then the rows), JSON as JSONWriter, XML as XMLWriter.
+// neutralizeFormulas is RecordWriter.NeutralizeFormulas, for CSV and TSV only;
+// types exempt their numeric columns from it, and give JSON its value kinds.
+func WriteTable(w io.Writer, f Format, columns, types []string, t Table, neutralizeFormulas bool) error {
 	var write func(cells []string, isNull []bool) error
 	var finish func() error
 	switch f {
@@ -40,9 +41,11 @@ func WriteTable(w io.Writer, f Format, columns, types []string, t Table) error {
 			sep = TSV
 		}
 		rw := NewRecordWriter(w, sep)
+		rw.NeutralizeFormulas = neutralizeFormulas
 		if err := rw.BeginSet(columns); err != nil {
 			return err
 		}
+		rw.SetColumnTypes(types)
 		write, finish = rw.WriteRecord, rw.Flush
 	}
 	isNull := make([]bool, len(columns))

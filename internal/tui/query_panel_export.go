@@ -22,17 +22,31 @@ type csvSink struct {
 
 // newCSVSink returns a sink streaming to a temp file beside path. path itself is
 // replaced only by Close, so a failed or stopped run (Abort) leaves what the user
-// agreed to overwrite as it was.
-func newCSVSink(path string) (*csvSink, error) {
+// agreed to overwrite as it was. neutralizeFormulas is
+// export.RecordWriter.NeutralizeFormulas.
+func newCSVSink(path string, neutralizeFormulas bool) (*csvSink, error) {
 	st, err := fileutil.CreateStream(path, 0o644)
 	if err != nil {
 		return nil, err
 	}
-	return &csvSink{st: st, w: export.NewRecordWriter(st, export.CSV)}, nil
+	w := export.NewRecordWriter(st, export.CSV)
+	w.NeutralizeFormulas = neutralizeFormulas
+	return &csvSink{st: st, w: w}, nil
 }
 
 // BeginSet writes the separator (for every set after the first) and header.
 func (s *csvSink) BeginSet(columns []string) error { return s.w.BeginSet(columns) }
+
+// BeginTypedSet is BeginSet that also tells the writer which columns are
+// numeric, so formula neutralization leaves their -5 alone
+// (query.TypedRowSink).
+func (s *csvSink) BeginTypedSet(columns, types []string, _ []bool) error {
+	if err := s.w.BeginSet(columns); err != nil {
+		return err
+	}
+	s.w.SetColumnTypes(types)
+	return nil
+}
 
 func (s *csvSink) Row(cells []string, isNull []bool) error { return s.w.WriteRecord(cells, isNull) }
 
@@ -170,9 +184,9 @@ func (p *QueryPanel) exportResults(f export.Format, ext string) {
 		}
 	}
 	p.app.fileDialog().ShowSave("Export Results", p.exportFileName(ext), func(path string) {
-		n := rows.Len()
+		n, neutralize := rows.Len(), !p.app.cfg.ExportKeepFormulas
 		p.app.safego("exporting results", func() {
-			err := writeResultSet(path, f, set, rows)
+			err := writeResultSet(path, f, set, rows, neutralize)
 			p.app.postAndWake(func() {
 				if err != nil {
 					p.app.setStatus(fmt.Sprintf("Export failed: %v", err))
@@ -199,13 +213,14 @@ func (p *QueryPanel) exportFileName(ext string) string {
 }
 
 // writeResultSet writes rows (set's, in the order shown) to path as format f,
-// through a temp file: a failed write leaves path as it was.
-func writeResultSet(path string, f export.Format, set query.ResultSet, rows export.Table) error {
+// through a temp file: a failed write leaves path as it was. neutralizeFormulas
+// applies to CSV and TSV (export.WriteTable).
+func writeResultSet(path string, f export.Format, set query.ResultSet, rows export.Table, neutralizeFormulas bool) error {
 	st, err := fileutil.CreateStream(path, 0o644)
 	if err != nil {
 		return err
 	}
-	if err := export.WriteTable(st, f, set.Columns, set.ColumnTypes, rows); err != nil {
+	if err := export.WriteTable(st, f, set.Columns, set.ColumnTypes, rows, neutralizeFormulas); err != nil {
 		st.Abort()
 		return err
 	}

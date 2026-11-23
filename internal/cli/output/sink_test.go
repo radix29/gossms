@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -292,9 +293,9 @@ func TestMaxOutputBytesDropsTrailingRows(t *testing.T) {
 // The text helpers behind D10 and P2-12.
 func TestCells(t *testing.T) {
 	for in, want := range map[string]bool{"0": true, "-0": true, "12": true, "1.5": true, "1E+300": true, "-1.5E-05": true,
-		"1e5": true, "": false, "01": false, ".5": false, "1.": false, "+1": false, "1E": false, "NaN": false, "Inf": false, "1 ": false} {
-		if got := isJSONNumber(in); got != want {
-			t.Errorf("isJSONNumber(%q) = %v", in, got)
+		"1e5": true, "9007199254740991": true, "-9007199254740991": true, "9007199254740992": false, "-9007199254740993": false, "12345678901234567": false, "": false, "01": false, ".5": false, "1.": false, "+1": false, "1E": false, "NaN": false, "Inf": false, "1 ": false} {
+		if got := export.JSONNumberText(in); got != want {
+			t.Errorf("JSONNumberText(%q) = %v", in, got)
 		}
 	}
 	for _, tt := range []struct {
@@ -404,6 +405,49 @@ func TestRecordsAreTheExportWriters(t *testing.T) {
 		if got.String() != rest {
 			t.Errorf("%s --no-headers:\n%q\nwant\n%q", f, got.String(), rest)
 		}
+	}
+}
+
+// --csv-neutralize-formulas: a text cell and header a spreadsheet would run
+// get a leading ', a typed number is left alone, on stdout and in a .csv
+// --out-file alike; off, the cell is written as is.
+func TestRecordsNeutralizeFormulas(t *testing.T) {
+	set := Set{Columns: []Column{{Name: "=h", Type: "nvarchar(10)"}, {Name: "n", Type: "int"}},
+		Rows: [][]*string{{str("=1+1"), str("-5")}, {str("@x"), nil}}}
+	want := "'=h,n\n'=1+1,-5\n'@x,\n"
+	o := DefaultOptions(FormatCSV)
+	o.NeutralizeFormulas = true
+	var got bytes.Buffer
+	if err := Render(&got, &Result{Sets: []Set{set}}, o); err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != want {
+		t.Errorf("stdout %q, want %q", got.String(), want)
+	}
+
+	path := filepath.Join(t.TempDir(), "out.csv")
+	fo := o
+	fo.Format, fo.OutFile = FormatJSON, path
+	sink, err := NewSink(io.Discard, fo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink.BeginTypedSet([]string{"=h", "n"}, []string{"nvarchar(10)", "int"}, nil)
+	sink.Row([]string{"=1+1", "-5"}, []bool{false, false})
+	sink.Row([]string{"@x", "NULL"}, []bool{false, true})
+	sink.EndSet(2)
+	if err := sink.Finish(&Result{}, false); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != want {
+		t.Errorf("--out-file %q, want %q", data, want)
+	}
+
+	o.NeutralizeFormulas = false
+	got.Reset()
+	Render(&got, &Result{Sets: []Set{set}}, o)
+	if want := "=h,n\n=1+1,-5\n@x,\n"; got.String() != want {
+		t.Errorf("off: %q, want %q", got.String(), want)
 	}
 }
 

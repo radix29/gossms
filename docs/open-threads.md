@@ -70,18 +70,17 @@ support); this section covers only the environment.
 - **No instance has a case-sensitive *server* collation**, so nothing that
   compares server-scoped names under it has run live. gosmo's login-database
   retarget (`connection_retarget.go`: `retarget`, and Connect's `master`
-  check) compares under `ServerInfo.Collation` since review step B5, pinned only offline by
+  check) compares under `ServerInfo.Collation`, pinned only offline by
   `TestWriteOnLoginDatabaseFollowsServerCollation` and
   `TestRefusedDialOnCaseSensitiveServerMovesMASTER`. To check: connect with
   `Database: "sales"` to a `Latin1_General_CS_AS` server holding both `Sales`
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
   Document's keyword case (below) waits on the same instance, as does gosmo's
   `Database.BackupRefusal` on a `DatabaseRef` (names under the server's
-  collation since review 2026-11-22-4 B4, pinned offline by
-  `TestDatabaseBackupRefusal`'s CS cases): create user databases `TempDB` and
+  collation, pinned offline by `TestDatabaseBackupRefusal`'s CS cases): create user databases `TempDB` and
   `Master`, and see a differential/log backup of each go through, not refused
-  as tempdb's or master's. The CLI's server-collation checks (review
-  2026-11-23 B4, pinned offline by `TestSecurityGrantDatabaseCaseSensitive`
+  as tempdb's or master's. The CLI's server-collation checks (pinned
+  offline by `TestSecurityGrantDatabaseCaseSensitive`
   and `TestDBDropCaseSensitive`) wait on it too: connected to `sales`,
   `security grant CONNECT --on DATABASE::Sales` is refused; `db drop Sales`
   is not refused as the connection's own database, nor blocked by an AG
@@ -94,15 +93,15 @@ support); this section covers only the environment.
   the documentation alone. To check, with the Fabric contributor: connect,
   run gosmo's `TestLiveVersionSweep` against it, and walk Object Explorer —
   no server-scope folders, no "needs SQL Server 2016" refusals. Also online
-  rebuild and the per-index ALL expansion (review 2026-11-18 B2): `gossms
-  maint index-rebuild --online` (gosmo now allows it on 12) and without
+  rebuild and the per-index ALL expansion: `gossms
+  maint index-rebuild --online` (gosmo allows it on 12) and without
   `--index`, with and without `--reorganize` — gosmo sends one `ALTER INDEX
   [name]` per index there, since the docs say Fabric refuses `ALTER INDEX
   ALL` — and Object Explorer's Rebuild All Indexes script on a table and an
   indexed view; confirm Fabric really refuses `ALL` (if not, the expansion
   can go).
 - **Fabric Warehouse vs. Synapse serverless is told apart by hostname**
-  (review 2026-11-18, E4). gosmo decides `Server.IsFabricDW()` at connect
+  gosmo decides `Server.IsFabricDW()` at connect
   (`detectFabricDW`): EngineEdition 11 is Fabric unless the host ends in a
   Synapse serverless domain (`.sql.azuresynapse.net` and its sovereign
   forms); an unknown edition falls back to the
@@ -117,8 +116,7 @@ support); this section covers only the environment.
 ## Windows clipboard: what is left
 
 - **One clipboard-manager run hung** (2026-11-18, no stack captured); not
-  reproduced since (16 runs, then 40 Ctrl+C/Ctrl+V cycles and a paced 10-paste
-  run on win10cli with Ditto, 2026-11-22). Likely the probe's own format
+  reproduced since (win10cli with Ditto, 2026-11-22). Likely the probe's own format
   listener, unproven. If a Windows user reports a frozen copy, suspect this
   first. A hang no longer takes Paste with it: tuikit's `Dispatcher.Paste`
   waits at most `toolTimeout + 1s` for earlier copies.
@@ -163,10 +161,10 @@ Settled design: `docs/decisions.md` § Format Document.
   collation (an upstream PR; a forked `replace` would not reach gosmo's
   dependents).
 - **Multi-volume grouping and pre-2016-SP2 VLFs are unit-tested only**
-  (phase 4) — every instance here has one volume, and none is older than
+  — every instance here has one volume, and none is older than
   2016 SP3.
-- **`maint index-rebuild --online` → exit 11 is unit-tested only** (phase
-  8, 8.m): every instance here is Developer or Enterprise, so the refusal on
+- **`maint index-rebuild --online` → exit 11 is unit-tested only**:
+  every instance here is Developer or Enterprise, so the refusal on
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
@@ -182,7 +180,7 @@ Settled design: `docs/decisions.md` § Format Document.
 
 ## Code size: what is left
 
-- **Five property-page builders run past 200 lines** (2026-11-23 review N1):
+- **Five property-page builders run past 200 lines:**
   `pageRGGroups` (324), `pageMailProfiles` (264), `pageMailAccounts` (218),
   `buildSymmetricKeyEncryptionForm` (218), `pageLoginUserMapping` (217). Not
   worth a change on their own; the next change that lands in one splits it
@@ -242,10 +240,8 @@ work; close an item by deleting it when fixed.
   database, never on MI, nor on an Azure SQL Database created `WITH
   CATALOG_COLLATION` (none in the estate) — `TestLiveCatalogCollation` and
   `TestLiveGatedColumnsMatchTheCatalog` on MI. And the Details pane's
-  workload-group "Max tempdb data" rows (2026-11-23 review B3): now gated
-  through `serverAtLeast`, so MI shows them with both limits unset — driven
-  on 13 (hidden) and 17 (shown), fake-driver-tested on edition 8
-  (`TestWorkloadGroupDetailTempdbRowsFollowAtLeast`), never seen on MI.
+  workload-group "Max tempdb data" rows: gated through `serverAtLeast`, so MI
+  should show them with both limits unset — never seen on MI.
 - **V5 — Resource Governor, Database Mail and backup compression edition
   gates never met a real refusal.** Every
   instance in the estate is Developer, so Resource Governor's rule

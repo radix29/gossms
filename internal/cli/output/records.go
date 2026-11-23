@@ -20,23 +20,40 @@ type recordWriter struct {
 	isNull    []bool
 }
 
-func newRecordWriter(w io.Writer, f Format, noHeaders bool) *recordWriter {
+// newRecordWriter returns f's writer onto w; o gives NoHeaders and
+// NeutralizeFormulas.
+func newRecordWriter(w io.Writer, f Format, o Options) *recordWriter {
 	sep := rune(export.CSV)
 	if f == FormatTSV {
 		sep = export.TSV
 	}
-	return &recordWriter{rw: export.NewRecordWriter(w, sep), noHeaders: noHeaders}
+	rw := export.NewRecordWriter(w, sep)
+	rw.NeutralizeFormulas = o.NeutralizeFormulas
+	return &recordWriter{rw: rw, noHeaders: o.NoHeaders}
 }
 
+// beginSet starts a set; its column types exempt numeric columns from
+// NeutralizeFormulas.
 func (w *recordWriter) beginSet(cols []Column) error {
-	if w.noHeaders {
-		return w.rw.BeginHeaderlessSet()
-	}
-	names := make([]string, len(cols))
+	types := make([]string, len(cols))
 	for i, c := range cols {
-		names[i] = w.show(c.Name)
+		types[i] = c.Type
 	}
-	return w.rw.BeginSet(names)
+	if w.noHeaders {
+		if err := w.rw.BeginHeaderlessSet(); err != nil {
+			return err
+		}
+	} else {
+		names := make([]string, len(cols))
+		for i, c := range cols {
+			names[i] = w.show(c.Name)
+		}
+		if err := w.rw.BeginSet(names); err != nil {
+			return err
+		}
+	}
+	w.rw.SetColumnTypes(types)
+	return nil
 }
 
 // row writes cells (nil for NULL), padded to ncols.
@@ -67,7 +84,7 @@ func (w *recordWriter) flush() error { return w.rw.Flush() }
 
 // renderRecords writes r's sets as csv or tsv.
 func renderRecords(w io.Writer, r *Result, o Options) error {
-	rw := newRecordWriter(w, o.Format, o.NoHeaders)
+	rw := newRecordWriter(w, o.Format, o)
 	rw.visible = o.Terminal
 	for _, s := range r.Sets {
 		if s.InFile {

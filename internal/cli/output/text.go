@@ -232,7 +232,8 @@ func textCells(s Set, o Options, line func(string) string) (head []string, rows 
 			case row[i] == nil:
 				cells[i] = line(o.NullText)
 			default:
-				cells[i] = line(clip(*row[i], o.MaxColWidth))
+				kept, marker := clipParts(*row[i], o.MaxColWidth)
+				cells[i] = line(kept) + marker
 			}
 		}
 		rows = append(rows, cells)

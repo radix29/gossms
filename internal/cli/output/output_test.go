@@ -215,18 +215,25 @@ func TestHelpers(t *testing.T) {
 
 // TestMarkdownCell: GitHub renders inline HTML in a table cell, so a cell's
 // own & < > must come out as entities, while the <br> markdownCell writes for
-// a line break stays markup.
+// a line break stays markup, and inline Markdown (images, links, emphasis,
+// code, strikethrough) is backslash-escaped so a value renders as its text.
 func TestMarkdownCell(t *testing.T) {
 	for in, want := range map[string]string{
-		`<root a="1"/>`: `&lt;root a="1"/&gt;`,
-		"a<b>c":         "a&lt;b&gt;c",
-		"&amp;":         "&amp;amp;",
-		"&lt;":          "&amp;lt;",
-		"<br>":          "&lt;br&gt;",
-		"x\r\ny\nz":     "x<br>y<br>z",
-		`a|b\c`:         `a\|b\\c`,
-		"a & b\t<c>":    "a &amp; b &lt;c&gt;",
-		"plain":         "plain",
+		"![t](https://example.test/p.png)": `\!\[t\](https://example.test/p.png)`,
+		"[x](https://example.test)":        `\[x\](https://example.test)`,
+		"*bold* _it_ `code` ~~s~~":         "\\*bold\\* \\_it\\_ \\`code\\` \\~\\~s\\~\\~",
+		`\*`:                               `\\\*`,
+		"order_id":                         `order\_id`,
+		"-5 #1 +2 >3":                      "-5 #1 +2 &gt;3",
+		`<root a="1"/>`:                    `&lt;root a="1"/&gt;`,
+		"a<b>c":                            "a&lt;b&gt;c",
+		"&amp;":                            "&amp;amp;",
+		"&lt;":                             "&amp;lt;",
+		"<br>":                             "&lt;br&gt;",
+		"x\r\ny\nz":                        "x<br>y<br>z",
+		`a|b\c`:                            `a\|b\\c`,
+		"a & b\t<c>":                       "a &amp; b &lt;c&gt;",
+		"plain":                            "plain",
 	} {
 		if got := markdownCell(in); got != want {
 			t.Errorf("markdownCell(%q) = %q, want %q", in, got, want)

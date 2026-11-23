@@ -68,6 +68,12 @@ type Options struct {
 	NoHeaders bool
 	// NoMessages leaves out PRINT and informational messages.
 	NoMessages bool
+	// NeutralizeFormulas prefixes ' to a csv or tsv text cell (header
+	// included) a spreadsheet would read as a formula
+	// (export.RecordWriter.NeutralizeFormulas), on stdout and in a .csv or
+	// .tsv --out-file. Off by default: csv and tsv stay lossless for pipes
+	// and data import.
+	NeutralizeFormulas bool
 
 	// Terminal is true when stdout is a terminal. csv and tsv keep every byte
 	// of a value except then, when control characters are spelled out

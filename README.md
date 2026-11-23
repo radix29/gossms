@@ -249,7 +249,10 @@ Role, Server Role, Sequence or Synonym; each dialog checks your permissions firs
 result grid, double-click a cell for Show Value and click a row number to
 select the row; right-click the blank cell above the row numbers (or any cell,
 or use File > Export Results) to export the result set on screen, in the order
-shown, to a CSV, tab-separated, JSON or XML file. Show Value on a `varbinary`/`image` cell that holds a picture
+shown, to a CSV, tab-separated, JSON or XML file. CSV and tab-separated
+exports (and Results To File) put a `'` before a text cell starting with `=`,
+`+`, `-` or `@`, so a spreadsheet does not run a database value as a formula;
+Tools > Options turns that off for a byte-exact file. Show Value on a `varbinary`/`image` cell that holds a picture
 (PNG, JPEG, GIF, BMP, TIFF or WebP) opens it in its own tab as terminal art,
 as does File > Open of a picture file (recognized by its content, not its
 extension), with fit, zoom, pan, brightness and contrast, and Save; pictures render in Unicode block sextants, with
@@ -451,8 +454,8 @@ and ORDER BY alone on their lines with the joins indented under FROM, and
 writes `expr AS name` as `name = expr` — the Edit menu's cascade formats once in either), grid and text
 column widths, indent size, Max fetch rows (rows kept per result
 set in grid, text and file mode, 0 = unlimited; reaching it cancels the rest
-of the script, later GO batches included, and the results status line says so) and
-IntelliSense. Unsaved query tabs are recovered to the `recovered` folder beside
+of the script, later GO batches included, and the results status line says so),
+IntelliSense, and whether CSV/TSV exports neutralize spreadsheet formulas (on). Unsaved query tabs are recovered to the `recovered` folder beside
 `config.json` after a crash.
 
 Built-in completion distinguishes Fabric Warehouse/SQL analytics endpoint AI

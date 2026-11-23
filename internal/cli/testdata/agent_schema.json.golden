@@ -185,6 +185,16 @@
       "help": "Column headers in text, csv and tsv; --no-headers leaves them out"
     },
     {
+      "name": "--csv-neutralize-formulas",
+      "short": null,
+      "type": "bool",
+      "enum": [],
+      "default": false,
+      "negation": "--no-csv-neutralize-formulas",
+      "env": null,
+      "help": "csv and tsv: prefix ' to a text cell starting with = + - @, tab or CR, so a spreadsheet does not run it as a formula"
+    },
+    {
       "name": "--messages",
       "short": null,
       "type": "bool",

@@ -28,11 +28,24 @@ const (
 // field holding a tab, a quote or a line break is quoted, which is what
 // spreadsheets read, rather than PostgreSQL TEXT's \t escapes.
 //
+// NeutralizeFormulas, off by default, guards against spreadsheet formula
+// injection (CWE-1236): see neutralize. It changes the data, so it is opt-in
+// and the default stays the lossless inverse of RecordReader
+// (docs/decisions.md § CSV/TSV formula neutralization).
+//
 // The write path is deliberately dumb: no counting, no buffering past bufio's
 // own, nothing retained between rows. Writes are buffered until Flush.
 type RecordWriter struct {
 	w   *bufio.Writer
 	sep rune
+
+	// NeutralizeFormulas prefixes ' to a text cell that a spreadsheet would
+	// read as a formula. Set it before the first write.
+	NeutralizeFormulas bool
+
+	// numeric marks the current set's numeric columns (SetColumnTypes), exempt
+	// from NeutralizeFormulas so -5 stays a number. Cleared by each new set.
+	numeric []bool
 
 	// sets counts result sets begun so far, so the blank-line separator goes between
 	// sets and not before the first.
@@ -62,6 +75,9 @@ func (rw *RecordWriter) WriteRecord(cells []string, isNull []bool) error {
 		if i > 0 {
 			rw.w.WriteRune(rw.sep)
 		}
+		if rw.NeutralizeFormulas && (i >= len(rw.numeric) || !rw.numeric[i]) {
+			c = neutralize(c)
+		}
 		switch {
 		case i < len(isNull) && isNull[i]:
 		case c == "":
@@ -75,6 +91,18 @@ func (rw *RecordWriter) WriteRecord(cells []string, isNull []bool) error {
 		}
 	}
 	return rw.w.WriteByte('\n')
+}
+
+// neutralize is c with a ' in front when a spreadsheet would read it as a
+// formula: OWASP's CSV-injection rule, a cell starting with =, +, -, @, a tab
+// or a carriage return. Quoting is no defence (a quoted "=1+1" is still a
+// formula), so the text itself changes; Excel and LibreOffice show the cell
+// without the '.
+func neutralize(c string) string {
+	if c != "" && strings.IndexByte("=+-@\t\r", c[0]) >= 0 {
+		return "'" + c
+	}
+	return c
 }
 
 // needsQuotes is encoding/csv's rule for a non-empty field: a quote, the
@@ -99,11 +127,39 @@ func (rw *RecordWriter) BeginSet(columns []string) error {
 // BeginHeaderlessSet is BeginSet without the header row: the separator only,
 // for every set after the first.
 func (rw *RecordWriter) BeginHeaderlessSet() error {
+	rw.numeric = rw.numeric[:0]
 	rw.sets++
 	if rw.sets > 1 {
 		return rw.w.WriteByte('\n')
 	}
 	return nil
+}
+
+// SetColumnTypes takes the declared types ("int", "nvarchar(50)") of the set
+// just begun, parallel to its columns; nil or short means text. A numeric
+// column's cells are not neutralized: -5 is a number, not a formula, and a
+// numeric column's text is never anything else. Call it after BeginSet (whose
+// header row is text, so neutralized) and before the set's rows.
+func (rw *RecordWriter) SetColumnTypes(types []string) {
+	rw.numeric = rw.numeric[:0]
+	for _, t := range types {
+		rw.numeric = append(rw.numeric, isNumericType(t))
+	}
+}
+
+// isNumericType reports whether a column of SQL type t holds numbers only:
+// KindOf's numbers plus decimal, numeric, money and smallmoney, which JSON
+// keeps as strings but which are numbers all the same.
+func isNumericType(t string) bool {
+	if KindOf(t) == KindNumber {
+		return true
+	}
+	base, _, _ := strings.Cut(strings.ToLower(t), "(")
+	switch base {
+	case "decimal", "numeric", "money", "smallmoney":
+		return true
+	}
+	return false
 }
 
 // Flush writes any buffered records to the underlying writer.

@@ -208,6 +208,8 @@ func optionsFocusName(d *OptionsDialog) string {
 		return "fetchrows"
 	case d.cbIntelliSense:
 		return "intellisense"
+	case d.cbNeutralize:
+		return "neutralize"
 	}
 	return "?"
 }
@@ -234,7 +236,7 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	left, right := key{"Left", tcell.KeyLeft}, key{"Right", tcell.KeyRight}
 	enter, esc, f5 := key{"Enter", tcell.KeyEnter}, key{"Esc", tcell.KeyEscape}, key{"F5", tcell.KeyF5}
 	keys := []key{
-		tab, tab, tab, tab, tab, tab, tab, tab, tab, tab, // every stop, round to icons
+		tab, tab, tab, tab, tab, tab, tab, tab, tab, tab, tab, // every stop, round to icons
 		backtab, right, left, left, tab, backtab, // the row: Tab off resets OK
 		up, up, down, down, f5, // Up/Down leave the row as Backtab/Tab; it swallows the rest
 		backtab, up, up, down, // fields: Up/Down move focus
@@ -257,11 +259,12 @@ func TestOptionsDialogKeyboardWalk(t *testing.T) {
 	}
 	const want = "icons Tab>theme(true,false) Tab>sqlstyle(true,false) Tab>cell(true,true) Tab>text(true,true) " +
 		"Tab>indent(true,true) Tab>xecap(true,true) Tab>fetchrows(true,true) Tab>intellisense(true,false) " +
+		"Tab>neutralize(true,false) " +
 		"Tab>button0(true,false) Tab>icons(true,false) Backtab>button0(true,false) Right>button1(true,false) " +
 		"Left>button0(true,false) Left>button0(true,false) Tab>icons(true,false) Backtab>button0(true,false) " +
-		"Up>intellisense(true,false) Up>fetchrows(true,true) Down>intellisense(true,false) Down>button0(true,false) " +
-		"F5>button0(true,false) Backtab>intellisense(true,false) Up>fetchrows(true,true) Up>xecap(true,true) " +
-		"Down>fetchrows(true,true) Tab>intellisense(true,false) Tab>button0(true,false) Tab>icons(true,false) " +
+		"Up>neutralize(true,false) Up>intellisense(true,false) Down>neutralize(true,false) Down>button0(true,false) " +
+		"F5>button0(true,false) Backtab>neutralize(true,false) Up>intellisense(true,false) Up>fetchrows(true,true) " +
+		"Down>intellisense(true,false) Tab>neutralize(true,false) Tab>button0(true,false) Tab>icons(true,false) " +
 		"Down>icons(true,false) Down>icons(true,false) Down>icons(true,false) Down>theme(true,false) " +
 		"Enter>theme(true,false) Down>theme(true,false) Esc>theme(true,false) Down>sqlstyle(true,false) " +
 		"Up>theme(true,false)"
@@ -397,5 +400,25 @@ func TestOptionsDialogOpenSQLStyleListTakesTheClick(t *testing.T) {
 	if d.ddSQLStyle.OverlayActive() || d.ddSQLStyle.Selected() != 1 || optionsFocusName(d) != "sqlstyle" {
 		t.Errorf("after clicking item 2: open %v, selected %d, focus %s; want closed, 1, sqlstyle",
 			d.ddSQLStyle.OverlayActive(), d.ddSQLStyle.Selected(), optionsFocusName(d))
+	}
+}
+
+// The export checkbox reads the inverted config flag: a fresh config shows it
+// checked (formulas neutralized), and unchecking it records ExportKeepFormulas.
+func TestOptionsExportNeutralizeFormulas(t *testing.T) {
+	a := newTestApp()
+	d := withScreen(NewOptionsDialog(a), a.screen)
+	d.Show()
+	if !d.cbNeutralize.Checked() {
+		t.Fatal("a fresh config shows formula neutralization off")
+	}
+	d.cbNeutralize.SetChecked(false)
+	d.apply()
+	if !a.cfg.ExportKeepFormulas {
+		t.Error("unchecking left ExportKeepFormulas false")
+	}
+	d.Show()
+	if d.cbNeutralize.Checked() {
+		t.Error("reopened dialog shows the box checked after it was turned off")
 	}
 }

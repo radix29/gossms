@@ -128,6 +128,7 @@ close (edit distance ≤ 2), the hint is a did-you-mean: `Did you mean
 | `--max-output-bytes <n>` | | Cap on stdout (default 1048576; `0` is no cap) |
 | `--null-text <text>` | | How text and markdown show NULL (default `NULL`) |
 | `--no-headers` | | Leave out column headers (text, csv, tsv) |
+| `--csv-neutralize-formulas` | | csv and tsv: prefix `'` to a text cell a spreadsheet would run as a formula (§ `csv` and `tsv`) |
 | `--no-messages` | | Leave out PRINT and informational messages |
 | `--out-file <path>` | | Write every row to a file; stdout gets the summary |
 | `--force` | | Replace an existing `--out-file`, a `plan` command's `--plan-file` or a `script` command's `--script-file` |
@@ -439,7 +440,8 @@ CLI_SCHEMA: 1.0
   that removed rows), `null` when whole. With `--out-file` the rows are in the
   file and `rows` is `[]`.
 - A cell is typed by its column's SQL type: `int`, `bigint`, `smallint`,
-  `tinyint`, `real`, `float` a number; `bit` `true`/`false`; NULL `null`;
+  `tinyint`, `real`, `float` a number (an integer beyond ±2^53−1 is a string,
+  as a parser would round it); `bit` `true`/`false`; NULL `null`;
   everything else — `decimal`, `numeric` and `money` included, which most
   parsers would round as a float — the grid's text as a string. A column of
   type `json` (`xevent capture`'s `data`) holds a document, written as a
@@ -483,13 +485,27 @@ keep every byte. Everything else — the header block, each set's
 marker and truncation note, messages, warnings, errors — goes to **stderr** as
 the text format's summary, on success too; the exit code carries the status. That stderr summary honours `--no-messages`.
 
+`--csv-neutralize-formulas` (off by default) guards a file meant for a
+spreadsheet against formula injection: a text cell, header included,
+starting with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading
+`'` (OWASP's rule), which Excel and LibreOffice hide. A numeric column (int,
+bigint, smallint, tinyint, real, float, decimal, numeric, money,
+smallmoney) is exempt, so `-5` stays a number. It applies to stdout and to a
+`.csv`/`.tsv` `--out-file`. Off keeps the bytes lossless, which `data import`
+relies on; on, `data import` reads the `'` back as part of the value
+(`docs/decisions.md` § CSV/TSV formula neutralization).
+
 ### `markdown`
 
 The text envelope with each set as a GitHub table, after a blank line: `|`
 and `\` escaped, `&`, `<` and `>` as `&amp;`, `&lt;` and `&gt;` (GitHub
 renders HTML in a cell, so an `xml` value would otherwise vanish), line
 breaks as `<br>` — the only markup a cell holds, so a value containing the
-text `<br>` reads `&lt;br&gt;`. Read raw, the source shows the entities.
+text `<br>` reads `&lt;br&gt;`. The inline-Markdown characters
+`` ` `` `*` `_` `[` `]` `!` `~` are backslash-escaped, so a value cannot
+render as an image, a link, emphasis or code once posted; the cost is that
+the raw source reads `order\_id` for a column named `order_id`. Read raw,
+the source shows the entities and escapes.
 `--no-headers` does not apply (a GitHub table needs its header row).
 
 ### Limits
