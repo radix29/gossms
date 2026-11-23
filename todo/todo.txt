@@ -49,9 +49,6 @@ check the go-mssqldb,tcell library and golang 1.27.3 for changes in the latest v
 Watch upstream (unreleased)
 
 
-review tuikit and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them. add a recommended implementation order list.
-you can vcreate breaking changes if it helps. update gossms accordingy.
-
 --- prepare for release -------------------------------------------------
 
 

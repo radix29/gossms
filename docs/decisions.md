@@ -135,11 +135,16 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
     queue with no activation; **`RouteChanges` can change but never clear** a
     setting (`= NULL` doesn't parse, empty is refused — drop and recreate), so
     Route Properties refuses an emptied row with a message.
-- **A snapshot's subtree offers writes the server refuses.** It gets Tables,
-  Views, Programmability (not Query Store, Storage, Security — none apply);
-  Delete/Rename inside is offered and refused "read-only". The gate answers what
-  the *login* may do; a read-only-database gate would have to cover every
-  READ_ONLY database. SSMS does the same.
+- **Refusals on state, not rights, are not gated.** The gate answers what the
+  *login* may do; these depend on state that changes under an open tree.
+  - *Start/Stop Job* aren't greyed: they read state first and refuse in the
+    app's words ("Job X is already running"/"is not running"), refreshing the
+    node — the read is free, and gating would hide a legit Stop for a job
+    started since the folder loaded.
+  - *A snapshot's subtree* offers writes the server refuses. It gets Tables,
+    Views, Programmability (not Query Store, Storage, Security — none apply);
+    Delete/Rename inside is offered and refused "read-only". A read-only-database
+    gate would have to cover every READ_ONLY database. SSMS does the same.
 - **System Data Types has no Properties dialog** (SSMS has none; `int` says it
   all). Folder and Detail Browser listing exist; the menu omits the item.
 
@@ -170,7 +175,7 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
   principal isn't offered a move the server would allow — the same trade as
   `gate.QueueDropRights`.
 
-**Classes 0, 1, 3, 4, 5, 6, 10, 101, 105 and 108 are gated.** Each row below is
+**Classes 0, 1, 3, 4, 5, 6, 10, 24, 25, 26, 23, 29, 31, 101, 105 and 108 are gated** (23–31 under § The rest). Each row below is
 a *wrong* gate if assumed the other way round.
 
 **Every schemaless database-level family has an explicit set**
@@ -350,13 +355,12 @@ on that would empty menus for everyone working through a database-wide grant.
   Executing, 2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended, 6
   WaitingForStepToFinish, 7 PerformingCompletionActions, 0 = not run by Agent.
   No Cancelling or Running state.
-- **Lookup-free handles carry `Ref`; `*ByName` lookups keep their names**
-  (rule: `CLAUDE.md`, `~/go/gosmo/CLAUDE.md`). **Two alternatives rejected:**
-  giving the lookup the plain name splits it from every other `*ByName`; a
-  distinct handle type with `Load(ctx)` isn't worth changing every call site —
-  reopen only with a bug the suffix failed to prevent.
-- **`Database`'s catalog state is exported fields**, like every gosmo type
-  (rule: `CLAUDE.md`). `Server.Name()` stays a method (it reads `s.info.Name`).
+- **Lookup-free handles carry `Ref`; `*ByName` lookups keep their names, and
+  `Database`'s catalog state is exported fields** (rules: `CLAUDE.md`,
+  `~/go/gosmo/CLAUDE.md`). Rejected: giving the lookup the plain name (splits
+  it from every other `*ByName`); a handle type with `Load(ctx)` (not worth
+  changing every call site). Reopen only with a bug the suffix failed to
+  prevent. `Server.Name()` stays a method (it reads `s.info.Name`).
 - **`Server.InTransaction(ctx, fn)` binds one transaction into ctx**, the way `WithScript` threads a collector: every
   chokepoint, reads included, runs on it, never retried. Observers hear after
   COMMIT and nothing on a rollback; a nested call on the same Server joins;
@@ -583,7 +587,10 @@ Peer credentials, easy to undo:
   `TableDetail` query, i.e. a folder-wide fetch before the first row. Do not
   re-raise.
 - **Filters are per-session** (`App.savedFilters`, keyed by `filterKey`, survive
-  reconnects). Not saved to `config.json`, as in SSMS.
+  reconnects). Not saved to `config.json`, as in SSMS. Rule: transient scope
+  (what a tree shows right now) is per-session; display preferences a user
+  re-applies every time (the XEvent viewer's hidden columns and saved view
+  settings) are saved to config.
 
 ## Delete/Rename: what is deliberately out of it
 
@@ -1422,6 +1429,11 @@ it from the string 'NULL'.
 
 ## By design — not issues, do not re-raise
 
+**SSMS parity rule:** match SSMS unless that loses data or safety. Entries below that
+keep a harmless SSMS wart (a log's 2097152 MB) or break parity (float digits,
+Results To File on error, typed confirmation for system XE sessions) each state
+their reason.
+
 ### Explorer, Details pane and dialogs
 
 - **The Details pane caches every node it has shown, for the connection's
@@ -1438,21 +1450,14 @@ it from the string 'NULL'.
   fails every row, whereas the fan-out (8-wide, `ceil(N/8) × RTT`) degrades to
   `N/A` in one row. If ever slow, add the batch as a fast path with the fan-out
   as fallback — never as a replacement.
-- **Dialog prefetches read serially; parallelising them was measured and
-  declined** (review C3). Mean of 7 runs, fresh
-  `db.Connect` per run, win10cli: New Sequence (3 reads after
-  `DatabaseByName`) and New Job (6 independent reads) took 19/38 ms serial vs
-  45/126 ms in parallel on SQL2017 (~0.05 s login), and 14/30 ms vs
-  400/633 ms on the 2025 instance (~0.6 s login). With six idle connections
-  pre-opened, parallel saved ~5 ms (19 → 14 ms) and ~1 ms (31 → 30 ms).
-  ubusql1 (2025 on Linux, the plan's target) agreed over two runs: cold
-  21-24/40-45 ms serial vs 590-640/830-1270 ms parallel; warm a wash (22 → 20
-  ms) or worse (44 → 57 ms; a noisier first run had 58 → 151). Each
-  extra concurrent read needs its own pooled connection, and a new
-  TCP+TLS+login costs far more than the round trips it overlaps — the
-  `eachDatabase` finding (`db_scan.go`) again. A WAN link raises both sides
-  (a login is several round trips), so it doesn't change the answer. Gating on
-  `sql.DB.Stats().Idle` was not pursued: racy, for a saving of milliseconds.
+- **Dialog prefetches read serially; parallelising was measured and
+  declined.** On SQL2017 (~0.05 s login), the 2025 instance (~0.6 s) and
+  ubusql1, parallel reads cost more than serial (e.g. 14/30 ms serial vs
+  400/633 ms parallel; with idle connections pre-opened it saved ~5 ms): each
+  extra concurrent read needs its own pooled connection, and a new TCP+TLS+login
+  costs far more than the round trips it overlaps (the `eachDatabase` finding,
+  `db_scan.go`). A WAN link raises both sides. Gating on `sql.DB.Stats().Idle`
+  was not pursued: racy, for milliseconds.
 - **On a narrow terminal the main toolbar hides buttons; it never overlaps
   the menu labels.** `Toolbar.SetBounds` takes `MenuBar.LabelsEnd()` as a
   hard left limit and hides by `ToolbarButton.DropRank`, highest first:
@@ -1493,21 +1498,18 @@ it from the string 'NULL'.
   `widgets.InputField` takes `Ctrl+A`/`Ctrl+U`, not `Ctrl+Z`. A new
   `EditorRow` inherits this; a new row type with its own `Ctrl+Z` and no
   `KeyHandler` needs a different key.
-- **Hand-rolled dialogs share one focus ring (2026-11-20)**, superseding
-  "the two search dialogs' key-routing skeleton stays duplicated". Find/Replace,
-  Log Search, Filter and Options had four semantics (each button a Tab stop vs
-  a cycling row, Backtab wrapping or not, Up/Down moving focus or not, Options'
-  Tab trapped on OK/Cancel). Decided: the `propsheet.Form`/`ButtonRowKey`
-  model the Connect/Backup/Restore/Profile dialogs already used, the row being
-  one stop with Left/Right inside it, full wrap, and the focused widget getting
-  every key first, Up/Down moving focus only when it declines. Consequences
-  taken knowingly: Enter on a checkbox in Find/Replace toggles it (it used to
-  press Find Next), and Up/Down leave a button row as Backtab/Tab do, in
-  every `ButtonRowKey` dialog (Connect, Backup, Restore, Profile included;
-  `ListDialog` keeps them for its list). `docs/ui-rules.md`
-  § Dialogs and the clipboard has the rule. `log_search_dialog.go`'s
-  `HandleMouse` comment points at tuikit's dialog and goes stale if either
-  moves again.
+- **Hand-rolled dialogs share one focus ring.** Find/Replace, Log Search,
+  Filter, Options, Connect, Back Up, Restore and Profile use the
+  `propsheet.Form`/`ButtonRowKey` model: the button row is one Tab stop with
+  Left/Right inside it, full wrap, and the focused widget gets every key first
+  (Up/Down move focus only when it declines; Enter toggles a checkbox, opens a
+  closed dropdown or adds an editor line, and only what the widget declines
+  presses the default button). Consequences taken knowingly: Enter on a
+  checkbox in Find/Replace toggles it rather than pressing Find Next, and
+  Up/Down leave a button row as Backtab/Tab do in every `ButtonRowKey` dialog
+  (`ListDialog` keeps them for its list). Rule: `docs/ui-rules.md` § Dialogs and
+  the clipboard. `log_search_dialog.go`'s `HandleMouse` comment points at
+  tuikit's dialog and goes stale if either moves.
 - **A combining mark does not shift a row; a tmux capture only looks like
   it.** Arabic stopwords ending in a shadda (`إنّ`, U+0651) seem to push the
   grid's and dialog's right border one column, but tcell emits base and mark in
@@ -1573,10 +1575,6 @@ it from the string 'NULL'.
   SQL Server refuses to drop a job owner. A **schedule's** owner can be dropped
   (`SUSER_SNAME(owner_sid)` goes NULL). Orphaned job owners come only from a
   foreign msdb restore or a Windows principal removed from AD.
-- **Start/Stop Job aren't greyed.** They read state first and refuse in the
-  app's words ("Job X is already running"/"is not running"), refreshing the node
-  — the read is free. Gating would hide a legit Stop for a job started since the
-  folder loaded.
 - **`sp_delete_jobstep` isn't symmetrical with `sp_add_jobstep`** — it resets
   references to steps at/after the deleted one to "quit with success", hence
   `ReorderSteps`' repair pass. A test moving the *last* step can't see it; the
@@ -1674,29 +1672,24 @@ it from the string 'NULL'.
   columns, so the 22-column name would clip on every tile. The label is
   display-only: `PhysicalOp`, plan-compare matching and CLI output keep the
   XML's "Clustered Index Scan"/"Index Scan".
-- **Enter after a name typed in full breaks the line; Tab still commits it**
-  (2026-11-22, fix plan F4). A non-keyword candidate whose text the typed
-  span already equals under the database's collation is `CompletionItem.Soft`
-  (`softenExactMatches`, `completion_provider.go`): committing it would change
-  nothing, so `FROM sys.tables⏎` is a newline. Under a case-sensitive
-  collation `orders` is not `Orders`, so Enter commits the catalog's spelling.
-  Keywords are deliberately excluded: a fully typed `from⏎` still commits
-  `FROM ` (upper-cased, with its space), as
-  `TestSQLKeywordCompletionKeepsFullyTypedKeywords` pins.
-- **Enter commits a keyword at an alias position** (2026-11-23). `FROM mytable WH⏎` gives
-  `WHERE `, as Tab does. e6083d5 had made a started word Soft wherever a new
-  alias could be typed, so `FROM Orders o⏎` kept the alias instead of taking
-  `OUTER APPLY`; in use that made Enter seem to work on some keywords and not
-  others (`GR⏎` committed after WHERE, not after a table). The cost is
-  accepted: an alias typed without `AS` at the end of a line needs Escape
-  before Enter. Only the nothing-typed position stays Soft for keywords
-  (`WHERE Name ⏎` is a newline, not `=`).
-  `TestSQLKeywordCompletionEnterCommitsAtAliasPosition` pins it.
-- **A catalog name holding a control character is not offered** (2026-11-22,
-  fix plan F7). `sqlCompletionCandidates` drops any candidate whose Label has a
-  C0 character or DEL (`hasControlChar`): its popup label draws without the
-  character and a CR is lost to the editor's CRLF normalisation, so the insert
-  would name a different object. Typing such a name by hand still works.
+- **Completion's Enter breaks the line where committing would change nothing;
+  Tab always commits.** A non-keyword candidate the typed span already equals
+  under the database's collation is `CompletionItem.Soft`
+  (`softenExactMatches`, `completion_provider.go`): `FROM sys.tables⏎` is a
+  newline. Under a case-sensitive collation `orders` is not `Orders`, so Enter
+  commits the catalog's spelling. A started keyword is not Soft anywhere a new
+  alias could be typed: `FROM mytable WH⏎` gives `WHERE `, and `FROM Orders o⏎`
+  takes `OUTER APPLY` rather than keeping the alias. Accepted cost: an alias
+  typed without `AS` at the end of a line needs Escape before Enter. Only the
+  nothing-typed position stays Soft for keywords (`WHERE Name ⏎` is a newline,
+  not `=`), and a fully typed `from⏎` still commits `FROM `
+  (`TestSQLKeywordCompletionKeepsFullyTypedKeywords`,
+  `TestSQLKeywordCompletionEnterCommitsAtAliasPosition`).
+- **A catalog name holding a control character is not offered.**
+  `sqlCompletionCandidates` drops any candidate whose Label has a C0 character
+  or DEL (`hasControlChar`): its popup label draws without the character and a
+  CR is lost to the editor's CRLF normalisation, so the insert would name a
+  different object. Typing such a name by hand still works.
 
 ### Activity Monitor
 
@@ -1764,35 +1757,24 @@ it from the string 'NULL'.
   reader.
 - **`gate.AlterAnyLinkedSrv` and `gate.CreateTable` read as unused**,
   deliberately (the reason is at `AlterAnyLinkedSrv`, `gate/gate.go`).
-- **`fileutil.WithLock` breaks a stale lock under a second lock, not flock**. A stale `.lock` (older than
-  `lockStale`, 10 s) is removed only while holding `.lock.break` and after
-  re-checking staleness inside it, and release removes the lock only while it
-  still holds the holder's token — portable O_EXCL files, no GOOS branch. Left:
-  a crash inside the microsecond break window leaves a stale `.break`, which
-  is removed outright (`breakStaleLock`).
-- **`fileutil.WithLock` hands the lock to a starving waiter with a priority
-  marker, not a backoff or a ticket queue** (2026-11-22). A waiter that has
-  lost for `lockPriorityAfter` (100 ms) creates `.lock.wait`; everyone else
-  stands back while it is there. The cause of the starvation was barging (a
-  holder saving again retakes the lock before the waiter's next poll), so a
-  jittered 5→50 ms backoff, tried first, made it worse (win10cli: 10/10
-  failures against 0/10). A FIFO ticket queue was declined as more crash
-  cases for the same result. Not FIFO: one waiter is prioritised at a time.
-- **`fileutil.WithLock` times out on the lock's lack of progress, not on
-  the caller's own wait, with a 10 s cap** (2026-11-22, issue #56). With
-  several waiters the marker's next owner is whoever wins the race, so on a
-  loaded Windows host a waiter lost for `lockWait` (2 s) behind a moving
-  queue and the CLI dropped an audit line. Now `lockWait` is how long the
-  lock file may stay unchanged (stat only — reading the token would open
-  handles that block the holder's remove on Windows); past `lockMaxWait`
-  (10 s) a moving queue gives a distinct "busy" error. Simply raising
-  `lockWait` was declined: a wedged live holder would stall every saver for
-  the whole wait. Ageing the marker (oldest waiter wins) was declined: it
-  needs reads of the marker, the same handle problem. A lock seen absent is
-  progress on every poll (a slow waiter can see it absent twice with holders
-  in between), and release retries a failed remove for up to `lockWait`: on
-  win10cli under load the antivirus held the new lock open past one 5 ms
-  retry, and the leftover lock failed every waiter as stuck.
+- **`fileutil.WithLock` is portable O_EXCL files, no flock, no GOOS branch.**
+  - *Stale locks:* a `.lock` older than `lockStale` (10 s) is removed only while
+    holding `.lock.break` and after re-checking staleness inside it; release
+    removes the lock only while it still holds the holder's token. A crash
+    inside the microsecond break window leaves a stale `.break`, removed
+    outright (`breakStaleLock`).
+  - *Starvation:* a waiter that has lost for `lockPriorityAfter` (100 ms)
+    creates `.lock.wait` and everyone else stands back; one waiter is
+    prioritised at a time, not FIFO. The cause was barging (a holder saving
+    again retakes the lock before the waiter's next poll); a jittered backoff
+    made it worse and a FIFO ticket queue was declined as more crash cases.
+  - *Timeout:* `lockWait` (2 s) is how long the lock file may stay unchanged
+    (stat only: reading the token opens handles that block the holder's remove
+    on Windows); past `lockMaxWait` (10 s) a moving queue gives a distinct
+    "busy" error. Raising `lockWait` was declined (a wedged live holder would
+    stall every saver); ageing the marker was declined (same handle problem). A
+    lock seen absent is progress, and release retries a failed remove for up to
+    `lockWait` because antivirus can hold the new lock open.
 - **`widgets.InputField.HandleKey` keeps its exception to the `HandleKey`
   rule**. It claims every key it binds, Left at column 0
   and Right at the end included, where grid/editor/tree/list hand edge keys to
@@ -1843,406 +1825,53 @@ it from the string 'NULL'.
     RGB data tables (the latter already share `mcSkin`); a builder would hide
     the table. `newTestEditor` stays in both repos: tuikittest importing
     `controls/editor` is an import cycle.
-- **Every section title strip is tuikit's `charts.DrawSectionBar`**
-  (2026-11-20, tuikit reuse round 1): Activity Monitor, the
-  Database Detail Browser's DISK USAGE strip and the AG dashboard. The AG
-  dashboard adopted the shared look (`ChartHeading` foreground, not bold); its
-  own `Text`-on-`ChartSectionBg` bold strip claimed to match the Activity
-  Monitor and didn't. A per-caller style override is not wanted.
-- **A click on a dashboard plot maps back through tuikit's `charts.PlotHit`**
-  (2026-11-20, tuikit reuse round 1), which replaced `dashboard.ChartHit`
-  unchanged. It moved with `DrawSectionBar` despite one consumer (the
-  Activity Monitor readout):
-  tuikit ships the readout box, and a host rewriting the hit model tends to
-  read `At` where the chart drew `AtBucket`.
-- **Side-by-side chart panels split through tuikit's `core.SplitColumns`**
-  (2026-11-20, tuikit reuse round 1): fit as many as fit at the minimum width,
-  gutters counted, the last column absorbing the remainder. The Database
-  Detail Browser's last disk-usage panel gained the 0..n-1 cells it used to
-  leave blank; the dashboard keeps "all or one" at its call site and now
-  counts the gutters too, so it collapses one or two columns of width earlier
-  rather than drawing panels a cell under `minPanelW`. No `lastAbsorbs` flag.
-- **A flat-ring dialog's mouse is tuikit's `dialogs.RingMouse`** (2026-11-20,
-  tuikit reuse round 2): Find/Replace, Log Search, Filter, Options, Profile.
-  Settled with it: an open dropdown gets first refusal *before*
-  `ConsumeOutsideClick` everywhere (Profile offered it after, though its list
-  overhangs the box too); a non-`Button1` event inside the box answers `false`
-  (the wheel reaches the host; Profile answered `true`); members are routed by
-  type (a `core.DragCanceller` through the `FieldGesture`, any other
-  `core.MouseHandler` takes its own press), not by a per-dialog list. Connect,
-  Back Up and Restore stay out: tabs, a wheel, zones. `dialogs.SetFocusIn` no
-  longer blurs its target on the way to focusing it — `DropDown.Focus(false)`
-  closes the list, so a mouse click could never open Profile's Allowed
-  Operations list.
-- **Enter in a hand-rolled dialog goes to the focused widget first**
-  (2026-11-20, tuikit reuse round 4): Profile, Connect, Back Up and Restore
-  moved onto `dialogs.FieldRingKey`/`ButtonRowKey`/`RingStep`, as Options and
-  Filter already were. So Enter toggles a checkbox, opens a closed dropdown
-  and adds a line in an editor (Connect's Custom Properties and preview); only
-  what the widget declines presses the default button. "Enter always presses
-  the default button" was declined: two Enter rules in one app, and Back Up's
-  Verify checkbox started the backup. Typing a password and pressing Enter
-  still connects (an `InputField` declines Enter). Settled with it: Tab skips
-  greyed controls everywhere (Back Up's Browse on a URL destination; Restore's
-  Files view now greys Default Location with the folder fields and keeps all
-  four in its ring instead of rebuilding a shorter one), and Up/Down move
-  focus once the widget declines them. Escape on an open Authentication list
-  now re-applies the auth fields: the list's moved selection survives Escape,
-  and the old path skipped `applyAuthFields`. Mouse routing is unchanged.
-  `core.OpenOverlay` (tuikit) replaced the per-host "which child has its
-  overlay open" loops in these dialogs, Options, Replication Monitor and the
-  AG dashboard; Connect's mouse keeps its own ordering of its two dropdowns.
-- **A buttons-only dialog's keyboard is tuikit's `dialogs.ButtonsKey`**
-  (2026-11-20, tuikit reuse round 3): Check for Updates, Device Code and the
-  Back Up/Restore progress views. It wraps (through `StepButtonWrap`;
-  `StepButton` still stops at the ends, which `ButtonRowKey` relies on), skips
-  a disabled button, and clamps the focus index on every key, not only on
-  Enter. The progress views gained Left/Right stepping like the other two —
-  they ignored the arrows before; nothing depended on that. tuikit's own
-  `ConfirmDialog` was not switched: its checkbox stop would have to sit in
-  front, a separate change.
-- **Check for Updates and Device Code are tuikit's `dialogs.MessageDialog`**
-  (2026-11-20, tuikit reuse round 3, taken by the author without waiting for
-  a third user): styled `MessageLine`s (`Indent`, `Wrap` at draw time) over
-  the host's own buttons, keyboard `ButtonsKey`, `OnEscape` nil = Hide. It is
-  embedded by value (`InitMessage`), so a zero `UpdateDialog{}` in a test
-  still takes `ShowResult`. The GitHub check, the sign-in wait, the clipboard
-  target and Update's `lines`/`linkRow` (the Copy Link source) stay in gossms.
-- **Clipboard traffic is tuikit's `clipboard.Dispatcher`** (2026-11-20,
-  tuikit reuse round 5): newest-copy-wins writes, the OSC 52 fallback and its
-  hedge hook, a paste aimed once (target + `ClipboardTargetToken`) and dropped
-  if either changed before the text arrived, the OSC 52 reply route (pending
-  target cleared first), and bracketed paste as one `Paste` with keys skipping
-  the frame. It stays a leaf: `Post`, `Go`, `Resolve` and `Token` are
-  injected, so `tuikitLayers` is unchanged. Which widget is active
-  (`activeClipboardTarget`), the menus and the status wording stay in gossms;
-  `App.clip()` builds it on first use so a bare `&App{}` in a test has one.
-- **The plan's tree diagram and tree-with-guides list stay in `planview`**
-  (2026-11-20, tuikit reuse round 5, declined by the author): neither
-  `planview/graph_layout.go`+`graph.go` as a `controls.TreeDiagram` nor
-  `planview/tree.go`'s guides, per-row style and live column as
-  `controls.TreeView` options. One consumer each; do not re-raise.
-- **Details panes are tuikit's `core.LinePane`** (2026-11-20, tuikit reuse
-  round 5): the Log/XEvent viewers' details (`viewerPanel.detail`) and Plan
-  view's Operator Details, bottom Properties and Plan-tab strip share its
-  scroll clamp, inset draw, per-line style and "▾ more" hint. A draw + clamp
-  value like `core.Viewport`, not a control: keys, wheel and focus stay with
-  each host (see "LogViewer vs XEventViewer beyond `viewerPanel`"), as do
-  line building and the per-(item, width) caches. `Draw` now clamps a stale
-  `Scroll`, so a pane grown taller shows its last line at the bottom instead
-  of blank rows. The placeholder is `DrawEmpty`, a separate call, so a pane
-  too narrow to wrap its item stays blank rather than saying nothing is
-  selected; Plan view's "(no operator selected)" is now dim like the
-  viewers'. The `core.AlignKV` the plan floated was not added: Plan view's
-  one padding loop over `[]showplan.KV` would need two slices built for it.
-- **The master-detail pending-edit list is tuikit's `propsheet.PendingEdits`**
-  (2026-11-20, tuikit reuse round 5, taken by the author without waiting for
-  a ListEditor change): the rows as loaded and as edited, Add/Remove/Restore/
-  Swap, `Visible`, `Dirty`, `Revert`, and the `Index`/`Listed`/`Taken` name
-  checks; row types embed `propsheet.PendingState` (`IsNew`, `Removing`).
-  Name equality is injected (`same func(a, b string) bool`); gossms's
-  `newPendingEdits` wires it to `gosmo.SameName` under the scope's collation,
-  and New Database's filegroups pass a closure reading the General page's
-  collation at each Add. `pendingNamesRefusal` (via `pendingRefusal`) and its
-  English text stay in gossms: the Apply-order rules are SQL Server's.
-- **Background goroutines start through tuikit's `loop.Runner`** (2026-11-20,
-  tuikit reuse round 6): the traceback label (`loop.Label`, pprof `op`), the
-  recover, `GoRepair`'s repair posted before the report, and `FanOut`'s
-  bounded pool recovering per item with its queue filled before any worker
-  starts. The earlier reason for keeping it in gossms ("tuikit has no async
-  layer") went when `loop` got `Poster` and `Latest`. A struct, not package
-  functions, so the ~170 call sites don't repeat `Post`/`Report`/`Workers`.
-  `safego`/`safegoRepair`/`fanOut` stay as one-line delegates over a
-  `Runner` built per call (it holds no state, so no lazy init for a
-  background caller to race on); `reportPanic` (log + status bar) is its
-  `Report`. `App.recoverPanic` went: its one caller was the old `fanOut`.
-  Driven in the binary with a forced panic in a Detail Browser backfill
-  (row repaired to N/A, rest filled) and a Log File Viewer read.
-- **A spinner's redraw clock is tuikit's `loop.Runner.Tick`** (2026-11-20,
-  tuikit reuse round 9, item 1). `widgets.Spinner`, `dialogs.ProgressDialog`
-  and `propsheet.ApplyingSpinner` each told the host to supply the clock and
-  gave it nothing to do it with; the trap (a clock outliving a panicking
-  worker unless `done` is closed in a `defer` inside it) is `GoRepair`'s bug
-  class. `Tick` takes a `tick func()` rather than a `*Poster`, so `Runner`
-  stays stateless and uncoupled from `Poster`. `animateUntil` stays as a
-  one-line delegate, its five call sites unchanged.
-- **A progress job's lifecycle is tuikit's `dialogs.ProgressDialog.Run`**
-  (2026-11-20, tuikit reuse round 9, item 2; shape (a)). The busy refusal
-  (running the caller's repair), the showing sequence that drops a late
-  report, the release on finish *and* panic, and `cancelled = err != nil &&
-  Cancelling()` were ~40 lines every host re-derived, the last easy to get
-  wrong (a completed write reported "cancelled"). This adds the layering edge
-  `dialogs → loop` (`loop` imports no tuikit, so no cycle); `Run` takes the
-  host's `Runner` and `Poster` as arguments, not injected func fields (shape
-  (b): three fields for one helper). `Run` owns the context's cancel and
-  posts its panic repair through the `Poster` whatever `Runner.Post` is, and
-  ticks at the new `widgets.Spinner.Interval` (a zero `Period` would panic the
-  ticker). `runWithProgress` keeps the gossms part — the context's parent and
-  `serverWriteTimeout`, the refusal's status text — and its 28 call sites are
-  unchanged; `App.progressBusy`/`progressSeq` went (`Running()` replaces the
-  former). `animateUntil` is down to four callers.
-- **Ctrl+Enter's two encodings are tuikit's `core.IsCtrlEnter`**
-  (2026-11-20, tuikit reuse round 9, item 3). `KeyEnter`+`ModCtrl` under
-  kitty/modifyOtherKeys, a bare LF (`KeyCtrlJ`) everywhere else: terminal
-  encoding knowledge of `NormalizeKey`'s kind, which a tuikit host binding
-  only the first would find dead on most terminals. Not folded into
-  `NormalizeKey`, which would break hosts that bind Ctrl+J. Its one gossms
-  caller is Execute Current Statement (`query_panel_input.go`).
-- **Byte sizes render through tuikit's `core.FormatBytes`** (2026-11-20,
-  tuikit reuse round 10, item 1). gossms's own `formatBytes`
-  (`backup_common.go`) was a stale copy that picked the unit before rounding,
-  so 1 MiB − 1 read "1024.0 KB"; tuikit's reads "1.0 MB". Same format
-  otherwise, so `parseDetailNumber`'s byte-unit sort is unaffected. Its
-  `TestFormatBytes` went: every row is in `~/go/tuikit/core/strutil_test.go`.
-- **A tool-row press is tuikit's `controls.ToolRow.Press`** (2026-11-20,
-  tuikit reuse round 10, item 2). The six hosts (Activity Monitor, Picture
-  panel, XEvent viewer, Log Viewer, Query Store's two rows, Replication
-  Monitor) each hand-rolled "More → `OverflowMenu`, cell → `RunCell`, gap →
-  swallow" in their own order; `Press` owns the order (More first) and
-  reports whether the press fell on the row, so the host arms its gesture
-  zone either way. Arming stays with the host (`core.Gesture[Z]` is
-  host-typed); the Log Viewer still tests its filter field first. `Press`
-  takes the host's `app.contextMenu` eagerly, so a test panel built without
-  an `App` needs a zero one (`newTestLogViewer`).
-- **Canvas scroll keys are tuikit's `core.Viewport.ScrollKey`, and End keeps
-  the column** (2026-11-20, tuikit reuse round 10, item 3). The Activity
-  Monitor and the Picture panel each mapped arrows, PgUp/PgDn, Home and End
-  by hand, and disagreed on End: the Activity Monitor went to the far corner
-  (MaxX, MaxY), the Picture panel to the last row in the same column. The
-  author chose the column-keeping End (SSMS text views), so the Activity
-  Monitor's End changed. Steps stay per host (`hScrollStep` 4, the picture's
-  2); a page is View less one row, at least one (the Activity Monitor's
-  `pageStep` 10 fallback for an unknown height went). The Activity Monitor
-  returns `moved` so a key at a boundary falls through, through `panned` so a
-  scroll still drops the pinned tooltip; the Picture panel claims a bound key
-  either way, as before. **The grab-and-drag pan stayed in the Picture
-  panel** (`dragFrom`): one consumer, so no `Viewport.StartPan`/`PanTo`.
-- **A filter box over a grid is tuikit's `propsheet.FilterIndex`, matching
-  with `core.MatchesAny`** (2026-11-20, tuikit reuse round 10, item 4; the
-  plan called it weak, the author took it). The five hand-rolled pairs in
-  `server_permissions_matrix.go` (principals and permissions in
-  `buildPermissionsMatrix`, the single grid in
-  `pagePrincipalServerPermissions`) and `securables_matrix.go` (securables,
-  permissions) each kept a `visible` slice, rebuilt it on every edit and
-  indexed it raw; they now map grid rows through `At` (bounds-checked) and
-  build their filter boxes with `FilterRow` (a view control, never dirty).
-  The empty-result trap stays the host's, in `onFilter`: clearing the detail
-  grid needs the page's own selection state, so `FilterIndex` names it in
-  its doc comment rather than owning it. gossms's `matchesFilter` and its
-  test went (`core.TestMatchesAny` has every row). A list that changes
-  under the filter (Add growing the securables, a new selection's edits) is
-  re-fed with `SetItems`, which keeps the typed term.
-- **A pre-rendered text cell is read for sorting and alignment by tuikit**
-  (2026-11-20, tuikit reuse round 11, item 1; reverses rounds 1–6, which kept
-  it because it parsed gossms's own format — round 10 made that format
-  tuikit's `core.FormatBytes`). `core.ParseFormattedNumber` is the inverse of
-  `FormatBytes`/`FormatThousands` (byte units scaled to bytes), pinned by a
-  round-trip test so the pair can't drift; `controls.NewTextCellKey`,
-  `CompareTextCells` and `ClassifyTextCell` replace `detailSortKey`,
-  `compareDetailSortKeys` and `listCellClass`. Author's calls as recommended:
-  the placeholder set is fixed (`""`, `…`, `...`, `N/A`, `-`, `—`), not
-  host-injected; no stable-permutation helper (`sortedRows` also permutes the
-  row objects). The zero `TextCellKey` is a blank, so a row too short for the
-  column needs no special key. `TestParseDetailNumber` and
-  `TestDetailSortScalesByteUnits` moved to tuikit; `listAutoAlign`'s
-  Property/Value exemption stays gossms's. `query_panel_sort.go` is
-  untouched (it compares by declared SQL type).
-- **The background task registry is tuikit's `loop.Tasks`** (2026-11-20,
-  tuikit reuse round 11, item 2). It carries the rule
-  `dialogs.ProgressDialog.Run` carries for a modal run: a task is
-  `Cancelled` only if it failed after a Cancel asked for while it ran, never
-  when it panicked. `Start`/`Progress`/`Done`/`Finish`/`Running`/`All`
-  replace `startTask`/`postProgress`/`postTaskDone`/`markTaskDone`/
-  `runningTaskCount`/`a.tasks`; `Task.Times` replaces `taskTimes`;
-  `pruneFinishedTasks` is `Keep` (50). Author's calls as recommended: a panic
-  finishes a task with the exported sentinel `loop.ErrTaskPanicked`, and
-  `Task` keeps exported fields documented as UI-goroutine-only. One change
-  from the plan's sketch: the registry takes `Post func(func())`, the hook
-  `loop.Runner` takes, not a `*Poster`. gossms keeps `type Task = loop.Task`,
-  the wording (`taskStatusText`, `taskRepairNote` reading
-  `*gosmo.RepairError`, `taskFinished` as `OnFinish` with
-  `withPermissionAdvice`), `TasksDialog`, `drawTaskProgress` and
-  `runProgressButton`; `wireTasks` connects the registry in `NewApp` and
-  `newTestApp`. The generic rows of `tasks_test.go` and `TestTaskTimes` moved
-  to tuikit; `TestTaskStatusText` stays.
-- **A section heading (a bold title over a rule) is tuikit's
-  `dialogs.DrawSectionHeading`** (2026-11-20, tuikit reuse round 11, item 3).
-  It returns the first free row under the rule and clips the title to the
-  width. propsheet's `SectionRow.Draw` and page title use it, and so do
-  Restore's "Files Included" and "Files in the backup", which had drifted to
-  not-bold. Author's call as recommended: Restore adopts the bold look, as
-  round 1 did for `DrawSectionBar`. Connect's `drawSection` (the title set
-  into the rule, one row) is a different shape and stays.
-- **The Backup/Restore progress view is tuikit's `dialogs.DrawTaskProgress`,
-  and the clock format `core.FormatClock`** (2026-11-20, tuikit reuse round
-  12, item 2). `DrawTaskProgress(s, inner, bottom, t, TaskProgressView)` draws
-  the header rows, the bar, Elapsed/Remaining from `loop.Task.Times`, and the
-  message wrapped over every row down to `bottom`; with no task, only the
-  header. `FormatClock` is `formatHMS` (truncating `HH:MM:SS`, negative as
-  zero, hours unclamped); its every gossms caller switched and
-  `TestFormatHMS` moved to tuikit as `TestFormatClock`. One change from the
-  plan's sketch: the wording hook is `Message func(*loop.Task) (msg string,
-  isErr bool)`, called for every state, not a `Final` for the finished ones
-  only, so "Starting backup..." is the host's too; nil means
-  `dialogs.TaskMessage`, whose words (and the labels) are `dialogs.Strings`
-  entries. gossms keeps the wording (`taskProgressMessage`, with
-  `taskRepairNote`), `runProgressButton` and `wrapMessage`;
-  `TestBackupProgressView`/`TestRestoreProgressView` stay. tuikit's own
-  `ProgressDialog` keeps its m:ss `formatElapsed`.
-- **The Object Explorer drag is tuikit's `core.Drag[P]`** (2026-11-20,
-  tuikit reuse round 12, item 3; taken by the author with one consumer).
-  `Arm`, `Motion`, `Route` (a held Button1 is motion, any other button
-  cancels), `Release` (the payload only if the drag started), `Cancel`,
-  `Armed`/`Active`/`Payload`/`Pos` and `DrawGhost`; `Threshold`, zero meaning
-  `DefaultDragThreshold` (2). `App.drag` is a `core.Drag[*explorerNode]`;
-  `explorerDrag`, `dragThreshold` and `dragPastThreshold` went, and
-  `dropExplorerNode` takes the released node. gossms keeps what drags
-  (`isDraggableNode`), the text (`explorerDragText`), the drop target and its
-  messages, the "no drop if a modal opened mid-drag" check, arming from
-  `NodeAt` on a fresh press, and where `handleMouse` routes the drag.
-  The generic rows (threshold, either axis, cancel, ghost flip) are tuikit's
-  `drag_test.go`; `explorer_drag_arming_test.go` stays.
-- **tuikit comments no longer cite gossms's `redrawGrid`** (2026-11-20,
-  tuikit reuse round 12, item 4). `controls/datagrid_columns.go`
-  (`restoreOverrideWidths`) and `propsheet/togglegrid.go`
-  (`renderPreservingView`) named it as if it were tuikit API; both now point
-  at `DataGrid.SetDataPreservingView`. The other goSSMS mentions in tuikit
-  are history in "why" comments and stay.
-- **Every top/bottom split is tuikit's `layout.NewStackSplitter`**
-  (2026-11-20, tuikit reuse round 13, item 1). It is a horizontal bar at half
-  the rect, labelled; the 0.1/0.9 clamp gossms set by hand was already
-  `NewSplitter`'s default, so the preset takes no ratio or limits parameter
-  (`SetRatio`/`SetLimits` still apply, as `newViewerPanel` does). The label
-  suffix is `layout.ResizeHint` ("(drag or Ctrl+Up/Down to resize)").
-  `newHorizontalSplitter` went; `newVerticalSplitter` (the explorer split,
-  0.3 within 0.1/0.8, one consumer) stays in gossms.
-- **A pinned chart readout's life is tuikit's `charts.Pin`** (2026-11-20,
-  tuikit reuse round 13, item 2; taken with one consumer, Activity Monitor,
-  because tuikit already owned the box, callout and `PlotHit`, and the
-  identity-and-drift logic is what the next chart host would re-derive wrong).
-  `PinAt` pins a bucket by chart title and time, `Refresh` re-derives its
-  column each frame and reports false on chart gone / pruned / aged off the
-  plot / out of view, `Draw` does callout then box and skips a box that
-  doesn't fit. Unlike the plan, the canvas↔screen translation went too: Pin
-  takes a `core.Viewport`, as `DrawAxisCallout` already did. gossms keeps what
-  a bucket's time means per tab (`bucketTime`, `bucketIndex`) and the
-  pan/click/tab-switch drop rules (`panned`, `setTab`, `press`).
-- **Object Explorer's lazy-tree mechanics are tuikit's `controls.TreeModel`**
-  (2026-11-20, tuikit reuse round 14, item 1; taken with one consumer, as
-  `GoOnce`/`Drag`/`Pin` were, because the placeholder-ID, retire/release and
-  survivor rules are each a shipped bug any lazy tree host would re-ship).
-  This reverses tuikit `README.md`'s old "the host owns the tree model and
-  projects it" line. Generic and intrusive: `explorerNode` embeds
-  `controls.TreeItem[*explorerNode]` (alias `explorerItem`), which carries
-  `Parent`/`Children`/`Expanded`/`Loaded` (moved out of `nodeData`) and the
-  model's private ID, placeholder ID and retired flag (`ID()`,
-  `PlaceholderID()`, `Retired()`). Intrusive rather than a model owning
-  wrapper nodes of payload `T`, so `*explorerNode` stays the one identity
-  every loader, hint and cache keys on. Host hooks: `Row`, `Placeholder`,
-  `Load`, `Same` (`sameObject`), `Redirect` (the rename/Move to Schema
-  `followHint`), `OnSelect`/`OnReselect` (replacing `reselectFrom`),
-  `OnRetire`/`OnRelease` (the `latest` cancel, `detailBrowser.Forget`).
-  gossms keeps Group by Schema (it rewrites `Children` and uses
-  `Register`/`Retire`), filters, `ReloadFolders`, `followHint`/`drillHint`,
-  `resolveConn`, the per-node `latest` and `snapshot()`. The model's own tests
-  are tuikit's `treemodel_test.go`; the `explorer_*_test.go` families stayed,
-  changed only mechanically (field names, `tree.Roots()`/`ByID`/`Len`).
-- **The top-level mouse router's overlay protocol is tuikit's**
-  (2026-11-20, tuikit reuse round 14, item 2, all four parts as one round).
-  `core.RouteOverlay(o, ev)` is the `OverlayActive() && (HandleMouse(ev) ||
-  OverlayActive())` first-refusal test (three uses in `app_events.go`, one in
-  tuikit's `DataGrid` cell menu), over `core.MouseOverlay`.
-  `core.ReleaseNowhere(ev)` is the off-screen release (two in `routeRelease`,
-  one in `PanelManager`). `App.mouseButtonDown` became a `core.PressLatch`
-  (`App.buttonPress`). The overlay-change guard (2d, taken with one consumer
-  as "a bug every host re-derives") is `core.OverlayGuard[S comparable]`;
-  unlike the plan's `Press`/`Stale` pair it is one `Drop(ev, fresh, snap func() S)`,
-  so the "held `Button1` only, releases pass" half of the rule is tuikit's
-  too. `overlayStack`/`overlaySnapshot` stay gossms's. Not taken: a whole
-  `layout.Shell` router (host-specific steps between every generic one).
-- **The wheel over a `core.LinePane` is tuikit's `core.LineWheel`**
-  (2026-11-20, tuikit reuse round 14, item 3). `LineWheel(ev, r) (delta, ok)`
-  is the hit test and the ±1 step; the five hand-rolled `WheelUp`/`WheelDown`
-  switches (Log and XEvent viewer details, plan Operator Details, bottom
-  Properties, Plan tab Properties) call it and pass `delta` to their existing
-  `scroll*` helper, claiming the tick whenever `ok` (at a boundary too, as
-  before). Unlike the plan it is a function, not a `LinePane.Wheel(ev, r, n)`
-  that clamps: every host's line count wraps the selected item, so it is only
-  built on a tick that scrolls, and the plan panes' hit rect includes a
-  heading row the clamp height excludes. Author's call taken as recommended:
-  Shift+WheelUp/Down stays vertical over a `LinePane` (no horizontal axis;
-  `WheelDelta`'s sideways turn would leave it dead), WheelLeft/Right fall
-  through. The plan tree pane's own wheel (`treeSt.scroll`) is not a
-  `LinePane` and stays.
-- **App's lazy dialog slots are tuikit's `dialogs.Lazy`/`Built`**
-  (2026-11-20, tuikit reuse round 14, item 4; taken so the "a shown but
-  unregistered dialog is never drawn" rule lives beside `Stack.Register`,
-  not for lines). The one-dialog-per-type map moved onto `dialogs.Stack`;
-  `dialogOf`/`builtDialog` are one-line delegates, so no accessor changed,
-  and `App.dialogSlots` and `setScreen`'s loop went. Beyond the plan:
-  `dialogs.Replace` (the test seam behind `installDialog`: swaps a slot
-  without registering), and `Stack.SetScreen` reaches slot dialogs too, so a
-  replaced, unregistered dialog still gets the screen as it did before. Six
-  test helpers that reset `a.modals = dialogs.Stack{}` after `installDialog`
-  lost the reset (it now wipes the slots; the Device Code test failed on it).
-- **A bar chart's legend entries are tuikit's `charts.BarLegendItems`**
-  (2026-11-20, tuikit reuse round 14, item 5; the function only, as
-  recommended). `dashboard/sample.go` `withLegend` no longer copies
-  `Label`/`Short`/`Color` by hand, and `VBarChart`'s own legend uses it
-  instead of `LegendItems(barSeries(…))`. Not taken: a `BarChart.Legend`
-  field reserving the last row — one bar-panel host (`withLegend`); revisit
-  if a second appears. Stacked bars with `Parts` (the waits chart's
-  `waitLegend`) keep a host-built legend: parts are named per chart, not per
-  bar.
-- **Menu and toolbar toggles are tuikit's `MenuItem.Checked` and
-  `ToolbarButton.On`** (2026-11-20, tuikit reuse round 7, item 1). The state
-  is read at draw time, so labels are fixed and a flip needs no
-  `SetMenus`/`SetButtons` rebuild (`OnBeforeOpen`'s rebuild stays for other
-  dynamic labels). Author's calls: the menu mark is a light `✓`-or-blank
-  column (`controls.MenuTick`), not the checklist's `☑`/`☐` — a toggle reads
-  as a desktop menu check, not a checklist row; any toggle in a box reserves
-  the column for every row, so labels align and the width is the same in
-  both states. The toolbar shows "on" by bold `StyleMenuSelected` only
-  (`Act.Plan`, `Live`, `Meta`), dropping the old `[ON--]`/`[-OFF]` text:
-  checked in Dark, Light, mc and mc - retro, where it is a ground swap, not
-  a hue, so it survives the monochrome skins. Accepted cost: hovering an off
-  button looks like an on one but for the bold; the tooltip and status bar
-  name the state.
-- **A single-flight page button's latch is tuikit's `loop.Runner.GoOnce`**
-  (2026-11-20, tuikit reuse round 7, item 2). Taken although its only callers
-  are gossms's two `runPageActionOnce`s: the rule it carries (a panic must
-  release the busy flag, or the button refuses every later click) is the bug
-  class `GoRepair` moved for, and belongs in tuikit's docs beside it. `fn`
-  returns its UI callback rather than taking a separate `done`, so a result
-  passes by closure, not a shared variable. Context, timeout and the stale
-  check stay in gossms (`goPageActionOnce`, shared by `PropDialog` and
-  `newObjectDialog`). The two copies had diverged; both now drop a result
-  whose showing has closed or reopened, as the create dialogs did — every
-  Properties `onDone` writes only its own page's rows, which a reopen builds
-  afresh. Driven live: Effective Permissions' Show clicked three times fast
-  (one run), closed mid-flight and reopened (page empty, Show works); New
-  Database Role's Securables search typed fast (coalesced), closed mid-search
-  and reopened.
-- **`backup_common.go` `wrapMessage` stays an alias of `core.WrapTextLimit`**
-  (2026-11-20, tuikit reuse round 7, item 3). Its comment is the reason
-  server errors wrap (a one-line restore failure clipped right before the
-  cause), and `backup_common_test.go` pins that behaviour by the name the
-  Backup/Restore call sites use; inlining it would scatter the reason over
-  three sites for no gain. The same round dropped `restore_dialog_plan.go`'s
-  `plural`, a copy of `app.go` `pluralSuffix`.
-- **A tool row's gate is set once on `controls.ToolRow`** (2026-11-20,
-  tuikit reuse round 8, item 2): `Disabled`/`Reason`/`Status` fields, read by
-  `Run`, `OverflowItems` and `Draw` wherever they are passed nil, plus
-  `RunCell(i)` and `OverflowMenu(menu, fallback)`. The per-panel
-  `runTool`/`showOverflowMenu` (and Query Store's `runSel`/`runAct`) went;
-  the predicates themselves stay per-panel policy. Taken alone rather than
-  folded into a later `ToolRow` change, at the author's request. Query Store
-  sets `ReasonOnly`: its reasons are whole sentences and its selector labels
-  carry a value, so "Metric: Duration: Query Store records…" would replace
-  the reason-alone status it always showed. Plan Compare's pickers take only
-  `Disabled` (the draw and `runPicker` had separate copies of the predicate);
-  their refusal keeps its own "Plan A has only the one statement" text.
-- **Package-level `var`s are not mutable state to refactor** (review E2). A go/types pass over all three repos (~800 vars, test files
+- **Shared mechanics live in tuikit; the calls that stay settled.** What moved
+  is in tuikit's own docs and git history; only the author's choices and the
+  declined alternatives are kept here.
+  - *Declined, do not re-raise:* planview's tree diagram and tree-with-guides
+    as `controls.TreeDiagram`/`TreeView` options (one consumer each);
+    `core.AlignKV` (Plan view's one padding loop); `BarChart.Legend` (one bar
+    host, revisit with a second); a per-caller section-bar style override; a
+    `lastAbsorbs` flag on `core.SplitColumns`; a whole `layout.Shell` router;
+    `Viewport.StartPan`/`PanTo` (the Picture panel's grab-and-drag pan has one
+    consumer); a clamping `LinePane.Wheel` (hosts' line counts wrap the
+    selected item); a stable-permutation helper and a host-injected
+    placeholder set for text-cell sorting (the set is fixed: `""`, `…`, `...`,
+    `N/A`, `-`, `—`); "Enter always presses the default button" (two Enter
+    rules in one app; Back Up's Verify checkbox started the backup);
+    `backup_common.go`'s `wrapMessage` alias of `core.WrapTextLimit` stays (its
+    comment is why server errors wrap).
+  - *Author's calls:* End in canvas scroll keeps the column (SSMS text views);
+    Shift+Wheel stays vertical over a `LinePane`; menu toggles are a light
+    `✓`-or-blank column (`controls.MenuTick`) and toolbar toggles bold
+    `StyleMenuSelected` only, so hovering an off button looks like an on one
+    but for the bold; Restore's section headings are bold like
+    `dialogs.DrawSectionHeading` (Connect's `drawSection` is a different shape
+    and stays); the AG dashboard uses the shared section bar
+    (`ChartHeading`, not bold); a panic finishes a background task with
+    `loop.ErrTaskPanicked`; `Task` keeps exported fields documented as
+    UI-goroutine-only.
+  - *Rules the shared code carries, each a shipped bug:* an open dropdown gets
+    first refusal before `ConsumeOutsideClick` and a non-`Button1` event inside
+    a dialog answers `false` (`dialogs.RingMouse`); Tab skips greyed controls
+    and Up/Down move focus only once the widget declines them
+    (`FieldRingKey`/`ButtonRowKey`); a buttons-only dialog's keys wrap and
+    clamp on every key (`ButtonsKey`); a task is `Cancelled` only if it failed
+    after a Cancel asked for while it ran, never when it panicked
+    (`dialogs.ProgressDialog.Run`, `loop.Tasks`); a panic must release a
+    single-flight button's latch and stop its spinner clock
+    (`Runner.GoOnce`/`Tick`); a late result for a closed or reopened showing is
+    dropped (`goPageActionOnce`); a shown but unregistered dialog is never
+    drawn (`dialogs.Lazy`); Ctrl+Enter is `KeyEnter`+`ModCtrl` or a bare LF
+    (`core.IsCtrlEnter`, not folded into `NormalizeKey`, which would break
+    hosts binding Ctrl+J); `core.FormatBytes` rounds before choosing the unit.
+  - *Stays in gossms:* which widget is the clipboard target, the menus and
+    status wording; Group by Schema, filters, `followHint`/`drillHint` and the
+    per-node `latest` in Object Explorer; `isDraggableNode` and drop messages;
+    bucket-time meaning per Activity Monitor tab; the Apply-order rules behind
+    `pendingNamesRefusal`; Query Store's `ReasonOnly` tool-row status; the
+    wording of task and progress messages.
+- **Package-level `var`s are not mutable state to refactor** A go/types pass over all three repos (~800 vars, test files
   excluded) found every one is a sentinel error, regexp, lookup table, or a
   test seam (func or timing written only by `_test.go`: `lockWait`, `jobNow`,
   `releaseFetcher`, …), except the few written at run time — each documented as
@@ -2255,7 +1884,7 @@ it from the string 'NULL'.
   tuikit `theme.active` and `editor.defaultIndentWidth` (UI goroutine, read
   per frame/construction). Moving them into an owning struct would thread a
   handle through every caller for no fix.
-- **Contrast floor holds in every palette with no exemption list** (review E4). Default: DialogAccent
+- **Contrast floor holds in every palette with no exemption list**. Default: DialogAccent
   is the editor keyword blue 86,156,214, DialogError VS Code dark's
   244,135,113. Light: DialogAccent 0,106,177, both dim greys 105. mc skins:
   MenuTextDim is Black, as mc's own `menuinactive = black;cyan`;
@@ -2698,7 +2327,7 @@ down.
   `d.ServiceBroker()`, `d.FullText()`, `s.Mail()`, `s.XEvents()`/`d.XEvents()`;
   rule in `~/go/gosmo/CLAUDE.md` § Conventions) give the same discoverability
   without that. Resource Governor, Backup and `Server.FullTextInfo` stay
-  unprefixed on `Server` (review A2): RG's singleton already owns
+  unprefixed on `Server`: RG's singleton already owns
   the name, Backup is operations rather than a family, and a one-method
   facet adds nothing.
 
