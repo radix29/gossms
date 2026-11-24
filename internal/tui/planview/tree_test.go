@@ -37,11 +37,11 @@ func TestTreeScrollbarDragScrolls(t *testing.T) {
 	selBefore := v.selectedID
 
 	sbX := r.Right() - 1
-	if !v.handleTreeTabMouse(tcell.NewEventMouse(sbX, r.Y+r.H-1, tcell.Button1, tcell.ModNone)) {
+	if !v.HandleMouse(tcell.NewEventMouse(sbX, r.Y+r.H-1, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("handling a click on the tree pane's scrollbar column should return true")
 	}
-	if !v.treeSt.sbDragging {
-		t.Fatal("treeSt.sbDragging should be true after pressing on the scrollbar")
+	if z, held := v.drag.Owner(); !held || z != pzTreeBar {
+		t.Fatalf("drag owner = %v (held %v) after pressing on the scrollbar, want pzTreeBar", z, held)
 	}
 	if v.treeSt.scroll == 0 {
 		t.Error("treeSt.scroll should have jumped forward when clicking near the bottom of the track")
@@ -50,10 +50,69 @@ func TestTreeScrollbarDragScrolls(t *testing.T) {
 		t.Errorf("selectedID changed, clicking the scrollbar must not select a node")
 	}
 
-	v.handleTreeTabMouse(tcell.NewEventMouse(sbX, r.Y, tcell.ButtonNone, tcell.ModNone))
-	if v.treeSt.sbDragging {
-		t.Error("treeSt.sbDragging should reset on release")
+	// Held, the bar keeps the drag across the rows and off the pane: back to
+	// the top over the row column, then below the view to the end.
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y, tcell.Button1, tcell.ModNone))
+	if v.treeSt.scroll != 0 {
+		t.Errorf("dragging the thumb to the top over the rows left scroll = %d, want 0", v.treeSt.scroll)
 	}
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, r.Bottom()+5, tcell.Button1, tcell.ModNone))
+	if want := len(v.treeSt.rows) - r.H; v.treeSt.scroll != want {
+		t.Errorf("dragging the thumb below the pane left scroll = %d, want %d", v.treeSt.scroll, want)
+	}
+	if v.selectedID != selBefore {
+		t.Errorf("selectedID changed, dragging the thumb over the rows must not select a node")
+	}
+
+	v.HandleMouse(tcell.NewEventMouse(sbX, r.Y, tcell.ButtonNone, tcell.ModNone))
+	if _, held := v.drag.Owner(); held {
+		t.Error("the gesture should end on release")
+	}
+}
+
+// A press on a row, held and dragged onto the scrollbar column, is still the
+// row's: it must not grab the thumb and jump the scroll.
+func TestTreeRowDragOntoScrollbarDoesNotScroll(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 120, 8)
+	v.SetPlan(loadTestPlan(t))
+	v.setActiveTab(TabTree)
+	r := v.treePaneRect
+	if len(v.treeSt.rows) <= r.H {
+		t.Fatalf("test needs more tree rows (%d) than treePaneRect.H (%d)", len(v.treeSt.rows), r.H)
+	}
+
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+1, tcell.Button1, tcell.ModNone))
+	sel := v.selectedID
+	v.HandleMouse(tcell.NewEventMouse(r.Right()-1, r.Y+r.H-1, tcell.Button1, tcell.ModNone))
+	if v.treeSt.scroll != 0 {
+		t.Errorf("a row press dragged onto the scrollbar scrolled to %d, want 0", v.treeSt.scroll)
+	}
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+3, tcell.Button1, tcell.ModNone))
+	if v.selectedID != sel {
+		t.Errorf("a row press dragged over another row selected %d, want %d kept", v.selectedID, sel)
+	}
+}
+
+// A drag that began in the operator summary grid selects no tree row when it
+// enters the tree pane.
+func TestSummaryDragIntoTreeSelectsNoRow(t *testing.T) {
+	v := newSummaryTabView(t)
+	b, r := v.bottomRect, v.treePaneRect
+	sel := v.selectedID
+
+	v.HandleMouse(tcell.NewEventMouse(b.X+2, b.Y+summaryDataRowY, tcell.Button1, tcell.ModNone))
+	if z, held := v.drag.Owner(); !held || z != pzSummary {
+		t.Fatalf("drag owner = %v (held %v) after pressing in the summary grid, want pzSummary", z, held)
+	}
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+3, tcell.Button1, tcell.ModNone))
+	if v.selectedID != sel {
+		t.Errorf("a summary drag entering the tree selected %d, want %d kept", v.selectedID, sel)
+	}
+	if !v.bottomFocused {
+		t.Error("a summary drag entering the tree moved focus to the tree")
+	}
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, r.Y+3, tcell.ButtonNone, tcell.ModNone))
 }
 
 func TestTree_DefaultSelectionIsRoot(t *testing.T) {
@@ -295,12 +354,12 @@ func TestTreeRowClickIsOnePerPhysicalPress(t *testing.T) {
 	y := r.Y + 1
 	collapsedBefore := v.treeSt.collapsed[target.ID]
 
-	v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
 	if v.selectedID != target.ID {
 		t.Fatalf("selectedID = %d after clicking row 1, want %d", v.selectedID, target.ID)
 	}
 	for range 3 {
-		v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
+		v.HandleMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
 	}
 	if v.treeSt.collapsed[target.ID] != collapsedBefore {
 		t.Errorf("holding the press over row 1 toggled its expand state; collapsed = %v, want %v",
@@ -309,14 +368,14 @@ func TestTreeRowClickIsOnePerPhysicalPress(t *testing.T) {
 
 	// After the release the next press is a fresh one, and on the row that
 	// is now selected it toggles — exactly once.
-	v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.ButtonNone, tcell.ModNone))
-	v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, y, tcell.ButtonNone, tcell.ModNone))
+	v.HandleMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
 	if v.treeSt.collapsed[target.ID] == collapsedBefore {
 		t.Errorf("a fresh press on the selected row did not toggle it; collapsed = %v",
 			v.treeSt.collapsed[target.ID])
 	}
 	for range 3 {
-		v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
+		v.HandleMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
 	}
 	if v.treeSt.collapsed[target.ID] == collapsedBefore {
 		t.Errorf("holding that press toggled row 1 back; collapsed = %v, want it left toggled",

@@ -51,11 +51,58 @@ func (v *PlanView) HandleKey(ev *tcell.EventKey) bool {
 	}
 }
 
+// planZone names the part of the view that claimed a Button1 press; the
+// gesture (PlanView.drag) routes every held resend back to it (routeDrag)
+// instead of hit-testing it again. With all-motion tracking a held press
+// resends Button1 on every motion, and positional routing read each as a new
+// click: a press on a tile dragged onto a scrollbar grabbed the thumb, and one
+// dragged across the graph selected every tile it passed.
+type planZone int
+
+const (
+	pzNone       planZone = iota // an inert press: the repeats go nowhere
+	pzChrome                     // tab row, banner, statement selector: act on the press only
+	pzXML                        // the XML editor: a text selection drag
+	pzGraphSplit                 // the Plan tab's canvas|Properties splitter
+	pzGraphBar                   // the Plan tab's canvas scrollbars
+	pzGraphTile                  // the Plan tab's canvas (a tile, or the space between)
+	pzTreeSplit                  // the Tree tab's tree|details splitter
+	pzTreeBar                    // the Tree tab's tree pane scrollbar
+	pzTreeRow                    // a Tree tab row
+	pzSummary                    // the Tree tab's operator summary grid: it extends its selection
+)
+
+// routeDrag delivers a held Button1 to the zone that claimed the press. Only
+// the splitters, scrollbars, XML editor and summary grid use the rest of a
+// gesture; the other zones act once on the press.
+func (v *PlanView) routeDrag(ev *tcell.EventMouse, z planZone) {
+	switch z {
+	case pzXML:
+		v.xml.HandleMouse(ev)
+	case pzGraphSplit:
+		if v.graphSplit.HandleMouse(ev) {
+			v.layoutGraphTab()
+		}
+	case pzGraphBar:
+		// The bar latched on the press keeps the drag (core.Viewport).
+		v.graphView().HandleScrollbars(ev, false)
+	case pzTreeSplit:
+		if v.treeSplit.HandleMouse(ev) {
+			v.layoutTree()
+		}
+	case pzTreeBar:
+		v.dragTreeBar(ev)
+	case pzSummary:
+		v.handleSummaryMouse(ev)
+	}
+}
+
 // routeToContent forwards ev to the active tab (XML editor, Tree, or Plan);
-// shared by HandleMouse's release, latched and default branches.
+// shared by HandleMouse's release and fresh-press branches.
 func (v *PlanView) routeToContent(ev *tcell.EventMouse) bool {
 	switch {
 	case v.activeTab == TabXML:
+		v.drag.Arm(ev, pzXML)
 		return v.xml.HandleMouse(ev)
 	case v.activeTab == TabTree:
 		return v.handleTreeTabMouse(ev)
@@ -79,27 +126,29 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 	if v.summaryOverlayActive() {
 		if ev.Buttons() == tcell.ButtonNone {
 			v.mouseDragging = false
+			v.drag.Release()
 		}
 		return v.handleSummaryMouse(ev)
 	}
-	// Always forward releases to the XML editor, so a text-selection drag ends
-	// cleanly even if the cursor left this control (as QueryPanel.HandleMouse).
+	// Always forward releases to the content, so a text-selection drag, a
+	// splitter or the summary grid's selection ends cleanly even if the
+	// cursor left this control (as QueryPanel.HandleMouse).
 	if ev.Buttons() == tcell.ButtonNone {
 		v.mouseDragging = false
+		v.drag.Release()
 		return v.routeToContent(ev)
+	}
+	// Ahead of the bounds test: a held drag keeps its zone after leaving the
+	// view, so a scrollbar thumb dragged past the end still reaches it.
+	if v.drag.Route(ev, v.routeDrag) {
+		return true
 	}
 	if !v.rect.Contains(mx, my) {
 		return false
 	}
+	// From here on a Button1 is a fresh press: Route took every held one.
 	if v.tabRect.H == 1 && my == v.tabRect.Y && ev.Buttons() == tcell.Button1 {
-		// A drag started in the content area (e.g. XML selection) resends
-		// Button1 on every motion; if it drifts into the tab row,
-		// mouseDragging is already true, so forward to the content handler
-		// rather than misfire a tab switch/Expand/statement step.
-		if v.mouseDragging {
-			return v.routeToContent(ev)
-		}
-		v.mouseDragging = true
+		v.drag.Arm(ev, pzChrome)
 		if v.expandRect().Contains(mx, my) {
 			v.OnExpand()
 			return true
@@ -111,18 +160,12 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 		if ev.Buttons() != tcell.Button1 {
 			return true
 		}
-		if v.mouseDragging {
-			return v.routeToContent(ev)
-		}
-		v.mouseDragging = true
+		v.drag.Arm(ev, pzChrome)
 		v.openMissingIndexDetails()
 		return true
 	}
 	if v.stmtRect.H == 1 && my == v.stmtRect.Y && ev.Buttons() == tcell.Button1 {
-		if v.mouseDragging {
-			return v.routeToContent(ev)
-		}
-		v.mouseDragging = true
+		v.drag.Arm(ev, pzChrome)
 		prev, next := v.arrowRects()
 		switch {
 		case prev.Contains(mx, my):
@@ -141,10 +184,14 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
-	if ev.Buttons() == tcell.Button1 {
-		v.mouseDragging = true
+	handled := v.routeToContent(ev)
+	// Every fresh press in the view is claimed, so one the tab's handler left
+	// alone (a pane with nothing to click) still owns its repeats rather than
+	// handing them to whatever the drag reaches.
+	if _, held := v.drag.Owner(); !held {
+		v.drag.Arm(ev, pzNone)
 	}
-	return v.routeToContent(ev)
+	return handled
 }
 
 // contextMenuAt reports whether a right-click at (x, y) opens the host's plan

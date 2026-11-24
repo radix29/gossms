@@ -156,12 +156,21 @@ func Classify(script string) *Script {
 func classifyBatch(text string, startLine int) []Statement {
 	toks, cuts := lexBatch(text, startLine)
 	var out []Statement
+	// Inside CREATE SCHEMA, CREATE VIEW is a schema element: its body ends at the
+	// next element (CREATE TABLE/VIEW, GRANT, REVOKE, DENY), and every element
+	// runs now, so each cut is classified on its own (a GRANT after the view was
+	// hidden as the view's body). The server refuses any other module there.
+	inSchema := false
+	if len(cuts) > 0 {
+		verb, obj := createAlterObject(toks[cuts[0]:])
+		inSchema = verb == "CREATE" && obj == "SCHEMA"
+	}
 	for ci, from := range cuts {
 		to := len(toks)
 		if ci+1 < len(cuts) {
 			to = cuts[ci+1]
 		}
-		if isModule(toks[from:]) {
+		if !inSchema && isModule(toks[from:]) {
 			// CREATE/ALTER PROCEDURE, FUNCTION, TRIGGER or VIEW is alone in its batch:
 			// everything after its header is its body, which runs when the module is
 			// called, not now. One ddl statement, no flags from the body.

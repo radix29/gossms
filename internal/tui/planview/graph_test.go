@@ -119,7 +119,7 @@ func TestGraphScrollbarDragScrolls(t *testing.T) {
 
 	// Horizontal bar: bottom row of the canvas, its last cell one short of the
 	// corner (with both bars drawn the corner is the vertical bar's).
-	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.X+r.W-2, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
+	if !v.HandleMouse(tcell.NewEventMouse(r.X+r.W-2, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("handling a click on the horizontal scrollbar row should return true")
 	}
 	if !v.graphSt.vp.Dragging() {
@@ -128,14 +128,24 @@ func TestGraphScrollbarDragScrolls(t *testing.T) {
 	if v.graphSt.vp.X == 0 {
 		t.Error("graphSt.vp.X should have jumped forward when clicking near the right of the track")
 	}
-	v.handleGraphTabMouse(tcell.NewEventMouse(r.X, r.Bottom()-1, tcell.ButtonNone, tcell.ModNone))
+	// Held, the bar keeps the drag across the tiles and off the canvas: back
+	// to the left over the canvas, then past the view's right edge.
+	v.HandleMouse(tcell.NewEventMouse(r.X, r.Y, tcell.Button1, tcell.ModNone))
+	if v.graphSt.vp.X != 0 {
+		t.Errorf("dragging the thumb left over the tiles left X = %d, want 0", v.graphSt.vp.X)
+	}
+	v.HandleMouse(tcell.NewEventMouse(r.Right()+10, r.Bottom()+3, tcell.Button1, tcell.ModNone))
+	if v.graphSt.vp.X == 0 {
+		t.Error("dragging the thumb past the canvas's right edge did not scroll")
+	}
+	v.HandleMouse(tcell.NewEventMouse(r.X, r.Bottom()-1, tcell.ButtonNone, tcell.ModNone))
 	if v.graphSt.vp.Dragging() {
 		t.Error("graphSt.vp.Dragging() should reset on release")
 	}
 
 	// Vertical bar: right column of the canvas, down to the corner cell
 	// where both bars meet, which core.Viewport gives the vertical one.
-	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.Right()-1, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
+	if !v.HandleMouse(tcell.NewEventMouse(r.Right()-1, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("handling a click on the vertical scrollbar column should return true")
 	}
 	if !v.graphSt.vp.Dragging() {
@@ -147,6 +157,72 @@ func TestGraphScrollbarDragScrolls(t *testing.T) {
 
 	if v.selectedID != selBefore {
 		t.Errorf("selectedID changed, dragging either scrollbar must not select a tile")
+	}
+}
+
+// visibleTiles returns the screen cell of a point inside each tile wholly
+// clear of the canvas's scrollbars, in layout order.
+func visibleTiles(v *PlanView) (ids []int, pts [][2]int) {
+	r, vp := v.graphCanvasRect, v.graphView()
+	inner := core.Rect{X: r.X, Y: r.Y, W: r.W - 1, H: r.H - 1}
+	for _, tl := range v.graphSt.layout.tiles {
+		sx, sy := vp.ToScreen(tl.rect.X+1, tl.rect.Y+1)
+		if inner.Contains(sx, sy) {
+			ids = append(ids, tl.node.ID)
+			pts = append(pts, [2]int{sx, sy})
+		}
+	}
+	return ids, pts
+}
+
+// A press on a tile, held and dragged onto the canvas's scrollbars, is the
+// tile's: it must neither grab a bar and jump the canvas nor latch it.
+func TestGraphTileDragOntoScrollbarDoesNotScroll(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 40, 14)
+	v.SetPlan(loadTestPlan(t))
+	r := v.graphCanvasRect
+	ids, pts := visibleTiles(v)
+	if len(ids) == 0 {
+		t.Fatal("no tile wholly visible in the canvas")
+	}
+	// Selecting the tile may scroll it into view, so the baseline is taken
+	// after the press.
+	v.HandleMouse(tcell.NewEventMouse(pts[0][0], pts[0][1], tcell.Button1, tcell.ModNone))
+	x0, y0 := v.graphView().X, v.graphView().Y
+	v.HandleMouse(tcell.NewEventMouse(r.Right()-3, r.Bottom()-1, tcell.Button1, tcell.ModNone)) // horizontal bar
+	v.HandleMouse(tcell.NewEventMouse(r.Right()-1, r.Bottom()-2, tcell.Button1, tcell.ModNone)) // vertical bar
+	if vp := v.graphView(); vp.X != x0 || vp.Y != y0 || vp.Dragging() {
+		t.Errorf("a tile press dragged onto the bars scrolled to (%d,%d) from (%d,%d), dragging %v",
+			vp.X, vp.Y, x0, y0, vp.Dragging())
+	}
+	v.HandleMouse(tcell.NewEventMouse(r.Right()-1, r.Bottom()-2, tcell.ButtonNone, tcell.ModNone))
+}
+
+// A press on a tile selects it once; dragged over other tiles it keeps the
+// first selected rather than selecting each one it passes.
+func TestGraphTileDragKeepsFirstSelected(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 120, 40)
+	v.SetPlan(loadTestPlan(t))
+	ids, pts := visibleTiles(v)
+	if len(ids) < 3 {
+		t.Fatalf("test needs three visible tiles, got %d", len(ids))
+	}
+
+	v.HandleMouse(tcell.NewEventMouse(pts[1][0], pts[1][1], tcell.Button1, tcell.ModNone))
+	if v.selectedID != ids[1] {
+		t.Fatalf("selectedID = %d after pressing tile %d", v.selectedID, ids[1])
+	}
+	v.HandleMouse(tcell.NewEventMouse(pts[2][0], pts[2][1], tcell.Button1, tcell.ModNone))
+	v.HandleMouse(tcell.NewEventMouse(pts[0][0], pts[0][1], tcell.Button1, tcell.ModNone))
+	if v.selectedID != ids[1] {
+		t.Errorf("a held press dragged over other tiles selected %d, want %d kept", v.selectedID, ids[1])
+	}
+	v.HandleMouse(tcell.NewEventMouse(pts[0][0], pts[0][1], tcell.ButtonNone, tcell.ModNone))
+	v.HandleMouse(tcell.NewEventMouse(pts[2][0], pts[2][1], tcell.Button1, tcell.ModNone))
+	if v.selectedID != ids[2] {
+		t.Errorf("a fresh press after the release selected %d, want %d", v.selectedID, ids[2])
 	}
 }
 

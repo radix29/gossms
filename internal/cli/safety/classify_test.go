@@ -467,6 +467,32 @@ func TestClassifyModuleBatch(t *testing.T) {
 	}
 }
 
+// Inside CREATE SCHEMA, CREATE VIEW is a schema element, not a module: the
+// elements after it run now and keep their own class (a GRANT there was hidden
+// as the view's body, so --allow ddl ran it).
+func TestClassifySchemaElementsAfterView(t *testing.T) {
+	for _, tt := range []struct {
+		script string
+		want   spec.Class
+		leader string
+		n      int
+	}{
+		{"CREATE SCHEMA s AUTHORIZATION dbo\n    CREATE VIEW v AS SELECT 1 AS x\n    GRANT CONTROL ON SCHEMA::s TO public", admin, "GRANT", 3},
+		{"CREATE SCHEMA s CREATE VIEW v AS SELECT 1 AS x DENY SELECT ON SCHEMA::s TO public", admin, "DENY", 3},
+		{"CREATE SCHEMA s CREATE VIEW v AS SELECT 1 AS x REVOKE SELECT ON SCHEMA::s FROM public", admin, "REVOKE", 3},
+		{"CREATE SCHEMA s CREATE VIEW v AS SELECT 1 AS x CREATE TABLE t (a int)", ddl, "CREATE TABLE", 3},
+	} {
+		sc := Classify(tt.script)
+		if sc.Class != tt.want || len(sc.Statements) != tt.n {
+			t.Errorf("%q = %s, %d statements %+v; want %s, %d", tt.script, sc.Class, len(sc.Statements), sc.Statements, tt.want, tt.n)
+			continue
+		}
+		if last := sc.Statements[tt.n-1]; last.Leader != tt.leader || last.Class != tt.want {
+			t.Errorf("%q: last statement = %+v, want %s %s", tt.script, last, tt.want, tt.leader)
+		}
+	}
+}
+
 func TestClassifyFlags(t *testing.T) {
 	for _, tt := range []struct {
 		script string
