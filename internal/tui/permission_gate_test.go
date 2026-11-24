@@ -9,6 +9,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/tuikit/controls"
 )
@@ -437,6 +438,9 @@ func TestADatabaseMenuKeepsEverythingForAnAdministrator(t *testing.T) {
 		[]string{"ALTER ANY DATABASE", "CREATE ANY DATABASE", "CONTROL SERVER"}, nil,
 		[]string{"BACKUP DATABASE", "ALTER", "CONTROL"}, nil)
 	node := &explorerNode{label: "appdb", data: nodeData{Type: NodeDatabase, DBName: "appdb", DBState: "ONLINE", conn: sc}}
+	qp := NewQueryPanel(a, "Query 1")
+	qp.conn, qp.session, qp.database = sc, new(query.Session), "master"
+	a.panels.AddPanel(qp)
 
 	_, off := gatedLabels(a.contextMenuItemsForNode(node))
 	if len(off) != 0 {

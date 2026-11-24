@@ -61,6 +61,9 @@ type ObjectExplorer struct {
 	view *controls.TreeView
 	tree *controls.TreeModel[*explorerNode]
 
+	contextConn *db.ServerConn
+	contextDB   string
+
 	// follow is a rename's or Move to Schema's forwarding address (see Follow),
 	// pending until the reload of the folder it names lands.
 	follow *followHint
@@ -108,10 +111,24 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 
 func (oe *ObjectExplorer) SetBounds(x, y, w, h int)              { oe.view.SetBounds(x, y, w, h) }
 func (oe *ObjectExplorer) Focus(v bool)                          { oe.view.Focus(v) }
-func (oe *ObjectExplorer) Draw(s tcell.Screen)                   { oe.view.Draw(s) }
 func (oe *ObjectExplorer) DrawOverlay(s tcell.Screen)            { oe.view.DrawOverlay(s) }
 func (oe *ObjectExplorer) HandleKey(ev *tcell.EventKey) bool     { return oe.view.HandleKey(ev) }
 func (oe *ObjectExplorer) HandleMouse(ev *tcell.EventMouse) bool { return oe.view.HandleMouse(ev) }
+
+func (oe *ObjectExplorer) Draw(s tcell.Screen) {
+	var conn *db.ServerConn
+	var database string
+	if oe.app.panels != nil {
+		if qp := oe.app.activeQueryPanel(); qp != nil && qp.connected() {
+			conn, database = qp.conn, qp.database
+		}
+	}
+	if conn != oe.contextConn || database != oe.contextDB {
+		oe.contextConn, oe.contextDB = conn, database
+		oe.rebuild()
+	}
+	oe.view.Draw(s)
+}
 
 // AddRoot adds a new server root node and selects it, so Object Explorer Details
 // populates immediately after a connect (controls.TreeModel.AddRoot).
@@ -461,6 +478,11 @@ func (oe *ObjectExplorer) row(n *explorerNode, depth int) controls.TreeNode {
 	// The suffix is added here rather than written into n.label, so clearing the
 	// filter needn't unpick it from a string the loaders own.
 	label := n.label
+	if n.data.Type == NodeDatabase && oe.app.panels != nil {
+		if qp := oe.app.activeQueryPanel(); qp.onExplorerConnection(resolveConn(n)) && qp.database == n.data.DBName {
+			label = "✓ " + label
+		}
+	}
 	// A server root saved under a profile name leads with it. Display only:
 	// n.label stays the connection label sameObject matches by (the status-bar
 	// breadcrumb and the Details title add the profile name themselves).

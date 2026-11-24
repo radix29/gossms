@@ -228,6 +228,14 @@ failed peer connection never retries with another server's credentials.
 
 ## Object Explorer
 
+The current database of the active query tab has a `✓` before its name,
+followed by one space, in every icon style.
+**Use Database**, the first item in a database's right-click
+menu, changes that tab's existing session without editing its SQL or clearing
+its results. It is disabled while busy, for another connection identity, and
+on Azure SQL Database, SQL database in Fabric and Synapse dedicated SQL pools,
+which require a new connection rather than `USE`. It never reconnects implicitly.
+
 The `[x]` in the top-right corner, after Group by Schema, hides Object Explorer without
 disconnecting or clearing its tree. **View > Object Explorer** shows and
 focuses it when hidden, or only focuses it when already visible. Reopening

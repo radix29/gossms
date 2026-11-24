@@ -355,13 +355,21 @@ func (p *QueryPanel) startRun(queryText string, firstLine int, exportPath string
 func (p *QueryPanel) launch(what, status string, prog *query.Progress,
 	run func(context.Context, *query.Session) *query.Result,
 	finish func(res *query.Result, cancelled bool)) {
+	p.resultsNotice = ""
+	p.showResultsPane()
+	p.launchSession(what, status, prog, run, finish)
+}
+
+// launchSession also serves database context changes, which keep the previous
+// query's results and whether its results pane was shown.
+func (p *QueryPanel) launchSession(what, status string, prog *query.Progress,
+	run func(context.Context, *query.Session) *query.Result,
+	finish func(res *query.Result, cancelled bool)) {
 	// Snapshotted: closeConnection and connectForQueryPanel replace both on the UI
 	// goroutine while the run is in flight.
 	sess := p.session
 	ctx, cancel := context.WithCancel(p.conn.Server.Context())
 	p.cancel = cancel
-	p.resultsNotice = ""
-	p.showResultsPane()
 	p.executing = true
 	p.execStart = time.Now()
 	p.progress = prog
