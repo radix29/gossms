@@ -551,6 +551,11 @@ func TestClassifyFlags(t *testing.T) {
 		{"WAITFOR (RECEIVE * FROM dbo.q), TIMEOUT 100", FlagUncounted},
 		{"WRITETEXT dbo.t.x @p 'z'", FlagUncounted},
 		{"IF @p IS NOT NULL UPDATETEXT dbo.t.x @p 0 NULL 'z'", FlagUncounted},
+		{"TRUNCATE TABLE t", FlagUncounted},
+		{"IF 1=1 TRUNCATE TABLE t", FlagUncounted},
+		{"DROP TABLE t", FlagUncounted},
+		{"DROP TABLE IF EXISTS a, b", FlagUncounted},
+		{"ALTER TABLE t SWITCH PARTITION 2 TO t2 PARTITION 2", FlagUncounted},
 	} {
 		if got := Classify(tt.script).Flags; !got.Has(tt.want) {
 			t.Errorf("Classify(%q).Flags = %v, want %v among them", tt.script, got.Names(), tt.want.Names())
@@ -577,6 +582,10 @@ func TestClassifyFlags(t *testing.T) {
 		{"ALTER INDEX ix ON t REORGANIZE", 0},
 		{"CREATE EVENT NOTIFICATION n ON DATABASE FOR CREATE_TABLE TO SERVICE 's', 'current database'", 0},
 		{"SELECT resumable, abort, pause FROM t", 0},
+		{"DROP VIEW v", 0},
+		{"ALTER TABLE t DROP COLUMN c", 0},
+		{"SELECT [truncate] FROM t", 0},
+		{"TRUNCATE TABLE #t", 0},
 	} {
 		if got := Classify(tt.script).Flags; got != tt.want {
 			t.Errorf("Classify(%q).Flags = %v, want %v", tt.script, got.Names(), tt.want.Names())

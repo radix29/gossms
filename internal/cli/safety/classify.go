@@ -46,9 +46,10 @@ const (
 	// FlagSequence: NEXT VALUE FOR, which advances a sequence outside any
 	// transaction — a rollback does not undo it (docs/cli.md § Transactions).
 	FlagSequence
-	// FlagUncounted: RECEIVE, WRITETEXT or UPDATETEXT, whose changes the
-	// server's row counts miss (live, 17): RECEIVE's count arrives after its
-	// result set and so reads like a SELECT's, the text verbs report none.
+	// FlagUncounted: RECEIVE, WRITETEXT, UPDATETEXT, or TRUNCATE TABLE, DROP
+	// TABLE or ALTER TABLE … SWITCH of a permanent table (uncountedDDL), whose
+	// changes the server's row counts miss (live, 17): RECEIVE's count arrives
+	// after its result set and so reads like a SELECT's, the others report none.
 	FlagUncounted
 )
 
@@ -651,7 +652,7 @@ func floor(st *Statement, toks []token) {
 				st.Writes = append(st.Writes, wr)
 			}
 		}
-		if uncountedVerb(toks, i, v.name) {
+		if uncountedVerb(toks, i, v.name) || uncountedDDL(toks, i) {
 			st.Flags |= FlagUncounted
 		}
 		st.raise(c, "keyword "+v.name+at)
@@ -699,6 +700,55 @@ func uncountedVerb(toks []token, i int, name string) bool {
 		case next.kind == sqltext.KindWord:
 			return !receiveColumnFollowers[next.word]
 		}
+	}
+	return false
+}
+
+// uncountedDDL reports whether toks[i] begins TRUNCATE TABLE, DROP TABLE or
+// ALTER TABLE … SWITCH of a permanent table (FlagUncounted): each removes rows
+// and reports no count, so a --max-rows-affected limit of any size passed
+// them and committed (a 1000-row TRUNCATE under a limit of 10). A temporary
+// table is exempt, as Write.Local exempts it from the trigger check: what it
+// held, the script put there.
+func uncountedDDL(toks []token, i int) bool {
+	verb, obj := createAlterObject(toks[i:])
+	if toks[i].is("TRUNCATE") {
+		verb, obj = "TRUNCATE", ""
+		if i+1 < len(toks) && toks[i+1].is("TABLE") {
+			obj = "TABLE"
+		}
+	}
+	if obj != "TABLE" {
+		return false
+	}
+	permanent := func(j int) (bool, int) {
+		parts, next := nameParts(toks, j)
+		return len(parts) > 0 && !strings.HasPrefix(parts[len(parts)-1], "#"), next
+	}
+	j := i + 2
+	switch verb {
+	case "TRUNCATE":
+		p, _ := permanent(j)
+		return p
+	case "DROP":
+		// DROP TABLE [IF EXISTS] a, #b, c
+		if j+1 < len(toks) && toks[j].is("IF") && toks[j+1].is("EXISTS") {
+			j += 2
+		}
+		for {
+			p, next := permanent(j)
+			if p {
+				return true
+			}
+			if next >= len(toks) || !toks[next].punct(",") || next == j {
+				return false
+			}
+			j = next + 1
+		}
+	case "ALTER":
+		// ALTER TABLE t SWITCH [PARTITION n] TO t2 [PARTITION n]
+		p, next := permanent(j)
+		return p && next < len(toks) && toks[next].is("SWITCH")
 	}
 	return false
 }
