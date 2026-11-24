@@ -702,12 +702,56 @@ func TestSQLCompletionOpenBracketNameWithSpace(t *testing.T) {
 		t.Fatalf("items %v missing dbo.Order Details", labels(items))
 	}
 	for _, it := range items {
-		if it.Label == "dbo.Order Details" && it.Text != "[Order Details]" {
-			t.Errorf("Text = %q, want %q (needs re-quoting)", it.Text, "[Order Details]")
+		if it.Label == "dbo.Order Details" && it.Text != "dbo.[Order Details]" {
+			t.Errorf("Text = %q, want %q (needs re-quoting)", it.Text, "dbo.[Order Details]")
 		}
 	}
 	if want := col - len("[Order De"); from != want {
 		t.Errorf("replaceFrom = %d, want %d", from, want)
+	}
+}
+
+// Issue #65: an unqualified object candidate shows "dbo.Customers" and must
+// insert it, not the bare "Customers".
+func TestSQLCompletionUnqualifiedObjectInsertsSchema(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	qp.editor.SetText("SELECT * FROM ")
+	qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnd, "", tcell.ModCtrl))
+	for _, r := range "Cust" {
+		qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+	}
+	qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	if got, want := qp.editor.Text(), "SELECT * FROM dbo.Customers"; got != want {
+		t.Fatalf("Text() = %q, want %q", got, want)
+	}
+}
+
+// A bare name typed in full stays Soft although the commit would add its
+// schema: Enter breaks the line, Tab qualifies it.
+func TestSQLCompletionExactBareNameEnterIsNewline(t *testing.T) {
+	for _, tt := range []struct{ key, want string }{
+		{"enter", "SELECT * FROM Customers\n"},
+		{"tab", "SELECT * FROM dbo.Customers"},
+	} {
+		t.Run(tt.key, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			qp.editor.SetText("SELECT * FROM ")
+			qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnd, "", tcell.ModCtrl))
+			for _, r := range "Customers" {
+				qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+			}
+			if !qp.editor.OverlayActive() {
+				t.Fatal("popup closed after typing the name")
+			}
+			key := tcell.KeyEnter
+			if tt.key == "tab" {
+				key = tcell.KeyTab
+			}
+			qp.editor.HandleKey(tcell.NewEventKey(key, "", tcell.ModNone))
+			if got := qp.editor.Text(); got != tt.want {
+				t.Fatalf("Text() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

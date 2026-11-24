@@ -100,10 +100,20 @@ func softenExactMatches(items []editor.CompletionItem, req editor.CompletionRequ
 		if end > len(line) {
 			continue
 		}
-		if typed := string(line[replaceCol:end]); typed != "" && gosmo.SameName(collation, typed, item.Text) {
+		if typed := string(line[replaceCol:end]); typed != "" &&
+			(gosmo.SameName(collation, typed, item.Text) || qualifiesTyped(collation, typed, item.Text)) {
 			item.Soft = true
 		}
 	}
+}
+
+// qualifiesTyped reports whether text is typed with qualifiers added in front
+// ("dbo.Customers" for "Customers"): an unqualified object candidate inserts
+// its schema-qualified name (issue #65), and a name typed in full still must
+// not swallow Enter just because the commit would add the schema.
+func qualifiesTyped(collation, typed, text string) bool {
+	cut := len(text) - len(typed)
+	return cut > 0 && text[cut-1] == '.' && gosmo.SameName(collation, typed, text[cut:])
 }
 
 // completionPost is the post-processing baseCompletionCandidates arms as it

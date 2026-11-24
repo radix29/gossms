@@ -246,9 +246,10 @@ func dataTypeChoices(buf []rune, tokens []sqlparse.Token, from int, types ddlTyp
 		return choices, true, handled
 	case dataTypeConversion, dataTypeParse, dataTypeAliasBase:
 		system := ddlDataTypes(types.fabric)
-		if kind == dataTypeAliasBase {
+		switch kind {
+		case dataTypeAliasBase:
 			system = ddlAliasBaseTypes(types.fabric)
-		} else if kind == dataTypeParse {
+		case dataTypeParse:
 			allowed := strings.Fields("BIGINT INT SMALLINT TINYINT DECIMAL NUMERIC FLOAT REAL SMALLMONEY MONEY DATE TIME DATETIME SMALLDATETIME DATETIME2 DATETIMEOFFSET")
 			system = slices.DeleteFunc(system, func(typ string) bool {
 				return !slices.Contains(allowed, strings.TrimSuffix(typ, "("))
