@@ -140,7 +140,7 @@ func (pp *PicturePanel) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	// The bars are drawn only while zoomed (picture_panel_draw.go).
-	if pp.zoomed() && pp.art != nil && pp.viewport().HandleScrollbars(ev) {
+	if pp.zoomed() && pp.art != nil && pp.viewport().HandleScrollbars(ev, true) {
 		pp.dragZone.Arm(ev, pzBar)
 		return true
 	}
@@ -170,7 +170,7 @@ func (pp *PicturePanel) routeDrag(ev *tcell.EventMouse, z pictureZone) {
 		pp.dragFrom = [2]int{mx, my}
 	case pzBar:
 		// The bar latched on the press keeps the drag (core.Viewport).
-		pp.viewport().HandleScrollbars(ev)
+		pp.viewport().HandleScrollbars(ev, false)
 	}
 }
 

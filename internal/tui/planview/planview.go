@@ -109,11 +109,16 @@ type PlanView struct {
 	// acting on this view as its clipboard target.
 	OnTextContextMenu func(x, y int)
 
-	// mouseDragging distinguishes a fresh Button1 press on the tab bar or
-	// statement selector from a continued hold (as Toolbar/TreeView/MenuBar).
-	// Without it, tcell's all-motion tracking resends Button1 on every motion
-	// while held, so a twitching click would re-fire OnExpand, switch tabs or step
-	// the selector per event, not once per click.
+	// drag owns a Button1 press from the press to its release: every held
+	// resend goes back to the zone that claimed the press (planZone,
+	// routeDrag), never hit-tested again. Without it a twitching click on the
+	// tab bar re-fired OnExpand per motion event, and a drag from a tile or
+	// tree row grabbed a scrollbar it crossed.
+	drag core.Gesture[planZone]
+
+	// mouseDragging latches a right-button press on the operators, which
+	// resends Button2 on every motion while held, so the host's menu opens once
+	// per press (drag arms on Button1 only).
 	mouseDragging bool
 }
 

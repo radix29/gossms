@@ -41,17 +41,6 @@ type treeState struct {
 	rows      []treeRow
 	scroll    int
 	collapsed map[int]bool // NodeID -> collapsed; absent = expanded (default)
-
-	// sbDragging is true while dragging the scrollbar thumb (see
-	// controls.DataGrid's field of the same name).
-	sbDragging bool
-
-	// rowDragging is true from a press on a tree row until its release.
-	// PlanView.mouseDragging can't stand in: it is set unconditionally on the way
-	// to the content area so the XML editor and graph still receive the resent
-	// Button1 events a selection drag is made of. A row click toggles, so a held
-	// press would expand and collapse a selected row per motion event.
-	rowDragging bool
 }
 
 // rebuildTreeRows re-flattens the statement's tree, respecting collapsed state,
@@ -560,32 +549,35 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 	case tcell.ButtonNone:
-		v.treeSt.sbDragging = false
-		v.treeSt.rowDragging = false
 		// The splitter needs its own release to clear sp.dragging; otherwise
 		// the next plain click anywhere in the tab is read as a drag
-		// continuation and moves the divider instead of selecting.
-		if v.treeSplit.HandleMouse(ev) {
+		// continuation and moves the divider instead of selecting. The summary
+		// grid's selection drag likewise ends wherever the release lands.
+		split := v.treeSplit.HandleMouse(ev)
+		if split {
 			v.layoutTree()
-			return true
 		}
+		grid := v.handleSummaryMouse(ev)
+		return split || grid
 	case tcell.Button1:
+		// Every Button1 here is a fresh press: PlanView.HandleMouse routes a
+		// held one to the zone this press arms (routeDrag), so a row click
+		// toggles once per press and a drag from a row grabs no scrollbar.
 		if v.treeSplit.HandleMouse(ev) {
+			v.drag.Arm(ev, pzTreeSplit)
 			v.layoutTree()
 			return true
 		}
 		// Scrollbar drag/click outranks row hit-testing: the bar is drawn at
 		// treePaneRect.Right()-1 (see drawTreePane) and would otherwise read as
 		// a click on the row in that column.
-		if core.HandleScrollbarDrag(ev, v.treePaneRect.Right()-1, v.treePaneRect.Y, v.treePaneRect.H, len(v.treeSt.rows), &v.treeSt.sbDragging, &v.treeSt.scroll) {
+		if core.OnScrollbar(mx, my, v.treePaneRect.Right()-1, v.treePaneRect.Y, v.treePaneRect.H, len(v.treeSt.rows)) {
+			v.drag.Arm(ev, pzTreeBar)
+			v.dragTreeBar(ev)
 			return true
 		}
 		if v.treePaneRect.Contains(mx, my) {
-			if v.treeSt.rowDragging {
-				// Still the same physical press — see rowDragging.
-				return true
-			}
-			v.treeSt.rowDragging = true
+			v.drag.Arm(ev, pzTreeRow)
 			v.bottomFocused = false
 			idx := v.treeSt.scroll + (my - v.treePaneRect.Y)
 			if idx >= 0 && idx < len(v.treeSt.rows) {
@@ -599,6 +591,7 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 		if v.bottomMode == bottomSummary && v.bottomRect.Contains(mx, my) {
+			v.drag.Arm(ev, pzSummary)
 			v.bottomFocused = true
 		}
 	}
@@ -611,6 +604,17 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 		return v.handleSummaryMouse(ev)
 	}
 	return false
+}
+
+// dragTreeBar scrolls the tree pane to the pointer's place on its scrollbar,
+// for the press that claimed the bar (pzTreeBar) and every held repeat, which
+// keeps the bar even once the pointer leaves its column.
+func (v *PlanView) dragTreeBar(ev *tcell.EventMouse) {
+	_, my := ev.Position()
+	r := v.treePaneRect
+	if total := len(v.treeSt.rows); total > r.H && r.H > 0 {
+		v.treeSt.scroll = core.ScrollOffsetForDrag(my-r.Y, r.H, total, r.H)
+	}
 }
 
 // orDash returns s, or "—" if empty (metrics absent from estimated-only plans).

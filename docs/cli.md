@@ -884,6 +884,16 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   does not convert is `SQL_ERROR` (Msg 8114, line 0 as the server reports
   it). `binary`/`varbinary` take `0x` and hex digits instead (nvarchar does
   not convert to binary). There is no NULL value: write `NULL` in the script.
+- **Dates are ISO 8601 only** — `date datetime smalldatetime datetime2
+  datetimeoffset` take `YYYY-MM-DD`, optionally followed by `T` or a space
+  and `hh:mm[:ss[.fffffff]]`, and for `datetimeoffset` a `Z` or `±hh:mm`
+  after the time; `date` takes no time. The value is sent as `YYYYMMDD`, or
+  `YYYY-MM-DDThh:mm:ss[.f…]` with a time: forms the server reads the same
+  under every `DATEFORMAT` and language. (Sent as written, `2026-01-02` is
+  1 February in `datetime` for a login whose language is British, German or
+  French; `01/02/2026` swaps for every type.) Another form, or a day or time
+  that does not exist, is `USAGE_ERROR`. A `bit` is `0`, `1`, `true` or
+  `false` (any case).
 - **A value that would change is refused before connecting** (`USAGE_ERROR`):
   an empty or blank value for any type but `char varchar nchar nvarchar
   sysname xml sql_variant` (the server would turn it into `0` or
@@ -920,7 +930,8 @@ commit on their own). The record's `transaction` says how it ended:
 
 - The check refuses (exit 7) a script that controls transactions itself
   (`BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `SAVE TRAN`, `SET
-  IMPLICIT_TRANSACTIONS ON`) or holds a statement SQL Server refuses inside
+  IMPLICIT_TRANSACTIONS ON`, and `SET ANSI_DEFAULTS ON`, which sets it) or
+  holds a statement SQL Server refuses inside
   one (flag `not-in-transaction`): `CREATE`/`ALTER`/`DROP DATABASE` (every
   form) and `FULLTEXT`, `BACKUP`, `RESTORE`, `RECONFIGURE`, `KILL`, `DBCC
   SHRINKFILE`/`SHRINKDATABASE`, `CREATE`/`ALTER`/`DROP EVENT SESSION`, and a
@@ -946,9 +957,12 @@ commit on their own). The record's `transaction` says how it ended:
   BLOCKED, exit 7. With `--transaction rollback` it rolls back either way.
   It can only trust what the server counts, so it refuses (exit 7, before
   connecting) a script with `SET NOCOUNT ON`, dynamic SQL, a procedure call
-  not on the read allow-list, an `OUTPUT` clause, or `RECEIVE`, `WRITETEXT`
-  or `UPDATETEXT` (flag `uncounted`: `RECEIVE`'s count follows the rows it
-  returns, so it reads like a `SELECT`'s, and the text verbs report none).
+  not on the read allow-list, an `OUTPUT` clause, or `RECEIVE`, `WRITETEXT`,
+  `UPDATETEXT`, or `TRUNCATE TABLE`, `DROP TABLE` or `ALTER TABLE … SWITCH`
+  of a permanent table (flag `uncounted`: `RECEIVE`'s count follows the rows
+  it returns, so it reads like a `SELECT`'s, and the others report none —
+  a `TRUNCATE` of any size would pass any limit). A `#temp` table is exempt:
+  what it held, the script put there.
 - **The server counts a write's own target only.** A trigger's changes are
   hidden by the `SET NOCOUNT ON` most triggers open with, and a foreign key's
   `ON DELETE`/`ON UPDATE` action (`CASCADE`, `SET NULL`, `SET DEFAULT`) is

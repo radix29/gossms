@@ -121,6 +121,16 @@ support); this section covers only the environment.
   first. A hang no longer takes Paste with it: tuikit's `Dispatcher.Paste`
   waits at most `toolTimeout + 1s` for earlier copies.
 
+## tuikit press latches: what is left
+
+- **`widgets.Button`, `CheckBox` and `RadioBox` claim their press latch only
+  on a hit** (`Fresh` inside the bounds test), so a press elsewhere dragged
+  onto one arrives fresh and activates it. `Toolbar` had the same shape and
+  now claims on every `Button1`, as `layout.Splitter` does. No repro for these
+  three: `dialogs.FieldGesture` routes a drag to the field that took the
+  press. If a host is found routing one by position, move `Fresh` before the
+  bounds test (one line each).
+
 ## File lock (`fileutil.WithLock`): what is left
 
 - **Starvation past the 10 s cap is possible, not seen since the fix** (issue
@@ -177,6 +187,14 @@ Settled design: `docs/decisions.md` § Format Document.
   that delay before its error. No portable way found to tell it from the
   Windows transient (a handle open without FILE_SHARE_DELETE, on either
   path); `WithLock`'s create no longer has this (it checks the lock exists).
+
+## Plan view: what is left
+
+- **Collapsing a tree row can leave the Tree tab scrolled past its top.**
+  `rebuildTreeRows` resets `treeSt.scroll` only when it exceeds `len(rows)`,
+  not `len(rows)-treePaneRect.H`: scrolled to 1, collapse a subtree so every
+  row fits, and the first row stays hidden with no scrollbar drawn (the wheel
+  brings it back). Pre-existing; seen while driving B2 (2026-11-24).
 
 ## Code size: what is left
 

@@ -93,6 +93,9 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"SAVE TRAN s1", write},
 		{"IF @@TRANCOUNT > 0 ROLLBACK", write},
 		{"SET IMPLICIT_TRANSACTIONS ON", write},
+		{"SET ANSI_DEFAULTS ON", write},
+		{"set ansi_defaults on", write},
+		{"SET ANSI_DEFAULTS, NOCOUNT ON", write},
 		{"EXEC dbo.usp_unknown 1", write},
 		{"EXEC @rc = dbo.usp_unknown", write},
 		{"usp_unknown 1, 2", write},
@@ -467,6 +470,32 @@ func TestClassifyModuleBatch(t *testing.T) {
 	}
 }
 
+// Inside CREATE SCHEMA, CREATE VIEW is a schema element, not a module: the
+// elements after it run now and keep their own class (a GRANT there was hidden
+// as the view's body, so --allow ddl ran it).
+func TestClassifySchemaElementsAfterView(t *testing.T) {
+	for _, tt := range []struct {
+		script string
+		want   spec.Class
+		leader string
+		n      int
+	}{
+		{"CREATE SCHEMA s AUTHORIZATION dbo\n    CREATE VIEW v AS SELECT 1 AS x\n    GRANT CONTROL ON SCHEMA::s TO public", admin, "GRANT", 3},
+		{"CREATE SCHEMA s CREATE VIEW v AS SELECT 1 AS x DENY SELECT ON SCHEMA::s TO public", admin, "DENY", 3},
+		{"CREATE SCHEMA s CREATE VIEW v AS SELECT 1 AS x REVOKE SELECT ON SCHEMA::s FROM public", admin, "REVOKE", 3},
+		{"CREATE SCHEMA s CREATE VIEW v AS SELECT 1 AS x CREATE TABLE t (a int)", ddl, "CREATE TABLE", 3},
+	} {
+		sc := Classify(tt.script)
+		if sc.Class != tt.want || len(sc.Statements) != tt.n {
+			t.Errorf("%q = %s, %d statements %+v; want %s, %d", tt.script, sc.Class, len(sc.Statements), sc.Statements, tt.want, tt.n)
+			continue
+		}
+		if last := sc.Statements[tt.n-1]; last.Leader != tt.leader || last.Class != tt.want {
+			t.Errorf("%q: last statement = %+v, want %s %s", tt.script, last, tt.want, tt.leader)
+		}
+	}
+}
+
 func TestClassifyFlags(t *testing.T) {
 	for _, tt := range []struct {
 		script string
@@ -477,6 +506,9 @@ func TestClassifyFlags(t *testing.T) {
 		{"ROLLBACK", FlagTranControl},
 		{"SAVE TRANSACTION s", FlagTranControl},
 		{"SET IMPLICIT_TRANSACTIONS ON", FlagTranControl},
+		{"SET ANSI_DEFAULTS ON", FlagTranControl},
+		{"set ansi_defaults on", FlagTranControl},
+		{"SET ANSI_DEFAULTS, NOCOUNT ON", FlagTranControl | FlagNoCount},
 		{"ALTER DATABASE d SET ONLINE", FlagNotInTransaction},
 		{"CREATE DATABASE d", FlagNotInTransaction},
 		{"DROP DATABASE IF EXISTS d", FlagNotInTransaction},
@@ -525,6 +557,11 @@ func TestClassifyFlags(t *testing.T) {
 		{"WAITFOR (RECEIVE * FROM dbo.q), TIMEOUT 100", FlagUncounted},
 		{"WRITETEXT dbo.t.x @p 'z'", FlagUncounted},
 		{"IF @p IS NOT NULL UPDATETEXT dbo.t.x @p 0 NULL 'z'", FlagUncounted},
+		{"TRUNCATE TABLE t", FlagUncounted},
+		{"IF 1=1 TRUNCATE TABLE t", FlagUncounted},
+		{"DROP TABLE t", FlagUncounted},
+		{"DROP TABLE IF EXISTS a, b", FlagUncounted},
+		{"ALTER TABLE t SWITCH PARTITION 2 TO t2 PARTITION 2", FlagUncounted},
 	} {
 		if got := Classify(tt.script).Flags; !got.Has(tt.want) {
 			t.Errorf("Classify(%q).Flags = %v, want %v among them", tt.script, got.Names(), tt.want.Names())
@@ -536,6 +573,7 @@ func TestClassifyFlags(t *testing.T) {
 	}{
 		{"SET NOCOUNT OFF", 0},
 		{"SET NOEXEC OFF", 0},
+		{"SET ANSI_DEFAULTS OFF", 0},
 		{"SELECT 1", 0},
 		{"SELECT next, value FROM t FOR XML PATH", 0},
 		{"EXEC sp_who2", 0},
@@ -551,6 +589,10 @@ func TestClassifyFlags(t *testing.T) {
 		{"ALTER INDEX ix ON t REORGANIZE", 0},
 		{"CREATE EVENT NOTIFICATION n ON DATABASE FOR CREATE_TABLE TO SERVICE 's', 'current database'", 0},
 		{"SELECT resumable, abort, pause FROM t", 0},
+		{"DROP VIEW v", 0},
+		{"ALTER TABLE t DROP COLUMN c", 0},
+		{"SELECT [truncate] FROM t", 0},
+		{"TRUNCATE TABLE #t", 0},
 	} {
 		if got := Classify(tt.script).Flags; got != tt.want {
 			t.Errorf("Classify(%q).Flags = %v, want %v", tt.script, got.Names(), tt.want.Names())

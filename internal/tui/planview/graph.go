@@ -404,35 +404,32 @@ func (v *PlanView) handleGraphTabKey(ev *tcell.EventKey) bool {
 }
 
 // handleGraphTabMouse handles wheel scrolling (Shift+wheel or WheelLeft/Right
-// for horizontal), dragging graphSplit, and clicking a tile.
+// for horizontal), a press on graphSplit, the scrollbars or a tile, and the
+// release. A held Button1 never gets here: PlanView.HandleMouse routes it to
+// the zone the press armed (routeDrag), so every Button1 here is fresh.
 func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	vp := v.graphView()
 	if ev.Buttons() == tcell.ButtonNone {
-		vp.Release()
+		bars := vp.Release()
+		// The splitter needs its own release to clear sp.dragging (why
+		// handleTreeTabMouse forwards ButtonNone to treeSplit unconditionally).
+		split := v.graphSt.detailOpen && v.graphSplit.HandleMouse(ev)
+		if split {
+			v.layoutGraphTab()
+		}
+		return bars || split
 	}
 	if v.graphSt.detailOpen {
-		if ev.Buttons() == tcell.ButtonNone {
-			// The splitter needs its own release to clear sp.dragging (why
-			// handleTreeTabMouse forwards ButtonNone to treeSplit unconditionally).
-			if v.graphSplit.HandleMouse(ev) {
-				v.layoutGraphTab()
-				return true
-			}
-		}
 		if d, ok := core.LineWheel(ev, v.graphPropsRect); ok {
 			v.scrollGraphProps(d)
 			return true
 		}
 		if ev.Buttons() == tcell.Button1 && v.graphSplit.HandleMouse(ev) {
+			v.drag.Arm(ev, pzGraphSplit)
 			v.layoutGraphTab()
 			return true
 		}
-	}
-	// A latched scrollbar drag keeps the bar even once the pointer leaves
-	// the canvas.
-	if vp.Dragging() {
-		return vp.HandleScrollbars(ev)
 	}
 	if !v.graphCanvasRect.Contains(mx, my) {
 		return false
@@ -447,9 +444,13 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		// Scrollbar drag/click outranks tile selection: the bars are drawn over
 		// the canvas's bottom row/right column (see drawGraphCanvas), so a click
 		// would otherwise select the tile underneath.
-		if vp.HandleScrollbars(ev) {
+		if vp.HandleScrollbars(ev, true) {
+			v.drag.Arm(ev, pzGraphBar)
 			return true
 		}
+		// Claimed, so the drag selects no other tile it passes and grabs no
+		// bar it reaches.
+		v.drag.Arm(ev, pzGraphTile)
 		// No layout on a statement without a plan tree ("No plan tree for this
 		// statement"); a press there has nothing to select.
 		if v.graphSt.layout == nil {

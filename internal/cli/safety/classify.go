@@ -23,8 +23,9 @@ import (
 type Flag uint16
 
 const (
-	// FlagTranControl: BEGIN TRAN, COMMIT, ROLLBACK, SAVE TRAN or SET
-	// IMPLICIT_TRANSACTIONS ON — refused under --transaction rollback.
+	// FlagTranControl: BEGIN TRAN, COMMIT, ROLLBACK, SAVE TRAN, SET
+	// IMPLICIT_TRANSACTIONS ON or SET ANSI_DEFAULTS ON (which sets it) —
+	// refused under --transaction rollback.
 	FlagTranControl Flag = 1 << iota
 	// FlagNotInTransaction: a statement SQL Server refuses inside a user
 	// transaction (ALTER DATABASE, BACKUP, KILL, a resumable index operation,
@@ -46,9 +47,10 @@ const (
 	// FlagSequence: NEXT VALUE FOR, which advances a sequence outside any
 	// transaction — a rollback does not undo it (docs/cli.md § Transactions).
 	FlagSequence
-	// FlagUncounted: RECEIVE, WRITETEXT or UPDATETEXT, whose changes the
-	// server's row counts miss (live, 17): RECEIVE's count arrives after its
-	// result set and so reads like a SELECT's, the text verbs report none.
+	// FlagUncounted: RECEIVE, WRITETEXT, UPDATETEXT, or TRUNCATE TABLE, DROP
+	// TABLE or ALTER TABLE … SWITCH of a permanent table (uncountedDDL), whose
+	// changes the server's row counts miss (live, 17): RECEIVE's count arrives
+	// after its result set and so reads like a SELECT's, the others report none.
 	FlagUncounted
 )
 
@@ -156,12 +158,21 @@ func Classify(script string) *Script {
 func classifyBatch(text string, startLine int) []Statement {
 	toks, cuts := lexBatch(text, startLine)
 	var out []Statement
+	// Inside CREATE SCHEMA, CREATE VIEW is a schema element: its body ends at the
+	// next element (CREATE TABLE/VIEW, GRANT, REVOKE, DENY), and every element
+	// runs now, so each cut is classified on its own (a GRANT after the view was
+	// hidden as the view's body). The server refuses any other module there.
+	inSchema := false
+	if len(cuts) > 0 {
+		verb, obj := createAlterObject(toks[cuts[0]:])
+		inSchema = verb == "CREATE" && obj == "SCHEMA"
+	}
 	for ci, from := range cuts {
 		to := len(toks)
 		if ci+1 < len(cuts) {
 			to = cuts[ci+1]
 		}
-		if isModule(toks[from:]) {
+		if !inSchema && isModule(toks[from:]) {
 			// CREATE/ALTER PROCEDURE, FUNCTION, TRIGGER or VIEW is alone in its batch:
 			// everything after its header is its body, which runs when the module is
 			// called, not now. One ddl statement, no flags from the body.
@@ -514,6 +525,14 @@ func setStatement(st *Statement, toks []token) {
 				case w == "IMPLICIT_TRANSACTIONS":
 					st.Class, st.Flags = spec.ClassWrite, st.Flags|FlagTranControl
 					st.Reason = "SET IMPLICIT_TRANSACTIONS ON opens transactions"
+				case w == "ANSI_DEFAULTS":
+					// ANSI_DEFAULTS ON sets IMPLICIT_TRANSACTIONS ON with the
+					// ANSI options: left read, a procedure's COMMIT would let
+					// the next statement open a transaction the wrapper then
+					// rolls back as its own, reporting rolled-back over
+					// committed rows. OFF turns it off, so it stays read.
+					st.Class, st.Flags = spec.ClassWrite, st.Flags|FlagTranControl
+					st.Reason = "SET ANSI_DEFAULTS ON turns on IMPLICIT_TRANSACTIONS, which opens transactions"
 				}
 			}
 		}
@@ -642,7 +661,7 @@ func floor(st *Statement, toks []token) {
 				st.Writes = append(st.Writes, wr)
 			}
 		}
-		if uncountedVerb(toks, i, v.name) {
+		if uncountedVerb(toks, i, v.name) || uncountedDDL(toks, i) {
 			st.Flags |= FlagUncounted
 		}
 		st.raise(c, "keyword "+v.name+at)
@@ -690,6 +709,55 @@ func uncountedVerb(toks []token, i int, name string) bool {
 		case next.kind == sqltext.KindWord:
 			return !receiveColumnFollowers[next.word]
 		}
+	}
+	return false
+}
+
+// uncountedDDL reports whether toks[i] begins TRUNCATE TABLE, DROP TABLE or
+// ALTER TABLE … SWITCH of a permanent table (FlagUncounted): each removes rows
+// and reports no count, so a --max-rows-affected limit of any size passed
+// them and committed (a 1000-row TRUNCATE under a limit of 10). A temporary
+// table is exempt, as Write.Local exempts it from the trigger check: what it
+// held, the script put there.
+func uncountedDDL(toks []token, i int) bool {
+	verb, obj := createAlterObject(toks[i:])
+	if toks[i].is("TRUNCATE") {
+		verb, obj = "TRUNCATE", ""
+		if i+1 < len(toks) && toks[i+1].is("TABLE") {
+			obj = "TABLE"
+		}
+	}
+	if obj != "TABLE" {
+		return false
+	}
+	permanent := func(j int) (bool, int) {
+		parts, next := nameParts(toks, j)
+		return len(parts) > 0 && !strings.HasPrefix(parts[len(parts)-1], "#"), next
+	}
+	j := i + 2
+	switch verb {
+	case "TRUNCATE":
+		p, _ := permanent(j)
+		return p
+	case "DROP":
+		// DROP TABLE [IF EXISTS] a, #b, c
+		if j+1 < len(toks) && toks[j].is("IF") && toks[j+1].is("EXISTS") {
+			j += 2
+		}
+		for {
+			p, next := permanent(j)
+			if p {
+				return true
+			}
+			if next >= len(toks) || !toks[next].punct(",") || next == j {
+				return false
+			}
+			j = next + 1
+		}
+	case "ALTER":
+		// ALTER TABLE t SWITCH [PARTITION n] TO t2 [PARTITION n]
+		p, next := permanent(j)
+		return p && next < len(toks) && toks[next].is("SWITCH")
 	}
 	return false
 }

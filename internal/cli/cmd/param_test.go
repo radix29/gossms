@@ -104,6 +104,74 @@ func TestParameterize(t *testing.T) {
 	}
 }
 
+// A date is ISO 8601 only, sent as YYYYMMDD or with the T: the forms no
+// DATEFORMAT or LANGUAGE reads another way.
+func TestParseParamDate(t *testing.T) {
+	for _, tt := range []struct {
+		raw  string
+		want string // the literal, or "!" and a substring of the error
+	}{
+		{"d=2026-01-02:datetime", "N'20260102'"},
+		{"d=2026-01-02:smalldatetime", "N'20260102'"},
+		{"d=2026-01-02:date", "N'20260102'"},
+		{"d= 2026-01-02 :date", "N'20260102'"},
+		{"d=2026-01-02:datetime2(3)", "N'20260102'"},
+		{"d=2026-01-02:datetimeoffset", "N'20260102'"},
+		{"d=2026-01-02 10:30:datetime", "N'2026-01-02T10:30:00'"},
+		{"d=2026-01-02T10:30:15:smalldatetime", "N'2026-01-02T10:30:15'"},
+		{"d=2026-01-02T10:30:15.123:datetime", "N'2026-01-02T10:30:15.123'"},
+		{"d=2026-01-02 10:30:15.1234567:datetime2(7)", "N'2026-01-02T10:30:15.1234567'"},
+		{"d=2026-01-02T10:30:15Z:datetimeoffset(0)", "N'2026-01-02T10:30:15Z'"},
+		{"d=2026-01-02T10:30+02:00:datetimeoffset", "N'2026-01-02T10:30:00+02:00'"},
+		{"d=2026-01-02T10:30:15.5-14:00:datetimeoffset", "N'2026-01-02T10:30:15.5-14:00'"},
+		{"d=2024-02-29:date", "N'20240229'"},
+		{"d=01/02/2026:datetime", "!not an ISO 8601 date"},
+		{"d=2026-1-2:date", "!not an ISO 8601 date"},
+		{"d=20260102:date", "!not an ISO 8601 date"},
+		{"d=2026-01-02 25:00:datetime", "!not a time of day"},
+		{"d=2026-01-02 10:60:datetime", "!not a time of day"},
+		{"d=2026-02-30:date", "!not a date"},
+		{"d=2025-02-29:date", "!not a date"},
+		{"d=2026-13-01:date", "!not a date"},
+		{"d=0000-01-01:date", "!not a date"},
+		{"d=2026-01-02T10:00:date", "!date keeps none"},
+		{"d=2026-01-02T10:00Z:datetime", "!datetime keeps none"},
+		{"d=2026-01-02T10:00+02:00:datetime2", "!datetime2 keeps none"},
+		{"d=2026-01-02+02:00:datetimeoffset", "!no time"},
+		{"d=2026-01-02T10:00+15:00:datetimeoffset", "!outside"},
+		{"d=2026-01-02T10:00:00.12345678:datetime2", "!not an ISO 8601 date"},
+	} {
+		p, err := parseParam(tt.raw)
+		if want, ok := strings.CutPrefix(tt.want, "!"); ok {
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%q: %v (%+v), want %q", tt.raw, err, p, want)
+			} else if e, ok := err.(*output.Error); !ok || e.Code != output.CodeUsageError {
+				t.Errorf("%q: not a usage error: %v", tt.raw, err)
+			}
+			continue
+		}
+		if err != nil || p.value != tt.want {
+			t.Errorf("%q: %v %q, want %q", tt.raw, err, p.value, tt.want)
+		}
+	}
+}
+
+// The server turns any number but 0 into 1.
+func TestParseParamBit(t *testing.T) {
+	for raw, want := range map[string]string{
+		"b=1:bit": "N'1'", "b=0:bit": "N'0'", "b=TRUE:bit": "N'1'", "b=false:bit": "N'0'", "b= 1 :bit": "N'1'",
+	} {
+		if p, err := parseParam(raw); err != nil || p.value != want {
+			t.Errorf("%q: %v %q, want %q", raw, err, p.value, want)
+		}
+	}
+	for _, raw := range []string{"b=2:bit", "b=-1:bit", "b=yes:bit", "b=1.0:bit"} {
+		if _, err := parseParam(raw); err == nil || !strings.Contains(err.Error(), "is not a bit") {
+			t.Errorf("%q: %v", raw, err)
+		}
+	}
+}
+
 // An empty value would convert to 0 or 1900-01-01; only a string type may be
 // empty.
 func TestParseParamEmptyValue(t *testing.T) {
