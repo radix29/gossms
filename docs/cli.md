@@ -884,6 +884,16 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   does not convert is `SQL_ERROR` (Msg 8114, line 0 as the server reports
   it). `binary`/`varbinary` take `0x` and hex digits instead (nvarchar does
   not convert to binary). There is no NULL value: write `NULL` in the script.
+- **Dates are ISO 8601 only** — `date datetime smalldatetime datetime2
+  datetimeoffset` take `YYYY-MM-DD`, optionally followed by `T` or a space
+  and `hh:mm[:ss[.fffffff]]`, and for `datetimeoffset` a `Z` or `±hh:mm`
+  after the time; `date` takes no time. The value is sent as `YYYYMMDD`, or
+  `YYYY-MM-DDThh:mm:ss[.f…]` with a time: forms the server reads the same
+  under every `DATEFORMAT` and language. (Sent as written, `2026-01-02` is
+  1 February in `datetime` for a login whose language is British, German or
+  French; `01/02/2026` swaps for every type.) Another form, or a day or time
+  that does not exist, is `USAGE_ERROR`. A `bit` is `0`, `1`, `true` or
+  `false` (any case).
 - **A value that would change is refused before connecting** (`USAGE_ERROR`):
   an empty or blank value for any type but `char varchar nchar nvarchar
   sysname xml sql_variant` (the server would turn it into `0` or

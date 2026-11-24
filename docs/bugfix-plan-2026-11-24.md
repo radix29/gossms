@@ -11,7 +11,6 @@ commits but the user.
 | # | Where | Effect | Severity |
 |---|---|---|---|
 | C1 | `internal/cli/safety/classify.go` (`floor`, flags), `check.go` | `--max-rows-affected` commits a `TRUNCATE TABLE` of any size | Data loss behind a guard that says it holds |
-| C3 | `internal/cli/cmd/param.go` (`parseParam`) | `--param d=2026-01-02:datetime` reaches the server as 1 Feb for a login whose language is `dmy` (British, German, French, …) | Silent wrong value |
 
 Each step: `go build -o gossms ./cmd/gossms && go test ./internal/cli/... &&
 gofmt -l . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
@@ -22,8 +21,6 @@ then `go test ./...`, then drive the built binary with the item's repro
 
 1. **C1** — the most severe (rows deleted for good under a flag sold as the
    safe way to run a write), and it adds the flag-raising pattern C2 reuses.
-2. **C3** — independent (`param.go`); last because its live check needs a
-   throwaway login with `DEFAULT_LANGUAGE = British`.
 
 ---
 
@@ -72,51 +69,6 @@ the targeted flag; ask the user if the broad rule is preferred.
 `ALTER TABLE t ADD c int`, `DROP VIEW v`, `TRUNCATE` as a column name
 (`SELECT [truncate] FROM t`) do not. Live: the repro above answers BLOCKED,
 exit 7, before connecting, and the table keeps its rows.
-
----
-
-## C3 — `--param` date values depend on the login's language; `bit` coerced
-
-**Cause.** `parseParam` sends every non-binary value as `N'…'` and lets the
-server convert it to the declared type (`param.go`, the `p.value =
-gosmo.QuoteLiteral(value)` line). For `datetime` and `smalldatetime`,
-`YYYY-MM-DD` is read under the session's DATEFORMAT: a login whose default
-language is `dmy` (British, German, French, Italian, …) gets `ydm`, so
-`2026-01-02` is **1 February**. `date`, `datetime2` and `datetimeoffset` read
-`YYYY-MM-DD` correctly, but any non-ISO form (`01/02/2026`) swaps on them too.
-No error is raised, so the docs' promise that "a value that would change is
-refused before connecting" (`docs/cli.md`, the `--param` bullets) does not
-hold. Smaller, same promise: a `bit` value other than 0/1 (`2`, `-1`) becomes 1
-silently. gosmo already avoids the trap everywhere it writes a date as text
-(`YYYYMMDD`, or ISO 8601 with the `T`; see `timeLiteral` in gosmo's
-`script.go`); this is the one path that does not.
-
-**Repro (live, verified):** throwaway login with `DEFAULT_LANGUAGE = British`.
-
-```sh
-gossms query run -U probe_british ... -Q "SELECT @d AS d" --param d=2026-01-02:datetime
-# d = 2026-02-01 00:00:00.000
-```
-
-**Fix.** For `date`, `datetime`, `smalldatetime`, `datetime2` and
-`datetimeoffset`, accept ISO 8601 only — `YYYY-MM-DD`, optionally `[T or
-space]hh:mm[:ss[.fffffff]]`, and for `datetimeoffset` an optional `Z` or
-`±hh:mm` — and refuse anything else (USAGE_ERROR, hint "write the date as
-YYYY-MM-DD[Thh:mm:ss]"). Send what was accepted in a form every
-DATEFORMAT/LANGUAGE reads the same: `YYYYMMDD` for a date alone,
-`YYYY-MM-DDThh:mm:ss[.f…]` with a time (seconds filled in). Leave the
-server to refuse what does not fit the type (more than three decimals for
-`datetime`, a year before 1753), which is a refusal, not a silent change.
-For `bit`, accept `0`, `1`, `true`, `false` (any case) and refuse the rest.
-Update the `--param` bullets in `docs/cli.md` (accepted forms, and drop
-nothing from the "still round" list: `money`, `float`, `real`, `time`).
-
-**Tests** (`internal/cli/cmd`, beside the existing `--param` tests): the
-normalised literal for each date type with and without a time and fraction;
-refusals for `01/02/2026`, `2026-1-2`, `2026-01-02 25:00`; `datetimeoffset`
-with `Z` and `+02:00`; `bit` `1`/`TRUE` accepted, `2` refused. Live: the repro
-with the British login returns 2026-01-02 for `datetime` and
-`smalldatetime`; drop the login afterwards.
 
 ---
 

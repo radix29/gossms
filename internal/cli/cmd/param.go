@@ -138,11 +138,133 @@ func parseParam(raw string) (param, error) {
 				return param{}, err
 			}
 		}
+		// A date or bit is checked and rewritten in a form the server reads
+		// one way: its own conversion would succeed with a different value.
+		switch {
+		case paramDateTypes[m[1]]:
+			v, err := dateLiteral(p.name, value, m[1])
+			if err != nil {
+				return param{}, err
+			}
+			value = v
+		case m[1] == "bit":
+			v, err := bitLiteral(p.name, value)
+			if err != nil {
+				return param{}, err
+			}
+			value = v
+		}
 		// The server converts the string to the declared type, as it would
 		// a client's string parameter; a bad value fails there (Msg 8114).
 		p.value = gosmo.QuoteLiteral(value)
 	}
 	return p, nil
+}
+
+// paramDateTypes take an ISO 8601 value only.
+var paramDateTypes = map[string]bool{
+	"date": true, "datetime": true, "smalldatetime": true, "datetime2": true, "datetimeoffset": true,
+}
+
+// paramDate is the ISO 8601 form --param accepts for a date type: the date,
+// then optionally a time (T or a space before it; seconds and a fraction
+// optional), then optionally a zone.
+var paramDate = regexp.MustCompile(`^([0-9]{4})-([0-9]{2})-([0-9]{2})` +
+	`(?:[T ]([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]{1,7}))?)?)?` +
+	`(Z|[+-][0-9]{2}:[0-9]{2})?$`)
+
+// dateLiteral checks a date-type value and rewrites it in a form every
+// DATEFORMAT and LANGUAGE reads the same: YYYYMMDD for a date alone,
+// YYYY-MM-DDThh:mm:ss[.f…][zone] with a time. The server reads YYYY-MM-DD as
+// year-day-month for datetime and smalldatetime under a dmy language
+// (British, German, French…), and any other form (01/02/2026) by DATEFORMAT
+// for every type — a different date, with no error. What does not fit the
+// type (a year before 1753 for datetime, more decimals than it keeps) is
+// left to the server to refuse or round, as for time.
+func dateLiteral(name, value, base string) (string, error) {
+	v := strings.TrimSpace(value)
+	form := "YYYY-MM-DD[Thh:mm[:ss[.fffffff]]]"
+	switch base {
+	case "date":
+		form = "YYYY-MM-DD"
+	case "datetimeoffset":
+		form += "[Z|±hh:mm]"
+	}
+	bad := func(msg string) (string, error) {
+		return "", usageError(fmt.Sprintf("--param %s: %q %s", name, v, msg),
+			"Write the date as "+form+": another form is read by the login's language, and can name another day.")
+	}
+	m := paramDate.FindStringSubmatch(v)
+	if m == nil {
+		return bad("is not an ISO 8601 date")
+	}
+	y, _ := strconv.Atoi(m[1])
+	mo, _ := strconv.Atoi(m[2])
+	d, _ := strconv.Atoi(m[3])
+	if y < 1 || mo < 1 || mo > 12 || d < 1 || d > daysIn(y, mo) {
+		return bad("is not a date")
+	}
+	hasTime, zone := m[4] != "", m[8]
+	switch {
+	case hasTime && base == "date":
+		return bad("has a time; date keeps none")
+	case zone != "" && base != "datetimeoffset":
+		return bad(fmt.Sprintf("has a time zone; %s keeps none", base))
+	case zone != "" && !hasTime:
+		return bad("has a time zone but no time")
+	}
+	if !hasTime {
+		return m[1] + m[2] + m[3], nil
+	}
+	h, _ := strconv.Atoi(m[4])
+	mi, _ := strconv.Atoi(m[5])
+	s := 0
+	if m[6] != "" {
+		s, _ = strconv.Atoi(m[6])
+	}
+	if h > 23 || mi > 59 || s > 59 {
+		return bad("is not a time of day")
+	}
+	if len(zone) == 6 {
+		zh, _ := strconv.Atoi(zone[1:3])
+		zm, _ := strconv.Atoi(zone[4:6])
+		if zh > 14 || zm > 59 || (zh == 14 && zm > 0) {
+			return bad("has a zone outside -14:00 to +14:00")
+		}
+	}
+	out := fmt.Sprintf("%s-%s-%sT%s:%s:%02d", m[1], m[2], m[3], m[4], m[5], s)
+	if m[7] != "" {
+		out += "." + m[7]
+	}
+	return out + zone, nil
+}
+
+// daysIn is the number of days in month mo of year y (proleptic Gregorian,
+// as SQL Server's date types count them).
+func daysIn(y, mo int) int {
+	switch mo {
+	case 2:
+		if y%4 == 0 && (y%100 != 0 || y%400 == 0) {
+			return 29
+		}
+		return 28
+	case 4, 6, 9, 11:
+		return 30
+	}
+	return 31
+}
+
+// bitLiteral accepts 0, 1, true and false (any case): the server turns any
+// other number into 1 silently.
+func bitLiteral(name, value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "0", "false":
+		return "0", nil
+	case "1", "true":
+		return "1", nil
+	}
+	return "", usageError(fmt.Sprintf("--param %s: %q is not a bit", name, strings.TrimSpace(value)),
+		"Give 0, 1, true or false: the server would turn any other number into 1.")
 }
 
 // paramDecimal is a value the server converts to decimal: a sign, digits
