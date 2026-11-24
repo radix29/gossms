@@ -4,27 +4,23 @@ What changed in the current goSSMS release. Detail, and every earlier release,
 is in [CHANGELOG.md](CHANGELOG.md). Questions and feedback:
 [goSSMS on Discord](https://discord.gg/7YVKzB3vZ).
 
-## v0.2.1 — 2026-11-17
+## v0.2.2 — 2026-11-24
 
 ### New
 
-- Microsoft Fabric Data Warehouse: own Object Explorer tree, menus, statistics
-  and property pages.
-- Fabric T-SQL in the editor: `QUALIFY`, FROM-first queries, `WINDOW`, `MEDIAN`
-  and `QUANTILE`.
-- Right-click Cut/Copy/Paste menu on every text field.
-- Picture viewer for binary result cells; result export to CSV, TSV, JSON, XML.
-- Profile name on the Object Explorer root; database security nodes.
+- Hide and restore Object Explorer.
+- IntelliSense: user-defined types, DDL positions, more built-ins and `OPENROWSET(BULK)` options.
+- Picture viewer brightness and contrast.
+- CSV/TSV formula neutralization.
+- Stricter CLI `--max-rows-affected` and parameter checks.
 
 ### Fixes
 
-- Service Broker statements with `FROM` run whole on F5.
-- Ctrl+C and paste work in plan, Query Store and Log Viewer panels.
-- Line endings and text encodings survive open, save and format.
-- Backup planning refuses invalid cases clearly; unknown encryption modes refused.
-- Config tests no longer touch the real config on Windows and macOS.
+- Plan cost badges and columnstore scans; no panic on plan-less statements.
+- Safer CLI output: control characters, JSON integers, Markdown cells.
+- Windows file, lock and clipboard issues.
 
 ### Changes
 
-- `gosmo` v0.3.0, `tuikit` v0.0.3.
-- Connection dialog **Reset** is now **New**.
+- `gosmo` v0.4.0, `tuikit` v0.1.0.
+- Fabric DW detected by engine edition.

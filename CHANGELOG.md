@@ -4,6 +4,72 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.2.2] - 2026-11-24
+
+A hardening and completion release: Object Explorer can be hidden and
+restored, IntelliSense learns user-defined types, DDL positions and a much
+larger set of built-ins, pictures gain brightness and contrast, and the
+command line gets stricter safety checks and safer output. Built on gosmo
+v0.4.0 and tuikit v0.1.0.
+
+### Added
+
+- **Hide and restore Object Explorer**: the `[x]` in its top-right corner
+  hides it without disconnecting or clearing the tree; View > Object Explorer
+  shows and focuses it again at its previous width.
+- **IntelliSense**: data-type completion outside `CREATE TABLE` and routine
+  headers, user-defined types (qualified, unqualified, bracketed), DDL and
+  DML positions, platform-aware built-in functions (Fabric Warehouse AI
+  functions apart from SQL Server embeddings and chunking) and `OPENROWSET(BULK)`
+  options by engine and file format.
+- **Picture viewer**: brightness and contrast adjustments; File > Open
+  recognizes a picture file by its content, not its extension.
+- **CSV/TSV formula neutralization**: a text cell starting with `=`, `+`, `-`
+  or `@` gets a leading `'` so a spreadsheet does not run it. On by default in
+  the GUI (Tools > Options), `--csv-neutralize-formulas` on the command line.
+- **Activity Monitor**: procedure option switches on the toolbar.
+- **Find and Replace**: rescope the search from the open dialog.
+- **Numeric columns** are right-aligned in grids and dialogs.
+- **Command line**: `--max-rows-affected` reads every write target for
+  triggers and cascading foreign keys and refuses what it cannot count; bound
+  parameter values that would change (truncated, rounded, blank) are refused
+  before connecting; UTF-16 and UTF-32 response and script files.
+- Plan and Tree views identify columnstore scans.
+- Windows: native clipboard through the Win32 API.
+
+### Fixed
+
+- Object Explorer reveals on connect and its menu states follow its
+  visibility.
+- Plan cost badges are no longer mistaken for errors; badge logic and
+  operator-name clipping corrected.
+- Mouse press on a statement without a plan tree no longer panics.
+- Server version gates go through one check, so features appear on the right
+  engine versions.
+- Name comparison on the command line follows the scope's collation
+  (including Turkish case rules).
+- `RECEIVE`, `WRITETEXT BULK` and `UPDATETEXT BULK` split and count correctly;
+  statements that cannot run in a transaction are flagged.
+- Safety classification of DDL and DML statements is stricter.
+- Config file locking is safer when several instances wait.
+- Windows: file handling, locking, path and fixture byte-exactness issues.
+- Command-line output never lets control characters, DEL, C1 controls or bidi
+  overrides reach a terminal; JSON keeps integers beyond 2^53 as strings;
+  Markdown cells escape inline formatting and HTML; `--no-messages` is honoured
+  by the stderr summary.
+- Formatting can be cancelled.
+- Enter at an alias position commits keywords (#57); locking and completion
+  fixes (#56).
+
+### Changed
+
+- Built on `gosmo` v0.4.0 and `tuikit` v0.1.0 (lazy dialogs, shared
+  clipboard and loop packages, `ListDialog` and `MessageDialog` throughout).
+- Fabric Data Warehouse is detected from the engine edition, not the host name.
+- Copyright is now "Radu Colceriu"; the README credits Fabric DW contributor
+  Jovan Popovic.
+- README advises Windows Terminal on Windows.
+
 ## [0.2.1] - 2026-11-17
 
 A Fabric and polish release: Microsoft Fabric Data Warehouse connections get

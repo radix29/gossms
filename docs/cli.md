@@ -359,7 +359,7 @@ STATUS: OK
 COMMAND: version
 DURATION_MS: 0
 
-VERSION: v0.2.1
+VERSION: v0.2.2
 COMMIT: 72a0e3c
 CLI_SCHEMA: 1.0
 ```
@@ -410,7 +410,7 @@ CLI_SCHEMA: 1.0
   "rowsAffected": null,
   "outFile": null,
   "data": {
-    "version": "v0.2.1",
+    "version": "v0.2.2",
     "commit": "72a0e3c",
     "cliSchema": "1.0"
   },

@@ -19,7 +19,7 @@ import (
 //	COMMAND: version
 //	DURATION_MS: 0
 //
-//	VERSION: v0.2.1          Fields, as KEY: value
+//	VERSION: v0.2.2          Fields, as KEY: value
 //
 //	=== DEFINITION (3 lines) ===   a Verbatim field, its lines as they are
 //	CREATE VIEW …
