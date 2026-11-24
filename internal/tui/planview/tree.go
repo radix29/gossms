@@ -576,8 +576,9 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 		}
 		// Scrollbar drag/click outranks row hit-testing: the bar is drawn at
 		// treePaneRect.Right()-1 (see drawTreePane) and would otherwise read as
-		// a click on the row in that column.
-		if core.HandleScrollbarDrag(ev, v.treePaneRect.Right()-1, v.treePaneRect.Y, v.treePaneRect.H, len(v.treeSt.rows), &v.treeSt.sbDragging, &v.treeSt.scroll) {
+		// a click on the row in that column. PlanView has no gesture router
+		// yet, so every Button1 is passed as fresh.
+		if core.HandleScrollbarDrag(ev, v.treePaneRect.Right()-1, v.treePaneRect.Y, v.treePaneRect.H, len(v.treeSt.rows), true, &v.treeSt.sbDragging, &v.treeSt.scroll) {
 			return true
 		}
 		if v.treePaneRect.Contains(mx, my) {

@@ -178,7 +178,7 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if am.tab.canvasTab() {
-		if am.scrollbarDrag(ev) {
+		if am.scrollbarDrag(ev, true) {
 			return true
 		}
 		if am.viewRect.Contains(mx, my) {
@@ -203,7 +203,7 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 // once on the press.
 func (am *ActivityMonitor) routeDrag(ev *tcell.EventMouse, zone amDragZone) bool {
 	if zone == amZoneBars {
-		return am.scrollbarDrag(ev)
+		return am.scrollbarDrag(ev, false)
 	}
 	// The grid extends a block selection, so it needs every held event.
 	if zone == amZoneProcGrid {
@@ -217,12 +217,15 @@ func (am *ActivityMonitor) routeDrag(ev *tcell.EventMouse, zone amDragZone) bool
 // scrollbarDrag hands the event to the scrollbars; core.Viewport's latch keeps
 // control once the pointer leaves the bar.
 //
+// fresh is true from press and false from routeDrag, whose repeats reach a
+// bar only with its latch already set.
+//
 // A move drops a pinned tooltip as wheel and keys do. Returns true for any
 // event the bars took, moved or not: the gesture belongs to the bar.
-func (am *ActivityMonitor) scrollbarDrag(ev *tcell.EventMouse) bool {
+func (am *ActivityMonitor) scrollbarDrag(ev *tcell.EventMouse, fresh bool) bool {
 	vp := am.viewport()
 	x, y := vp.X, vp.Y
-	if !vp.HandleScrollbars(ev) {
+	if !vp.HandleScrollbars(ev, fresh) {
 		return false
 	}
 	am.dragZone.Arm(ev, amZoneBars)

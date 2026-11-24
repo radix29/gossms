@@ -432,7 +432,7 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	// A latched scrollbar drag keeps the bar even once the pointer leaves
 	// the canvas.
 	if vp.Dragging() {
-		return vp.HandleScrollbars(ev)
+		return vp.HandleScrollbars(ev, false)
 	}
 	if !v.graphCanvasRect.Contains(mx, my) {
 		return false
@@ -447,7 +447,9 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		// Scrollbar drag/click outranks tile selection: the bars are drawn over
 		// the canvas's bottom row/right column (see drawGraphCanvas), so a click
 		// would otherwise select the tile underneath.
-		if vp.HandleScrollbars(ev) {
+		// PlanView has no gesture router yet, so it cannot tell a fresh press
+		// from a held resend: every Button1 is passed as fresh.
+		if vp.HandleScrollbars(ev, true) {
 			return true
 		}
 		// No layout on a statement without a plan tree ("No plan tree for this
