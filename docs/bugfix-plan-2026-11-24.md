@@ -11,7 +11,6 @@ commits but the user.
 | # | Where | Effect | Severity |
 |---|---|---|---|
 | C1 | `internal/cli/safety/classify.go` (`floor`, flags), `check.go` | `--max-rows-affected` commits a `TRUNCATE TABLE` of any size | Data loss behind a guard that says it holds |
-| C2 | `internal/cli/safety/classify.go` (`setStatement`) | `SET ANSI_DEFAULTS ON` turns on implicit transactions unseen: `--transaction` reports `rolled-back` while rows stay committed | Wrong outcome report; class too low |
 | C3 | `internal/cli/cmd/param.go` (`parseParam`) | `--param d=2026-01-02:datetime` reaches the server as 1 Feb for a login whose language is `dmy` (British, German, French, …) | Silent wrong value |
 
 Each step: `go build -o gossms ./cmd/gossms && go test ./internal/cli/... &&
@@ -23,9 +22,7 @@ then `go test ./...`, then drive the built binary with the item's repro
 
 1. **C1** — the most severe (rows deleted for good under a flag sold as the
    safe way to run a write), and it adds the flag-raising pattern C2 reuses.
-2. **C2** — a small change in the same file as C1, so it lands while that file
-   is open; its live check needs the disposable procedure only.
-3. **C3** — independent (`param.go`); last because its live check needs a
+2. **C3** — independent (`param.go`); last because its live check needs a
    throwaway login with `DEFAULT_LANGUAGE = British`.
 
 ---
@@ -75,47 +72,6 @@ the targeted flag; ask the user if the broad rule is preferred.
 `ALTER TABLE t ADD c int`, `DROP VIEW v`, `TRUNCATE` as a column name
 (`SELECT [truncate] FROM t`) do not. Live: the repro above answers BLOCKED,
 exit 7, before connecting, and the table keeps its rows.
-
----
-
-## C2 — `SET ANSI_DEFAULTS ON` hides `IMPLICIT_TRANSACTIONS ON`
-
-**Cause.** `setStatement` (`classify.go:499`) flags transaction control only
-for the word `IMPLICIT_TRANSACTIONS`. `SET ANSI_DEFAULTS ON` sets
-`IMPLICIT_TRANSACTIONS` on too (with ANSI_NULLS, ANSI_PADDING, …; documented
-SQL Server behaviour, verified live: `@@OPTIONS & 2` goes 0 → 2). So the
-script classifies `read` with no `transaction-control` flag, and
-`--transaction` accepts it. Then, when a procedure in the script commits the
-wrapper, the next statement opens an implicit transaction, `@@TRANCOUNT` is 1
-at the end, and `endTransaction` rolls back *that* one and reports
-`rolled-back` — the "ended by the script" detection (`cmd/query.go`,
-`endTransaction`) the refusal of `IMPLICIT_TRANSACTIONS` exists to protect is
-defeated. Under `--allow read` it also passes a statement this project
-classifies `write`.
-
-**Repro (live, verified):** tempdb table `t(n int)`, procedure `p AS COMMIT`.
-
-```sh
-gossms query run -d tempdb --allow write --transaction rollback \
-  -Q "SET ANSI_DEFAULTS ON; INSERT t VALUES (1); EXEC p; INSERT t VALUES (2);"
-# STATUS: OK, TRANSACTION: rolled-back — but row 1 is committed
-```
-
-Same script without the SET: `ended-by-script`, SQL_ERROR (correct). With
-`SET IMPLICIT_TRANSACTIONS ON`: BLOCKED (correct).
-
-**Fix.** In `setStatement`, treat `ANSI_DEFAULTS` in an `ON` option list as
-`IMPLICIT_TRANSACTIONS` is treated: class `write`, `FlagTranControl`, reason
-"SET ANSI_DEFAULTS ON turns on IMPLICIT_TRANSACTIONS, which opens
-transactions". `OFF` stays read (it turns them off). Add `SET ANSI_DEFAULTS`
-to the hint in `check.go:77` and to `docs/cli.md` § Transactions (the list
-after "controls transactions itself").
-
-**Tests** (`classify_test.go`, `check_test.go`): `SET ANSI_DEFAULTS ON` →
-write, `transaction-control`; `SET ANSI_DEFAULTS, NOCOUNT ON` → both flags;
-`set ansi_defaults on` (case); `SET ANSI_DEFAULTS OFF` → read, no flag;
-refused under `Policy{Transaction: true}`. Live: the repro answers BLOCKED,
-exit 7, and the table is empty afterwards.
 
 ---
 

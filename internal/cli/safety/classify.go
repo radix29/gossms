@@ -23,8 +23,9 @@ import (
 type Flag uint16
 
 const (
-	// FlagTranControl: BEGIN TRAN, COMMIT, ROLLBACK, SAVE TRAN or SET
-	// IMPLICIT_TRANSACTIONS ON — refused under --transaction rollback.
+	// FlagTranControl: BEGIN TRAN, COMMIT, ROLLBACK, SAVE TRAN, SET
+	// IMPLICIT_TRANSACTIONS ON or SET ANSI_DEFAULTS ON (which sets it) —
+	// refused under --transaction rollback.
 	FlagTranControl Flag = 1 << iota
 	// FlagNotInTransaction: a statement SQL Server refuses inside a user
 	// transaction (ALTER DATABASE, BACKUP, KILL, a resumable index operation,
@@ -524,6 +525,14 @@ func setStatement(st *Statement, toks []token) {
 				case w == "IMPLICIT_TRANSACTIONS":
 					st.Class, st.Flags = spec.ClassWrite, st.Flags|FlagTranControl
 					st.Reason = "SET IMPLICIT_TRANSACTIONS ON opens transactions"
+				case w == "ANSI_DEFAULTS":
+					// ANSI_DEFAULTS ON sets IMPLICIT_TRANSACTIONS ON with the
+					// ANSI options: left read, a procedure's COMMIT would let
+					// the next statement open a transaction the wrapper then
+					// rolls back as its own, reporting rolled-back over
+					// committed rows. OFF turns it off, so it stays read.
+					st.Class, st.Flags = spec.ClassWrite, st.Flags|FlagTranControl
+					st.Reason = "SET ANSI_DEFAULTS ON turns on IMPLICIT_TRANSACTIONS, which opens transactions"
 				}
 			}
 		}

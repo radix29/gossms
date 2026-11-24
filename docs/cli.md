@@ -920,7 +920,8 @@ commit on their own). The record's `transaction` says how it ended:
 
 - The check refuses (exit 7) a script that controls transactions itself
   (`BEGIN TRAN`, `COMMIT`, `ROLLBACK`, `SAVE TRAN`, `SET
-  IMPLICIT_TRANSACTIONS ON`) or holds a statement SQL Server refuses inside
+  IMPLICIT_TRANSACTIONS ON`, and `SET ANSI_DEFAULTS ON`, which sets it) or
+  holds a statement SQL Server refuses inside
   one (flag `not-in-transaction`): `CREATE`/`ALTER`/`DROP DATABASE` (every
   form) and `FULLTEXT`, `BACKUP`, `RESTORE`, `RECONFIGURE`, `KILL`, `DBCC
   SHRINKFILE`/`SHRINKDATABASE`, `CREATE`/`ALTER`/`DROP EVENT SESSION`, and a

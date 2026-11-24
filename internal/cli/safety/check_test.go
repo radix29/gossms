@@ -88,6 +88,8 @@ func TestCheckTransaction(t *testing.T) {
 		{"UPDATE t SET a = 1", ""},
 		{"BEGIN TRAN\nUPDATE t SET a = 1\nCOMMIT", "controls transactions"},
 		{"SET IMPLICIT_TRANSACTIONS ON", "controls transactions"},
+		{"SET ANSI_DEFAULTS ON", "controls transactions"},
+		{"SET ANSI_DEFAULTS OFF", ""},
 		{"ALTER DATABASE d SET RECOVERY SIMPLE", "inside a transaction"},
 		{"BACKUP LOG d TO DISK = 'x'", "inside a transaction"},
 	} {

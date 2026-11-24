@@ -74,7 +74,7 @@ func Check(sc *Script, p Policy) *Blocked {
 		if sc.Flags.Has(FlagTranControl) {
 			b.Statements = flagged(sc, FlagTranControl)
 			b.Message = "the script controls transactions itself, so the wrapping transaction cannot hold it"
-			b.Hint = "Remove BEGIN TRAN, COMMIT, ROLLBACK, SAVE TRAN and SET IMPLICIT_TRANSACTIONS from the script, or run it without --transaction."
+			b.Hint = "Remove BEGIN TRAN, COMMIT, ROLLBACK, SAVE TRAN, SET IMPLICIT_TRANSACTIONS and SET ANSI_DEFAULTS from the script, or run it without --transaction."
 			return b
 		}
 		if sc.Flags.Has(FlagNotInTransaction) {
