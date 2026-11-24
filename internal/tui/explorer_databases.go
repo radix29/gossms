@@ -15,33 +15,30 @@ import (
 // etc.) so it stays safe to call directly in tests; the Agent node's " (Stopped)"
 // label suffix is filled in by a follow-up async check — see
 // refreshAgentRootLabel in app_explorer_data.go. The Always On folder is listed
-// unconditionally, as in SSMS: whether the instance has Always On enabled is a
+// on supported engines, as in SSMS: whether the instance has Always On enabled is a
 // query, and the answer belongs in the folder's own expansion
 // (loadAlwaysOnChildren), not in whether it appears.
 //
-// Replication follows Server Objects, where SSMS puts it, on every instance but
-// Azure SQL Database (replicationHidden) — read from the connection's cached
-// ServerInfo, so the loader still issues no query.
+// Engine support is read from cached metadata, so this loader issues no query.
 func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	if l.sc != nil && l.sc.IsFabricDW() {
-		return []*explorerNode{
-			l.node("Databases", NodeDatabases, "", "", ""),
-			l.node("Security", NodeSecurity, "", "", ""),
-		}, nil
+	features := explorerSupport(l.sc)
+	out := l.folders("",
+		explorerFolder{"Databases", NodeDatabases, 0},
+		explorerFolder{"Security", NodeSecurity, 0},
+	)
+	if features&oeServerObjectFeatures != 0 {
+		out = append(out, l.node("Server Objects", NodeServerObjects, "", "", ""))
 	}
-	out := []*explorerNode{
-		l.node("Databases", NodeDatabases, "", "", ""),
-		l.node("Security", NodeSecurity, "", "", ""),
-		l.node("Server Objects", NodeServerObjects, "", "", ""),
-	}
-	if l.sc == nil || l.sc.Server == nil || !replicationHidden(l.sc.Server.Info()) {
+	if features.has(oeReplication) {
 		out = append(out, l.node("Replication", NodeReplication, "", "", ""))
 	}
-	return append(out,
-		l.node("Management", NodeManagement, "", "", ""),
-		l.node(alwaysOnRootLabel, NodeAlwaysOn, "", "", ""),
-		l.node(agentRootLabel, NodeAgentJobs, "", "", ""),
-	), nil
+	if features&oeManagementFeatures != 0 {
+		out = append(out, l.node("Management", NodeManagement, "", "", ""))
+	}
+	return append(out, l.folders("",
+		explorerFolder{alwaysOnRootLabel, NodeAlwaysOn, oeAlwaysOn},
+		explorerFolder{agentRootLabel, NodeAgentJobs, oeAgent},
+	)...), nil
 }
 
 // agentRootLabel is the "SQL Server Agent" node's base label — the literal
@@ -199,35 +196,24 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		return []*explorerNode{l.node(accessDeniedLabel+"CONNECT permission on this database is required.",
 			NodeError, "", "", dbName)}, nil
 	}
-	if l.sc != nil && l.sc.IsFabricDW() {
-		folders := []*explorerNode{
-			l.node("Tables", NodeTables, "", "", dbName),
-			l.node("Views", NodeViews, "", "", dbName),
-			l.node("External Data Sources", NodeExternalDataSources, "", "", dbName),
-			l.node("Programmability", NodeProgrammability, "", "", dbName),
-			l.node("Security", NodeDatabaseSecurity, "", "", dbName),
-		}
-		if databaseScopedXEvents(l.sc) {
-			folders = append(folders, l.node("Extended Events", NodeExtendedEvents, "", "", dbName))
-		}
-		return folders, nil
+	features := explorerSupport(l.sc)
+	folders := l.folders(dbName,
+		explorerFolder{"Tables", NodeTables, 0},
+		explorerFolder{"Views", NodeViews, 0},
+	)
+	if features&oeExternalResources != 0 {
+		folders = append(folders, l.node("External Resources", NodeExternalResources, "", "", dbName))
+	} else {
+		folders = append(folders, l.node("External Data Sources", NodeExternalDataSources, "", "", dbName))
 	}
-	folders := []*explorerNode{
-		l.node("Tables", NodeTables, "", "", dbName),
-		l.node("Views", NodeViews, "", "", dbName),
-		l.node("External Resources", NodeExternalResources, "", "", dbName),
-		l.node("Programmability", NodeProgrammability, "", "", dbName),
-		l.node("Query Store", NodeQueryStore, "", "", dbName),
-		l.node("Service Broker", NodeServiceBroker, "", "", dbName),
-		l.node("Security", NodeDatabaseSecurity, "", "", dbName),
-		l.node("Storage", NodeStorage, "", "", dbName),
-	}
-	// Azure SQL Database's event sessions are the database's own, and SSMS
-	// files them here — see explorer_xevents.go.
-	if databaseScopedXEvents(l.sc) {
-		folders = append(folders, l.node("Extended Events", NodeExtendedEvents, "", "", dbName))
-	}
-	return folders, nil
+	return append(folders, l.folders(dbName,
+		explorerFolder{"Programmability", NodeProgrammability, 0},
+		explorerFolder{"Query Store", NodeQueryStore, oeQueryStore},
+		explorerFolder{"Service Broker", NodeServiceBroker, oeServiceBroker},
+		explorerFolder{"Security", NodeDatabaseSecurity, 0},
+		explorerFolder{"Storage", NodeStorage, oeStorage},
+		explorerFolder{"Extended Events", NodeExtendedEvents, oeDatabaseXEvents},
+	)...), nil
 }
 
 // loadProgrammabilityChildren returns the module families SSMS files under
@@ -241,25 +227,19 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 // own Triggers folder, as in SSMS.
 func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbName := node.data.DBName
-	if l.sc != nil && l.sc.IsFabricDW() {
-		return []*explorerNode{
-			l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
-			l.node("Functions", NodeFunctions, "", "", dbName),
-			l.node("External Functions", NodeExternalFunctions, "", "", dbName),
-		}, nil
-	}
-	return []*explorerNode{
-		l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
-		l.node("Functions", NodeFunctions, "", "", dbName),
-		l.node("Database Triggers", NodeDatabaseTriggers, "", "", dbName),
-		l.node("Assemblies", NodeAssemblies, "", "", dbName),
-		l.node("Types", NodeTypes, "", "", dbName),
-		l.node("Rules", NodeRules, "", "", dbName),
-		l.node("Defaults", NodeDefaults, "", "", dbName),
-		l.node("Plan Guides", NodePlanGuides, "", "", dbName),
-		l.node("Sequences", NodeSequences, "", "", dbName),
-		l.node("Synonyms", NodeSynonyms, "", "", dbName),
-	}, nil
+	return l.folders(dbName,
+		explorerFolder{"Stored Procedures", NodeStoredProcedures, 0},
+		explorerFolder{"Functions", NodeFunctions, 0},
+		explorerFolder{"External Functions", NodeExternalFunctions, oeExternalFunctions},
+		explorerFolder{"Database Triggers", NodeDatabaseTriggers, oeDatabaseTriggers},
+		explorerFolder{"Assemblies", NodeAssemblies, oeCLR},
+		explorerFolder{"Types", NodeTypes, oeTypes},
+		explorerFolder{"Rules", NodeRules, oeRules},
+		explorerFolder{"Defaults", NodeDefaults, oeDefaults},
+		explorerFolder{"Plan Guides", NodePlanGuides, oePlanGuides},
+		explorerFolder{"Sequences", NodeSequences, oeSequences},
+		explorerFolder{"Synonyms", NodeSynonyms, oeSynonyms},
+	), nil
 }
 
 // loadDatabaseTriggersChildren lists a database's DDL triggers, each labelled
@@ -292,23 +272,32 @@ func loadQueryStoreChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 // (explorer_loaders.go).
 
 func serverMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
-	return []controls.MenuItem{
+	items := []controls.MenuItem{
 		newQuery,
 		{Divider: true},
 		{Label: "Disconnect", Action: func() { a.disconnectActive() }},
 		{Divider: true},
 		gate.Item(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
 			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase),
-		{Divider: true},
-		gate.Item(controls.MenuItem{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
-			sc, "", gate.ViewServerState),
-		{Label: "View SQL Server Log", Action: func() {
-			a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
-		}},
-		{Divider: true},
-		refresh,
-		{Label: "Properties...", Action: func() { a.showServerPropertiesFor(sc) }},
 	}
+	features := explorerSupport(sc)
+	if features&(oeActivityMonitor|oeServerLogs) != 0 {
+		items = append(items, controls.MenuItem{Divider: true})
+	}
+	if features.has(oeActivityMonitor) {
+		items = append(items, gate.Item(controls.MenuItem{Label: "Activity Monitor",
+			Action: func() { a.showActivityMonitorFor(sc) }}, sc, "", gate.ViewServerState))
+	}
+	if features.has(oeServerLogs) {
+		items = append(items, controls.MenuItem{Label: "View SQL Server Log", Action: func() {
+			a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
+		}})
+	}
+	return append(items,
+		controls.MenuItem{Divider: true},
+		refresh,
+		controls.MenuItem{Label: "Properties...", Action: func() { a.showServerPropertiesFor(sc) }},
+	)
 }
 
 func databasesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
@@ -320,13 +309,15 @@ func databasesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 		gateAzure(gate.Item(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
 			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase), sc),
 	}
-	// Fabric DW has no BACKUP/RESTORE: the platform owns recovery.
-	if sc == nil || !sc.IsFabricDW() {
-		items = append(items,
-			controls.MenuItem{Divider: true},
-			controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
-			controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
-		)
+	features := explorerSupport(sc)
+	if features&(oeBackup|oeRestore) != 0 {
+		items = append(items, controls.MenuItem{Divider: true})
+	}
+	if features.has(oeBackup) {
+		items = append(items, controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }})
+	}
+	if features.has(oeRestore) {
+		items = append(items, controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }})
 	}
 	return append(items, controls.MenuItem{Divider: true}, refresh)
 }
@@ -337,15 +328,20 @@ func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 		newQuery,
 		{Divider: true},
 	}
-	// Fabric DW has no BACKUP/RESTORE and no msdb backup history.
-	if sc == nil || !sc.IsFabricDW() {
-		items = append(items,
-			gate.Item(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
-				sc, node.data.DBName, gate.BackupDatabase, gate.AlterAnyDatabase),
-			gate.Item(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
-				sc, node.data.DBName, gate.ControlDB, gate.AlterAnyDatabase, gate.CreateAnyDatabase),
-			controls.MenuItem{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
-		)
+	features := explorerSupport(sc)
+	if features.has(oeBackup) {
+		items = append(items, gate.Item(controls.MenuItem{Label: "Back Up Database...",
+			Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
+			sc, node.data.DBName, gate.BackupDatabase, gate.AlterAnyDatabase))
+	}
+	if features.has(oeRestore) {
+		items = append(items, gate.Item(controls.MenuItem{Label: "Restore Database...",
+			Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
+			sc, node.data.DBName, gate.ControlDB, gate.AlterAnyDatabase, gate.CreateAnyDatabase))
+	}
+	if features.has(oeBackupHistory) {
+		items = append(items, controls.MenuItem{Label: "View Backup History",
+			Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }})
 	}
 	// Reads the catalog and opens a script; nothing runs, so it is not gated.
 	items = append(items, controls.MenuItem{Label: "Generate Scripts...", Action: func() { a.showGenerateScriptsFor(sc, node.data.DBName) }})

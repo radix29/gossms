@@ -13,18 +13,17 @@ import (
 // (stored procedures, functions, sequences, synonyms) stayed there rather
 // than being moved, since moving working code buys nothing.
 
-// loadTypesChildren returns the five type families SSMS files under
+// loadTypesChildren returns the supported type families SSMS files under
 // Programmability > Types, in SSMS's order. A static loader: each folder
 // reads for itself, so expanding Types costs no query.
 func loadTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbName := node.data.DBName
-	return []*explorerNode{
-		l.node("System Data Types", NodeSystemDataTypes, "", "", dbName),
-		l.node("User-Defined Data Types", NodeUserDefinedDataTypes, "", "", dbName),
-		l.node("User-Defined Table Types", NodeUserDefinedTableTypes, "", "", dbName),
-		l.node("User-Defined Types", NodeUserDefinedTypes, "", "", dbName),
-		l.node("XML Schema Collections", NodeXMLSchemaCollections, "", "", dbName),
-	}, nil
+	return l.folders(node.data.DBName,
+		explorerFolder{"System Data Types", NodeSystemDataTypes, 0},
+		explorerFolder{"User-Defined Data Types", NodeUserDefinedDataTypes, 0},
+		explorerFolder{"User-Defined Table Types", NodeUserDefinedTableTypes, 0},
+		explorerFolder{"User-Defined Types", NodeUserDefinedTypes, oeCLR},
+		explorerFolder{"XML Schema Collections", NodeXMLSchemaCollections, 0},
+	), nil
 }
 
 // loadSystemDataTypesChildren lists the built-in types the instance ships.

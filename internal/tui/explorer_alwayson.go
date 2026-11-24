@@ -382,6 +382,9 @@ func slicesContains(ss []string, s string) bool {
 // to render with or without Always On, so a disabled instance, a group
 // mid-failover and a failed query all leave the labels bare.
 func agLocalDatabaseStates(l loaderCtx) *nameMap[agDatabaseSummary] {
+	if !explorerSupport(l.sc).has(oeAlwaysOn) {
+		return nil
+	}
 	if info := l.sc.Server.Info(); info == nil || !info.IsHADREnabled {
 		return nil
 	}

@@ -14,25 +14,18 @@ import (
 // loadDatabaseSecurityChildren returns a database's security folders, in
 // SSMS's order.
 func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	if l.sc != nil && l.sc.IsFabricDW() {
-		return []*explorerNode{
-			l.node("Users", NodeUsers, "", "", node.data.DBName),
-			l.node("Roles", NodeRoles, "", "", node.data.DBName),
-			l.node("Schemas", NodeSchemas, "", "", node.data.DBName),
-		}, nil
-	}
-	return []*explorerNode{
-		l.node("Users", NodeUsers, "", "", node.data.DBName),
-		l.node("Roles", NodeRoles, "", "", node.data.DBName),
-		l.node("Schemas", NodeSchemas, "", "", node.data.DBName),
-		l.node("Asymmetric Keys", NodeAsymmetricKeys, "", "", node.data.DBName),
-		l.node("Certificates", NodeCertificates, "", "", node.data.DBName),
-		l.node("Symmetric Keys", NodeSymmetricKeys, "", "", node.data.DBName),
-		l.node("Database Audit Specifications", NodeDatabaseAuditSpecifications, "", "", node.data.DBName),
-		l.node("Database Scoped Credentials", NodeDatabaseScopedCredentials, "", "", node.data.DBName),
-		l.node("Security Policies", NodeSecurityPolicies, "", "", node.data.DBName),
-		l.node("Always Encrypted Keys", NodeAlwaysEncryptedKeys, "", "", node.data.DBName),
-	}, nil
+	return l.folders(node.data.DBName,
+		explorerFolder{"Users", NodeUsers, 0},
+		explorerFolder{"Roles", NodeRoles, 0},
+		explorerFolder{"Schemas", NodeSchemas, 0},
+		explorerFolder{"Asymmetric Keys", NodeAsymmetricKeys, oeAsymmetricKeys},
+		explorerFolder{"Certificates", NodeCertificates, oeCertificates},
+		explorerFolder{"Symmetric Keys", NodeSymmetricKeys, oeSymmetricKeys},
+		explorerFolder{"Database Audit Specifications", NodeDatabaseAuditSpecifications, oeDatabaseAudits},
+		explorerFolder{"Database Scoped Credentials", NodeDatabaseScopedCredentials, oeDatabaseCredentials},
+		explorerFolder{"Security Policies", NodeSecurityPolicies, oeSecurityPolicies},
+		explorerFolder{"Always Encrypted Keys", NodeAlwaysEncryptedKeys, oeAlwaysEncrypted},
+	), nil
 }
 
 // loadDatabaseAuditSpecificationsChildren lists a database's audit
@@ -276,7 +269,7 @@ func dbCreateFolderMenu(sc *db.ServerConn, node *explorerNode, newQuery, refresh
 // needs ALTER ANY USER, which ALTER and CONTROL on the database both imply.
 func usersMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	// Fabric DW users come from Entra workspace membership, not CREATE USER.
-	if sc != nil && sc.IsFabricDW() {
+	if !explorerSupport(sc).has(oeCreateUser) {
 		return []controls.MenuItem{newQuery, {Divider: true}, refresh}
 	}
 	return dbCreateFolderMenu(sc, node, newQuery, refresh, "New User...",

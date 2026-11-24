@@ -29,7 +29,7 @@ import (
 // dialogs' size reads go through a USE) and fails on a read-only one, so the
 // script could only fail. Fabric DW does not support shrinking.
 func shrinkMenuItem(a *App, sc *db.ServerConn, node *explorerNode) (controls.MenuItem, bool) {
-	if node.data.DBState != gosmo.DatabaseOnline || node.data.DBReadOnly || (sc != nil && sc.IsFabricDW()) {
+	if node.data.DBState != gosmo.DatabaseOnline || node.data.DBReadOnly || !explorerSupport(sc).has(oeShrink) {
 		return controls.MenuItem{}, false
 	}
 	dbName := node.data.DBName

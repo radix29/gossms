@@ -11,20 +11,14 @@ import (
 // Logins, Server Roles, Credentials, Cryptographic Providers, Audits and
 // Server Audit Specifications, in SSMS's order.
 func loadSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	if l.sc != nil && l.sc.IsFabricDW() {
-		return []*explorerNode{
-			l.node("Logins", NodeLogins, "", "", ""),
-			l.node("Server Roles", NodeServerRoles, "", "", ""),
-		}, nil
-	}
-	return []*explorerNode{
-		l.node("Logins", NodeLogins, "", "", ""),
-		l.node("Server Roles", NodeServerRoles, "", "", ""),
-		l.node("Credentials", NodeCredentials, "", "", ""),
-		l.node("Cryptographic Providers", NodeCryptographicProviders, "", "", ""),
-		l.node("Audits", NodeAudits, "", "", ""),
-		l.node("Server Audit Specifications", NodeServerAuditSpecifications, "", "", ""),
-	}, nil
+	return l.folders("",
+		explorerFolder{"Logins", NodeLogins, 0},
+		explorerFolder{"Server Roles", NodeServerRoles, 0},
+		explorerFolder{"Credentials", NodeCredentials, oeServerCredentials},
+		explorerFolder{"Cryptographic Providers", NodeCryptographicProviders, oeCryptographicProviders},
+		explorerFolder{"Audits", NodeAudits, oeServerAudits},
+		explorerFolder{"Server Audit Specifications", NodeServerAuditSpecifications, oeServerAudits},
+	), nil
 }
 
 func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
@@ -114,6 +108,9 @@ func loginMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 }
 
 func serverRolesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	if !explorerSupport(sc).has(oeCreateServerRole) {
+		return []controls.MenuItem{newQuery, {Divider: true}, refresh}
+	}
 	return folderMenu(newQuery, refresh,
 		gate.Item(controls.MenuItem{Label: "New Server Role...", Action: func() { a.showNewServerRoleDialog(sc) }},
 			sc, "", gate.CreateServerRole, gate.AlterAnyServerRole),

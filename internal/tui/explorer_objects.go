@@ -18,7 +18,7 @@ import (
 // folder of their own; otherwise a FileTable would be listed twice, here and under
 // FileTables.
 //
-// Which folders appear follows SSMS: System Tables and FileTables always, External
+// Which folders appear follows SSMS: System Tables and FileTables where supported, External
 // Tables only where the database has one (PolyBase-specific, empty elsewhere),
 // Graph Tables only on an instance whose sys.tables has is_node/is_edge at all
 // (2017+). An absent folder and an empty one are different answers; only the
@@ -44,12 +44,13 @@ func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 // folder's own loader lists it once expanded.
 func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]*explorerNode, error) {
 	dbName := node.data.DBName
-	if l.sc != nil && l.sc.IsFabricDW() {
-		return nil, nil
-	}
-	folders := []*explorerNode{
-		l.node("System Tables", NodeSystemTables, "", "", dbName),
-		l.node("FileTables", NodeFileTables, "", "", dbName),
+	features := explorerSupport(l.sc)
+	folders := l.folders(dbName,
+		explorerFolder{"System Tables", NodeSystemTables, oeSystemTables},
+		explorerFolder{"FileTables", NodeFileTables, oeFileTables},
+	)
+	if !features.has(oeExternalTables) {
+		return folders, nil
 	}
 	present, err := dbObj.TableKindsPresent(l.ctx)
 	if err != nil {
@@ -62,7 +63,7 @@ func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]
 	// gosmo refuses the graph listing below 2017, so a folder there could only
 	// ever show that refusal. An unread version (or Azure) is treated as
 	// newest.
-	if serverAtLeast(l.sc, gosmo.SQLServer2017) {
+	if features.has(oeGraphTables) {
 		folders = append(folders, l.node("Graph Tables", NodeGraphTables, "", "", dbName))
 	}
 	return folders, nil
@@ -124,22 +125,18 @@ func tablesOfKindLoader(kind gosmo.TableKind, system bool) childLoader {
 // folder node carries the owning table's Schema/Name so its own loader
 // knows which table to query.
 func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
-	if l.sc != nil && l.sc.IsFabricDW() {
-		return []*explorerNode{
-			l.node("Columns", NodeColumns, schema, name, dbName),
-			l.node("Keys", NodeKeys, schema, name, dbName),
-			l.node("Statistics", NodeStatistics, schema, name, dbName),
-		}, nil
+	folders := l.folders(node.data.DBName,
+		explorerFolder{"Columns", NodeColumns, 0},
+		explorerFolder{"Keys", NodeKeys, 0},
+		explorerFolder{"Constraints", NodeChecks, oeCheckConstraints},
+		explorerFolder{"Triggers", NodeTriggers, oeTableTriggers},
+		explorerFolder{"Indexes", NodeIndexes, oeTableIndexes},
+		explorerFolder{"Statistics", NodeStatistics, 0},
+	)
+	for _, folder := range folders {
+		folder.data.Schema, folder.data.Name = node.data.Schema, node.data.Name
 	}
-	return []*explorerNode{
-		l.node("Columns", NodeColumns, schema, name, dbName),
-		l.node("Keys", NodeKeys, schema, name, dbName),
-		l.node("Constraints", NodeChecks, schema, name, dbName),
-		l.node("Triggers", NodeTriggers, schema, name, dbName),
-		l.node("Indexes", NodeIndexes, schema, name, dbName),
-		l.node("Statistics", NodeStatistics, schema, name, dbName),
-	}, nil
+	return folders, nil
 }
 
 // loadViewChildren returns one view's object-family folders, in SSMS's order:
@@ -148,21 +145,17 @@ func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 // statistics. Those two are the table's folder types, marked OnView: every
 // index and statistic action is the same DDL on a view.
 func loadViewChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
-	if l.sc != nil && l.sc.IsFabricDW() {
-		return []*explorerNode{
-			l.node("Columns", NodeViewColumns, schema, name, dbName),
-		}, nil
+	folders := l.folders(node.data.DBName,
+		explorerFolder{"Columns", NodeViewColumns, 0},
+		explorerFolder{"Triggers", NodeTriggers, oeViewTriggers},
+		explorerFolder{"Indexes", NodeIndexes, oeIndexedViews},
+		explorerFolder{"Statistics", NodeStatistics, oeIndexedViews},
+	)
+	for _, folder := range folders {
+		folder.data.Schema, folder.data.Name = node.data.Schema, node.data.Name
+		folder.data.OnView = folder.data.Type == NodeIndexes || folder.data.Type == NodeStatistics
 	}
-	indexes := l.node("Indexes", NodeIndexes, schema, name, dbName)
-	stats := l.node("Statistics", NodeStatistics, schema, name, dbName)
-	indexes.data.OnView, stats.data.OnView = true, true
-	return []*explorerNode{
-		l.node("Columns", NodeViewColumns, schema, name, dbName),
-		l.node("Triggers", NodeTriggers, schema, name, dbName),
-		indexes,
-		stats,
-	}, nil
+	return folders, nil
 }
 
 // tableFor resolves node's owning table — node.data.Schema/Name are the
@@ -550,15 +543,15 @@ func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 		}},
 		{Divider: true},
 	}
-	// Fabric DW tables have no user-managed indexes and no full-text indexing.
-	if sc == nil || !sc.IsFabricDW() {
+	features := explorerSupport(sc)
+	if features.has(oeTableIndexes) {
 		items = append(items, rebuildAllIndexesItem(a, sc, node.data))
 	}
 	items = append(items,
 		controls.MenuItem{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
 		controls.MenuItem{Divider: true},
 	)
-	if sc == nil || !sc.IsFabricDW() {
+	if features.has(oeFullText) {
 		items = append(items, tableFullTextMenu(a, sc, node), controls.MenuItem{Divider: true})
 	}
 	return append(items,

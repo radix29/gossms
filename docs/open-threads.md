@@ -121,6 +121,15 @@ support); this section covers only the environment.
   first. A hang no longer takes Paste with it: tuikit's `Dispatcher.Paste`
   waits at most `toolTimeout + 1s` for earlier copies.
 
+## tuikit tests on Windows: what is left
+
+- **`TestLocalFileSystemExistsReportsPermissionError` assumes Unix directory
+  permissions.** On Windows, `os.Chmod(dir, 0)` does not deny directory
+  traversal, so its missing-child lookup returns `(false, nil)` instead of
+  the expected permission error. The fixture predates the latest tuikit
+  update. Make it portable or skip this fixture on Windows in tuikit;
+  no goSSMS workaround is needed.
+
 ## tuikit press latches: what is left
 
 - **`widgets.Button`, `CheckBox` and `RadioBox` claim their press latch only
@@ -240,7 +249,7 @@ work; close an item by deleting it when fixed.
 - **V4 — Resource Governor and Database Mail unverified on Managed
   Instance** (t-qmi-01 refuses logins). Both
   shipped shown and ungated on EngineEdition 8, pinned by fake-driver tests
-  only (`resourceGovernorHidden`, `databaseMailHidden` in `edition_gate.go`).
+  only (`explorerSupport` in `explorer_features.go`).
   To run when MI is back: RG catalog/DMV reads and `CREATE RESOURCE POOL` /
   `ALTER RESOURCE GOVERNOR` rights; Database Mail `sysmail_*` reads, writes and
   a test send; the gosmo version sweep of every new read; the tmux live pass
