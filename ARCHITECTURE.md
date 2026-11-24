@@ -98,9 +98,9 @@ a sentence and link.
    file): `ParseAll` builds one navigable `Plan`, rendered by
    `internal/tui/planview` as Plan/Tree/XML tabs.
 
-`QueryPanel.launch` (`query_panel_exec.go`) is the Session's only caller and
-the one run-start path (Execute, Results To File, estimated plan): executor on
-a background goroutine, `Result` back via `postAndWake`. IntelliSense and
+Query execution and database-context changes share `QueryPanel.launchSession`
+(`query_panel_exec.go`): executor on a background goroutine, `Result` back via
+`postAndWake`. IntelliSense and
 catalog reads use the `ServerConn` pool, never the session, so they never
 queue behind a query. A lost session closes the panel's connection (Query >
 Reconnect opens a new one); closing, reconnecting or quitting with
@@ -360,6 +360,7 @@ gossms/
 │       ├── query_panel_draw.go   # QueryPanel rendering: editor/results split, tab strip, results status line
 │       ├── query_panel_input.go  # QueryPanel HandleKey/HandleMouse, incl. the results-side drag zones
 │       ├── query_panel_exec.go   # Execute/Execute Selection/Cancel, plan-capture wiring
+│       ├── query_panel_database.go # Use Database for the active query session, matching its Object Explorer connection identity
 │       ├── query_panel_tabs.go   # result-set tabs + Messages tab
 │       ├── query_panel_plan.go   # Estimated/Actual Execution Plan tabs, backed by planview.PlanView
 │       ├── query_panel_live.go   # Live Query Statistics: the toggle's run, DMV poller, live tab → actual plan

@@ -333,6 +333,7 @@ func databasesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 
 func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	items := []controls.MenuItem{
+		a.useDatabaseMenuItem(sc, node),
 		newQuery,
 		{Divider: true},
 	}

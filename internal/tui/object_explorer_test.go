@@ -4,9 +4,87 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/tuikittest"
 )
+
+func TestExplorerActiveDatabaseMarker(t *testing.T) {
+	a := newTestApp()
+	qp, _ := hostedSessionPanel(t, a, 0)
+	sc := &db.ServerConn{Opts: qp.conn.Opts}
+	sc.Opts.Database = "initial"
+	addTestConnOf(a, sc)
+	root := a.explorer.Selected()
+	root.Expanded = true
+	master := &explorerNode{label: "master", data: nodeData{Type: NodeDatabase, DBName: "master", IsSystem: true, conn: sc}}
+	sales := &explorerNode{label: "Sales", data: nodeData{Type: NodeDatabase, DBName: "Sales", conn: sc}}
+	a.explorer.SetChildren(root, []*explorerNode{master, sales})
+	a.explorer.SetBounds(0, 0, 55, 12)
+	s := tuikittest.NewScreen(55, 12)
+
+	for _, style := range config.AllIconStyles() {
+		a.cfg.IconStyle = style
+		a.explorer.rebuild()
+		a.explorer.Draw(s)
+		if s.RowOf("✓ master") < 0 || s.RowOf("✓ Sales") >= 0 {
+			t.Fatalf("%s: wrong active marker:\n%s", config.IconStyleName(style), s.Snapshot())
+		}
+		if master.label != "master" || a.explorer.Selected() != root {
+			t.Fatal("marking changed the node's name or selection")
+		}
+		x, y, _ := s.Find("✓ master")
+		if got, want := s.StyleAt(x, y), theme.StylePanel(); got.GetForeground() != want.GetForeground() || got.GetBackground() != want.GetBackground() {
+			t.Fatal("the unselected checkmark did not follow the panel colors")
+		}
+		onSelect := a.explorer.tree.OnSelect
+		a.explorer.tree.OnSelect = nil
+		a.explorer.tree.Select(master)
+		a.explorer.Draw(s)
+		x, y, found := s.Find("✓ master")
+		if !found {
+			t.Fatal("selecting the current database hid its checkmark")
+		}
+		if got, want := s.StyleAt(x, y), theme.StyleSelected(); got.GetForeground() != want.GetForeground() || got.GetBackground() != want.GetBackground() {
+			t.Fatal("the selected checkmark did not follow the selection colors")
+		}
+		a.explorer.tree.Select(root)
+		a.explorer.tree.OnSelect = onSelect
+	}
+
+	qp.setResult(&query.Result{Database: "Sales"}, false)
+	a.explorer.Draw(s)
+	if s.RowOf("✓ Sales") < 0 || s.RowOf("✓ master") >= 0 {
+		t.Fatalf("manual USE did not move the marker:\n%s", s.Snapshot())
+	}
+	a.panels.AddPanel(NewQueryPanel(a, "Disconnected"))
+	a.panels.SetActiveIndex(1)
+	a.explorer.Draw(s)
+	if s.RowOf("✓ Sales") >= 0 || s.RowOf("✓ master") >= 0 {
+		t.Fatal("a disconnected active tab left a database marked")
+	}
+	a.panels.SetActiveIndex(0)
+	a.explorer.Draw(s)
+	if s.RowOf("✓ Sales") < 0 {
+		t.Fatal("returning to the connected query tab did not restore its marker")
+	}
+	hostedSessionPanel(t, a, 0)
+	a.panels.SetActiveIndex(2)
+	a.explorer.Draw(s)
+	if s.RowOf("✓ master") < 0 || s.RowOf("✓ Sales") >= 0 {
+		t.Fatal("a second connected tab did not show its own database")
+	}
+	a.panels.SetActiveIndex(0)
+	sc.Opts.User = "another-login"
+	a.explorer.rebuild()
+	a.explorer.Draw(s)
+	if s.RowOf("✓ Sales") >= 0 || s.RowOf("✓ master") >= 0 {
+		t.Fatal("a different connection identity was marked")
+	}
+}
 
 // selectionTree is a connected server with its Databases folder and a
 // Security > Logins folder holding three logins, everything expanded — the
