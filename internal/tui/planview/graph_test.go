@@ -117,8 +117,9 @@ func TestGraphScrollbarDragScrolls(t *testing.T) {
 	}
 	selBefore := v.selectedID
 
-	// Horizontal bar: bottom row of the canvas.
-	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.X+r.W-1, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
+	// Horizontal bar: bottom row of the canvas, its last cell one short of the
+	// corner (with both bars drawn the corner is the vertical bar's).
+	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.X+r.W-2, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("handling a click on the horizontal scrollbar row should return true")
 	}
 	if !v.graphSt.vp.Dragging() {
@@ -132,11 +133,9 @@ func TestGraphScrollbarDragScrolls(t *testing.T) {
 		t.Error("graphSt.vp.Dragging() should reset on release")
 	}
 
-	// Vertical bar: right column of the canvas, one row shy of the very
-	// bottom — that exact corner cell is where both bars meet, and favors
-	// the horizontal one (core.Viewport takes the horizontal one there), same as
-	// many real GUIs' scrollbar corner box.
-	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.Right()-1, r.Bottom()-2, tcell.Button1, tcell.ModNone)) {
+	// Vertical bar: right column of the canvas, down to the corner cell
+	// where both bars meet, which core.Viewport gives the vertical one.
+	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.Right()-1, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("handling a click on the vertical scrollbar column should return true")
 	}
 	if !v.graphSt.vp.Dragging() {
