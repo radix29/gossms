@@ -336,7 +336,11 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 	for i := range inv.catalog.Objects {
 		obj := &inv.catalog.Objects[i]
 		if ok, partial := nameMatch(obj.Name, pl); ok {
-			items = append(items, p.objectItem(obj, partial))
+			// The popup shows "dbo.Doctors"; commit inserts what it shows
+			// (issue #65), as the TVFs below and DDL targets already do.
+			item := p.objectItem(obj, partial)
+			item.Text = gosmo.QuoteNameIfNeeded(obj.Schema) + "." + item.Text
+			items = append(items, item)
 		}
 	}
 	for i := range inv.catalog.Functions {
