@@ -477,3 +477,36 @@ func TestQueryRunParams(t *testing.T) {
 		}
 	}
 }
+
+// --timeout is bounded to int32 seconds: past that, time.Duration's multiply
+// wrapped into a negative or sub-second timeout. Refused before dialling, for
+// query run and for a data command sharing readTimeout.
+func TestTimeoutOutOfRangeRefusedBeforeConnecting(t *testing.T) {
+	for _, secs := range []string{"9300000000", "18446744074", "2147483648", "-1"} {
+		for _, argv := range [][]string{
+			{"query", "run", "-p", "dev", "-o", "json", "--sql", "SELECT 1", "--timeout", secs},
+			{"data", "count", "Sales.Customer", "-p", "dev", "-o", "json", "--timeout", secs},
+		} {
+			sess := &fakeSession{t: t}
+			d, dialled, _ := dataDeps(t, newObjectServer(t), sess)
+			r := runQuery(t, d, argv...)
+			if r.exit != 2 || *dialled != 0 {
+				t.Errorf("%v: exit %d, dialled %d\n%s", argv, r.exit, *dialled, r.stdout)
+				continue
+			}
+			if e := firstError(t, envelope(t, r.stdout)); e["code"] != "USAGE_ERROR" {
+				t.Errorf("%v: %v", argv, e)
+			}
+		}
+	}
+}
+
+// The ceiling itself is accepted.
+func TestTimeoutAtCeilingRuns(t *testing.T) {
+	sess := &fakeSession{t: t, run: rowsThenUpdate(0)}
+	d, dialled := queryDeps(t, sess)
+	r := runQuery(t, d, "query", "run", "-p", "dev", "--sql", "SELECT 1", "--timeout", "2147483647")
+	if r.exit != 0 || *dialled != 1 {
+		t.Errorf("exit %d, dialled %d\n%s", r.exit, *dialled, r.stdout)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -160,9 +161,15 @@ func paramOption() spec.Option {
 		Help: "name=value:type, e.g. id=42:int: run the script through sp_executesql with @name declared as type; one batch only"}
 }
 
+// maxTimeout bounds --timeout: int32 seconds (about 68 years), well inside
+// time.Duration. Unbounded, a large value wrapped on the multiply into a
+// negative or sub-second timeout, cutting a run (db set's unwrapped ALTERs
+// included) short at once.
+const maxTimeout = math.MaxInt32
+
 func timeoutOption() spec.Option {
 	return spec.Option{Name: optTimeout, Type: spec.TypeInt, Default: strconv.Itoa(defaultTimeout),
-		Help: "Seconds the script may run (the connect has --connect-timeout); 0 is no limit"}
+		Help: fmt.Sprintf("Seconds the script may run, 0 to %d (the connect has --connect-timeout); 0 is no limit", maxTimeout)}
 }
 
 func classNames() []string {
@@ -329,8 +336,8 @@ func readRunSettings(inv *spec.Invocation) (runSettings, error) {
 
 func readTimeout(inv *spec.Invocation) (time.Duration, error) {
 	secs := inv.Values[optTimeout].(int)
-	if secs < 0 {
-		return 0, usageError("--timeout: must be 0 or more", "0 means no limit.")
+	if secs < 0 || secs > maxTimeout {
+		return 0, usageError(fmt.Sprintf("--timeout: %d is not a number of seconds from 0 to %d", secs, maxTimeout), "0 means no limit.")
 	}
 	return time.Duration(secs) * time.Second, nil
 }

@@ -824,7 +824,7 @@ against `--allow` and the profile's ceiling (§ Safety) — a refusal is exit 7
 | `--transaction <auto\|commit\|rollback>` | § Transactions (default `auto`: each statement commits itself) |
 | `--max-rows-affected <n>` | § Transactions |
 | `--continue-on-error` | Send every batch even after one fails. The default stops after the first failing batch (within a batch SQL Server decides), with a warning naming how many batches were sent |
-| `--timeout <sec>` | How long the script may run (default 60, `0` no limit); `--connect-timeout` bounds the connect. Past it the run is cancelled: `TIMEOUT`, exit 6 |
+| `--timeout <sec>` | How long the script may run: 0 to 2147483647, default 60, `0` no limit (above the range: `USAGE_ERROR`, exit 2); `--connect-timeout` bounds the connect. Past it the run is cancelled: `TIMEOUT`, exit 6 |
 | `--statistics <io,time>` | `SET STATISTICS IO`/`TIME ON` for the run; their output is in `messages` |
 | `--param <name>=<value>:<type>` | § Parameters; repeat for each parameter |
 
