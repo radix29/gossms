@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -22,6 +24,14 @@ type param struct {
 	name  string // with its leading @
 	typ   string // lower case, e.g. "decimal(9,2)"
 	value string // T-SQL literal: N'…', or 0x… for a binary type
+
+	// text, base and length are a char/varchar value as given, its type
+	// name and its (n) (-1 for max), kept for checkCodePage: the server
+	// converts the N'…' literal in the session database's code page, known
+	// only once connected. Unset for every other type.
+	text   string
+	base   string
+	length int
 }
 
 // paramName is a regular T-SQL variable name without its @. Anything else —
@@ -117,8 +127,9 @@ func parseParam(raw string) (param, error) {
 		}
 		// sp_executesql converts to the declared type without Msg 8152, so a
 		// longer string would be cut and match other rows. char/varchar count
-		// runes (code-page bytes depend on the collation: a conservative
-		// floor); nchar/nvarchar count UTF-16 code units.
+		// runes, exact for ASCII and a floor otherwise — code-page bytes
+		// depend on the collation, which checkCodePage measures once
+		// connected; nchar/nvarchar count UTF-16 code units.
 		limit, ok := paramLength(m[2])
 		if m[1] == "sysname" {
 			limit, ok = 128, true
@@ -131,6 +142,12 @@ func parseParam(raw string) (param, error) {
 			if n > limit {
 				return param{}, usageError(fmt.Sprintf("--param %s: %d characters do not fit %s", p.name, n, typ),
 					"Shorten the value or declare a longer type.")
+			}
+		}
+		if m[1] == "char" || m[1] == "varchar" {
+			p.text, p.base, p.length = value, m[1], -1
+			if ok {
+				p.length = limit
 			}
 		}
 		if kind == argsPrecision {
@@ -169,6 +186,92 @@ func parseParam(raw string) (param, error) {
 		p.value = gosmo.QuoteLiteral(value)
 	}
 	return p, nil
+}
+
+// needsCodePage reports whether p is a char/varchar value checkCodePage must
+// check on the server. ASCII needs none: it is one byte, and the same byte,
+// in every code page char data can have, so parseParam's character count is
+// exact.
+func (p param) needsCodePage() bool {
+	if p.base == "" {
+		return false
+	}
+	for i := 0; i < len(p.text); i++ {
+		if p.text[i] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return false
+}
+
+// checkCodePage refuses a char/varchar parameter whose value the server's
+// conversion would change: sp_executesql converts the N'…' literal in the
+// session database's default collation, turning a character its code page
+// lacks into '?' and cutting a value over (n) bytes, with no error. srv is
+// on the session's database; nothing has been sent when it refuses. Reads
+// nothing when no value needs it (needsCodePage).
+func checkCodePage(ctx context.Context, srv *gosmo.Server, ps []param) error {
+	if !slices.ContainsFunc(ps, param.needsCodePage) {
+		return nil
+	}
+	name, err := srv.CurrentDatabase(ctx)
+	if err != nil {
+		return readError(err)
+	}
+	dbase, err := srv.DatabaseByName(ctx, name)
+	if err != nil {
+		return readError(err)
+	}
+	cp, err := srv.CollationCodePage(ctx, dbase.Collation)
+	if err != nil {
+		return readError(err)
+	}
+	for _, p := range ps {
+		if p.needsCodePage() {
+			if err := p.fitsCodePage(cp, dbase.Collation); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// fitsCodePage refuses p's value when code page cp, collation's, lacks one
+// of its characters or holds it in more than (n) bytes. The encoding is
+// gosmo's BulkColumn check, the one data import uses.
+func (p param) fitsCodePage(cp int, collation string) error {
+	hint := fmt.Sprintf("Declare n%s(n), or use characters the database's code page (CP%d) has.", p.base, cp)
+	// Length -1: the bytes are counted below, in the message's terms rather
+	// than a bulk column's.
+	conv, err := gosmo.BulkColumn{Type: "varchar", Length: -1, CodePage: cp, DatabaseCodePage: cp}.Converter()
+	if err != nil {
+		// A Unicode-only collation (code page 0) or one gosmo has no encoder
+		// for: the value cannot be checked, so it is not sent.
+		return usageError(fmt.Sprintf("--param %s: %s cannot be checked in the database's collation %s (code page %d)",
+			p.name, p.typ, collation, cp), hint)
+	}
+	v, err := conv(p.text)
+	if err != nil {
+		reason := err.Error()
+		if e, ok := errors.AsType[*gosmo.BulkValueError](err); ok {
+			// gosmo words it for a column; here the code page is the
+			// session database's.
+			reason = strings.Replace(e.Reason, "the column's", "the database's", 1)
+		}
+		return usageError(fmt.Sprintf("--param %s: %s", p.name, reason), hint)
+	}
+	n := 0
+	switch v := v.(type) {
+	case []byte:
+		n = len(v)
+	case string: // a UTF-8 code page: the text is the bytes
+		n = len(v)
+	}
+	if p.length >= 0 && n > p.length {
+		return usageError(fmt.Sprintf("--param %s: %d bytes in code page %d do not fit %s", p.name, n, cp, p.typ),
+			"Shorten the value, declare a longer type, or declare n"+p.base+"(n).")
+	}
+	return nil
 }
 
 // paramDateTypes take an ISO 8601 value only.

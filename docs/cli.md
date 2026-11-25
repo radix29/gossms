@@ -900,8 +900,8 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   an empty or blank value for any type but `char varchar nchar nvarchar
   sysname xml sql_variant` (the server would turn it into `0` or
   `1900-01-01`); a string longer than `(n)` (`sysname` is 128) — UTF-16 units
-  for `nchar`/`nvarchar`, characters for `char`/`varchar`, a floor since
-  code-page bytes depend on the collation; a `binary`/`varbinary` value of
+  for `nchar`/`nvarchar`, characters for `char`/`varchar` (exact for ASCII;
+  bytes are checked once connected, below); a `binary`/`varbinary` value of
   more than `n` bytes; a `decimal`/`numeric` value with more decimals than
   the scale or more digits before the point than precision minus scale (a
   bare `decimal` is `decimal(18,0)`, `(p)` is `(p,0)`; leading and trailing
@@ -910,6 +910,15 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   four decimals, or is out of the type's range — the check `data import`
   uses. `sp_executesql` would silently truncate, round or misread these.
   `float`, `real` and the time types still round to their own precision.
+- **A `char`/`varchar` value with a non-ASCII character is checked once
+  connected**, before anything is sent: the server converts it in the
+  session database's default collation, turning a character its code page
+  lacks into `?` and cutting a value over `(n)` bytes (in a UTF-8 or
+  double-byte code page `é` or `日` is more than one), with no error. Either
+  is `USAGE_ERROR` naming the character, or the byte count and code page —
+  the check `data import` uses. A collation whose code page cannot be checked
+  (a Unicode-only one) refuses any such value. `--dry-run` does not connect,
+  so it passes such a value unchecked; an ASCII value needs no server.
 - The script must be **one batch, sent once** (no `GO`, no `GO n`):
   `sp_executesql` runs a single batch. Inside it, as in any dynamic SQL, `USE`
   and `SET` last only until the script ends, and a `#temp` table it creates is

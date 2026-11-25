@@ -310,3 +310,64 @@ func TestParseParamDecimalFits(t *testing.T) {
 		}
 	}
 }
+
+// An ASCII char/varchar value is exact offline; anything else is checked in
+// the session database's code page once connected (checkCodePage).
+func TestParamNeedsCodePage(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"v=Cafe:varchar(10)":    false,
+		"v=:varchar(10)":        false,
+		"v=Café:varchar(10)":    true,
+		"v=Жук:char(10)":        true,
+		"v=Жук:varchar(max)":    true,
+		"v=Жук:nvarchar(10)":    false,
+		"v=Жук:nchar(10)":       false,
+		"v=Жук:sysname":         false,
+		"v=Жук:sql_variant":     false,
+		"v=0xC3A9:varbinary(4)": false,
+	} {
+		p, err := parseParam(raw)
+		if err != nil {
+			t.Errorf("%q: %v", raw, err)
+			continue
+		}
+		if got := p.needsCodePage(); got != want {
+			t.Errorf("%q: needsCodePage = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func TestParamFitsCodePage(t *testing.T) {
+	for _, tt := range []struct {
+		raw  string
+		cp   int
+		want string // the refusal's message, "" when the value fits
+	}{
+		{"v=Жук:varchar(10)", 1252, `--param @v: 'Ж' (U+0416) is not in the database's code page 1252`},
+		{"v=Жук:varchar(10)", 1251, ""},
+		{"v=Café:varchar(10)", 1252, ""},
+		{"v=Café:varchar(4)", 1252, ""},
+		{"v=éé:varchar(3)", 65001, "--param @v: 4 bytes in code page 65001 do not fit varchar(3)"},
+		{"v=éé:varchar(4)", 65001, ""},
+		{"v=Жук:varchar(max)", 65001, ""},
+		{"v=Жук:varchar(max)", 1252, `--param @v: 'Ж' (U+0416) is not in the database's code page 1252`},
+		{"v=日本:char(3)", 932, "--param @v: 4 bytes in code page 932 do not fit char(3)"},
+		{"v=日本:char(4)", 932, ""},
+		{"v=é:varchar(10)", 0, "--param @v: varchar(10) cannot be checked in the database's collation X (code page 0)"},
+	} {
+		p, err := parseParam(tt.raw)
+		if err != nil {
+			t.Fatalf("%q: %v", tt.raw, err)
+		}
+		err = p.fitsCodePage(tt.cp, "X")
+		switch {
+		case tt.want == "" && err != nil:
+			t.Errorf("%q in %d: %v", tt.raw, tt.cp, err)
+		case tt.want != "":
+			e, ok := err.(*output.Error)
+			if !ok || e.Code != output.CodeUsageError || e.Message != tt.want {
+				t.Errorf("%q in %d: got %v, want USAGE_ERROR %q", tt.raw, tt.cp, err, tt.want)
+			}
+		}
+	}
+}

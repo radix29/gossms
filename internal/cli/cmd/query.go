@@ -400,6 +400,7 @@ type scriptInput struct {
 	script string         // as given: what the classifier reads
 	send   string         // what the server receives: script, or script inside sp_executesql under --param
 	sc     *safety.Script // script, classified
+	params []param        // --param's, checked offline; checkCodePage checks the rest once connected
 }
 
 // readScriptInput reads the one SQL input option and, for a command that has
@@ -414,6 +415,7 @@ func readScriptInput(inv *spec.Invocation) (scriptInput, error) {
 	if params, err := readParams(values); err != nil {
 		return in, err
 	} else if params != nil {
+		in.params = params
 		if in.send, err = parameterize(script, params); err != nil {
 			return in, err
 		}
@@ -510,6 +512,15 @@ func (d Deps) runScript(ctx context.Context, inv *spec.Invocation, in scriptInpu
 	rctx, cancel := withTimeout(ctx, run.timeout)
 	defer cancel()
 	timedOut := func() bool { return ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded) }
+
+	// A char/varchar --param value the database's code page would change
+	// needs the server's collation; nothing has been sent yet.
+	if err := checkCodePage(rctx, c.conn.Server, in.params); err != nil {
+		if timedOut() {
+			return res, nil, timeoutError(run.timeout)
+		}
+		return res, nil, err
+	}
 
 	if run.limited {
 		// The offline check passed; what each write's target does beyond its
