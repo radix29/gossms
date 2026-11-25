@@ -958,11 +958,15 @@ commit on their own). The record's `transaction` says how it ended:
   It can only trust what the server counts, so it refuses (exit 7, before
   connecting) a script with `SET NOCOUNT ON`, dynamic SQL, a procedure call
   not on the read allow-list, an `OUTPUT` clause, or `RECEIVE`, `WRITETEXT`,
-  `UPDATETEXT`, or `TRUNCATE TABLE`, `DROP TABLE` or `ALTER TABLE … SWITCH`
-  of a permanent table (flag `uncounted`: `RECEIVE`'s count follows the rows
-  it returns, so it reads like a `SELECT`'s, and the others report none —
-  a `TRUNCATE` of any size would pass any limit). A `#temp` table is exempt:
-  what it held, the script put there.
+  `UPDATETEXT`, or `TRUNCATE TABLE`, `DROP TABLE`, or `ALTER TABLE …
+  SWITCH`, `… DROP COLUMN` or `… ALTER COLUMN` of a permanent table (flag
+  `uncounted`: `RECEIVE`'s count follows the rows it returns, so it reads
+  like a `SELECT`'s, and the others report none — a `TRUNCATE` of any size
+  would pass any limit, and an `ALTER COLUMN` rewrites every row, rounding
+  `decimal`/`datetime2` or turning characters a code page lacks into `?`).
+  `ALTER COLUMN … ADD/DROP ROWGUIDCOL` and similar options change no data
+  but are refused too; a bare `DROP c` is a constraint and passes. A `#temp`
+  table is exempt: what it held, the script put there.
 - **The server counts a write's own target only.** A trigger's changes are
   hidden by the `SET NOCOUNT ON` most triggers open with, and a foreign key's
   `ON DELETE`/`ON UPDATE` action (`CASCADE`, `SET NULL`, `SET DEFAULT`) is

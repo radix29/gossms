@@ -90,7 +90,7 @@ func Check(sc *Script, p Policy) *Blocked {
 			b.Statements = matching(sc, func(st Statement) bool { return st.Flags&blind != 0 })
 			b.Message = "--max-rows-affected cannot count every row this script changes " +
 				"(SET NOCOUNT ON, dynamic SQL, a procedure call, an OUTPUT clause, RECEIVE, WRITETEXT, UPDATETEXT, " +
-				"TRUNCATE TABLE, DROP TABLE or ALTER TABLE … SWITCH)"
+				"TRUNCATE TABLE, DROP TABLE, or ALTER TABLE … SWITCH, DROP COLUMN or ALTER COLUMN)"
 			b.Hint = uncountedHint
 			return b
 		}
