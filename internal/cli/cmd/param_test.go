@@ -59,11 +59,69 @@ func TestParseParamRefuses(t *testing.T) {
 		"b=DEAD:varbinary(4)",              // binary not 0x
 		"b=0xZZ:binary(1)",                 // not hex
 		"b=0x1');DROP TABLE t--:binary(8)", // not hex either
+		"a=1,5:money",                      // the server drops the comma: 15.00
+		"a=12,50:smallmoney",               // 1250.00
+		"a=$5:money",                       // currency sign
+		"a=1.23456:money",                  // more than four decimals
+		"a=214749:smallmoney",              // out of range
 	} {
 		if p, err := parseParam(raw); err == nil {
 			t.Errorf("%q: accepted as %+v", raw, p)
 		} else if e, ok := err.(*output.Error); !ok || e.Code != output.CodeUsageError {
 			t.Errorf("%q: %v", raw, err)
+		}
+	}
+}
+
+// A money amount is sent as written once it has the only shape the server
+// cannot read as another amount.
+func TestParseParamMoney(t *testing.T) {
+	for raw, want := range map[string]string{
+		"a=-12.50:money":           "N'-12.50'",
+		"a=1250:money":             "N'1250'",
+		"a=+0.0001:smallmoney":     "N'+0.0001'",
+		"a=214748.3647:smallmoney": "N'214748.3647'",
+		// Trailing zeros past four decimals round nothing, as for decimal
+		// (decimalFits): the two checks must agree.
+		"a=12.50000:money":      "N'12.50000'",
+		"a=1.000000:smallmoney": "N'1.000000'",
+	} {
+		p, err := parseParam(raw)
+		if err != nil || p.value != want {
+			t.Errorf("%q: %+v %v, want %s", raw, p, err, want)
+		}
+	}
+	if _, err := parseParam("a=12,50:money"); err == nil || !strings.Contains(err.Error(), "is not a money amount") {
+		t.Errorf("12,50: %v", err)
+	}
+}
+
+func TestParseParamGUID(t *testing.T) {
+	for raw, want := range map[string]string{
+		"g=0e984725-c51c-4bf4-9960-e1c80e27aba0:uniqueidentifier":   "N'0e984725-c51c-4bf4-9960-e1c80e27aba0'",
+		"g=0E984725-C51C-4BF4-9960-E1C80E27ABA0:uniqueidentifier":   "N'0E984725-C51C-4BF4-9960-E1C80E27ABA0'",
+		"g={0E984725-C51C-4BF4-9960-E1C80E27ABA0}:uniqueidentifier": "N'{0E984725-C51C-4BF4-9960-E1C80E27ABA0}'",
+		"g= 0E984725-C51C-4BF4-9960-E1C80E27ABA0 :uniqueidentifier": "N'0E984725-C51C-4BF4-9960-E1C80E27ABA0'",
+	} {
+		p, err := parseParam(raw)
+		if err != nil || p.value != want {
+			t.Errorf("%q: %+v %v, want %s", raw, p, err, want)
+		}
+	}
+	// What the server would cut to its first 36 characters, or refuse.
+	for _, v := range []string{
+		"0E984725-C51C-4BF4-9960-E1C80E27ABA0, 11111111-2222-3333-4444-555555555555",
+		"0E984725-C51C-4BF4-9960-E1C80E27ABA0junk",
+		"0E984725-C51C-4BF4-9960-E1C80E27ABA",  // 35 hex digits
+		"0E984725C-51C-4BF4-9960-E1C80E27ABA0", // a '-' misplaced
+		"{0E984725-C51C-4BF4-9960-E1C80E27ABA0",
+		"0E984725-C51C-4BF4-9960-E1C80E27ABA0}",
+	} {
+		_, err := parseParam("g=" + v + ":uniqueidentifier")
+		e, _ := err.(*output.Error)
+		if e == nil || e.Code != output.CodeUsageError || !strings.Contains(e.Message, "is not a uniqueidentifier") ||
+			!strings.Contains(e.Hint, "Give one GUID") {
+			t.Errorf("%q: %v", v, err)
 		}
 	}
 }
@@ -105,7 +163,8 @@ func TestParameterize(t *testing.T) {
 }
 
 // A date is ISO 8601 only, sent as YYYYMMDD or with the T: the forms no
-// DATEFORMAT or LANGUAGE reads another way.
+// DATEFORMAT or LANGUAGE reads another way. A time is hh:mm[:ss[.f…]] only: the
+// server would take a whole date as midnight.
 func TestParseParamDate(t *testing.T) {
 	for _, tt := range []struct {
 		raw  string
@@ -140,6 +199,16 @@ func TestParseParamDate(t *testing.T) {
 		{"d=2026-01-02+02:00:datetimeoffset", "!no time"},
 		{"d=2026-01-02T10:00+15:00:datetimeoffset", "!outside"},
 		{"d=2026-01-02T10:00:00.12345678:datetime2", "!not an ISO 8601 date"},
+		{"t=10:00:time", "N'10:00:00'"},
+		{"t=12:30:00.5:time(1)", "N'12:30:00.5'"},
+		{"t= 23:59:59.1234567 :time(7)", "N'23:59:59.1234567'"},
+		{"t=2026-01-02:time", "!not an ISO 8601 time"},
+		{"t=2026-01-02T10:00:time", "!not an ISO 8601 time"},
+		{"t=10:00 PM:time", "!not an ISO 8601 time"},
+		{"t=10:00:00.12345678:time", "!not an ISO 8601 time"},
+		{"t=24:00:time", "!not a time of day"},
+		{"t=10:60:time", "!not a time of day"},
+		{"t=10:00:60:time(0)", "!not a time of day"},
 	} {
 		p, err := parseParam(tt.raw)
 		if want, ok := strings.CutPrefix(tt.want, "!"); ok {
@@ -282,6 +351,67 @@ func TestParseParamDecimalFits(t *testing.T) {
 		case err != nil:
 			if e, ok := err.(*output.Error); !ok || e.Code != output.CodeUsageError {
 				t.Errorf("%q: not a usage error: %v", tt.raw, err)
+			}
+		}
+	}
+}
+
+// An ASCII char/varchar value is exact offline; anything else is checked in
+// the session database's code page once connected (checkCodePage).
+func TestParamNeedsCodePage(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"v=Cafe:varchar(10)":    false,
+		"v=:varchar(10)":        false,
+		"v=Café:varchar(10)":    true,
+		"v=Жук:char(10)":        true,
+		"v=Жук:varchar(max)":    true,
+		"v=Жук:nvarchar(10)":    false,
+		"v=Жук:nchar(10)":       false,
+		"v=Жук:sysname":         false,
+		"v=Жук:sql_variant":     false,
+		"v=0xC3A9:varbinary(4)": false,
+	} {
+		p, err := parseParam(raw)
+		if err != nil {
+			t.Errorf("%q: %v", raw, err)
+			continue
+		}
+		if got := p.needsCodePage(); got != want {
+			t.Errorf("%q: needsCodePage = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func TestParamFitsCodePage(t *testing.T) {
+	for _, tt := range []struct {
+		raw  string
+		cp   int
+		want string // the refusal's message, "" when the value fits
+	}{
+		{"v=Жук:varchar(10)", 1252, `--param @v: 'Ж' (U+0416) is not in the database's code page 1252`},
+		{"v=Жук:varchar(10)", 1251, ""},
+		{"v=Café:varchar(10)", 1252, ""},
+		{"v=Café:varchar(4)", 1252, ""},
+		{"v=éé:varchar(3)", 65001, "--param @v: 4 bytes in code page 65001 do not fit varchar(3)"},
+		{"v=éé:varchar(4)", 65001, ""},
+		{"v=Жук:varchar(max)", 65001, ""},
+		{"v=Жук:varchar(max)", 1252, `--param @v: 'Ж' (U+0416) is not in the database's code page 1252`},
+		{"v=日本:char(3)", 932, "--param @v: 4 bytes in code page 932 do not fit char(3)"},
+		{"v=日本:char(4)", 932, ""},
+		{"v=é:varchar(10)", 0, "--param @v: varchar(10) cannot be checked in the database's collation X (code page 0)"},
+	} {
+		p, err := parseParam(tt.raw)
+		if err != nil {
+			t.Fatalf("%q: %v", tt.raw, err)
+		}
+		err = p.fitsCodePage(tt.cp, "X")
+		switch {
+		case tt.want == "" && err != nil:
+			t.Errorf("%q in %d: %v", tt.raw, tt.cp, err)
+		case tt.want != "":
+			e, ok := err.(*output.Error)
+			if !ok || e.Code != output.CodeUsageError || e.Message != tt.want {
+				t.Errorf("%q in %d: got %v, want USAGE_ERROR %q", tt.raw, tt.cp, err, tt.want)
 			}
 		}
 	}

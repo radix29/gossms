@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -22,6 +24,14 @@ type param struct {
 	name  string // with its leading @
 	typ   string // lower case, e.g. "decimal(9,2)"
 	value string // T-SQL literal: N'…', or 0x… for a binary type
+
+	// text, base and length are a char/varchar value as given, its type
+	// name and its (n) (-1 for max), kept for checkCodePage: the server
+	// converts the N'…' literal in the session database's code page, known
+	// only once connected. Unset for every other type.
+	text   string
+	base   string
+	length int
 }
 
 // paramName is a regular T-SQL variable name without its @. Anything else —
@@ -117,8 +127,9 @@ func parseParam(raw string) (param, error) {
 		}
 		// sp_executesql converts to the declared type without Msg 8152, so a
 		// longer string would be cut and match other rows. char/varchar count
-		// runes (code-page bytes depend on the collation: a conservative
-		// floor); nchar/nvarchar count UTF-16 code units.
+		// runes, exact for ASCII and a floor otherwise — code-page bytes
+		// depend on the collation, which checkCodePage measures once
+		// connected; nchar/nvarchar count UTF-16 code units.
 		limit, ok := paramLength(m[2])
 		if m[1] == "sysname" {
 			limit, ok = 128, true
@@ -133,16 +144,52 @@ func parseParam(raw string) (param, error) {
 					"Shorten the value or declare a longer type.")
 			}
 		}
+		if m[1] == "char" || m[1] == "varchar" {
+			p.text, p.base, p.length = value, m[1], -1
+			if ok {
+				p.length = limit
+			}
+		}
 		if kind == argsPrecision {
 			if err := decimalFits(p.name, value, m[1], m[2]); err != nil {
 				return param{}, err
 			}
 		}
-		// A date or bit is checked and rewritten in a form the server reads
-		// one way: its own conversion would succeed with a different value.
+		// The server's string-to-money conversion drops commas anywhere and
+		// takes a currency sign, so 12,50 would run as 1250.00 with no
+		// error. gosmo's money check (the one data import uses) refuses
+		// anything but [+-]digits[.digits], over four decimals, and out of
+		// range.
+		if m[1] == "money" || m[1] == "smallmoney" {
+			if err := moneyFits(p.name, value, m[1]); err != nil {
+				return param{}, err
+			}
+		}
+		// The server's string-to-uniqueidentifier conversion keeps the first
+		// 36 characters and drops the rest, so a second pasted GUID or
+		// trailing junk would run as the first GUID alone. gosmo's check
+		// (the one data import uses) takes exactly one GUID, dashed or
+		// braced; the trimmed text is sent as given, since the server reads
+		// both forms the same.
+		if m[1] == "uniqueidentifier" {
+			v, err := guidLiteral(p.name, value)
+			if err != nil {
+				return param{}, err
+			}
+			value = v
+		}
+		// A date, time or bit is checked and rewritten in a form the server
+		// reads one way: its own conversion would succeed with a different
+		// value.
 		switch {
 		case paramDateTypes[m[1]]:
 			v, err := dateLiteral(p.name, value, m[1])
+			if err != nil {
+				return param{}, err
+			}
+			value = v
+		case m[1] == "time":
+			v, err := timeLiteral(p.name, value)
 			if err != nil {
 				return param{}, err
 			}
@@ -161,17 +208,149 @@ func parseParam(raw string) (param, error) {
 	return p, nil
 }
 
+// needsCodePage reports whether p is a char/varchar value checkCodePage must
+// check on the server. ASCII needs none: it is one byte, and the same byte,
+// in every code page char data can have, so parseParam's character count is
+// exact.
+func (p param) needsCodePage() bool {
+	if p.base == "" {
+		return false
+	}
+	for i := 0; i < len(p.text); i++ {
+		if p.text[i] >= utf8.RuneSelf {
+			return true
+		}
+	}
+	return false
+}
+
+// checkCodePage refuses a char/varchar parameter whose value the server's
+// conversion would change: sp_executesql converts the N'…' literal in the
+// session database's default collation, turning a character its code page
+// lacks into '?' and cutting a value over (n) bytes, with no error. srv is
+// on the session's database; nothing has been sent when it refuses. Reads
+// nothing when no value needs it (needsCodePage).
+func checkCodePage(ctx context.Context, srv *gosmo.Server, ps []param) error {
+	if !slices.ContainsFunc(ps, param.needsCodePage) {
+		return nil
+	}
+	name, err := srv.CurrentDatabase(ctx)
+	if err != nil {
+		return readError(err)
+	}
+	dbase, err := srv.DatabaseByName(ctx, name)
+	if err != nil {
+		return readError(err)
+	}
+	cp, err := srv.CollationCodePage(ctx, dbase.Collation)
+	if err != nil {
+		return readError(err)
+	}
+	for _, p := range ps {
+		if p.needsCodePage() {
+			if err := p.fitsCodePage(cp, dbase.Collation); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// fitsCodePage refuses p's value when code page cp, collation's, lacks one
+// of its characters or holds it in more than (n) bytes. The encoding is
+// gosmo's BulkColumn check, the one data import uses.
+func (p param) fitsCodePage(cp int, collation string) error {
+	hint := fmt.Sprintf("Declare n%s(n), or use characters the database's code page (CP%d) has.", p.base, cp)
+	// Length -1: the bytes are counted below, in the message's terms rather
+	// than a bulk column's.
+	conv, err := gosmo.BulkColumn{Type: "varchar", Length: -1, CodePage: cp, DatabaseCodePage: cp}.Converter()
+	if err != nil {
+		// A Unicode-only collation (code page 0) or one gosmo has no encoder
+		// for: the value cannot be checked, so it is not sent.
+		return usageError(fmt.Sprintf("--param %s: %s cannot be checked in the database's collation %s (code page %d)",
+			p.name, p.typ, collation, cp), hint)
+	}
+	v, err := conv(p.text)
+	if err != nil {
+		reason := err.Error()
+		if e, ok := errors.AsType[*gosmo.BulkValueError](err); ok {
+			// gosmo words it for a column; here the code page is the
+			// session database's.
+			reason = strings.Replace(e.Reason, "the column's", "the database's", 1)
+		}
+		return usageError(fmt.Sprintf("--param %s: %s", p.name, reason), hint)
+	}
+	n := 0
+	switch v := v.(type) {
+	case []byte:
+		n = len(v)
+	case string: // a UTF-8 code page: the text is the bytes
+		n = len(v)
+	}
+	if p.length >= 0 && n > p.length {
+		return usageError(fmt.Sprintf("--param %s: %d bytes in code page %d do not fit %s", p.name, n, cp, p.typ),
+			"Shorten the value, declare a longer type, or declare n"+p.base+"(n).")
+	}
+	return nil
+}
+
 // paramDateTypes take an ISO 8601 value only.
 var paramDateTypes = map[string]bool{
 	"date": true, "datetime": true, "smalldatetime": true, "datetime2": true, "datetimeoffset": true,
 }
 
+// paramClock is the clock part of paramDate and paramTime: hh:mm, then
+// optionally seconds and a fraction of 1 to 7 digits. Four groups.
+const paramClock = `([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]{1,7}))?)?`
+
 // paramDate is the ISO 8601 form --param accepts for a date type: the date,
-// then optionally a time (T or a space before it; seconds and a fraction
-// optional), then optionally a zone.
+// then optionally a time (T or a space before it), then optionally a zone.
 var paramDate = regexp.MustCompile(`^([0-9]{4})-([0-9]{2})-([0-9]{2})` +
-	`(?:[T ]([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]{1,7}))?)?)?` +
+	`(?:[T ]` + paramClock + `)?` +
 	`(Z|[+-][0-9]{2}:[0-9]{2})?$`)
+
+// paramTime is the form --param accepts for time: the clock alone.
+var paramTime = regexp.MustCompile(`^` + paramClock + `$`)
+
+// clockLiteral checks paramClock's four submatches and writes them
+// hh:mm:ss[.f…]; ok is false for a time of day that does not exist.
+func clockLiteral(hh, mm, ss, frac string) (string, bool) {
+	h, _ := strconv.Atoi(hh)
+	mi, _ := strconv.Atoi(mm)
+	s := 0
+	if ss != "" {
+		s, _ = strconv.Atoi(ss)
+	}
+	if h > 23 || mi > 59 || s > 59 {
+		return "", false
+	}
+	out := fmt.Sprintf("%s:%s:%02d", hh, mm, s)
+	if frac != "" {
+		out += "." + frac
+	}
+	return out, true
+}
+
+// timeLiteral checks a time value: the server's conversion takes a whole
+// date or datetime and keeps its clock (2026-01-02 runs as 00:00:00), and
+// reads 10:00 PM as 22:00. What it rounds (more decimals than the scale) is
+// left to it, as for the date types.
+func timeLiteral(name, value string) (string, error) {
+	v := strings.TrimSpace(value)
+	bad := func(msg string) (string, error) {
+		return "", usageError(fmt.Sprintf("--param %s: %q %s", name, v, msg),
+			"Write the time as hh:mm[:ss[.fffffff]] (24-hour).")
+	}
+	m := paramTime.FindStringSubmatch(v)
+	if m == nil {
+		return bad("is not an ISO 8601 time")
+	}
+	out, ok := clockLiteral(m[1], m[2], m[3], m[4])
+	if !ok {
+		return bad("is not a time of day")
+	}
+	return out, nil
+}
 
 // dateLiteral checks a date-type value and rewrites it in a form every
 // DATEFORMAT and LANGUAGE reads the same: YYYYMMDD for a date alone,
@@ -216,13 +395,8 @@ func dateLiteral(name, value, base string) (string, error) {
 	if !hasTime {
 		return m[1] + m[2] + m[3], nil
 	}
-	h, _ := strconv.Atoi(m[4])
-	mi, _ := strconv.Atoi(m[5])
-	s := 0
-	if m[6] != "" {
-		s, _ = strconv.Atoi(m[6])
-	}
-	if h > 23 || mi > 59 || s > 59 {
+	clock, ok := clockLiteral(m[4], m[5], m[6], m[7])
+	if !ok {
 		return bad("is not a time of day")
 	}
 	if len(zone) == 6 {
@@ -232,11 +406,7 @@ func dateLiteral(name, value, base string) (string, error) {
 			return bad("has a zone outside -14:00 to +14:00")
 		}
 	}
-	out := fmt.Sprintf("%s-%s-%sT%s:%s:%02d", m[1], m[2], m[3], m[4], m[5], s)
-	if m[7] != "" {
-		out += "." + m[7]
-	}
-	return out + zone, nil
+	return m[1] + "-" + m[2] + "-" + m[3] + "T" + clock + zone, nil
 }
 
 // daysIn is the number of days in month mo of year y (proleptic Gregorian,
@@ -304,6 +474,35 @@ func decimalFits(name, value, base, args string) error {
 			"Declare a larger precision.")
 	}
 	return nil
+}
+
+// moneyFits refuses a money/smallmoney value the server would read as
+// another amount or round, with gosmo's BulkColumn check for the type.
+func moneyFits(name, value, base string) error {
+	conv, err := gosmo.BulkColumn{Type: base}.Converter()
+	if err == nil {
+		_, err = conv(strings.TrimSpace(value))
+	}
+	if err != nil {
+		return usageError(fmt.Sprintf("--param %s: %v", name, err),
+			"Write the amount with a point and no grouping or currency sign: 1250.00 or 12.50.")
+	}
+	return nil
+}
+
+// guidLiteral checks a uniqueidentifier value with gosmo's BulkColumn check
+// and returns it trimmed.
+func guidLiteral(name, value string) (string, error) {
+	v := strings.TrimSpace(value)
+	conv, err := gosmo.BulkColumn{Type: "uniqueidentifier"}.Converter()
+	if err == nil {
+		_, err = conv(v)
+	}
+	if err != nil {
+		return "", usageError(fmt.Sprintf("--param %s: %v", name, err),
+			"Give one GUID: 8-4-4-4-12 hex digits, braces optional.")
+	}
+	return v, nil
 }
 
 // paramStringTypes may hold an empty value.

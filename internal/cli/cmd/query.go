@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -160,9 +161,15 @@ func paramOption() spec.Option {
 		Help: "name=value:type, e.g. id=42:int: run the script through sp_executesql with @name declared as type; one batch only"}
 }
 
+// maxTimeout bounds --timeout: int32 seconds (about 68 years), well inside
+// time.Duration. Unbounded, a large value wrapped on the multiply into a
+// negative or sub-second timeout, cutting a run (db set's unwrapped ALTERs
+// included) short at once.
+const maxTimeout = math.MaxInt32
+
 func timeoutOption() spec.Option {
 	return spec.Option{Name: optTimeout, Type: spec.TypeInt, Default: strconv.Itoa(defaultTimeout),
-		Help: "Seconds the script may run (the connect has --connect-timeout); 0 is no limit"}
+		Help: fmt.Sprintf("Seconds the script may run, 0 to %d (the connect has --connect-timeout); 0 is no limit", maxTimeout)}
 }
 
 func classNames() []string {
@@ -329,8 +336,8 @@ func readRunSettings(inv *spec.Invocation) (runSettings, error) {
 
 func readTimeout(inv *spec.Invocation) (time.Duration, error) {
 	secs := inv.Values[optTimeout].(int)
-	if secs < 0 {
-		return 0, usageError("--timeout: must be 0 or more", "0 means no limit.")
+	if secs < 0 || secs > maxTimeout {
+		return 0, usageError(fmt.Sprintf("--timeout: %d is not a number of seconds from 0 to %d", secs, maxTimeout), "0 means no limit.")
 	}
 	return time.Duration(secs) * time.Second, nil
 }
@@ -400,6 +407,7 @@ type scriptInput struct {
 	script string         // as given: what the classifier reads
 	send   string         // what the server receives: script, or script inside sp_executesql under --param
 	sc     *safety.Script // script, classified
+	params []param        // --param's, checked offline; checkCodePage checks the rest once connected
 }
 
 // readScriptInput reads the one SQL input option and, for a command that has
@@ -414,6 +422,7 @@ func readScriptInput(inv *spec.Invocation) (scriptInput, error) {
 	if params, err := readParams(values); err != nil {
 		return in, err
 	} else if params != nil {
+		in.params = params
 		if in.send, err = parameterize(script, params); err != nil {
 			return in, err
 		}
@@ -510,6 +519,15 @@ func (d Deps) runScript(ctx context.Context, inv *spec.Invocation, in scriptInpu
 	rctx, cancel := withTimeout(ctx, run.timeout)
 	defer cancel()
 	timedOut := func() bool { return ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded) }
+
+	// A char/varchar --param value the database's code page would change
+	// needs the server's collation; nothing has been sent yet.
+	if err := checkCodePage(rctx, c.conn.Server, in.params); err != nil {
+		if timedOut() {
+			return res, nil, timeoutError(run.timeout)
+		}
+		return res, nil, err
+	}
 
 	if run.limited {
 		// The offline check passed; what each write's target does beyond its

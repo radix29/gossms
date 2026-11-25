@@ -824,7 +824,7 @@ against `--allow` and the profile's ceiling (§ Safety) — a refusal is exit 7
 | `--transaction <auto\|commit\|rollback>` | § Transactions (default `auto`: each statement commits itself) |
 | `--max-rows-affected <n>` | § Transactions |
 | `--continue-on-error` | Send every batch even after one fails. The default stops after the first failing batch (within a batch SQL Server decides), with a warning naming how many batches were sent |
-| `--timeout <sec>` | How long the script may run (default 60, `0` no limit); `--connect-timeout` bounds the connect. Past it the run is cancelled: `TIMEOUT`, exit 6 |
+| `--timeout <sec>` | How long the script may run: 0 to 2147483647, default 60, `0` no limit (above the range: `USAGE_ERROR`, exit 2); `--connect-timeout` bounds the connect. Past it the run is cancelled: `TIMEOUT`, exit 6 |
 | `--statistics <io,time>` | `SET STATISTICS IO`/`TIME ON` for the run; their output is in `messages` |
 | `--param <name>=<value>:<type>` | § Parameters; repeat for each parameter |
 
@@ -882,7 +882,9 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
 - The value is sent as a Unicode string literal and the server converts it to
   the declared type, as it does a client's string parameter; a value that
   does not convert is `SQL_ERROR` (Msg 8114, line 0 as the server reports
-  it). `binary`/`varbinary` take `0x` and hex digits instead (nvarchar does
+  it) — except `money`/`smallmoney`, whose conversion drops commas and takes
+  a currency sign (`12,50` would be 1250.00), so they are checked first
+  (below). `binary`/`varbinary` take `0x` and hex digits instead (nvarchar does
   not convert to binary). There is no NULL value: write `NULL` in the script.
 - **Dates are ISO 8601 only** — `date datetime smalldatetime datetime2
   datetimeoffset` take `YYYY-MM-DD`, optionally followed by `T` or a space
@@ -892,20 +894,37 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   under every `DATEFORMAT` and language. (Sent as written, `2026-01-02` is
   1 February in `datetime` for a login whose language is British, German or
   French; `01/02/2026` swaps for every type.) Another form, or a day or time
-  that does not exist, is `USAGE_ERROR`. A `bit` is `0`, `1`, `true` or
-  `false` (any case).
+  that does not exist, is `USAGE_ERROR`. A `time` takes `hh:mm[:ss[.fffffff]]`
+  alone (24-hour), sent as `hh:mm:ss[.f…]`: the server's conversion would
+  run a date or datetime as its clock part (`2026-01-02` as `00:00:00`) and
+  read `10:00 PM`, so any other form is `USAGE_ERROR`. A `bit` is `0`, `1`,
+  `true` or `false` (any case).
 - **A value that would change is refused before connecting** (`USAGE_ERROR`):
   an empty or blank value for any type but `char varchar nchar nvarchar
   sysname xml sql_variant` (the server would turn it into `0` or
   `1900-01-01`); a string longer than `(n)` (`sysname` is 128) — UTF-16 units
-  for `nchar`/`nvarchar`, characters for `char`/`varchar`, a floor since
-  code-page bytes depend on the collation; a `binary`/`varbinary` value of
+  for `nchar`/`nvarchar`, characters for `char`/`varchar` (exact for ASCII;
+  bytes are checked once connected, below); a `binary`/`varbinary` value of
   more than `n` bytes; a `decimal`/`numeric` value with more decimals than
   the scale or more digits before the point than precision minus scale (a
   bare `decimal` is `decimal(18,0)`, `(p)` is `(p,0)`; leading and trailing
-  zeros do not count). `sp_executesql` would silently truncate or round
-  these. `money`, `float`, `real` and the time types still round to their
-  own precision.
+  zeros do not count); a `money`/`smallmoney` value that is not
+  `[+-]digits[.digits]` (no grouping comma, no currency sign), has more than
+  four decimals (trailing zeros do not count), or is out of the type's range — the check `data import`
+  uses; a `uniqueidentifier` that is not one GUID, 8-4-4-4-12 hex digits
+  with optional braces (the server keeps the first 36 characters, so a
+  second pasted GUID or trailing text would be dropped). `sp_executesql`
+  would silently truncate, round or misread these.
+  `float`, `real` and the time types still round to their own precision.
+- **A `char`/`varchar` value with a non-ASCII character is checked once
+  connected**, before anything is sent: the server converts it in the
+  session database's default collation, turning a character its code page
+  lacks into `?` and cutting a value over `(n)` bytes (in a UTF-8 or
+  double-byte code page `é` or `日` is more than one), with no error. Either
+  is `USAGE_ERROR` naming the character, or the byte count and code page —
+  the check `data import` uses. A collation whose code page cannot be checked
+  (a Unicode-only one) refuses any such value. `--dry-run` does not connect,
+  so it passes such a value unchecked; an ASCII value needs no server.
 - The script must be **one batch, sent once** (no `GO`, no `GO n`):
   `sp_executesql` runs a single batch. Inside it, as in any dynamic SQL, `USE`
   and `SET` last only until the script ends, and a `#temp` table it creates is
@@ -1244,8 +1263,9 @@ names its base object).
     `skipped (…)`, then the defaulted columns (`file_column` NULL, `default`).
   - **Conversion.** Each cell is parsed for its column's type (an alias
     type's base type) before it is sent, and checked as the driver does not:
-    range, precision and scale (more fractional digits than the column keeps
-    is an error, not rounding), length in the column's unit, `char` text
+    range, precision and scale (a fractional digit the column cannot keep is
+    an error, not rounding; trailing zeros do not count, so `12.5000` loads
+    into `decimal(10,2)` and `10:00:00.1230000` into `time(3)`), length in the column's unit, `char` text
     encoded to the database's code page and refused by name where it or the
     column's code page lacks a character. The first cell that fails is exit
     2, `line n, column [c]: …`. `sql_variant`, CLR types (`geography`,
