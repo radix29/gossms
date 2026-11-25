@@ -16,12 +16,12 @@ import (
 // loadServerChildren. SQL Server Agent's own loaders live in
 // agent_explorer.go.
 func loadServerObjectsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return []*explorerNode{
-		l.node("Backup Devices", NodeBackupDevices, "", "", ""),
-		l.node("Endpoints", NodeEndpoints, "", "", ""),
-		l.node("Linked Servers", NodeLinkedServers, "", "", ""),
-		l.node("Triggers", NodeServerTriggers, "", "", ""),
-	}, nil
+	return l.folders("",
+		explorerFolder{"Backup Devices", NodeBackupDevices, oeBackupDevices},
+		explorerFolder{"Endpoints", NodeEndpoints, oeEndpoints},
+		explorerFolder{"Linked Servers", NodeLinkedServers, oeLinkedServers},
+		explorerFolder{"Triggers", NodeServerTriggers, oeServerTriggers},
+	), nil
 }
 
 // loadManagementChildren returns the Management folder's children: Resource
@@ -32,26 +32,25 @@ func loadServerObjectsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 // Azure SQL Database has no server-scoped event sessions, so Extended Events is
 // under each database there instead (loadDatabaseChildren); nor anything of
 // Resource Governor's to configure, nor an msdb to keep Database Mail in, so those
-// two nodes are left out (resourceGovernorHidden, databaseMailHidden).
+// two nodes are left out by explorerSupport.
 //
 // Unlike loadServerChildren this loader reads: the Resource Governor and Database
 // Mail nodes' labels carry their state (resourceGovernorState,
 // databaseMailState), a failed read of which marks or bares the label rather than
 // failing the folder.
 func loadManagementChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	var info *gosmo.ServerInfo
-	if l.sc != nil && l.sc.Server != nil {
-		info = l.sc.Server.Info()
-	}
+	features := explorerSupport(l.sc)
 	var out []*explorerNode
-	if !resourceGovernorHidden(info) {
+	if features.has(oeResourceGovernor) {
 		out = append(out, resourceGovernorNode(l))
 	}
-	if !databaseScopedXEvents(l.sc) {
+	if features.has(oeServerXEvents) {
 		out = append(out, l.node("Extended Events", NodeExtendedEvents, "", "", ""))
 	}
-	out = append(out, l.node("SQL Server Logs", NodeSQLServerLogs, "", "", ""))
-	if !databaseMailHidden(info) {
+	if features.has(oeServerLogs) {
+		out = append(out, l.node("SQL Server Logs", NodeSQLServerLogs, "", "", ""))
+	}
+	if features.has(oeDatabaseMail) {
 		out = append(out, databaseMailNode(l))
 	}
 	return out, nil

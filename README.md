@@ -190,7 +190,17 @@ contains only Users, Roles, and Schemas. Context menus drop what Fabric does
 not support: Back Up, Restore, Backup History, Rename, Delete and Shrink on a
 database; Back Up and Restore on **Databases**; New User on **Users**; Rebuild
 All Indexes and Full-Text index on a table. This layout is per connection; other
-connected servers keep their usual folders.
+connected servers keep their usual folders. The Fabric server menu also omits
+Activity Monitor and View SQL Server Log.
+
+Azure SQL Database is identified by the server's reported engine edition, not
+its connection address. Object Explorer omits unsupported instance folders,
+Service Broker, CLR assemblies/types, FileTables, External Libraries and SQL
+Server Audit specifications, plus native Back Up/Restore/Backup History and
+New Server Role menu actions. Database triggers, table/view triggers, CHECK
+constraints, indexes, Query Store, supported security objects and Storage remain;
+Extended Events lives under each database. Object Explorer Details uses the
+same folder rules. Managed Instance keeps its separate instance-level features.
 
 Fabric statistics lists use `sys.stats` and `STATS_DATE`, without the unsupported
 `sys.dm_db_stats_properties` DMV. Selecting a statistic shows its

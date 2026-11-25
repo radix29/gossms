@@ -99,22 +99,6 @@ func entraPrincipalsOffered(info *gosmo.ServerInfo) bool {
 	return info.AtLeast(gosmo.SQLServer2022)
 }
 
-// resourceGovernorHidden reports whether Management leaves out the Resource
-// Governor node altogether: on a single-database engine (Azure SQL Database,
-// SQL database in Fabric) the platform governs and nothing is configurable. A Managed Instance keeps it,
-// shown and unverified (docs/open-threads.md V4) — which is why this reads the engine
-// edition and not serverIsAzure, which is true of both.
-func resourceGovernorHidden(info *gosmo.ServerInfo) bool {
-	return info.IsDatabaseScoped()
-}
-
-// databaseMailHidden reports whether Management leaves out the Database Mail
-// node: a single-database engine (Azure SQL Database, SQL database in Fabric)
-// has no msdb and no Database Mail. A Managed Instance keeps it, shown and unverified (V4).
-func databaseMailHidden(info *gosmo.ServerInfo) bool {
-	return info.IsDatabaseScoped()
-}
-
 // replicationHidden reports whether the server leaves out the Replication
 // folder: a single-database engine (Azure SQL Database, SQL database in
 // Fabric) can only be a push subscriber and keeps no replication catalog to

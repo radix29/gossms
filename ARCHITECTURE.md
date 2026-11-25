@@ -313,6 +313,7 @@ gossms/
 │       ├── tree_node_icons.go    # style-aware icon lookup (Emoji/Symbols/Portable/None): nodeIcon and its state substitutions (offline database, stopped session, publication kind)
 │       ├── object_explorer.go    # explorerNode (SQL Server data + loaders) over controls.TreeModel, which drives controls.TreeView
 │       ├── explorer_loaders.go   # childLoader and nodeMenus registries (NodeType → fetch func, NodeType → menu builder) + shared loader helpers
+│       ├── explorer_features.go  # local engine-support flags for Object Explorer folders, Details and menus; cached server metadata, separate from permissions and SQL syntax
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
 │       ├── explorer_database_security.go # loaders and menus: a database's Security folder — Users, Roles (Database/Application), Schemas, Audit Specifications, Scoped Credentials, keys and certificates, Security Policies, Always Encrypted Keys
 │       ├── explorer_objects.go   # loaders: Tables/Views/Procs/Functions/Triggers/Sequences/Synonyms + System Views/Procedures/Functions folders + table columns

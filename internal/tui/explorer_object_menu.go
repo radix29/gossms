@@ -28,14 +28,12 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 		return nil
 	}
 	sc, dbName := resolveConn(node), node.data.DBName
-	if node.data.Type == NodeDatabase && sc != nil && sc.IsFabricDW() {
-		return nil
-	}
+	features := explorerSupport(sc)
 	groups := objectDataRightGroups(node.data)
 	schema, object := objectOpSchema(node), objectOpName(node)
 
 	var items []controls.MenuItem
-	if op.rename != nil {
+	if op.rename != nil && (node.data.Type != NodeDatabase || features.has(oeDatabaseRename)) {
 		items = append(items, gate.ItemOnAll(controls.MenuItem{Label: "Rename...",
 			Action: func() { a.renameObject(node) }}, sc, dbName, schema, object, groups...))
 	}
@@ -46,7 +44,8 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 		items = append(items, gate.ItemOn(controls.MenuItem{Label: "Move to Schema...",
 			Action: func() { a.moveObjectToSchema(node) }}, sc, dbName, schema, object, objectTransferRights(node.data)...))
 	}
-	if op.drop != nil || op.dropWithOption != nil {
+	if (op.drop != nil || op.dropWithOption != nil) &&
+		(node.data.Type != NodeDatabase || features.has(oeDatabaseDrop)) {
 		items = append(items, gate.ItemOnAll(controls.MenuItem{Label: "Delete...",
 			Action: func() { a.deleteObject(node) }}, sc, dbName, schema, object, groups...))
 	}
