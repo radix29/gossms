@@ -165,6 +165,19 @@ func parseParam(raw string) (param, error) {
 				return param{}, err
 			}
 		}
+		// The server's string-to-uniqueidentifier conversion keeps the first
+		// 36 characters and drops the rest, so a second pasted GUID or
+		// trailing junk would run as the first GUID alone. gosmo's check
+		// (the one data import uses) takes exactly one GUID, dashed or
+		// braced; the trimmed text is sent as given, since the server reads
+		// both forms the same.
+		if m[1] == "uniqueidentifier" {
+			v, err := guidLiteral(p.name, value)
+			if err != nil {
+				return param{}, err
+			}
+			value = v
+		}
 		// A date or bit is checked and rewritten in a form the server reads
 		// one way: its own conversion would succeed with a different value.
 		switch {
@@ -431,6 +444,21 @@ func moneyFits(name, value, base string) error {
 			"Write the amount with a point and no grouping or currency sign: 1250.00 or 12.50.")
 	}
 	return nil
+}
+
+// guidLiteral checks a uniqueidentifier value with gosmo's BulkColumn check
+// and returns it trimmed.
+func guidLiteral(name, value string) (string, error) {
+	v := strings.TrimSpace(value)
+	conv, err := gosmo.BulkColumn{Type: "uniqueidentifier"}.Converter()
+	if err == nil {
+		_, err = conv(v)
+	}
+	if err != nil {
+		return "", usageError(fmt.Sprintf("--param %s: %v", name, err),
+			"Give one GUID: 8-4-4-4-12 hex digits, braces optional.")
+	}
+	return v, nil
 }
 
 // paramStringTypes may hold an empty value.

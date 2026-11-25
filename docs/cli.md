@@ -908,7 +908,10 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   zeros do not count); a `money`/`smallmoney` value that is not
   `[+-]digits[.digits]` (no grouping comma, no currency sign), has more than
   four decimals, or is out of the type's range — the check `data import`
-  uses. `sp_executesql` would silently truncate, round or misread these.
+  uses; a `uniqueidentifier` that is not one GUID, 8-4-4-4-12 hex digits
+  with optional braces (the server keeps the first 36 characters, so a
+  second pasted GUID or trailing text would be dropped). `sp_executesql`
+  would silently truncate, round or misread these.
   `float`, `real` and the time types still round to their own precision.
 - **A `char`/`varchar` value with a non-ASCII character is checked once
   connected**, before anything is sent: the server converts it in the

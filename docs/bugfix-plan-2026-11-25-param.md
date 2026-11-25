@@ -1,6 +1,6 @@
 # Bug-fix plan, 2026-11-25 (`--param` values the server changes)
 
-Three defects (D2, the code-page one, is fixed) found reviewing gossms, gosmo and tuikit, each **reproduced
+Three defects (D1, the uniqueidentifier one, and D2, the code-page one, are fixed) found reviewing gossms, gosmo and tuikit, each **reproduced
 live on win10cli (17.0, `SQL_Latin1_General_CP1_CI_AS`)** with the built
 binary and read-only queries. None is in `docs/open-threads.md`,
 `docs/decisions.md` or `~/go/gosmo/OPEN-THREADS.md`. All three are in
@@ -20,7 +20,6 @@ user.
 
 | # | Where | Effect | Severity |
 |---|---|---|---|
-| D1 | `parseParam`, uniqueidentifier | Anything after the 36th character is dropped | Silent: a second pasted GUID, or trailing junk, is ignored |
 | D3 | `parseParam`, time | A date or datetime string runs as a time (`2026-01-02` is `00:00:00`) | Silent, narrower |
 
 Each step: `go build ./... && go test ./... && gofmt -l . && go vet ./...
@@ -34,33 +33,6 @@ Live repro base command (win10cli, `docs/testing.md` live rules):
 PW=… gossms query run -S win10cli -U sa --password-env PW \
   --trust-server-certificate --sql "SELECT @v AS v" --param "v=…:<type>"
 ```
-
-## D1 — a uniqueidentifier value keeps only its first 36 characters
-
-**Cause.** nvarchar → uniqueidentifier conversion truncates anything past 36
-characters (documented SQL Server behaviour), and `parseParam` checks
-nothing for this type beyond "not empty".
-
-**Repro (live, verified 2026-11-25):** `--param
-"g=0E984725-C51C-4BF4-9960-E1C80E27ABA0, 11111111-2222-3333-4444-555555555555:uniqueidentifier"`
-→ `STATUS: OK`, `g = 0E984725-C51C-4BF4-9960-E1C80E27ABA0`; the same with
-`…ABA0junk`. A list pasted where one id was expected runs against its first
-id only.
-
-**Fix (gossms).** In `parseParam`, as `moneyFits` does for money: run the
-trimmed value through `gosmo.BulkColumn{Type: "uniqueidentifier"}.Converter()`
-(36-character dashed text or the 38-character braced form, either case;
-gosmo's `convGUID`). On refusal, `USAGE_ERROR` with gosmo's message and the
-hint "Give one GUID: 8-4-4-4-12 hex digits, braces optional." Send the
-trimmed text as given — the server reads both accepted forms the same.
-
-**Tests (`param_test.go`).** Refused: the two repro values, 35 hex digits,
-a GUID with `-` misplaced, `{…` unbalanced. Accepted, sent unchanged: dashed
-lower and upper case, braced. `TestParseParamEmptyValue`'s "not a
-uniqueidentifier" expectation still holds (the empty check runs first).
-
-**Live check.** Both repro values exit `USAGE_ERROR`; a valid GUID still
-returns itself.
 
 ## D3 — a time parameter takes a date and runs it as midnight
 
@@ -91,10 +63,7 @@ returns `12:30:00`.
 
 ## Recommended implementation order
 
-1. **D1** — one call in `parseParam` on the existing `moneyFits` pattern;
-   offline, no new plumbing, the smallest diff and the easiest to verify.
-2. **D3** — offline too, in the same function beside `dateLiteral`; doing it
-   right after D1 keeps both `param.go` edits and the `docs/cli.md`
-   "refused before connecting" bullet in one pass.
+1. **D3** — offline, in `parseParam` beside `dateLiteral`; update the
+   `docs/cli.md` "refused before connecting" bullet in the same pass.
 
 Then: `go test ./...` and the live checks once more on the final tree.

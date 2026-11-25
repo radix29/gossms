@@ -92,6 +92,36 @@ func TestParseParamMoney(t *testing.T) {
 	}
 }
 
+func TestParseParamGUID(t *testing.T) {
+	for raw, want := range map[string]string{
+		"g=0e984725-c51c-4bf4-9960-e1c80e27aba0:uniqueidentifier":   "N'0e984725-c51c-4bf4-9960-e1c80e27aba0'",
+		"g=0E984725-C51C-4BF4-9960-E1C80E27ABA0:uniqueidentifier":   "N'0E984725-C51C-4BF4-9960-E1C80E27ABA0'",
+		"g={0E984725-C51C-4BF4-9960-E1C80E27ABA0}:uniqueidentifier": "N'{0E984725-C51C-4BF4-9960-E1C80E27ABA0}'",
+		"g= 0E984725-C51C-4BF4-9960-E1C80E27ABA0 :uniqueidentifier": "N'0E984725-C51C-4BF4-9960-E1C80E27ABA0'",
+	} {
+		p, err := parseParam(raw)
+		if err != nil || p.value != want {
+			t.Errorf("%q: %+v %v, want %s", raw, p, err, want)
+		}
+	}
+	// What the server would cut to its first 36 characters, or refuse.
+	for _, v := range []string{
+		"0E984725-C51C-4BF4-9960-E1C80E27ABA0, 11111111-2222-3333-4444-555555555555",
+		"0E984725-C51C-4BF4-9960-E1C80E27ABA0junk",
+		"0E984725-C51C-4BF4-9960-E1C80E27ABA",  // 35 hex digits
+		"0E984725C-51C-4BF4-9960-E1C80E27ABA0", // a '-' misplaced
+		"{0E984725-C51C-4BF4-9960-E1C80E27ABA0",
+		"0E984725-C51C-4BF4-9960-E1C80E27ABA0}",
+	} {
+		_, err := parseParam("g=" + v + ":uniqueidentifier")
+		e, _ := err.(*output.Error)
+		if e == nil || e.Code != output.CodeUsageError || !strings.Contains(e.Message, "is not a uniqueidentifier") ||
+			!strings.Contains(e.Hint, "Give one GUID") {
+			t.Errorf("%q: %v", v, err)
+		}
+	}
+}
+
 func TestReadParamsRefusesADuplicate(t *testing.T) {
 	if _, err := readParams([]string{"id=1:int", "ID=2:int"}); err == nil || !strings.Contains(err.Error(), "more than once") {
 		t.Errorf("got %v", err)
