@@ -64,6 +64,7 @@ func TestCellParserValues(t *testing.T) {
 		{gosmo.BulkColumn{Type: "datetimeoffset", Scale: 0}, "2024-02-29T13:45:30+05:30", time.Date(2024, 2, 29, 13, 45, 30, 0, plus0530)},
 		{gosmo.BulkColumn{Type: "datetimeoffset", Scale: 0}, "2024-02-29 13:45:30", time.Date(2024, 2, 29, 13, 45, 30, 0, time.FixedZone("", 0))},
 		{gosmo.BulkColumn{Type: "datetimeoffset", Scale: 0}, "2024-02-29 13:45:30Z", time.Date(2024, 2, 29, 13, 45, 30, 0, time.FixedZone("", 0))},
+		{gosmo.BulkColumn{Type: "datetimeoffset", Scale: 0}, "0001-01-01 00:30:00 -01:00", time.Date(1, 1, 1, 0, 30, 0, 0, time.FixedZone("", -3600))},
 		// The wire order: the first three groups byte-reversed.
 		{gosmo.BulkColumn{Type: "uniqueidentifier"}, "6F9619FF-8B86-D011-B42D-00C04FD430C8",
 			[]byte{0xFF, 0x19, 0x96, 0x6F, 0x86, 0x8B, 0x11, 0xD0, 0xB4, 0x2D, 0x00, 0xC0, 0x4F, 0xD4, 0x30, 0xC8}},
@@ -173,6 +174,9 @@ func TestCellParserRefuses(t *testing.T) {
 		{gosmo.BulkColumn{Type: "time", Scale: 7}, "8:00:00", "not a time"},
 		{gosmo.BulkColumn{Type: "datetimeoffset", Scale: 0}, "2024-01-01 00:00:00 +14:01", "not a datetimeoffset"},
 		{gosmo.BulkColumn{Type: "datetimeoffset", Scale: 0}, "2024-01-01 00:00:00 05:30", "not a datetimeoffset"},
+		// Stored as the UTC instant, which is year 0 or 10000 here (gosmo refuses).
+		{gosmo.BulkColumn{Type: "datetimeoffset", Scale: 0}, "0001-01-01 00:30:00 +01:00", "its UTC time must be within years 1 to 9999"},
+		{gosmo.BulkColumn{Type: "datetimeoffset", Scale: 0}, "9999-12-31 23:30:00 -01:00", "its UTC time must be within years 1 to 9999"},
 		{gosmo.BulkColumn{Type: "uniqueidentifier"}, "6F9619FF8B86D011B42D00C04FD430C8", "not a uniqueidentifier"},
 		{gosmo.BulkColumn{Type: "uniqueidentifier"}, "6F9619FF-8B86-D011-B42D-00C04FD430CG", "not a uniqueidentifier"},
 		{gosmo.BulkColumn{Type: "varbinary", Length: 2}, "0x010203", "3 bytes is longer than the column's 2"},
