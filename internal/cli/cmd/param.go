@@ -178,11 +178,18 @@ func parseParam(raw string) (param, error) {
 			}
 			value = v
 		}
-		// A date or bit is checked and rewritten in a form the server reads
-		// one way: its own conversion would succeed with a different value.
+		// A date, time or bit is checked and rewritten in a form the server
+		// reads one way: its own conversion would succeed with a different
+		// value.
 		switch {
 		case paramDateTypes[m[1]]:
 			v, err := dateLiteral(p.name, value, m[1])
+			if err != nil {
+				return param{}, err
+			}
+			value = v
+		case m[1] == "time":
+			v, err := timeLiteral(p.name, value)
 			if err != nil {
 				return param{}, err
 			}
@@ -292,12 +299,58 @@ var paramDateTypes = map[string]bool{
 	"date": true, "datetime": true, "smalldatetime": true, "datetime2": true, "datetimeoffset": true,
 }
 
+// paramClock is the clock part of paramDate and paramTime: hh:mm, then
+// optionally seconds and a fraction of 1 to 7 digits. Four groups.
+const paramClock = `([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]{1,7}))?)?`
+
 // paramDate is the ISO 8601 form --param accepts for a date type: the date,
-// then optionally a time (T or a space before it; seconds and a fraction
-// optional), then optionally a zone.
+// then optionally a time (T or a space before it), then optionally a zone.
 var paramDate = regexp.MustCompile(`^([0-9]{4})-([0-9]{2})-([0-9]{2})` +
-	`(?:[T ]([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]{1,7}))?)?)?` +
+	`(?:[T ]` + paramClock + `)?` +
 	`(Z|[+-][0-9]{2}:[0-9]{2})?$`)
+
+// paramTime is the form --param accepts for time: the clock alone.
+var paramTime = regexp.MustCompile(`^` + paramClock + `$`)
+
+// clockLiteral checks paramClock's four submatches and writes them
+// hh:mm:ss[.f…]; ok is false for a time of day that does not exist.
+func clockLiteral(hh, mm, ss, frac string) (string, bool) {
+	h, _ := strconv.Atoi(hh)
+	mi, _ := strconv.Atoi(mm)
+	s := 0
+	if ss != "" {
+		s, _ = strconv.Atoi(ss)
+	}
+	if h > 23 || mi > 59 || s > 59 {
+		return "", false
+	}
+	out := fmt.Sprintf("%s:%s:%02d", hh, mm, s)
+	if frac != "" {
+		out += "." + frac
+	}
+	return out, true
+}
+
+// timeLiteral checks a time value: the server's conversion takes a whole
+// date or datetime and keeps its clock (2026-01-02 runs as 00:00:00), and
+// reads 10:00 PM as 22:00. What it rounds (more decimals than the scale) is
+// left to it, as for the date types.
+func timeLiteral(name, value string) (string, error) {
+	v := strings.TrimSpace(value)
+	bad := func(msg string) (string, error) {
+		return "", usageError(fmt.Sprintf("--param %s: %q %s", name, v, msg),
+			"Write the time as hh:mm[:ss[.fffffff]] (24-hour).")
+	}
+	m := paramTime.FindStringSubmatch(v)
+	if m == nil {
+		return bad("is not an ISO 8601 time")
+	}
+	out, ok := clockLiteral(m[1], m[2], m[3], m[4])
+	if !ok {
+		return bad("is not a time of day")
+	}
+	return out, nil
+}
 
 // dateLiteral checks a date-type value and rewrites it in a form every
 // DATEFORMAT and LANGUAGE reads the same: YYYYMMDD for a date alone,
@@ -342,13 +395,8 @@ func dateLiteral(name, value, base string) (string, error) {
 	if !hasTime {
 		return m[1] + m[2] + m[3], nil
 	}
-	h, _ := strconv.Atoi(m[4])
-	mi, _ := strconv.Atoi(m[5])
-	s := 0
-	if m[6] != "" {
-		s, _ = strconv.Atoi(m[6])
-	}
-	if h > 23 || mi > 59 || s > 59 {
+	clock, ok := clockLiteral(m[4], m[5], m[6], m[7])
+	if !ok {
 		return bad("is not a time of day")
 	}
 	if len(zone) == 6 {
@@ -358,11 +406,7 @@ func dateLiteral(name, value, base string) (string, error) {
 			return bad("has a zone outside -14:00 to +14:00")
 		}
 	}
-	out := fmt.Sprintf("%s-%s-%sT%s:%s:%02d", m[1], m[2], m[3], m[4], m[5], s)
-	if m[7] != "" {
-		out += "." + m[7]
-	}
-	return out + zone, nil
+	return m[1] + "-" + m[2] + "-" + m[3] + "T" + clock + zone, nil
 }
 
 // daysIn is the number of days in month mo of year y (proleptic Gregorian,

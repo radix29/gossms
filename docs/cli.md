@@ -894,8 +894,11 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   under every `DATEFORMAT` and language. (Sent as written, `2026-01-02` is
   1 February in `datetime` for a login whose language is British, German or
   French; `01/02/2026` swaps for every type.) Another form, or a day or time
-  that does not exist, is `USAGE_ERROR`. A `bit` is `0`, `1`, `true` or
-  `false` (any case).
+  that does not exist, is `USAGE_ERROR`. A `time` takes `hh:mm[:ss[.fffffff]]`
+  alone (24-hour), sent as `hh:mm:ss[.f…]`: the server's conversion would
+  run a date or datetime as its clock part (`2026-01-02` as `00:00:00`) and
+  read `10:00 PM`, so any other form is `USAGE_ERROR`. A `bit` is `0`, `1`,
+  `true` or `false` (any case).
 - **A value that would change is refused before connecting** (`USAGE_ERROR`):
   an empty or blank value for any type but `char varchar nchar nvarchar
   sysname xml sql_variant` (the server would turn it into `0` or

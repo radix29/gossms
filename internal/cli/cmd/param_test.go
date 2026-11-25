@@ -159,7 +159,8 @@ func TestParameterize(t *testing.T) {
 }
 
 // A date is ISO 8601 only, sent as YYYYMMDD or with the T: the forms no
-// DATEFORMAT or LANGUAGE reads another way.
+// DATEFORMAT or LANGUAGE reads another way. A time is hh:mm[:ss[.f…]] only: the
+// server would take a whole date as midnight.
 func TestParseParamDate(t *testing.T) {
 	for _, tt := range []struct {
 		raw  string
@@ -194,6 +195,16 @@ func TestParseParamDate(t *testing.T) {
 		{"d=2026-01-02+02:00:datetimeoffset", "!no time"},
 		{"d=2026-01-02T10:00+15:00:datetimeoffset", "!outside"},
 		{"d=2026-01-02T10:00:00.12345678:datetime2", "!not an ISO 8601 date"},
+		{"t=10:00:time", "N'10:00:00'"},
+		{"t=12:30:00.5:time(1)", "N'12:30:00.5'"},
+		{"t= 23:59:59.1234567 :time(7)", "N'23:59:59.1234567'"},
+		{"t=2026-01-02:time", "!not an ISO 8601 time"},
+		{"t=2026-01-02T10:00:time", "!not an ISO 8601 time"},
+		{"t=10:00 PM:time", "!not an ISO 8601 time"},
+		{"t=10:00:00.12345678:time", "!not an ISO 8601 time"},
+		{"t=24:00:time", "!not a time of day"},
+		{"t=10:60:time", "!not a time of day"},
+		{"t=10:00:60:time(0)", "!not a time of day"},
 	} {
 		p, err := parseParam(tt.raw)
 		if want, ok := strings.CutPrefix(tt.want, "!"); ok {
