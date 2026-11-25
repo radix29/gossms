@@ -25,31 +25,38 @@ func TestExplorerActiveDatabaseMarker(t *testing.T) {
 	a.explorer.SetChildren(root, []*explorerNode{master, sales})
 	a.explorer.SetBounds(0, 0, 55, 12)
 	s := tuikittest.NewScreen(55, 12)
+	// marked reports whether name's row is drawn in theme.StyleTreeCurrent (bold).
+	// The label itself carries no marker.
+	title := theme.StyleTreeCurrent()
+	marked := func(name string) bool {
+		x, y, ok := s.Find(name)
+		if !ok {
+			t.Fatalf("%s is not drawn:\n%s", name, s.Snapshot())
+		}
+		st := s.StyleAt(x, y)
+		return st.HasBold() && st.GetForeground() == title.GetForeground() && st.GetBackground() == title.GetBackground()
+	}
 
 	for _, style := range config.AllIconStyles() {
 		a.cfg.IconStyle = style
 		a.explorer.rebuild()
 		a.explorer.Draw(s)
-		if s.RowOf("✓ master") < 0 || s.RowOf("✓ Sales") >= 0 {
+		if !marked("master") || marked("Sales") {
 			t.Fatalf("%s: wrong active marker:\n%s", config.IconStyleName(style), s.Snapshot())
+		}
+		if s.RowOf("✓") >= 0 {
+			t.Fatal("the checkmark is still drawn")
 		}
 		if master.label != "master" || a.explorer.Selected() != root {
 			t.Fatal("marking changed the node's name or selection")
-		}
-		x, y, _ := s.Find("✓ master")
-		if got, want := s.StyleAt(x, y), theme.StylePanel(); got.GetForeground() != want.GetForeground() || got.GetBackground() != want.GetBackground() {
-			t.Fatal("the unselected checkmark did not follow the panel colors")
 		}
 		onSelect := a.explorer.tree.OnSelect
 		a.explorer.tree.OnSelect = nil
 		a.explorer.tree.Select(master)
 		a.explorer.Draw(s)
-		x, y, found := s.Find("✓ master")
-		if !found {
-			t.Fatal("selecting the current database hid its checkmark")
-		}
-		if got, want := s.StyleAt(x, y), theme.StyleSelected(); got.GetForeground() != want.GetForeground() || got.GetBackground() != want.GetBackground() {
-			t.Fatal("the selected checkmark did not follow the selection colors")
+		x, y, _ := s.Find("master")
+		if got, want := s.StyleAt(x, y), theme.StyleSelected(); !got.HasBold() || got.GetForeground() != want.GetForeground() || got.GetBackground() != want.GetBackground() {
+			t.Fatal("the selected current database lost its bold or the selection colors")
 		}
 		a.explorer.tree.Select(root)
 		a.explorer.tree.OnSelect = onSelect
@@ -57,31 +64,31 @@ func TestExplorerActiveDatabaseMarker(t *testing.T) {
 
 	qp.setResult(&query.Result{Database: "Sales"}, false)
 	a.explorer.Draw(s)
-	if s.RowOf("✓ Sales") < 0 || s.RowOf("✓ master") >= 0 {
+	if !marked("Sales") || marked("master") {
 		t.Fatalf("manual USE did not move the marker:\n%s", s.Snapshot())
 	}
 	a.panels.AddPanel(NewQueryPanel(a, "Disconnected"))
 	a.panels.SetActiveIndex(1)
 	a.explorer.Draw(s)
-	if s.RowOf("✓ Sales") >= 0 || s.RowOf("✓ master") >= 0 {
+	if marked("Sales") || marked("master") {
 		t.Fatal("a disconnected active tab left a database marked")
 	}
 	a.panels.SetActiveIndex(0)
 	a.explorer.Draw(s)
-	if s.RowOf("✓ Sales") < 0 {
+	if !marked("Sales") {
 		t.Fatal("returning to the connected query tab did not restore its marker")
 	}
 	hostedSessionPanel(t, a, 0)
 	a.panels.SetActiveIndex(2)
 	a.explorer.Draw(s)
-	if s.RowOf("✓ master") < 0 || s.RowOf("✓ Sales") >= 0 {
+	if !marked("master") || marked("Sales") {
 		t.Fatal("a second connected tab did not show its own database")
 	}
 	a.panels.SetActiveIndex(0)
 	sc.Opts.User = "another-login"
 	a.explorer.rebuild()
 	a.explorer.Draw(s)
-	if s.RowOf("✓ Sales") >= 0 || s.RowOf("✓ master") >= 0 {
+	if marked("Sales") || marked("master") {
 		t.Fatal("a different connection identity was marked")
 	}
 }

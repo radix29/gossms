@@ -478,10 +478,11 @@ func (oe *ObjectExplorer) row(n *explorerNode, depth int) controls.TreeNode {
 	// The suffix is added here rather than written into n.label, so clearing the
 	// filter needn't unpick it from a string the loaders own.
 	label := n.label
+	// The active query window's database is drawn in theme.StyleTreeCurrent.
+	current := false
 	if n.data.Type == NodeDatabase && oe.app.panels != nil {
-		if qp := oe.app.activeQueryPanel(); qp.onExplorerConnection(resolveConn(n)) && qp.database == n.data.DBName {
-			label = "✓ " + label
-		}
+		qp := oe.app.activeQueryPanel()
+		current = qp.onExplorerConnection(resolveConn(n)) && qp.database == n.data.DBName
 	}
 	// A server root saved under a profile name leads with it. Display only:
 	// n.label stays the connection label sameObject matches by (the status-bar
@@ -495,10 +496,11 @@ func (oe *ObjectExplorer) row(n *explorerNode, depth int) controls.TreeNode {
 		label += " (filtered)"
 	}
 	return controls.TreeNode{
-		Label:   label,
-		Icon:    nodeIcon(n.data, oe.app.cfg.IconStyle, n.Expanded),
-		Dim:     n.data.dimmed(),
-		HasKids: hasChildren(n.data.Type),
+		Label:    label,
+		Icon:     nodeIcon(n.data, oe.app.cfg.IconStyle, n.Expanded),
+		Dim:      n.data.dimmed(),
+		Emphasis: current,
+		HasKids:  hasChildren(n.data.Type),
 	}
 }
 

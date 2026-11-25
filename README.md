@@ -238,8 +238,8 @@ failed peer connection never retries with another server's credentials.
 
 ## Object Explorer
 
-The current database of the active query tab has a `✓` before its name,
-followed by one space, in every icon style.
+The current database of the active query tab is drawn in bold (bright yellow in
+the dark theme, the title color in the others), in every icon style.
 **Use Database**, the first item in a database's right-click
 menu, changes that tab's existing session without editing its SQL or clearing
 its results. It is disabled while busy, for another connection identity, and
