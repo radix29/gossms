@@ -48,7 +48,8 @@ const (
 	// transaction — a rollback does not undo it (docs/cli.md § Transactions).
 	FlagSequence
 	// FlagUncounted: RECEIVE, WRITETEXT, UPDATETEXT, or TRUNCATE TABLE, DROP
-	// TABLE or ALTER TABLE … SWITCH of a permanent table (uncountedDDL), whose
+	// TABLE, ALTER TABLE … SWITCH, ALTER TABLE … DROP COLUMN or ALTER TABLE …
+	// ALTER COLUMN of a permanent table (uncountedDDL), whose
 	// changes the server's row counts miss (live, 17): RECEIVE's count arrives
 	// after its result set and so reads like a SELECT's, the others report none.
 	FlagUncounted
@@ -713,8 +714,9 @@ func uncountedVerb(toks []token, i int, name string) bool {
 	return false
 }
 
-// uncountedDDL reports whether toks[i] begins TRUNCATE TABLE, DROP TABLE or
-// ALTER TABLE … SWITCH of a permanent table (FlagUncounted): each removes rows
+// uncountedDDL reports whether toks[i] begins TRUNCATE TABLE, DROP TABLE,
+// ALTER TABLE … SWITCH, ALTER TABLE … DROP COLUMN or ALTER TABLE … ALTER
+// COLUMN of a permanent table (FlagUncounted): each removes or rewrites rows
 // and reports no count, so a --max-rows-affected limit of any size passed
 // them and committed (a 1000-row TRUNCATE under a limit of 10). A temporary
 // table is exempt, as Write.Local exempts it from the trigger check: what it
@@ -755,9 +757,60 @@ func uncountedDDL(toks []token, i int) bool {
 			j = next + 1
 		}
 	case "ALTER":
-		// ALTER TABLE t SWITCH [PARTITION n] TO t2 [PARTITION n]
 		p, next := permanent(j)
-		return p && next < len(toks) && toks[next].is("SWITCH")
+		if !p || next >= len(toks) {
+			return false
+		}
+		switch {
+		case toks[next].is("SWITCH"): // ALTER TABLE t SWITCH [PARTITION n] TO t2 …
+			return true
+		case toks[next].is("ALTER"):
+			// ALTER TABLE t ALTER COLUMN c <type> converts every row, and the
+			// conversion rounds or substitutes silently (decimal(10,4) → (10,2),
+			// datetime2(7) → (0), nvarchar → varchar's ?). ALTER COLUMN … ADD/DROP
+			// ROWGUIDCOL, PERSISTED, SPARSE, MASKED … change no data but are
+			// flagged too: one fail-safe rule rather than a branch per option.
+			return next+1 < len(toks) && toks[next+1].is("COLUMN")
+		case toks[next].is("DROP"):
+			return dropsColumn(toks, next+1)
+		}
+	}
+	return false
+}
+
+// dropsColumn reports whether the ALTER TABLE … DROP list starting at toks[j]
+// drops a column: its items are [CONSTRAINT] [IF EXISTS] name [WITH (…)],
+// COLUMN [IF EXISTS] name [, name …] or PERIOD FOR SYSTEM_TIME, so a column
+// can follow a constraint (DROP CONSTRAINT c, COLUMN d). A bare DROP c is a
+// constraint: DROP defaults to CONSTRAINT.
+func dropsColumn(toks []token, j int) bool {
+	for j < len(toks) {
+		switch {
+		case toks[j].is("COLUMN"):
+			return true
+		case toks[j].is("PERIOD"):
+			return false
+		case toks[j].is("CONSTRAINT"):
+			j++
+		}
+		if j+1 < len(toks) && toks[j].is("IF") && toks[j+1].is("EXISTS") {
+			j += 2
+		}
+		_, next := nameParts(toks, j)
+		if next == j {
+			return false
+		}
+		j = next
+		if j+1 < len(toks) && toks[j].is("WITH") && toks[j+1].punct("(") {
+			d := toks[j+1].depth
+			for j += 2; j < len(toks) && !(toks[j].punct(")") && toks[j].depth == d+1); j++ {
+			}
+			j++
+		}
+		if j >= len(toks) || !toks[j].punct(",") {
+			return false
+		}
+		j++
 	}
 	return false
 }

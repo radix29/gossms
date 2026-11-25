@@ -562,6 +562,12 @@ func TestClassifyFlags(t *testing.T) {
 		{"DROP TABLE t", FlagUncounted},
 		{"DROP TABLE IF EXISTS a, b", FlagUncounted},
 		{"ALTER TABLE t SWITCH PARTITION 2 TO t2 PARTITION 2", FlagUncounted},
+		// D2: no count, every row's column gone or converted.
+		{"ALTER TABLE t DROP COLUMN c", FlagUncounted},
+		{"ALTER TABLE t DROP COLUMN IF EXISTS c, d", FlagUncounted},
+		{"ALTER TABLE dbo.t ALTER COLUMN c varchar(5)", FlagUncounted},
+		{"IF 1=1 ALTER TABLE t DROP COLUMN c", FlagUncounted},
+		{"ALTER TABLE t DROP CONSTRAINT k WITH (ONLINE = ON), COLUMN c", FlagUncounted},
 	} {
 		if got := Classify(tt.script).Flags; !got.Has(tt.want) {
 			t.Errorf("Classify(%q).Flags = %v, want %v among them", tt.script, got.Names(), tt.want.Names())
@@ -590,7 +596,11 @@ func TestClassifyFlags(t *testing.T) {
 		{"CREATE EVENT NOTIFICATION n ON DATABASE FOR CREATE_TABLE TO SERVICE 's', 'current database'", 0},
 		{"SELECT resumable, abort, pause FROM t", 0},
 		{"DROP VIEW v", 0},
-		{"ALTER TABLE t DROP COLUMN c", 0},
+		{"ALTER TABLE t DROP c", 0},
+		{"ALTER TABLE t DROP CONSTRAINT c", 0},
+		{"ALTER TABLE t DROP CONSTRAINT IF EXISTS a, b", 0},
+		{"ALTER TABLE #t DROP COLUMN c", 0},
+		{"ALTER TABLE #t ALTER COLUMN c varchar(5)", 0},
 		{"SELECT [truncate] FROM t", 0},
 		{"TRUNCATE TABLE #t", 0},
 	} {
