@@ -59,12 +59,36 @@ func TestParseParamRefuses(t *testing.T) {
 		"b=DEAD:varbinary(4)",              // binary not 0x
 		"b=0xZZ:binary(1)",                 // not hex
 		"b=0x1');DROP TABLE t--:binary(8)", // not hex either
+		"a=1,5:money",                      // the server drops the comma: 15.00
+		"a=12,50:smallmoney",               // 1250.00
+		"a=$5:money",                       // currency sign
+		"a=1.23456:money",                  // more than four decimals
+		"a=214749:smallmoney",              // out of range
 	} {
 		if p, err := parseParam(raw); err == nil {
 			t.Errorf("%q: accepted as %+v", raw, p)
 		} else if e, ok := err.(*output.Error); !ok || e.Code != output.CodeUsageError {
 			t.Errorf("%q: %v", raw, err)
 		}
+	}
+}
+
+// A money amount is sent as written once it has the only shape the server
+// cannot read as another amount.
+func TestParseParamMoney(t *testing.T) {
+	for raw, want := range map[string]string{
+		"a=-12.50:money":           "N'-12.50'",
+		"a=1250:money":             "N'1250'",
+		"a=+0.0001:smallmoney":     "N'+0.0001'",
+		"a=214748.3647:smallmoney": "N'214748.3647'",
+	} {
+		p, err := parseParam(raw)
+		if err != nil || p.value != want {
+			t.Errorf("%q: %+v %v, want %s", raw, p, err, want)
+		}
+	}
+	if _, err := parseParam("a=12,50:money"); err == nil || !strings.Contains(err.Error(), "is not a money amount") {
+		t.Errorf("12,50: %v", err)
 	}
 }
 

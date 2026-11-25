@@ -138,6 +138,16 @@ func parseParam(raw string) (param, error) {
 				return param{}, err
 			}
 		}
+		// The server's string-to-money conversion drops commas anywhere and
+		// takes a currency sign, so 12,50 would run as 1250.00 with no
+		// error. gosmo's money check (the one data import uses) refuses
+		// anything but [+-]digits[.digits], over four decimals, and out of
+		// range.
+		if m[1] == "money" || m[1] == "smallmoney" {
+			if err := moneyFits(p.name, value, m[1]); err != nil {
+				return param{}, err
+			}
+		}
 		// A date or bit is checked and rewritten in a form the server reads
 		// one way: its own conversion would succeed with a different value.
 		switch {
@@ -302,6 +312,20 @@ func decimalFits(name, value, base, args string) error {
 	case whole > prec-scale:
 		return usageError(fmt.Sprintf("--param %s: %s has %d digits before the point; %s keeps %d", name, strings.TrimSpace(value), whole, typ, prec-scale),
 			"Declare a larger precision.")
+	}
+	return nil
+}
+
+// moneyFits refuses a money/smallmoney value the server would read as
+// another amount or round, with gosmo's BulkColumn check for the type.
+func moneyFits(name, value, base string) error {
+	conv, err := gosmo.BulkColumn{Type: base}.Converter()
+	if err == nil {
+		_, err = conv(strings.TrimSpace(value))
+	}
+	if err != nil {
+		return usageError(fmt.Sprintf("--param %s: %v", name, err),
+			"Write the amount with a point and no grouping or currency sign: 1250.00 or 12.50.")
 	}
 	return nil
 }

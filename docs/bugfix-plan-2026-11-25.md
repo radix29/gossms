@@ -1,6 +1,6 @@
 # Bug-fix plan, 2026-11-25 (silent value changes)
 
-Three defects found (D2 fixed 2026-11-25; two remain) reviewing gossms,
+Three defects found (D2 and D3 fixed 2026-11-25; D1 remains) reviewing gossms,
 gosmo and tuikit, each **reproduced live on win10cli (17.0)** with
 disposable tempdb objects, all dropped afterwards. None is in `docs/open-threads.md`, `docs/decisions.md` or
 `~/go/gosmo/OPEN-THREADS.md`. All three change data with no error: a value
@@ -12,77 +12,12 @@ the last one. Nobody commits but the user.
 | # | Where | Effect | Severity |
 |---|---|---|---|
 | D1 | gosmo `bulkvalue.go` (`timeConv`) | A `datetimeoffset` whose UTC instant is outside 0001–9999 is bulk-loaded as a different value (a day later, or clamped) | Silent corruption in an import that promises to refuse it |
-| D3 | `internal/cli/cmd/param.go` (`parseParam`) | `--param amount=12,50:money` runs with 1250.00; `$5` is accepted too | Wrong value sent, no error |
 
 Each step, in the repo it touches: `go build ./... && go test ./... &&
 gofmt -l . && go vet ./... && staticcheck ./... && deadcode -test ./...`;
 then gossms's `go test ./...` and the item's live repro with the built
 binary (`docs/testing.md`). D1 goes through the `dev-with-local-gosmo`
-skill (the `replace` is active). Update `docs/cli.md` in the same change as
-D3.
-
-## Recommended implementation order
-
-1. **D3** — a few lines in `parseParam`, gossms only; wrong rows matched or
-   written with no error.
-2. **D1** — a gosmo change (tag/`replace` discipline, a library others use),
-   and the rarest input (an offset that pushes the instant past year 1 or
-   9999); do it last so the gossms-only fixes are not held behind it.
-
----
-
-## D3 — `--param` sends a mis-read `money`/`smallmoney` value
-
-**Cause.** `parseParam` (`internal/cli/cmd/param.go`) checks a `decimal`/
-`numeric` value (`decimalFits`, line 136), a date and a bit, and leaves every
-other type to the server, documenting (`docs/cli.md` § Parameters) that "a
-value that does not convert is `SQL_ERROR` (Msg 8114)". That holds for `int`,
-`decimal`, `float` and `real`, which refuse `1,5` and `$5`, but **not for
-`money`/`smallmoney`**: SQL Server's string-to-money conversion ignores commas
-anywhere and accepts a currency symbol. A European decimal comma becomes a
-value 100 times larger.
-
-**Repro (live, verified 2026-11-25, through `sp_executesql` exactly as
-`parameterize` sends it):**
-
-| type | value | becomes |
-|---|---|---|
-| `money` | `1,5` | `15.00` |
-| `money` | `12,50` | `1250.00` |
-| `money` | `1,2,3.5` | `123.50` |
-| `money` | `$5` | `5.00` |
-| `smallmoney` | `1,5` | `15.00` |
-| `int`, `bigint`, `decimal(9,2)`, `float`, `real` | `1,5` / `1,000` / `$5` | Msg 8114/245 |
-
-So `gossms query run -Q "UPDATE dbo.acct SET bal = @a WHERE id = 1" --param
-a=12,50:money --allow write` writes 1250.00.
-
-**Fix.** Before quoting, check `money`/`smallmoney` values with gosmo's own
-money check, so the CLI, `data import` and gosmo agree on what a money
-amount is: `gosmo.BulkColumn{Type: m[1]}.Converter()` refuses anything but
-`[+-]digits[.digits]`, more than four decimals, and out-of-range values
-(`moneyConv`, `~/go/gosmo/bulkvalue.go`). Its message (`"12,50" is not a money
-amount`) becomes the `USAGE_ERROR`, with the hint "Write the amount with a
-point and no grouping or currency sign: 1250.00 or 12.50." Rejecting more
-than four decimals is a tightening of the documented "`money` rounds to its
-own precision": recommended (it is what `decimalFits` already does for
-`decimal`, and what `data import` does for money); drop that sentence for
-money in `docs/cli.md`. Ask the user if rounding should stay allowed — then
-check only the shape (`paramDecimal`) and range.
-
-*Optional, same change:* run `int`/`bigint`/`smallint`/`tinyint`/`float`/
-`real` through the same `Converter` for a `USAGE_ERROR` before connecting
-instead of the server's Msg 8114 after it — not a correctness fix (the
-server refuses them), a better error.
-
-**Tests** (`internal/cli/cmd/param_test.go`, `TestParseParamRefuses`):
-`a=1,5:money`, `a=12,50:smallmoney`, `a=$5:money`, `a=1.23456:money`,
-`a=214749:smallmoney` (out of range) are `USAGE_ERROR`; `a=-12.50:money`,
-`a=1250:money`, `a=+0.0001:smallmoney` pass, quoted as written. Live: the
-`UPDATE` above is refused before connecting; `docs/cli.md` § Parameters
-updated (the "does not convert" bullet and the rounding sentence).
-
----
+skill (the `replace` is active).
 
 ## D1 — gosmo bulk load stores an out-of-UTC-range `datetimeoffset` as another value
 

@@ -882,7 +882,9 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
 - The value is sent as a Unicode string literal and the server converts it to
   the declared type, as it does a client's string parameter; a value that
   does not convert is `SQL_ERROR` (Msg 8114, line 0 as the server reports
-  it). `binary`/`varbinary` take `0x` and hex digits instead (nvarchar does
+  it) — except `money`/`smallmoney`, whose conversion drops commas and takes
+  a currency sign (`12,50` would be 1250.00), so they are checked first
+  (below). `binary`/`varbinary` take `0x` and hex digits instead (nvarchar does
   not convert to binary). There is no NULL value: write `NULL` in the script.
 - **Dates are ISO 8601 only** — `date datetime smalldatetime datetime2
   datetimeoffset` take `YYYY-MM-DD`, optionally followed by `T` or a space
@@ -903,9 +905,11 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   more than `n` bytes; a `decimal`/`numeric` value with more decimals than
   the scale or more digits before the point than precision minus scale (a
   bare `decimal` is `decimal(18,0)`, `(p)` is `(p,0)`; leading and trailing
-  zeros do not count). `sp_executesql` would silently truncate or round
-  these. `money`, `float`, `real` and the time types still round to their
-  own precision.
+  zeros do not count); a `money`/`smallmoney` value that is not
+  `[+-]digits[.digits]` (no grouping comma, no currency sign), has more than
+  four decimals, or is out of the type's range — the check `data import`
+  uses. `sp_executesql` would silently truncate, round or misread these.
+  `float`, `real` and the time types still round to their own precision.
 - The script must be **one batch, sent once** (no `GO`, no `GO n`):
   `sp_executesql` runs a single batch. Inside it, as in any dynamic SQL, `USE`
   and `SET` last only until the script ends, and a `#temp` table it creates is
