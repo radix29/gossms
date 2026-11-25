@@ -31,8 +31,8 @@ var ErrUnsupportedType = errors.New("no text form to load")
 // char encoding are gosmo's, so its messages are the parser's. This layer
 // reads the grid's date/time and binary forms (gosmo takes those as
 // time.Time and []byte) and refuses, for a date/time, more fractional-second
-// digits than the column keeps (datetime's 3, time's scale): text that would
-// be rounded is an error, not a silent change. Numbers, bits,
+// digits than the column keeps (datetime's 3, time's scale; trailing zeros do
+// not count): text that would be rounded is an error, not a silent change. Numbers, bits,
 // uniqueidentifiers and strings go to gosmo as the text itself. Checking here
 // as well lets the caller name the file line, and lets a dry run check
 // without loading. col.Name is best left empty: the caller names the column.
@@ -103,7 +103,7 @@ func timeParser(typ string, scale int) func(string) (any, error) {
 			if c, rest, ok = cutClock(rest); !ok {
 				return bad()
 			}
-			if c.fracDigits > maxFrac {
+			if c.sigDigits > maxFrac {
 				return nil, fmt.Errorf("%s has more than %d fractional-second digits", s, maxFrac)
 			}
 		}
@@ -141,8 +141,12 @@ func cutDate(s string) (year, month, day int, rest string, ok bool) {
 	return year, month, day, s[10:], ok
 }
 
+// clock is a parsed hh:mm:ss[.f]: fracDigits is the fraction's digits as
+// written, sigDigits those up to its last non-zero one — what a column's
+// scale must hold, since a trailing zero rounds nothing (.1230000 fits
+// time(3)).
 type clock struct {
-	hour, min, sec, nsec, fracDigits int
+	hour, min, sec, nsec, fracDigits, sigDigits int
 }
 
 // cutClock reads hh:mm:ss with an optional fraction of up to 9 digits from the
@@ -170,6 +174,7 @@ func cutClock(s string) (c clock, rest string, ok bool) {
 	if c.fracDigits == 0 || c.fracDigits > 9 {
 		return c, s, false
 	}
+	c.sigDigits = len(strings.TrimRight(rest[1:n], "0"))
 	c.nsec, _ = fixedDigits(rest[1:n] + strings.Repeat("0", 9-c.fracDigits))
 	return c, rest[n:], true
 }

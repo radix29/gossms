@@ -81,6 +81,10 @@ func TestParseParamMoney(t *testing.T) {
 		"a=1250:money":             "N'1250'",
 		"a=+0.0001:smallmoney":     "N'+0.0001'",
 		"a=214748.3647:smallmoney": "N'214748.3647'",
+		// Trailing zeros past four decimals round nothing, as for decimal
+		// (decimalFits): the two checks must agree.
+		"a=12.50000:money":      "N'12.50000'",
+		"a=1.000000:smallmoney": "N'1.000000'",
 	} {
 		p, err := parseParam(raw)
 		if err != nil || p.value != want {

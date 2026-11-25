@@ -910,7 +910,7 @@ gossms query run -p dev --file by-id.sql --param id=42:int --param "who=O'Brien:
   bare `decimal` is `decimal(18,0)`, `(p)` is `(p,0)`; leading and trailing
   zeros do not count); a `money`/`smallmoney` value that is not
   `[+-]digits[.digits]` (no grouping comma, no currency sign), has more than
-  four decimals, or is out of the type's range — the check `data import`
+  four decimals (trailing zeros do not count), or is out of the type's range — the check `data import`
   uses; a `uniqueidentifier` that is not one GUID, 8-4-4-4-12 hex digits
   with optional braces (the server keeps the first 36 characters, so a
   second pasted GUID or trailing text would be dropped). `sp_executesql`
@@ -1263,8 +1263,9 @@ names its base object).
     `skipped (…)`, then the defaulted columns (`file_column` NULL, `default`).
   - **Conversion.** Each cell is parsed for its column's type (an alias
     type's base type) before it is sent, and checked as the driver does not:
-    range, precision and scale (more fractional digits than the column keeps
-    is an error, not rounding), length in the column's unit, `char` text
+    range, precision and scale (a fractional digit the column cannot keep is
+    an error, not rounding; trailing zeros do not count, so `12.5000` loads
+    into `decimal(10,2)` and `10:00:00.1230000` into `time(3)`), length in the column's unit, `char` text
     encoded to the database's code page and refused by name where it or the
     column's code page lacks a character. The first cell that fails is exit
     2, `line n, column [c]: …`. `sql_variant`, CLR types (`geography`,
