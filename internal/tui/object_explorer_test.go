@@ -62,25 +62,37 @@ func TestExplorerActiveDatabaseMarker(t *testing.T) {
 		a.explorer.tree.OnSelect = onSelect
 	}
 
+	// settle is the event loop's post-step, where the marker follows the
+	// active panel, then a frame.
+	settle := func() {
+		a.handleEvent(tcell.NewEventInterrupt(nil))
+		a.explorer.Draw(s)
+	}
 	qp.setResult(&query.Result{Database: "Sales"}, false)
+	// Draw alone changes nothing (docs/ui-rules.md § Mouse): the marker moves
+	// in handleEvent, not in a frame.
 	a.explorer.Draw(s)
+	if !marked("master") || marked("Sales") {
+		t.Fatalf("Draw alone moved the marker:\n%s", s.Snapshot())
+	}
+	settle()
 	if !marked("Sales") || marked("master") {
 		t.Fatalf("manual USE did not move the marker:\n%s", s.Snapshot())
 	}
 	a.panels.AddPanel(NewQueryPanel(a, "Disconnected"))
 	a.panels.SetActiveIndex(1)
-	a.explorer.Draw(s)
+	settle()
 	if marked("Sales") || marked("master") {
 		t.Fatal("a disconnected active tab left a database marked")
 	}
 	a.panels.SetActiveIndex(0)
-	a.explorer.Draw(s)
+	settle()
 	if !marked("Sales") {
 		t.Fatal("returning to the connected query tab did not restore its marker")
 	}
 	hostedSessionPanel(t, a, 0)
 	a.panels.SetActiveIndex(2)
-	a.explorer.Draw(s)
+	settle()
 	if !marked("master") || marked("Sales") {
 		t.Fatal("a second connected tab did not show its own database")
 	}

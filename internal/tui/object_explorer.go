@@ -61,6 +61,12 @@ type ObjectExplorer struct {
 	view *controls.TreeView
 	tree *controls.TreeModel[*explorerNode]
 
+	// contextConn and contextDB are the active query panel's connection and
+	// database as of the last syncActiveDatabase: nil and "" when the active
+	// tab is not a connected query panel. row matches by IdentityKey
+	// (onExplorerConnection), but a pointer suffices here: a panel's conn is
+	// only ever replaced by a connect, so every identity change is a new
+	// pointer, and a reconnect under the same identity costs one spare rebuild.
 	contextConn *db.ServerConn
 	contextDB   string
 
@@ -115,7 +121,15 @@ func (oe *ObjectExplorer) DrawOverlay(s tcell.Screen)            { oe.view.DrawO
 func (oe *ObjectExplorer) HandleKey(ev *tcell.EventKey) bool     { return oe.view.HandleKey(ev) }
 func (oe *ObjectExplorer) HandleMouse(ev *tcell.EventMouse) bool { return oe.view.HandleMouse(ev) }
 
-func (oe *ObjectExplorer) Draw(s tcell.Screen) {
+func (oe *ObjectExplorer) Draw(s tcell.Screen) { oe.view.Draw(s) }
+
+// syncActiveDatabase rebuilds the tree when the active query panel's
+// connection or database differs from the last call's, so row's emphasis on
+// the active database follows it. App.handleEvent runs it after every event
+// and every drained post — every way that pair changes (tab switch, connect,
+// close, setResult, changeDatabase) — rather than Draw: state is set in the
+// handler, never in Draw (docs/ui-rules.md § Mouse).
+func (oe *ObjectExplorer) syncActiveDatabase() {
 	var conn *db.ServerConn
 	var database string
 	if oe.app.panels != nil {
@@ -127,7 +141,6 @@ func (oe *ObjectExplorer) Draw(s tcell.Screen) {
 		oe.contextConn, oe.contextDB = conn, database
 		oe.rebuild()
 	}
-	oe.view.Draw(s)
 }
 
 // AddRoot adds a new server root node and selects it, so Object Explorer Details
@@ -481,8 +494,7 @@ func (oe *ObjectExplorer) row(n *explorerNode, depth int) controls.TreeNode {
 	// The active query window's database is drawn in theme.StyleTreeCurrent.
 	current := false
 	if n.data.Type == NodeDatabase && oe.app.panels != nil {
-		qp := oe.app.activeQueryPanel()
-		current = qp.onExplorerConnection(resolveConn(n)) && qp.database == n.data.DBName
+		current = activeDatabase(oe.app.activeQueryPanel(), resolveConn(n), n.data.DBName)
 	}
 	// A server root saved under a profile name leads with it. Display only:
 	// n.label stays the connection label sameObject matches by (the status-bar

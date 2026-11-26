@@ -43,9 +43,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W4 — I1**: move the Object Explorer active-database check out of `Draw`
-  into `handleEvent`'s post-step, and give the "is this the active database"
-  test one home; document `query_panel_database.go` in the same change.
 - **W5 — I2** (tuikit): `Button`, `CheckBox` and `RadioBox` claim the press
   latch on every `Button1`, as `Toolbar` and `Splitter` do (an open thread:
   one line each). Do **I3** (the Windows-only tuikit test) in the same tuikit
@@ -67,39 +64,6 @@ commits but the user.
 ---
 
 ## Inconsistencies
-
-### I1 — Object Explorer rebuilds its tree inside `Draw`
-
-**Where:** `internal/tui/object_explorer.go`, `ObjectExplorer.Draw` (the
-`contextConn`/`contextDB` comparison and `oe.rebuild()`), and `row`;
-`internal/tui/query_panel_database.go`, `useDatabaseMenuItem`'s `Checked`.
-
-**What:** `ObjectExplorer.Draw` is the only `Draw` in `internal/tui` that
-changes state: it compares the active query panel's connection and database
-with the last frame's and rebuilds the tree on a difference.
-`docs/ui-rules.md` § Mouse says state is set in the handler, never in
-`Draw` — `App.Run` skips the frame after coalesced motion, so whatever
-`Draw` computes lags what the next event is hit-tested against. Here the
-rebuild changes only labels' styles, so nothing visible breaks today, but the
-pattern is the one the rule exists to stop. The predicate "this node is the
-active panel's database" is also written twice (`row`'s `current`, and
-`Checked`).
-
-**Fix:** a `func (oe *ObjectExplorer) syncActiveDatabase()` holding today's
-comparison, called from `App.handleEvent`'s post-step beside
-`a.abandonStaleFormat()` (it runs after every event and every drained post,
-which is every way the active panel or its database changes: tab switch,
-connect, close, `setResult`, `changeDatabase`). `Draw` goes back to one line.
-One helper, `activeDatabase(p *QueryPanel, sc *db.ServerConn, name string)
-bool`, serves `row` and `Checked`. Give `query_panel_database.go`'s four
-functions and the two new `ObjectExplorer` fields doc comments to match the
-surrounding density (`CLAUDE.md` § Coding conventions) — `contextConn` in
-particular, whose pointer comparison against `row`'s `IdentityKey`
-comparison needs its one line of why.
-
-**Tests:** the existing `object_explorer_test.go` marker tests keep passing
-once they call `handleEvent` (or `syncActiveDatabase`) instead of relying on
-a draw; add one asserting `Draw` alone no longer rebuilds.
 
 ### I2 — tuikit: three widgets claim the press latch only on a hit
 

@@ -279,6 +279,7 @@ func (a *App) handleEvent(ev tcell.Event) (quit bool, need frameNeed) {
 	// changes.
 	a.modals.Sync()
 	a.abandonStaleFormat()
+	a.explorer.syncActiveDatabase()
 	return false, need
 }
 
