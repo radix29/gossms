@@ -1265,7 +1265,9 @@ names its base object).
     type's base type) before it is sent, and checked as the driver does not:
     range, precision and scale (a fractional digit the column cannot keep is
     an error, not rounding; trailing zeros do not count, so `12.5000` loads
-    into `decimal(10,2)` and `10:00:00.1230000` into `time(3)`), length in the column's unit, `char` text
+    into `decimal(10,2)` and `10:00:00.1230000` into `time(3)`; a
+    `smalldatetime` refuses any seconds, a `datetime` milliseconds off its
+    1/300 s grid — ending in other than 0, 3 or 7), length in the column's unit, `char` text
     encoded to the database's code page and refused by name where it or the
     column's code page lacks a character. The first cell that fails is exit
     2, `line n, column [c]: …`. `sql_variant`, CLR types (`geography`,
