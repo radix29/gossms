@@ -350,7 +350,8 @@ func WithEachBatchOnce() Option {
 // connection in the database the pool logs in to (gosmo's
 // Server.InitialDatabase for a pool gosmo opened). A failing batch is reported
 // in Messages and execution continues. The connection is discarded rather than
-// pooled when the script leaves its database or the run fails or is cancelled.
+// pooled when the script leaves its database, its database cannot be read, or
+// the run is cancelled.
 // Cancelling ctx stops between and inside batches and returns the partial
 // Result. Every row is retained in Result.Sets unless WithMaxRows caps it; see
 // cellArena. A caller needing another database runs under a Session (Open).
