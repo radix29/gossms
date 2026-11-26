@@ -92,7 +92,9 @@ support); this section covers only the environment.
   single-database (`IsDatabaseScoped`: no msdb, Agent, server scope, USE) from
   the documentation alone. To check, with the Fabric contributor: connect,
   run gosmo's `TestLiveVersionSweep` against it, and walk Object Explorer —
-  no server-scope folders, no "needs SQL Server 2016" refusals. Also online
+  no "needs SQL Server 2016" refusals, and whether the instance folders and
+  actions it keeps today work (kept on purpose: `docs/decisions.md` § By
+  design, Explorer). Also online
   rebuild and the per-index ALL expansion: `gossms
   maint index-rebuild --online` (gosmo allows it on 12) and without
   `--index`, with and without `--reorganize` — gosmo sends one `ALTER INDEX

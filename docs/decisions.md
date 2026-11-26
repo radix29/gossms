@@ -1542,6 +1542,21 @@ their reason.
   in the header's column; the shift is `capture-pane -p` text read by a viewer
   that counts the mark as a column. `TestGridCombiningMarkKeepsSeparatorColumn`
   pins the emitted bytes and separator columns.
+- **Object Explorer keeps SQL database in Fabric (EngineEdition 12) apart from
+  Azure SQL Database (5).** `explorerSupport` applies the Azure exclusions
+  (instance folders, Back Up/Restore/Backup History, Activity Monitor, SQL
+  Server Log, New Server Role, Service Broker, CLR, FileTables, ML libraries,
+  database audits) to edition 5 only; edition 12 gets just the
+  `IsDatabaseScoped` branch (no Resource Governor, Database Mail,
+  Replication or server XEvents). Settled by `cc66edf` (PR #67), whose stated
+  intent was to preserve Fabric SQL database's existing behaviour, and kept
+  on 2026-11-26 when a review proposed folding edition 12 into the Azure
+  branch on gosmo's `IsDatabaseScoped` doc alone. No edition-12 server has
+  ever been connected (`docs/open-threads.md` § Environment), so the
+  documentation is not reason enough; change it only on a live walk by the
+  Fabric contributor. Pinned by the `fabric-sql-database` rows in
+  `TestExplorerRootSupportUsesEditionNotConnectionHostname` and
+  `TestExplorerFeatureMenusKeepManagedInstanceAndFabricDistinct`.
 
 ### Objects, scripting and Restore
 
