@@ -63,13 +63,14 @@ const openQuery = "SET ARITHABORT ON; " + stateQuery
 // returned to db; Close discards it. A dead pooled connection is retried (see
 // gosmo.AcquireConn).
 func Open(ctx context.Context, db *sql.DB, database string) (*Session, SessionState, error) {
-	conn, err := gosmo.AcquireConn(ctx, db, database)
+	pc, err := gosmo.AcquireConn(ctx, db, database)
 	if err != nil {
 		return nil, SessionState{}, err
 	}
-	s := &Session{conn: conn}
+	// Never pc.Release: a session's connection is always discarded (Close).
+	s := &Session{conn: pc.Conn}
 	var st SessionState
-	if err := conn.QueryRowContext(ctx, openQuery).Scan(&s.spid, &st.Database, &st.TranCount); err != nil {
+	if err := s.conn.QueryRowContext(ctx, openQuery).Scan(&s.spid, &st.Database, &st.TranCount); err != nil {
 		s.Close()
 		return nil, SessionState{}, err
 	}

@@ -2,7 +2,7 @@
 
 A review of gossms, `~/go/gosmo` and `~/go/tuikit` after the first
 2026-11-26 plan closed (`4326e0e`, gosmo `03bb1f2`, tuikit `71e53f9`).
-W1 (B1, gosmo), W2 (B2) and W3 (B3, tuikit) are done. Close an item by
+W1 (B1, gosmo), W2 (B2), W3 (B3, tuikit) and W4 (A1, gosmo) are done. Close an item by
 deleting it; delete this file with the last one. gosmo and tuikit may break back-compat where an item says so.
 
 **Method.** `go vet`, `staticcheck`, `deadcode -test` and
@@ -34,52 +34,14 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W4 — A1** (gosmo, breaking): `AcquireConn` reports the session's
-  database and owns the release, closing gosmo's open thread on parked
-  sessions; `query.Execute` loses two round trips and its hand-written
-  discard.
 - **W5 — N1**: nits (tuikit `LogFeed` ring, sequence dialog `%w`).
-- **W6**: move what stays undone to `docs/open-threads.md` (and
-  `~/go/gosmo/OPEN-THREADS.md` for W4's thread), then delete this file.
+- **W6**: move what stays undone to `docs/open-threads.md`, then delete
+  this file.
 
 Each step: build in the library first when one is involved (`go test ./...`
 there), then `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
 then `go test ./...`, then drive the built binary (`docs/testing.md`). Nobody
 commits but the user.
-
----
-
-## Architecture and simplification
-
-### A1 — gosmo: `AcquireConn` hands the session's database back and owns the release
-
-**Where:** `~/go/gosmo/retry.go`, `AcquireConn`; gossms
-`internal/query/executor.go` (`Execute`) and `session.go` (`Open`).
-
-**What:** `~/go/gosmo/OPEN-THREADS.md` § Idle pooled connections names the
-one remaining way to park a session in a database: a connection a caller
-switched with `AcquireConn` and closed back into the pool. gosmo hands out
-the hazard and leaves the rule to each caller; gossms's `Execute` writes
-it by hand (read `DB_NAME()` before, again after, `DiscardConn` unless
-equal) at the price of two extra round trips on top of the `SELECT 1`
-prologue — three per Activity Monitor procedure refresh. Separately, a
-context cancelled during `AcquireConn`'s backoff returns `ctx.Err()` alone,
-dropping the transient error, where `withRetry` joins the two.
-
-**Fix (breaking):** the prologue becomes `SELECT DB_NAME()` (after `USE`
-when a database is given, in the same batch) and `AcquireConn` returns a
-small `*PinnedConn` (or `(conn, home string, err)`) whose `Release()` reads
-`DB_NAME()` once and discards the connection unless it is still in `home`;
-a read failure discards. `Session` keeps discarding unconditionally
-(`DiscardConn` stays exported for it). `Execute`'s defer then calls
-`Release`, its start-of-run read goes, and `Result.Database` comes from the
-release's read when the run was not cancelled. Join the cause on the
-backoff cancel. Close that open-thread paragraph in
-`~/go/gosmo/OPEN-THREADS.md`. **Tests:** the existing `acquire_conn_test.go` fakes
-gain a "left in another database → discarded" and "read failed →
-discarded" case; gossms executor tests keep passing. **Drive:** Activity
-Monitor's sp_whoisactive tab refresh on 17 with Extended Events or
-`sys.dm_exec_sessions` confirming no session left in another database.
 
 ---
 
