@@ -180,8 +180,8 @@ func (c *targetCheck) object(ctx context.Context, verb string, d *gosmo.Database
 		if err != nil {
 			return nil, err
 		}
-		parts, ok := safety.NameParts(syn.BaseObject)
-		if !ok {
+		parts, err := gosmo.SplitName(syn.BaseObject)
+		if err != nil {
 			return []string{fmt.Sprintf("synonym %s's base object %s cannot be read", qn, syn.BaseObject)}, nil
 		}
 		return c.name(ctx, verb, parts, []string{d.Name}, false)

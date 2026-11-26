@@ -43,18 +43,12 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W5 — I2** (tuikit): `Button`, `CheckBox` and `RadioBox` claim the press
-  latch on every `Button1`, as `Toolbar` and `Splitter` do (an open thread:
-  one line each). Do **I3** (the Windows-only tuikit test) in the same tuikit
-  pass.
-- **W6 — A1 + A2**: `safety.NameParts` gives way to `gosmo.SplitName`;
-  `tableCandidates`' four loops fold into two helpers.
 - **W7 — A3** (tuikit): split `controls/treeview.go` (902 lines) at its mouse
   section.
 - **W8 — N1**: nits (gosmo `scanCapabilityRows` nested-map helper,
   `query.Execute`'s doc comment).
-- **W9**: move what stays undone to `docs/open-threads.md` (and close the
-  two open threads W5 resolves), then delete this file.
+- **W9**: move what stays undone to `docs/open-threads.md`, then delete
+  this file.
 
 Each step: build in the library first when one is involved (`go test ./...`
 there), then `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
@@ -63,63 +57,7 @@ commits but the user.
 
 ---
 
-## Inconsistencies
-
-### I2 — tuikit: three widgets claim the press latch only on a hit
-
-Already in `docs/open-threads.md` § tuikit press latches, with no repro. Do it
-now because it is three one-line moves and it makes the gesture rule
-uniform: `Toolbar` and `layout.Splitter` already claim on every `Button1`.
-
-**Where:** `~/go/tuikit/widgets/button.go`, `checkbox.go`, `radiobox.go`,
-each `HandleMouse`.
-
-**Fix:** call `press.Fresh(ev)` once, right after the `Buttons() != Button1`
-check and before the bounds test, keeping its result; act on it inside the
-hit. Mind the `disabled` early return: put `Fresh` before it too, so a press
-on a disabled widget still claims the gesture (a widget enabled mid-drag must
-not fire on the release's motion). Tests: press outside, drag onto the
-widget, assert no `OnClick`/toggle/pick — one per widget, beside the existing
-press tests. Delete the open-thread entry.
-
-### I3 — tuikit: `TestLocalFileSystemExistsReportsPermissionError` on Windows
-
-Already in `docs/open-threads.md` § tuikit tests on Windows. `os.Chmod(dir,
-0)` does not deny traversal on Windows. Skip that fixture when
-`runtime.GOOS == "windows"` (a test file, so the no-GOOS-branch rule for
-production code is not touched), with the reason in the skip message. Run
-`scripts/wintest.sh` against the tuikit tree to confirm. Delete the
-open-thread entry.
-
----
-
 ## Simplifications and refactoring
-
-### A1 — `safety.NameParts` duplicates `gosmo.SplitName`
-
-**Where:** `internal/cli/safety/writes.go`, `NameParts`; its one caller,
-`internal/cli/cmd/query_writes.go` (`targetCheck.object`, the synonym case).
-
-**What:** `NameParts` lexes a synonym's `base_object_name` to split it into
-parts. gosmo exports exactly that (`SplitName`: brackets, double quotes,
-omitted middle parts as "", at most four parts), and the two agree on every
-form the server writes there (it always brackets each part). `NameParts` is
-the only exported function in `safety` with no caller inside the package.
-
-**Fix:** call `gosmo.SplitName` (an error becomes today's "cannot be read"
-reason) and delete `NameParts`. `parseObjectName` in `cli/cmd` stays: its
-rules differ on purpose (no omitted part, at most three, its own usage
-wording).
-
-### A2 — completion: four copies of two loops in `tableCandidates`
-
-**Where:** `internal/tui/completion_candidates.go`, `tableCandidates`.
-
-**What:** the schema loop is written twice (user and system inventory), and
-since `fa9d965` the qualify-and-append loop twice (objects, functions).
-**Fix:** `schemaItems(schemas []string, pl string)` and
-`qualifiedObjectItems(objs, pl)`; behaviour unchanged, pinned by the existing
-completion tests (`softenExactMatches`/`qualifiesTyped` included).
 
 ### A3 — tuikit: `controls/treeview.go` is 902 lines
 

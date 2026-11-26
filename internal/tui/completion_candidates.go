@@ -311,49 +311,47 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 		})
 	}
 	items = append(items, p.bindingItems(bindings, prefix)...)
-	for _, schema := range inv.catalog.Schemas {
-		ok, partial := nameMatch(schema, pl)
-		if !ok {
-			continue
-		}
-		items = append(items, editor.CompletionItem{
-			Text: gosmo.QuoteNameIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
-			Partial: partial,
-		})
-	}
+	items = append(items, p.schemaItems(inv.catalog.Schemas, pl)...)
 	if sysInv != nil && sysInv.catalog != nil {
-		for _, schema := range sysInv.catalog.Schemas {
-			ok, partial := nameMatch(schema, pl)
-			if !ok {
-				continue
-			}
+		items = append(items, p.schemaItems(sysInv.catalog.Schemas, pl)...)
+	}
+	items = append(items, p.qualifiedObjectItems(inv.catalog.Objects, pl)...)
+	items = append(items, p.qualifiedObjectItems(inv.catalog.Functions, pl)...)
+	items = append(items, p.databaseItems(pl)...)
+	items = append(items, p.linkedServerItems(pl)...)
+	sortCompletionItems(items)
+	return items
+}
+
+// schemaItems offers every schema in schemas whose name contains pl, a
+// lower-cased prefix.
+func (p *QueryPanel) schemaItems(schemas []string, pl string) []editor.CompletionItem {
+	var items []editor.CompletionItem
+	for _, schema := range schemas {
+		if ok, partial := nameMatch(schema, pl); ok {
 			items = append(items, editor.CompletionItem{
 				Text: gosmo.QuoteNameIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
 				Partial: partial,
 			})
 		}
 	}
-	for i := range inv.catalog.Objects {
-		obj := &inv.catalog.Objects[i]
+	return items
+}
+
+// qualifiedObjectItems offers every object in objs whose name contains pl, a
+// lower-cased prefix, each committing schema-qualified: the popup shows
+// "dbo.Doctors" and commit inserts what it shows (issue #65), as DDL targets
+// already do.
+func (p *QueryPanel) qualifiedObjectItems(objs []gosmo.CatalogObject, pl string) []editor.CompletionItem {
+	var items []editor.CompletionItem
+	for i := range objs {
+		obj := &objs[i]
 		if ok, partial := nameMatch(obj.Name, pl); ok {
-			// The popup shows "dbo.Doctors"; commit inserts what it shows
-			// (issue #65), as the TVFs below and DDL targets already do.
 			item := p.objectItem(obj, partial)
 			item.Text = gosmo.QuoteNameIfNeeded(obj.Schema) + "." + item.Text
 			items = append(items, item)
 		}
 	}
-	for i := range inv.catalog.Functions {
-		fn := &inv.catalog.Functions[i]
-		if ok, partial := nameMatch(fn.Name, pl); ok {
-			item := p.objectItem(fn, partial)
-			item.Text = gosmo.QuoteNameIfNeeded(fn.Schema) + "." + item.Text
-			items = append(items, item)
-		}
-	}
-	items = append(items, p.databaseItems(pl)...)
-	items = append(items, p.linkedServerItems(pl)...)
-	sortCompletionItems(items)
 	return items
 }
 

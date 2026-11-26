@@ -123,25 +123,6 @@ support); this section covers only the environment.
   first. A hang no longer takes Paste with it: tuikit's `Dispatcher.Paste`
   waits at most `toolTimeout + 1s` for earlier copies.
 
-## tuikit tests on Windows: what is left
-
-- **`TestLocalFileSystemExistsReportsPermissionError` assumes Unix directory
-  permissions.** On Windows, `os.Chmod(dir, 0)` does not deny directory
-  traversal, so its missing-child lookup returns `(false, nil)` instead of
-  the expected permission error. The fixture predates the latest tuikit
-  update. Make it portable or skip this fixture on Windows in tuikit;
-  no goSSMS workaround is needed.
-
-## tuikit press latches: what is left
-
-- **`widgets.Button`, `CheckBox` and `RadioBox` claim their press latch only
-  on a hit** (`Fresh` inside the bounds test), so a press elsewhere dragged
-  onto one arrives fresh and activates it. `Toolbar` had the same shape and
-  now claims on every `Button1`, as `layout.Splitter` does. No repro for these
-  three: `dialogs.FieldGesture` routes a drag to the field that took the
-  press. If a host is found routing one by position, move `Fresh` before the
-  bounds test (one line each).
-
 ## File lock (`fileutil.WithLock`): what is left
 
 - **Starvation past the 10 s cap is possible, not seen since the fix** (issue
