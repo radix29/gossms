@@ -119,27 +119,6 @@ func TestCheckRefusesUnnameableWritesUnderMaxRows(t *testing.T) {
 	}
 }
 
-func TestNameParts(t *testing.T) {
-	for _, tt := range []struct {
-		in   string
-		want []string
-	}{
-		{"[db].[dbo].[t]", []string{"db", "dbo", "t"}},
-		{"[srv].[db].[dbo].[t]", []string{"srv", "db", "dbo", "t"}},
-		{"dbo.[a]]b]", []string{"dbo", "a]b"}},
-		{"t", []string{"t"}},
-		{"db..t", []string{"db", "", "t"}},
-		{"a.b.c.d.e", nil},
-		{"dbo.t x", nil},
-		{"", nil},
-	} {
-		got, ok := NameParts(tt.in)
-		if ok != (tt.want != nil) || !slices.Equal(got, tt.want) {
-			t.Errorf("NameParts(%q) = %q, %v; want %q", tt.in, got, ok, tt.want)
-		}
-	}
-}
-
 func TestUseDatabases(t *testing.T) {
 	script := "USE app\nGO\nIF @x = 1 USE [Other DB] ELSE USE APP\n" +
 		"SELECT 1 OPTION (USE HINT ('X'))\nSELECT 1 OPTION (USE PLAN N'<x/>')\n-- USE commented\nSELECT 'USE quoted'"

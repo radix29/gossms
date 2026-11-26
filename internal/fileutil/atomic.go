@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/radix29/gossms/internal/textutil"
@@ -386,14 +387,32 @@ var renameRetry = 500 * time.Millisecond
 // in Load, antivirus, a search indexer) fails with ERROR_ACCESS_DENIED until
 // that handle closes a few milliseconds later; surfacing it fails a save that
 // a retry completes. A denial that outlasts renameRetry (a read-only
-// directory, anywhere) is returned as itself.
+// directory on Windows) is returned as itself.
+//
+// A POSIX denial is returned at once: there it is always EACCES or EPERM and
+// never transient, so retrying it only delayed the error (log rotation into a
+// read-only directory). The test needs no GOOS branch: Windows reports the
+// denial as ERROR_ACCESS_DENIED (Errno 5), and its syscall.EACCES/EPERM are
+// Go-invented values (APPLICATION_ERROR+n) that os.Rename never returns there.
 func Rename(oldpath, newpath string) error {
 	deadline := time.Now().Add(renameRetry)
 	for {
 		err := os.Rename(oldpath, newpath)
-		if err == nil || !errors.Is(err, fs.ErrPermission) || time.Now().After(deadline) {
+		if err == nil || !transientDenial(err) || time.Now().After(deadline) {
 			return err
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// transientDenial reports whether a rename error is a permission denial that
+// a retry may clear: any but POSIX's EACCES and EPERM (see Rename).
+func transientDenial(err error) bool {
+	if !errors.Is(err, fs.ErrPermission) {
+		return false
+	}
+	if errno, ok := errors.AsType[syscall.Errno](err); ok {
+		return errno != syscall.EACCES && errno != syscall.EPERM
+	}
+	return true
 }

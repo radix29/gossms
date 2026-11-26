@@ -250,18 +250,6 @@ func aliasText(t token) string {
 	return t.raw
 }
 
-// NameParts splits s, a multipart object name such as a synonym's base object
-// ("[db].[dbo].[t]"), into its parts, each unquoted; ok is false when s is not
-// one name of one to four parts.
-func NameParts(s string) (parts []string, ok bool) {
-	toks, _ := lexBatch(s, 0)
-	n, next, ok := readName(toks, 0)
-	if !ok || len(n.parts) > 4 || next != len(toks) {
-		return nil, false
-	}
-	return n.parts, true
-}
-
 // UseDatabases is every database a USE statement in script names, in order,
 // each once (compared without case): the databases the script's writes may
 // land in besides the run's own. USE behind IF or ELSE counts too — the check

@@ -546,9 +546,9 @@ func TestActivityMonitorSessionsOptionSwitches(t *testing.T) {
 	}
 }
 
-// A run whose columns differ (Additional Info adds one mid-row) drops the
-// dragged widths, which are kept by index and would land on other columns.
-func TestActivityMonitorProcTabColumnChangeResetsWidths(t *testing.T) {
+// A run whose columns differ (Additional Info adds one mid-row) keeps each
+// dragged width on its column: kept by index, it landed on another column.
+func TestActivityMonitorProcTabColumnChangeKeepsWidthsByColumn(t *testing.T) {
 	am := hostedProcMonitor(t, amTabSessions)
 	pt := am.procTab()
 	pt.loc = activity.ProcTempDB
@@ -565,5 +565,8 @@ func TestActivityMonitorProcTabColumnChangeResetsWidths(t *testing.T) {
 	pt.applyResult(wider)
 	if got := pt.grid.ColumnWidth(2); got == 40 {
 		t.Error("sql text's dragged width moved onto additional_info")
+	}
+	if got := pt.grid.ColumnWidth(3); got != 40 {
+		t.Errorf("sql text's width = %d after the insert, want its dragged 40", got)
 	}
 }

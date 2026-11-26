@@ -229,115 +229,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				pool := poolRow.Value()
 				return slices.DeleteFunc(edits.Visible(), func(e *rgGroupEdit) bool { return e.cur.pool != pool })
 			}
-			headers := []string{"Name", "Importance", "Grant %", "CPU sec", "Timeout sec", "MAXDOP", "Max requests", "External pool"}
-			if tempdb {
-				headers = append(headers, "Tempdb %", "Tempdb MB")
-			}
-			cells := func(e *rgGroupEdit) []string {
-				v := e.cur
-				row := []string{
-					rgEditName(e.name, e.system, e.IsNew), v.importance, grantPercentText(v.grant),
-					zeroAs(v.cpuSec, "Unlimited"), zeroAs(v.timeoutSec, "Default"),
-					zeroAs(v.maxDOP, "Default"), zeroAs(v.maxRequests, "Unlimited"), v.external,
-				}
-				if tempdb {
-					row = append(row, orDefault(v.tempdbPercent, "None"), orDefault(v.tempdbMB, "None"))
-				}
-				return row
-			}
-
-			selectedRow := propsheet.Static("Name", "")
-			importanceRow := propsheet.Select("Importance", rgImportanceItems, 1)
-			grantRow := propsheet.Text("Max memory grant %", "25", 10)
-			grantRow.SetValidate(rgFloatValidator(0, 100, !fractional, false))
-			cpuRow := propsheet.Int("Max CPU time per request", 0, 0, 2147483647, "sec")
-			timeoutRow := propsheet.Int("Memory grant timeout", 0, 0, 2147483647, "sec")
-			dopRow := propsheet.Int("Maximum DOP", 0, 0, 64, "")
-			requestsRow := propsheet.Int("Maximum requests", 0, 0, 2147483647, "")
-			moveRow := propsheet.Select("Uses resource pool", movable, 0)
-			externalRow := propsheet.Select("Uses external pool", externalNames, 0)
-			tempdbPctRow := propsheet.Text("Tempdb data limit %", "", 10)
-			tempdbPctRow.SetValidate(rgFloatValidator(0, 100, false, true))
-			tempdbMBRow := propsheet.Text("Tempdb data limit (MB)", "", 14)
-			tempdbMBRow.SetValidate(rgFloatValidator(0, 1e15, false, true))
-			textRows := []*propsheet.TextRow{grantRow, cpuRow, timeoutRow, dopRow, requestsRow}
-			if tempdb {
-				textRows = append(textRows, tempdbPctRow, tempdbMBRow)
-			}
-			selectRows := []*propsheet.SelectRow{importanceRow, moveRow, externalRow}
-
-			// valid reads a detail row's value only when it validates; a value it would
-			// refuse leaves the group as it was.
-			valid := func(row *propsheet.TextRow) (string, bool) {
-				return row.Value(), row.Validate() == nil
-			}
-			intOf := func(row *propsheet.TextRow, dst *int) {
-				if n, err := row.IntValue(); err == nil && row.Validate() == nil {
-					*dst = int(n)
-				}
-			}
-			commit := func(e *rgGroupEdit) {
-				if e.locked {
-					return
-				}
-				v := &e.cur
-				v.importance = importanceRow.Value()
-				if s, ok := valid(grantRow); ok {
-					v.grant, _ = strconv.ParseFloat(s, 64)
-				}
-				intOf(cpuRow, &v.cpuSec)
-				intOf(timeoutRow, &v.timeoutSec)
-				intOf(dopRow, &v.maxDOP)
-				intOf(requestsRow, &v.maxRequests)
-				v.pool = moveRow.Value()
-				v.external = externalRow.Value()
-				if !tempdb {
-					return
-				}
-				if s, ok := valid(tempdbPctRow); ok {
-					v.tempdbPercent = s
-				}
-				if s, ok := valid(tempdbMBRow); ok {
-					v.tempdbMB = s
-				}
-			}
-			show := func(e *rgGroupEdit) {
-				locked := e == nil || e.locked
-				for _, row := range textRows {
-					row.SetReadOnly(locked)
-				}
-				for _, row := range selectRows {
-					row.SetReadOnly(locked)
-				}
-				if e == nil {
-					// Nothing selected (a pool with no groups): blank, not the last group's settings
-					// under no name.
-					selectedRow.SetValue("")
-					for _, row := range textRows {
-						row.SetValue("")
-					}
-					return
-				}
-				v := e.cur
-				selectedRow.SetValue(rgEditName(e.name, e.system, e.IsNew))
-				items, i := propsheet.PreservingItems(rgImportanceItems, v.importance)
-				importanceRow.SetItems(items)
-				importanceRow.SetSelected(i)
-				grantRow.SetValue(grantPercentText(v.grant))
-				cpuRow.SetValue(strconv.Itoa(v.cpuSec))
-				timeoutRow.SetValue(strconv.Itoa(v.timeoutSec))
-				dopRow.SetValue(strconv.Itoa(v.maxDOP))
-				requestsRow.SetValue(strconv.Itoa(v.maxRequests))
-				items, i = propsheet.PreservingItems(movable, v.pool)
-				moveRow.SetItems(items)
-				moveRow.SetSelected(i)
-				items, i = propsheet.PreservingItems(externalNames, v.external)
-				externalRow.SetItems(items)
-				externalRow.SetSelected(i)
-				tempdbPctRow.SetValue(v.tempdbPercent)
-				tempdbMBRow.SetValue(v.tempdbMB)
-			}
-
+			headers, cells := rgGroupColumns(tempdb)
+			d := newRGGroupDetail(fractional, tempdb, movable, externalNames)
 			var list *propsheet.ListEditor[*rgGroupEdit]
 			// warnRemoved says so when the pool listed is one the Resource Pools page
 			// removes: its groups must move out first.
@@ -370,8 +263,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				Items:      visible,
 				Cells:      cells,
 				Initial:    func(e *rgGroupEdit) bool { return e.name == focus.group },
-				Show:       show,
-				Commit:     commit,
+				Show:       func(e *rgGroupEdit) { d.show(e, movable, externalNames) },
+				Commit:     d.commit,
 				Add: func(name string) (string, bool) {
 					pool := poolRow.Value()
 					switch {
@@ -408,7 +301,7 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				list.Reselect(0)
 				warnRemoved()
 			})
-			moveRow.SetOnChange(func(to string) {
+			d.moveRow.SetOnChange(func(to string) {
 				cur := list.Current()
 				if cur == nil {
 					return
@@ -423,15 +316,8 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 				propsheet.Section("Workload groups"),
 				poolRow,
 				list.GridRow(),
-				propsheet.Section("Selected workload group"),
-				selectedRow,
-				importanceRow, grantRow, cpuRow, timeoutRow, dopRow, requestsRow,
-				moveRow, externalRow,
 			}
-			if tempdb {
-				rows = append(rows, tempdbPctRow, tempdbMBRow,
-					propsheet.Note("Tempdb data limits: blank is no limit."))
-			}
+			rows = append(rows, d.rows...)
 			rows = append(rows, list.AddRemoveRows()...)
 			rows = append(rows,
 				propsheet.Note("A new group is added to the pool listed above. internal accepts no changes; default and internal cannot be removed. 0 means unlimited, or the server's own value, for CPU time, timeout, DOP and requests."),
@@ -443,40 +329,183 @@ func pageRGGroups(sc *db.ServerConn, model *rgModel, focus rgFocus) propPage {
 			model.pools.onChange(func() { refreshPools() })
 			model.externals.onChange(func() { refreshPools() })
 
-			apply := func(ctx context.Context) error {
-				plan, err := rgPlanFrom(ctx)
-				if err != nil {
-					return err
-				}
-				for _, e := range edits.All() {
-					name := e.name
-					switch {
-					case e.IsNew:
-						o, err := e.options(rgGroupDefaults(e.cur.pool))
-						if err != nil {
-							return fmt.Errorf("workload group %s: %w", name, err)
-						}
-						plan.add(rgPhaseCreateGroups, func(ctx context.Context) error {
-							_, err := sc.Server.CreateWorkloadGroup(ctx, gosmo.CreateWorkloadGroupRequest{Name: name, Options: o})
-							return err
-						})
-					case e.Removing:
-						plan.add(rgPhaseDropGroups, func(ctx context.Context) error {
-							return sc.Server.WorkloadGroupRef(name).Drop(ctx)
-						})
-					case e.cur != e.orig:
-						o, err := e.options(e.orig)
-						if err != nil {
-							return fmt.Errorf("workload group %s: %w", name, err)
-						}
-						plan.add(rgPhaseAlterGroups, func(ctx context.Context) error {
-							return sc.Server.WorkloadGroupRef(name).Alter(ctx, o)
-						})
-					}
-				}
-				return nil
-			}
-			return list.NewForm(rows...), apply, nil
+			return list.NewForm(rows...), rgGroupsApply(sc, edits), nil
 		},
+	}
+}
+
+// rgGroupColumns is the Workload Groups grid's headers and each group's
+// cells; tempdb adds the SQL Server 2025 tempdb limits.
+func rgGroupColumns(tempdb bool) ([]string, func(*rgGroupEdit) []string) {
+	headers := []string{"Name", "Importance", "Grant %", "CPU sec", "Timeout sec", "MAXDOP", "Max requests", "External pool"}
+	if tempdb {
+		headers = append(headers, "Tempdb %", "Tempdb MB")
+	}
+	cells := func(e *rgGroupEdit) []string {
+		v := e.cur
+		row := []string{
+			rgEditName(e.name, e.system, e.IsNew), v.importance, grantPercentText(v.grant),
+			zeroAs(v.cpuSec, "Unlimited"), zeroAs(v.timeoutSec, "Default"),
+			zeroAs(v.maxDOP, "Default"), zeroAs(v.maxRequests, "Unlimited"), v.external,
+		}
+		if tempdb {
+			row = append(row, orDefault(v.tempdbPercent, "None"), orDefault(v.tempdbMB, "None"))
+		}
+		return row
+	}
+	return headers, cells
+}
+
+// rgGroupDetail is the Workload Groups page's selected group: its rows, and
+// what moves a group's settings into them and back. show takes the pools a
+// group may move to and the external pools, which the pool pages change.
+type rgGroupDetail struct {
+	moveRow *propsheet.SelectRow
+	rows    []propsheet.Row
+	show    func(e *rgGroupEdit, movable, externalNames []string)
+	commit  func(e *rgGroupEdit)
+}
+
+// newRGGroupDetail builds the Workload Groups detail form; fractional allows
+// a fractional memory grant, tempdb adds the tempdb limits.
+func newRGGroupDetail(fractional, tempdb bool, movable, externalNames []string) *rgGroupDetail {
+	selectedRow := propsheet.Static("Name", "")
+	importanceRow := propsheet.Select("Importance", rgImportanceItems, 1)
+	grantRow := propsheet.Text("Max memory grant %", "25", 10)
+	grantRow.SetValidate(rgFloatValidator(0, 100, !fractional, false))
+	cpuRow := propsheet.Int("Max CPU time per request", 0, 0, 2147483647, "sec")
+	timeoutRow := propsheet.Int("Memory grant timeout", 0, 0, 2147483647, "sec")
+	dopRow := propsheet.Int("Maximum DOP", 0, 0, 64, "")
+	requestsRow := propsheet.Int("Maximum requests", 0, 0, 2147483647, "")
+	moveRow := propsheet.Select("Uses resource pool", movable, 0)
+	externalRow := propsheet.Select("Uses external pool", externalNames, 0)
+	tempdbPctRow := propsheet.Text("Tempdb data limit %", "", 10)
+	tempdbPctRow.SetValidate(rgFloatValidator(0, 100, false, true))
+	tempdbMBRow := propsheet.Text("Tempdb data limit (MB)", "", 14)
+	tempdbMBRow.SetValidate(rgFloatValidator(0, 1e15, false, true))
+	textRows := []*propsheet.TextRow{grantRow, cpuRow, timeoutRow, dopRow, requestsRow}
+	if tempdb {
+		textRows = append(textRows, tempdbPctRow, tempdbMBRow)
+	}
+	selectRows := []*propsheet.SelectRow{importanceRow, moveRow, externalRow}
+
+	// valid reads a detail row's value only when it validates; a value it would
+	// refuse leaves the group as it was.
+	valid := func(row *propsheet.TextRow) (string, bool) {
+		return row.Value(), row.Validate() == nil
+	}
+	intOf := func(row *propsheet.TextRow, dst *int) {
+		if n, err := row.IntValue(); err == nil && row.Validate() == nil {
+			*dst = int(n)
+		}
+	}
+	commit := func(e *rgGroupEdit) {
+		if e.locked {
+			return
+		}
+		v := &e.cur
+		v.importance = importanceRow.Value()
+		if s, ok := valid(grantRow); ok {
+			v.grant, _ = strconv.ParseFloat(s, 64)
+		}
+		intOf(cpuRow, &v.cpuSec)
+		intOf(timeoutRow, &v.timeoutSec)
+		intOf(dopRow, &v.maxDOP)
+		intOf(requestsRow, &v.maxRequests)
+		v.pool = moveRow.Value()
+		v.external = externalRow.Value()
+		if !tempdb {
+			return
+		}
+		if s, ok := valid(tempdbPctRow); ok {
+			v.tempdbPercent = s
+		}
+		if s, ok := valid(tempdbMBRow); ok {
+			v.tempdbMB = s
+		}
+	}
+	show := func(e *rgGroupEdit, movable, externalNames []string) {
+		locked := e == nil || e.locked
+		for _, row := range textRows {
+			row.SetReadOnly(locked)
+		}
+		for _, row := range selectRows {
+			row.SetReadOnly(locked)
+		}
+		if e == nil {
+			// Nothing selected (a pool with no groups): blank, not the last group's settings
+			// under no name.
+			selectedRow.SetValue("")
+			for _, row := range textRows {
+				row.SetValue("")
+			}
+			return
+		}
+		v := e.cur
+		selectedRow.SetValue(rgEditName(e.name, e.system, e.IsNew))
+		items, i := propsheet.PreservingItems(rgImportanceItems, v.importance)
+		importanceRow.SetItems(items)
+		importanceRow.SetSelected(i)
+		grantRow.SetValue(grantPercentText(v.grant))
+		cpuRow.SetValue(strconv.Itoa(v.cpuSec))
+		timeoutRow.SetValue(strconv.Itoa(v.timeoutSec))
+		dopRow.SetValue(strconv.Itoa(v.maxDOP))
+		requestsRow.SetValue(strconv.Itoa(v.maxRequests))
+		items, i = propsheet.PreservingItems(movable, v.pool)
+		moveRow.SetItems(items)
+		moveRow.SetSelected(i)
+		items, i = propsheet.PreservingItems(externalNames, v.external)
+		externalRow.SetItems(items)
+		externalRow.SetSelected(i)
+		tempdbPctRow.SetValue(v.tempdbPercent)
+		tempdbMBRow.SetValue(v.tempdbMB)
+	}
+	rows := []propsheet.Row{
+		propsheet.Section("Selected workload group"),
+		selectedRow,
+		importanceRow, grantRow, cpuRow, timeoutRow, dopRow, requestsRow,
+		moveRow, externalRow,
+	}
+	if tempdb {
+		rows = append(rows, tempdbPctRow, tempdbMBRow,
+			propsheet.Note("Tempdb data limits: blank is no limit."))
+	}
+	return &rgGroupDetail{moveRow: moveRow, rows: rows, show: show, commit: commit}
+}
+
+// rgGroupsApply plans the Workload Groups page's creates, drops and alters.
+func rgGroupsApply(sc *db.ServerConn, edits *propsheet.PendingEdits[*rgGroupEdit]) propApply {
+	return func(ctx context.Context) error {
+		plan, err := rgPlanFrom(ctx)
+		if err != nil {
+			return err
+		}
+		for _, e := range edits.All() {
+			name := e.name
+			switch {
+			case e.IsNew:
+				o, err := e.options(rgGroupDefaults(e.cur.pool))
+				if err != nil {
+					return fmt.Errorf("workload group %s: %w", name, err)
+				}
+				plan.add(rgPhaseCreateGroups, func(ctx context.Context) error {
+					_, err := sc.Server.CreateWorkloadGroup(ctx, gosmo.CreateWorkloadGroupRequest{Name: name, Options: o})
+					return err
+				})
+			case e.Removing:
+				plan.add(rgPhaseDropGroups, func(ctx context.Context) error {
+					return sc.Server.WorkloadGroupRef(name).Drop(ctx)
+				})
+			case e.cur != e.orig:
+				o, err := e.options(e.orig)
+				if err != nil {
+					return fmt.Errorf("workload group %s: %w", name, err)
+				}
+				plan.add(rgPhaseAlterGroups, func(ctx context.Context) error {
+					return sc.Server.WorkloadGroupRef(name).Alter(ctx, o)
+				})
+			}
+		}
+		return nil
 	}
 }

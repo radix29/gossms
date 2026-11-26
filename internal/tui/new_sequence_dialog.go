@@ -312,7 +312,7 @@ func newSequenceRequest(f nseqFields, dbName string, pf *schemaObjectPrefetch) (
 			// A value row's message names its field already (sequenceValue);
 			// propsheet.Int's does not.
 			if label := strings.ToLower(r.Label()); !strings.HasPrefix(err.Error(), label) {
-				return fmt.Errorf("%s %v", label, err)
+				return fmt.Errorf("%s %w", label, err)
 			}
 			return err
 		}

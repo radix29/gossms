@@ -72,6 +72,10 @@ func NewCellParser(col gosmo.BulkColumn) (func(text string) (any, error), error)
 // T between date and time, fewer fractional digits than the scale, and a
 // datetimeoffset with no offset (+00:00, as SQL Server reads one). The
 // result is a time.Time in UTC, or in the text's offset for datetimeoffset.
+// Text the column would round is refused, not rounded (docs/cli.md § data
+// import, Conversion): fractional digits past the scale, any seconds for
+// smalldatetime, and datetime milliseconds off its 1/300 s grid. gosmo would
+// round all three silently.
 func timeParser(typ string, scale int) func(string) (any, error) {
 	hasDate, hasClock := typ != "time", typ != "date"
 	maxFrac := scale
@@ -103,8 +107,13 @@ func timeParser(typ string, scale int) func(string) (any, error) {
 			if c, rest, ok = cutClock(rest); !ok {
 				return bad()
 			}
-			if c.sigDigits > maxFrac {
+			switch {
+			case typ == "smalldatetime" && (c.sec != 0 || c.nsec != 0):
+				return nil, fmt.Errorf("%s has seconds; smalldatetime keeps whole minutes", s)
+			case c.sigDigits > maxFrac:
 				return nil, fmt.Errorf("%s has more than %d fractional-second digits", s, maxFrac)
+			case typ == "datetime" && !onDatetimeGrid(c.nsec):
+				return nil, fmt.Errorf("%s is not on datetime's 1/300 s grid (milliseconds ending in 0, 3 or 7)", s)
 			}
 		}
 		loc := time.UTC
@@ -127,6 +136,17 @@ func timeParser(typ string, scale int) func(string) (any, error) {
 		}
 		return t, nil
 	}
+}
+
+// onDatetimeGrid reports whether a fraction of at most three significant
+// digits is one datetime stores exactly: it keeps 1/300 s, which SQL Server
+// shows as milliseconds ending in 0, 3 or 7.
+func onDatetimeGrid(nsec int) bool {
+	switch nsec / int(time.Millisecond) % 10 {
+	case 0, 3, 7:
+		return true
+	}
+	return false
 }
 
 // cutDate reads yyyy-mm-dd from the front of s.

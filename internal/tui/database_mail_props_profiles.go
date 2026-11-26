@@ -196,56 +196,6 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				}
 			})
 
-			hint := list.Hint()
-			// moveAccount moves the selected account by delta in the failover
-			// order.
-			moveAccount := func(delta int) {
-				cur := list.Current()
-				if cur == nil {
-					return
-				}
-				i := acctGrid.SelectedRow()
-				j := i + delta
-				if i < 0 || i >= len(cur.accounts) || j < 0 || j >= len(cur.accounts) {
-					return
-				}
-				cur.accounts[i], cur.accounts[j] = cur.accounts[j], cur.accounts[i]
-				syncAccounts(cur, j)
-				list.Redraw()
-			}
-			upBtn := widgets.NewButton("Move Up", func() { moveAccount(-1) })
-			downBtn := widgets.NewButton("Move Down", func() { moveAccount(1) })
-			dropAcctBtn := widgets.NewButton("Remove Account", func() {
-				cur := list.Current()
-				if cur == nil {
-					return
-				}
-				i := acctGrid.SelectedRow()
-				if i < 0 || i >= len(cur.accounts) {
-					hint.Set("Select an account of the profile to remove it.")
-					return
-				}
-				hint.Clear()
-				cur.accounts = slices.Delete(cur.accounts, i, i+1)
-				syncAccounts(cur, min(i, len(cur.accounts)-1))
-				list.Redraw()
-			})
-			addAcctBtn := widgets.NewButton("Add Account", func() {
-				cur := list.Current()
-				switch {
-				case cur == nil:
-					hint.Set("Select or add a profile first.")
-					return
-				case addRow.Value() == "":
-					hint.Set("Every account is already in this profile — add one on the Accounts page.")
-					return
-				}
-				hint.Clear()
-				cur.accounts = append(cur.accounts, addRow.Value())
-				syncAccounts(cur, len(cur.accounts)-1)
-				list.Redraw()
-			})
-
 			// The Accounts page's edits change what may be added, and mark
 			// an account it removes wherever a profile lists it.
 			model.listenAccounts(func() {
@@ -261,11 +211,8 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				propsheet.Section("Selected profile"),
 				nameRow, descRow,
 				propsheet.Section("SMTP accounts, in failover order"),
-				propsheet.NewGridRow(acctGrid, 5),
-				propsheet.Buttons(upBtn, downBtn, dropAcctBtn),
-				addRow,
-				propsheet.Buttons(addAcctBtn),
 			}
+			rows = append(rows, mailProfileAccountRows(list, acctGrid, addRow, syncAccounts)...)
 			rows = append(rows, list.AddRemoveRows()...)
 			rows = append(rows,
 				propsheet.Note("A message goes through the first account; the next is tried only when one fails. Accounts added on the Accounts page are offered here at once; a profile added here is offered on Profile Security at once. A renamed profile or account keeps its old name on the other pages until Apply."),
@@ -274,54 +221,121 @@ func pageMailProfiles(sc *db.ServerConn, model *mailModel) propPage {
 				rows = append(rows, propsheet.Note("Managed Instance: SQL Server Agent sends its notifications only through a profile named "+mailManagedInstanceProfile+"."))
 			}
 
-			apply := func(ctx context.Context) error {
-				plan, err := mailPlanFrom(ctx)
-				if err != nil {
-					return err
-				}
-				avail := model.accountNames(loadedAccounts)
-				for _, e := range edits.All() {
-					name, accts := e.origName, e.accountsIn(avail)
-					switch {
-					case e.IsNew:
-						name, desc := e.name, e.desc
-						plan.add(mailPhaseCreateProfiles, func(ctx context.Context) error {
-							_, err := sc.Server.Mail().CreateProfile(ctx, gosmo.CreateMailProfileRequest{Name: name, Description: desc})
-							return err
-						})
-						if len(accts) > 0 {
-							plan.add(mailPhaseProfileAccounts, func(ctx context.Context) error {
-								return sc.Server.Mail().ProfileRef(name).SetAccounts(ctx, accts)
-							})
-						}
-					case e.Removing:
-						plan.add(mailPhaseDropProfiles, func(ctx context.Context) error {
-							return sc.Server.Mail().ProfileRef(name).Drop(ctx)
-						})
-					default:
-						if !slices.Equal(accts, e.origAccounts) {
-							plan.add(mailPhaseProfileAccounts, func(ctx context.Context) error {
-								return sc.Server.Mail().ProfileRef(name).SetAccounts(ctx, accts)
-							})
-						}
-						var o gosmo.MailProfileChanges
-						if e.name != e.origName {
-							o.Name = new(e.name)
-						}
-						if e.desc != e.origDesc {
-							o.Description = new(e.desc)
-						}
-						if o.Name != nil || o.Description != nil {
-							plan.add(mailPhaseAlterProfiles, func(ctx context.Context) error {
-								return sc.Server.Mail().ProfileRef(name).Alter(ctx, o)
-							})
-						}
-					}
-				}
-				return nil
-			}
-			return list.NewForm(rows...), apply, nil
+			return list.NewForm(rows...), mailProfilesApply(sc, model, edits, loadedAccounts), nil
 		},
+	}
+}
+
+// mailProfileAccountRows is the Profiles page's account list for the
+// selected profile, and the buttons that reorder, remove and add accounts;
+// syncAccounts redraws it.
+func mailProfileAccountRows(list *propsheet.ListEditor[*mailProfileEdit], acctGrid *controls.DataGrid,
+	addRow *propsheet.SelectRow, syncAccounts func(p *mailProfileEdit, row int)) []propsheet.Row {
+	hint := list.Hint()
+	// moveAccount moves the selected account by delta in the failover
+	// order.
+	moveAccount := func(delta int) {
+		cur := list.Current()
+		if cur == nil {
+			return
+		}
+		i := acctGrid.SelectedRow()
+		j := i + delta
+		if i < 0 || i >= len(cur.accounts) || j < 0 || j >= len(cur.accounts) {
+			return
+		}
+		cur.accounts[i], cur.accounts[j] = cur.accounts[j], cur.accounts[i]
+		syncAccounts(cur, j)
+		list.Redraw()
+	}
+	upBtn := widgets.NewButton("Move Up", func() { moveAccount(-1) })
+	downBtn := widgets.NewButton("Move Down", func() { moveAccount(1) })
+	dropAcctBtn := widgets.NewButton("Remove Account", func() {
+		cur := list.Current()
+		if cur == nil {
+			return
+		}
+		i := acctGrid.SelectedRow()
+		if i < 0 || i >= len(cur.accounts) {
+			hint.Set("Select an account of the profile to remove it.")
+			return
+		}
+		hint.Clear()
+		cur.accounts = slices.Delete(cur.accounts, i, i+1)
+		syncAccounts(cur, min(i, len(cur.accounts)-1))
+		list.Redraw()
+	})
+	addAcctBtn := widgets.NewButton("Add Account", func() {
+		cur := list.Current()
+		switch {
+		case cur == nil:
+			hint.Set("Select or add a profile first.")
+			return
+		case addRow.Value() == "":
+			hint.Set("Every account is already in this profile — add one on the Accounts page.")
+			return
+		}
+		hint.Clear()
+		cur.accounts = append(cur.accounts, addRow.Value())
+		syncAccounts(cur, len(cur.accounts)-1)
+		list.Redraw()
+	})
+	return []propsheet.Row{
+		propsheet.NewGridRow(acctGrid, 5),
+		propsheet.Buttons(upBtn, downBtn, dropAcctBtn),
+		addRow,
+		propsheet.Buttons(addAcctBtn),
+	}
+}
+
+// mailProfilesApply plans the Profiles page's creates, drops, alters and
+// account lists, leaving out accounts the Accounts page removes.
+func mailProfilesApply(sc *db.ServerConn, model *mailModel, edits *propsheet.PendingEdits[*mailProfileEdit], loadedAccounts []string) propApply {
+	return func(ctx context.Context) error {
+		plan, err := mailPlanFrom(ctx)
+		if err != nil {
+			return err
+		}
+		avail := model.accountNames(loadedAccounts)
+		for _, e := range edits.All() {
+			name, accts := e.origName, e.accountsIn(avail)
+			switch {
+			case e.IsNew:
+				name, desc := e.name, e.desc
+				plan.add(mailPhaseCreateProfiles, func(ctx context.Context) error {
+					_, err := sc.Server.Mail().CreateProfile(ctx, gosmo.CreateMailProfileRequest{Name: name, Description: desc})
+					return err
+				})
+				if len(accts) > 0 {
+					plan.add(mailPhaseProfileAccounts, func(ctx context.Context) error {
+						return sc.Server.Mail().ProfileRef(name).SetAccounts(ctx, accts)
+					})
+				}
+			case e.Removing:
+				plan.add(mailPhaseDropProfiles, func(ctx context.Context) error {
+					return sc.Server.Mail().ProfileRef(name).Drop(ctx)
+				})
+			default:
+				if !slices.Equal(accts, e.origAccounts) {
+					plan.add(mailPhaseProfileAccounts, func(ctx context.Context) error {
+						return sc.Server.Mail().ProfileRef(name).SetAccounts(ctx, accts)
+					})
+				}
+				var o gosmo.MailProfileChanges
+				if e.name != e.origName {
+					o.Name = new(e.name)
+				}
+				if e.desc != e.origDesc {
+					o.Description = new(e.desc)
+				}
+				if o.Name != nil || o.Description != nil {
+					plan.add(mailPhaseAlterProfiles, func(ctx context.Context) error {
+						return sc.Server.Mail().ProfileRef(name).Alter(ctx, o)
+					})
+				}
+			}
+		}
+		return nil
 	}
 }
 

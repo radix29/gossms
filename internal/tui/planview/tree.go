@@ -66,9 +66,11 @@ func (v *PlanView) rebuildTreeRows() {
 		}
 	}
 	walk(st.Root, 0, true, nil)
-	if v.treeSt.scroll > len(v.treeSt.rows) {
-		v.treeSt.scroll = 0
-	}
+	// Clamped to the last full page, not len(rows): scrolled to 1, a collapse
+	// that lets every row fit otherwise hid the first row with no scrollbar
+	// drawn. Before the first layout H is 0, which bounds scroll by len(rows);
+	// ensureTreeRowVisible clamps again on the next move.
+	v.treeSt.scroll = core.Clamp(v.treeSt.scroll, 0, max(0, len(v.treeSt.rows)-v.treePaneRect.H))
 }
 
 // layoutTree computes the Tree tab's layout: a 1-row metrics header, a

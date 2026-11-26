@@ -221,77 +221,7 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 			visible := edits.Visible
 			headers := []string{"Name", "E-mail address", "SMTP server", "Port", "SSL", "Authentication"}
 
-			nameRow := propsheet.Text("Account name", "", 30)
-			descRow := propsheet.Text("Description", "", 40)
-			emailRow := propsheet.Text("E-mail address", "", 40)
-			displayRow := propsheet.Text("Display name", "", 40)
-			replyRow := propsheet.Text("Reply e-mail", "", 40)
-			serverRow := propsheet.Text("SMTP server", "", 40)
-			portRow := propsheet.Int("Port", 25, 1, 65535, "")
-			timeoutRow := propsheet.Int("SMTP timeout", 0, 0, 2147483647, "sec")
-			sslRow := propsheet.Check("Secure connection (SSL)", false)
-			authRow := propsheet.Radio("Authentication", mailAuthItems, 0)
-			userRow := propsheet.Text("User name", "", 30)
-			passwordRow := propsheet.Password("Password", 30)
-			confirmRow := propsheet.Password("Confirm password", 30)
-			textRows := []*propsheet.TextRow{nameRow, descRow, emailRow, displayRow, replyRow, serverRow, portRow, timeoutRow}
-			credRows := []*propsheet.TextRow{userRow, passwordRow, confirmRow}
-
-			commit := func(e *mailAccountEdit) {
-				v := &e.cur
-				v.name, v.description, v.email = nameRow.Value(), descRow.Value(), emailRow.Value()
-				v.display, v.replyTo, v.server = displayRow.Value(), replyRow.Value(), serverRow.Value()
-				if n, err := portRow.IntValue(); err == nil && portRow.Validate() == nil {
-					v.port = int(n)
-				}
-				if n, err := timeoutRow.IntValue(); err == nil && timeoutRow.Validate() == nil {
-					v.timeout = int(n)
-				}
-				v.ssl = sslRow.Checked()
-				v.auth = gosmo.MailAuthentication(authRow.Selected())
-				if credsAllowed {
-					v.user = userRow.Value()
-					e.password, e.confirm = passwordRow.Value(), confirmRow.Value()
-				}
-			}
-			// credFieldsFor makes the user name and password editable only
-			// where they mean something and may be written.
-			credFieldsFor := func(selected bool, auth gosmo.MailAuthentication) {
-				for _, row := range credRows {
-					row.SetReadOnly(!selected || !credsAllowed || auth != gosmo.MailAuthBasic)
-				}
-			}
-			show := func(e *mailAccountEdit) {
-				for _, row := range textRows {
-					row.SetReadOnly(e == nil)
-				}
-				sslRow.SetReadOnly(e == nil)
-				if e == nil {
-					for _, row := range append(slices.Clone(textRows), credRows...) {
-						row.SetValue("")
-					}
-					sslRow.SetChecked(false)
-					authRow.SetSelected(int(gosmo.MailAuthAnonymous))
-					credFieldsFor(false, gosmo.MailAuthAnonymous)
-					return
-				}
-				v := e.cur
-				nameRow.SetValue(v.name)
-				descRow.SetValue(v.description)
-				emailRow.SetValue(v.email)
-				displayRow.SetValue(v.display)
-				replyRow.SetValue(v.replyTo)
-				serverRow.SetValue(v.server)
-				portRow.SetValue(strconv.Itoa(v.port))
-				timeoutRow.SetValue(strconv.Itoa(v.timeout))
-				sslRow.SetChecked(v.ssl)
-				authRow.SetSelected(int(v.auth))
-				userRow.SetValue(v.user)
-				passwordRow.SetValue(e.password)
-				confirmRow.SetValue(e.confirm)
-				credFieldsFor(true, v.auth)
-			}
-
+			d := newMailAccountDetail(credsAllowed)
 			list := propsheet.NewListEditor(propsheet.ListEditorSpec[*mailAccountEdit]{
 				Noun:       "account",
 				NameLabel:  "New account name",
@@ -304,8 +234,8 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 					return []string{mailEditName(e.orig.name, v.name, e.IsNew), v.email, v.server,
 						strconv.Itoa(v.port), yesNo(v.ssl), mailAuthItems[v.auth]}
 				},
-				Show:   show,
-				Commit: commit,
+				Show:   d.show,
+				Commit: d.commit,
 				Add: func(name string) (string, bool) {
 					if edits.Listed(name) {
 						return "An account named " + name + " is already listed.", false
@@ -337,11 +267,11 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				// selection move as well.
 				Changed: publish,
 			})
-			authRow.SetOnChange(func(i int) { credFieldsFor(list.Current() != nil, gosmo.MailAuthentication(i)) })
+			d.authRow.SetOnChange(func(i int) { d.credFieldsFor(list.Current() != nil, gosmo.MailAuthentication(i)) })
 			// A new account's name is what the Profiles page lists it by, so
 			// a rename of one is published as typed. An existing account is
 			// listed there by its stored name until Apply.
-			nameRow.SetOnChange(func(string) {
+			d.nameRow.SetOnChange(func(string) {
 				if cur := list.Current(); cur != nil && cur.IsNew {
 					list.Commit()
 					list.Redraw()
@@ -352,14 +282,8 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 			rows := []propsheet.Row{
 				propsheet.Section("Accounts"),
 				list.GridRow(),
-				propsheet.Section("Selected account"),
-				nameRow, descRow,
-				propsheet.Section("Outgoing mail (SMTP) server"),
-				emailRow, displayRow, replyRow, serverRow, portRow, sslRow, timeoutRow,
-				propsheet.Section("SMTP authentication"),
-				authRow, userRow, passwordRow, confirmRow,
-				propsheet.Note("The stored password cannot be read back: leave Password blank to keep it. Changing the authentication or the user name replaces the credential, and Basic authentication then needs the password typed again. Leading and trailing spaces are trimmed by the server. SMTP timeout 0 leaves the server's default."),
 			}
+			rows = append(rows, d.rows...)
 			if !credsAllowed {
 				rows = append(rows, propsheet.Note("User name and password are read-only: an account with Basic authentication stores its password as a server credential, which needs ALTER ANY CREDENTIAL (CONTROL SERVER implies it). Without it an existing Basic account cannot be changed or deleted at all — the server would unlink or orphan its credential. Other accounts can still be changed."))
 			}
@@ -368,44 +292,150 @@ func pageMailAccounts(sc *db.ServerConn, model *mailModel) propPage {
 				propsheet.Note("Removing an account also removes it from every profile that uses it; the server does not refuse it. A new account is offered on the Profiles page at once."),
 			)
 
-			apply := func(ctx context.Context) error {
-				plan, err := mailPlanFrom(ctx)
-				if err != nil {
-					return err
-				}
-				for _, e := range edits.All() {
-					if why := e.credentialRefusal(); !credsAllowed && why != "" {
-						return fmt.Errorf("account %s: %s", e.orig.name, why)
-					}
-					name := e.orig.name
-					switch {
-					case e.IsNew:
-						req, err := e.createRequest()
-						if err != nil {
-							return fmt.Errorf("account %s: %w", e.cur.name, err)
-						}
-						plan.add(mailPhaseCreateAccounts, func(ctx context.Context) error {
-							_, err := sc.Server.Mail().CreateAccount(ctx, req)
-							return err
-						})
-					case e.Removing:
-						plan.add(mailPhaseDropAccounts, func(ctx context.Context) error {
-							return sc.Server.Mail().AccountRef(name).Drop(ctx)
-						})
-					case e.cur != e.orig || e.password != "" || e.confirm != "":
-						o, err := e.options()
-						if err != nil {
-							return fmt.Errorf("account %s: %w", name, err)
-						}
-						plan.add(mailPhaseAlterAccounts, func(ctx context.Context) error {
-							return sc.Server.Mail().AccountRef(name).Alter(ctx, o)
-						})
-					}
-				}
-				return nil
-			}
-			return list.NewForm(rows...), apply, nil
+			return list.NewForm(rows...), mailAccountsApply(sc, edits, credsAllowed), nil
 		},
+	}
+}
+
+// mailAccountDetail is the Accounts page's selected account: its rows, and
+// what moves an edit into them and back.
+type mailAccountDetail struct {
+	nameRow       *propsheet.TextRow
+	authRow       *propsheet.RadioRow
+	rows          []propsheet.Row
+	show          func(*mailAccountEdit)
+	commit        func(*mailAccountEdit)
+	credFieldsFor func(selected bool, auth gosmo.MailAuthentication)
+}
+
+// newMailAccountDetail builds the Accounts page's detail form; credsAllowed
+// is whether the login may write a Basic account's credential.
+func newMailAccountDetail(credsAllowed bool) *mailAccountDetail {
+	nameRow := propsheet.Text("Account name", "", 30)
+	descRow := propsheet.Text("Description", "", 40)
+	emailRow := propsheet.Text("E-mail address", "", 40)
+	displayRow := propsheet.Text("Display name", "", 40)
+	replyRow := propsheet.Text("Reply e-mail", "", 40)
+	serverRow := propsheet.Text("SMTP server", "", 40)
+	portRow := propsheet.Int("Port", 25, 1, 65535, "")
+	timeoutRow := propsheet.Int("SMTP timeout", 0, 0, 2147483647, "sec")
+	sslRow := propsheet.Check("Secure connection (SSL)", false)
+	authRow := propsheet.Radio("Authentication", mailAuthItems, 0)
+	userRow := propsheet.Text("User name", "", 30)
+	passwordRow := propsheet.Password("Password", 30)
+	confirmRow := propsheet.Password("Confirm password", 30)
+	textRows := []*propsheet.TextRow{nameRow, descRow, emailRow, displayRow, replyRow, serverRow, portRow, timeoutRow}
+	credRows := []*propsheet.TextRow{userRow, passwordRow, confirmRow}
+
+	commit := func(e *mailAccountEdit) {
+		v := &e.cur
+		v.name, v.description, v.email = nameRow.Value(), descRow.Value(), emailRow.Value()
+		v.display, v.replyTo, v.server = displayRow.Value(), replyRow.Value(), serverRow.Value()
+		if n, err := portRow.IntValue(); err == nil && portRow.Validate() == nil {
+			v.port = int(n)
+		}
+		if n, err := timeoutRow.IntValue(); err == nil && timeoutRow.Validate() == nil {
+			v.timeout = int(n)
+		}
+		v.ssl = sslRow.Checked()
+		v.auth = gosmo.MailAuthentication(authRow.Selected())
+		if credsAllowed {
+			v.user = userRow.Value()
+			e.password, e.confirm = passwordRow.Value(), confirmRow.Value()
+		}
+	}
+	// credFieldsFor makes the user name and password editable only
+	// where they mean something and may be written.
+	credFieldsFor := func(selected bool, auth gosmo.MailAuthentication) {
+		for _, row := range credRows {
+			row.SetReadOnly(!selected || !credsAllowed || auth != gosmo.MailAuthBasic)
+		}
+	}
+	show := func(e *mailAccountEdit) {
+		for _, row := range textRows {
+			row.SetReadOnly(e == nil)
+		}
+		sslRow.SetReadOnly(e == nil)
+		if e == nil {
+			for _, row := range append(slices.Clone(textRows), credRows...) {
+				row.SetValue("")
+			}
+			sslRow.SetChecked(false)
+			authRow.SetSelected(int(gosmo.MailAuthAnonymous))
+			credFieldsFor(false, gosmo.MailAuthAnonymous)
+			return
+		}
+		v := e.cur
+		nameRow.SetValue(v.name)
+		descRow.SetValue(v.description)
+		emailRow.SetValue(v.email)
+		displayRow.SetValue(v.display)
+		replyRow.SetValue(v.replyTo)
+		serverRow.SetValue(v.server)
+		portRow.SetValue(strconv.Itoa(v.port))
+		timeoutRow.SetValue(strconv.Itoa(v.timeout))
+		sslRow.SetChecked(v.ssl)
+		authRow.SetSelected(int(v.auth))
+		userRow.SetValue(v.user)
+		passwordRow.SetValue(e.password)
+		confirmRow.SetValue(e.confirm)
+		credFieldsFor(true, v.auth)
+	}
+	return &mailAccountDetail{
+		nameRow: nameRow,
+		authRow: authRow,
+		rows: []propsheet.Row{
+			propsheet.Section("Selected account"),
+			nameRow, descRow,
+			propsheet.Section("Outgoing mail (SMTP) server"),
+			emailRow, displayRow, replyRow, serverRow, portRow, sslRow, timeoutRow,
+			propsheet.Section("SMTP authentication"),
+			authRow, userRow, passwordRow, confirmRow,
+			propsheet.Note("The stored password cannot be read back: leave Password blank to keep it. Changing the authentication or the user name replaces the credential, and Basic authentication then needs the password typed again. Leading and trailing spaces are trimmed by the server. SMTP timeout 0 leaves the server's default."),
+		},
+		show:          show,
+		commit:        commit,
+		credFieldsFor: credFieldsFor,
+	}
+}
+
+// mailAccountsApply plans the Accounts page's creates, drops and alters.
+func mailAccountsApply(sc *db.ServerConn, edits *propsheet.PendingEdits[*mailAccountEdit], credsAllowed bool) propApply {
+	return func(ctx context.Context) error {
+		plan, err := mailPlanFrom(ctx)
+		if err != nil {
+			return err
+		}
+		for _, e := range edits.All() {
+			if why := e.credentialRefusal(); !credsAllowed && why != "" {
+				return fmt.Errorf("account %s: %s", e.orig.name, why)
+			}
+			name := e.orig.name
+			switch {
+			case e.IsNew:
+				req, err := e.createRequest()
+				if err != nil {
+					return fmt.Errorf("account %s: %w", e.cur.name, err)
+				}
+				plan.add(mailPhaseCreateAccounts, func(ctx context.Context) error {
+					_, err := sc.Server.Mail().CreateAccount(ctx, req)
+					return err
+				})
+			case e.Removing:
+				plan.add(mailPhaseDropAccounts, func(ctx context.Context) error {
+					return sc.Server.Mail().AccountRef(name).Drop(ctx)
+				})
+			case e.cur != e.orig || e.password != "" || e.confirm != "":
+				o, err := e.options()
+				if err != nil {
+					return fmt.Errorf("account %s: %w", name, err)
+				}
+				plan.add(mailPhaseAlterAccounts, func(ctx context.Context) error {
+					return sc.Server.Mail().AccountRef(name).Alter(ctx, o)
+				})
+			}
+		}
+		return nil
 	}
 }
 

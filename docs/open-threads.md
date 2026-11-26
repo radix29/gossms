@@ -77,8 +77,8 @@ support); this section covers only the environment.
   and `sales`, drop `Sales`, and see `InitialDatabase` stay `sales`. Format
   Document's keyword case (below) waits on the same instance, as does gosmo's
   `Database.BackupRefusal` on a `DatabaseRef` (names under the server's
-  collation, pinned offline by `TestDatabaseBackupRefusal`'s CS cases): create user databases `TempDB` and
-  `Master`, and see a differential/log backup of each go through, not refused
+  collation, pinned offline by `TestDatabaseBackupRefusal`'s CS cases):
+  create user databases `TempDB` and `Master`, and see a differential/log backup of each go through, not refused
   as tempdb's or master's. The CLI's server-collation checks (pinned
   offline by `TestSecurityGrantDatabaseCaseSensitive`
   and `TestDBDropCaseSensitive`) wait on it too: connected to `sales`,
@@ -92,7 +92,9 @@ support); this section covers only the environment.
   single-database (`IsDatabaseScoped`: no msdb, Agent, server scope, USE) from
   the documentation alone. To check, with the Fabric contributor: connect,
   run gosmo's `TestLiveVersionSweep` against it, and walk Object Explorer —
-  no server-scope folders, no "needs SQL Server 2016" refusals. Also online
+  no "needs SQL Server 2016" refusals, and whether the instance folders and
+  actions it keeps today work (kept on purpose: `docs/decisions.md` § By
+  design, Explorer). Also online
   rebuild and the per-index ALL expansion: `gossms
   maint index-rebuild --online` (gosmo allows it on 12) and without
   `--index`, with and without `--reorganize` — gosmo sends one `ALTER INDEX
@@ -100,7 +102,7 @@ support); this section covers only the environment.
   ALL` — and Object Explorer's Rebuild All Indexes script on a table and an
   indexed view; confirm Fabric really refuses `ALL` (if not, the expansion
   can go).
-- **Fabric Warehouse vs. Synapse serverless is told apart by hostname**
+- **Fabric Warehouse vs. Synapse serverless is told apart by hostname.**
   gosmo decides `Server.IsFabricDW()` at connect
   (`detectFabricDW`): EngineEdition 11 is Fabric unless the host ends in a
   Synapse serverless domain (`.sql.azuresynapse.net` and its sovereign
@@ -115,30 +117,10 @@ support); this section covers only the environment.
 
 ## Windows clipboard: what is left
 
-- **One clipboard-manager run hung** (2026-11-18, no stack captured); not
-  reproduced since (win10cli with Ditto, 2026-11-22). Likely the probe's own format
-  listener, unproven. If a Windows user reports a frozen copy, suspect this
-  first. A hang no longer takes Paste with it: tuikit's `Dispatcher.Paste`
+- **One clipboard-manager run hung once** (no stack captured, not reproduced
+  with Ditto on win10cli). Likely the probe's own format listener, unproven.
+  If a Windows user reports a frozen copy, suspect this first. A hang no longer takes Paste with it: tuikit's `Dispatcher.Paste`
   waits at most `toolTimeout + 1s` for earlier copies.
-
-## tuikit tests on Windows: what is left
-
-- **`TestLocalFileSystemExistsReportsPermissionError` assumes Unix directory
-  permissions.** On Windows, `os.Chmod(dir, 0)` does not deny directory
-  traversal, so its missing-child lookup returns `(false, nil)` instead of
-  the expected permission error. The fixture predates the latest tuikit
-  update. Make it portable or skip this fixture on Windows in tuikit;
-  no goSSMS workaround is needed.
-
-## tuikit press latches: what is left
-
-- **`widgets.Button`, `CheckBox` and `RadioBox` claim their press latch only
-  on a hit** (`Fresh` inside the bounds test), so a press elsewhere dragged
-  onto one arrives fresh and activates it. `Toolbar` had the same shape and
-  now claims on every `Button1`, as `layout.Splitter` does. No repro for these
-  three: `dialogs.FieldGesture` routes a drag to the field that took the
-  press. If a host is found routing one by position, move `Fresh` before the
-  bounds test (one line each).
 
 ## File lock (`fileutil.WithLock`): what is left
 
@@ -147,8 +129,6 @@ support); this section covers only the environment.
   race for it on a loaded host fails with "is busy: waited 10s". If it
   recurs, record each failing waiter's marker tries and wins before revisiting
   the ticket queue `docs/decisions.md` declined — that is the user's call.
-- **A holder that runs past `lockWait` under load still fails its waiters as
-  "locked"** — by design: from outside it looks like a stuck holder.
 
 ## Format Document: what is left
 
@@ -187,31 +167,6 @@ Settled design: `docs/decisions.md` § Format Document.
   an edition without online index operations (gosmo
   `SupportsOnlineIndexOperations`) was never driven. An Express or Standard
   instance would close it.
-- **A column named `receive` (bare, unquoted) floors its statement to write**
-  (`floor` matches verbs anywhere): `SELECT receive FROM t` classifies write.
-  Fail-safe, pre-existing; `uncountedVerb` keeps it from also tripping
-  `--max-rows-affected`.
-- **`fileutil.Rename` retries any permission denial for up to 500 ms**, so
-  on Linux a persistent one (log rotation in a read-only directory) costs
-  that delay before its error. No portable way found to tell it from the
-  Windows transient (a handle open without FILE_SHARE_DELETE, on either
-  path); `WithLock`'s create no longer has this (it checks the lock exists).
-
-## Plan view: what is left
-
-- **Collapsing a tree row can leave the Tree tab scrolled past its top.**
-  `rebuildTreeRows` resets `treeSt.scroll` only when it exceeds `len(rows)`,
-  not `len(rows)-treePaneRect.H`: scrolled to 1, collapse a subtree so every
-  row fits, and the first row stays hidden with no scrollbar drawn (the wheel
-  brings it back). Pre-existing; seen while driving B2 (2026-11-24).
-
-## Code size: what is left
-
-- **Five property-page builders run past 200 lines:**
-  `pageRGGroups` (324), `pageMailProfiles` (264), `pageMailAccounts` (218),
-  `buildSymmetricKeyEncryptionForm` (218), `pageLoginUserMapping` (217). Not
-  worth a change on their own; the next change that lands in one splits it
-  (grid, detail form, apply), as CLAUDE.md does for 900-line files.
 
 ## Fix order
 
@@ -259,8 +214,7 @@ work; close an item by deleting it when fixed.
   Agent is documented to use the profile named
   `AzureManagedInstance_dbmail_profile`). And gosmo's
   `killDatabaseSessionsBatch` (forced drop/rename, restore closing
-  connections): live on 17 for the DATABASE-lock wait
-  (`TestLiveKillDatabaseSessionsLockWait`); the MI run itself is still open.
+  connections): `TestLiveKillDatabaseSessionsLockWait` on MI (passes on 17).
   And gosmo's
   `Database.CatalogCollation` (what gossms compares names inside a database
   under, `databaseCollation`): live on 13/14/17 with a contained `_CS_`
@@ -298,3 +252,8 @@ work; close an item by deleting it when fixed.
   Database (assumed); whether its `HAS_PERMS_BY_NAME` accepts the class words
   for 23/29/31 (a rejection would fail the whole database probe, not just
   these rows). `STATISTICAL_SEMANTICS` ran on 17 only.
+- **V9 — New Login's Entra form never executed.** `CREATE LOGIN ... FROM
+  EXTERNAL PROVIDER WITH OBJECT_ID` parses (win10cli returns the same Msg
+  37525 for it and the bare form); on `t-qmi-01` the bare form, run by hand
+  as SQL-auth sysadmin, created working user and service-principal logins.
+  Run the dialog's `WITH OBJECT_ID` form on MI.

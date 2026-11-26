@@ -70,6 +70,29 @@ func TestTreeScrollbarDragScrolls(t *testing.T) {
 	}
 }
 
+// A collapse that lets every row fit scrolls back to the top: clamping only
+// to len(rows) left the first row hidden with no scrollbar drawn.
+func TestTreeCollapseClampsScroll(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 120, 8)
+	v.SetPlan(loadTestPlan(t))
+	v.setActiveTab(TabTree)
+	if len(v.treeSt.rows) <= v.treePaneRect.H {
+		t.Fatalf("test needs more tree rows (%d) than treePaneRect.H (%d)", len(v.treeSt.rows), v.treePaneRect.H)
+	}
+	v.selectNode(v.currentStatement().Root.ID)
+	v.treeSt.scroll = 1 // selectNode may scroll the root into view
+	if !v.collapseSelected() {
+		t.Fatal("collapsing the root should collapse something")
+	}
+	if len(v.treeSt.rows) > v.treePaneRect.H {
+		t.Fatalf("after collapsing the root %d rows remain, want them all to fit in %d", len(v.treeSt.rows), v.treePaneRect.H)
+	}
+	if v.treeSt.scroll != 0 {
+		t.Errorf("scroll = %d after a collapse that fits every row, want 0", v.treeSt.scroll)
+	}
+}
+
 // A press on a row, held and dragged onto the scrollbar column, is still the
 // row's: it must not grab the thumb and jump the scroll.
 func TestTreeRowDragOntoScrollbarDoesNotScroll(t *testing.T) {

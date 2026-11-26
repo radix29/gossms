@@ -695,14 +695,14 @@ func TestCreateStreamRefusesAReadOnlyFile(t *testing.T) {
 	assertOnlyFile(t, dir, "results.csv")
 }
 
-// Rename returns a persistent denial as itself once renameRetry has passed,
-// not as a timeout or a nil.
+// Rename returns a POSIX denial as itself at once, not after renameRetry (it
+// is never transient there) and not as a timeout or a nil.
 func TestRenameReturnsAPersistentDenial(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("needs a directory the POSIX mode bits can make read-only, as non-root")
 	}
 	defer func(d time.Duration) { renameRetry = d }(renameRetry)
-	renameRetry = 20 * time.Millisecond
+	renameRetry = 10 * time.Second
 	dir := t.TempDir()
 	src := filepath.Join(dir, "a")
 	if err := os.WriteFile(src, nil, 0o600); err != nil {
@@ -712,7 +712,49 @@ func TestRenameReturnsAPersistentDenial(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Chmod(dir, 0o700)
+	start := time.Now()
 	if err := Rename(src, filepath.Join(dir, "b")); !errors.Is(err, fs.ErrPermission) {
 		t.Fatalf("Rename = %v, want a permission error", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("Rename took %v; a POSIX denial must not wait out renameRetry", took)
+	}
+}
+
+// Rename rides out the Windows transient: replacing a file another handle
+// holds open without FILE_SHARE_DELETE (Go's os.Open omits it there) is denied
+// until that handle closes.
+func TestRenameRetriesAWindowsSharingDenial(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the sharing denial is Windows-only")
+	}
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	if err := os.WriteFile(src, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(src, dst); !errors.Is(err, fs.ErrPermission) {
+		f.Close()
+		t.Fatalf("os.Rename over an open file = %v, want a denial (precondition)", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		f.Close()
+		close(done)
+	}()
+	defer func() { <-done }()
+	if err := Rename(src, dst); err != nil {
+		t.Fatalf("Rename = %v, want the retry to succeed once the handle closes", err)
+	}
+	if got, _ := os.ReadFile(dst); string(got) != "new" {
+		t.Errorf("dst = %q, want %q", got, "new")
 	}
 }

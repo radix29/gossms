@@ -10,7 +10,7 @@ import (
 
 // A propsheet page's RevertFn redraws its grid after putting the edits back.
 // Two things go wrong if it reaches for DataGrid.SetData directly, and both
-// shipped on the two user-mapping pages (login_props.go's pageLoginUserMapping
+// shipped on the two user-mapping pages (login_props.go's loginUserMappingForm
 // and new_login_pages.go's buildNewLoginUserMappingPage):
 //
 //   - SetData resets the cell cursor to 0,0, so the grid highlights the first

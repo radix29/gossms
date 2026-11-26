@@ -307,7 +307,7 @@ func defaultSchemaFor(names []string) string {
 	return names[0]
 }
 
-// buildNewLoginUserMappingPage adapts pageLoginUserMapping's grid/role idiom
+// buildNewLoginUserMappingPage adapts loginUserMappingForm's grid/role idiom
 // (login_props.go) for a login that doesn't exist yet: every row starts
 // unmapped, and only checked rows get an apply-time CREATE USER/ALTER ROLE ADD
 // MEMBER.

@@ -11,15 +11,32 @@ import (
 	"github.com/radix29/tuikit/controls"
 )
 
+// onExplorerConnection reports whether p is connected under the same identity
+// (server, login, auth) as Object Explorer's sc, so a database node of sc
+// names a database p could be in. Identity, not pointer: a query panel opens
+// its own connection from the same options. A nil p is never on it.
 func (p *QueryPanel) onExplorerConnection(sc *db.ServerConn) bool {
 	return p != nil && p.connected() && sc != nil &&
 		p.conn.Opts.IdentityKey() == sc.Opts.IdentityKey()
 }
 
+// activeDatabase reports whether the database name on Object Explorer's
+// connection sc is p's current database: the one row draws emphasized and Use
+// Database shows checked.
+func activeDatabase(p *QueryPanel, sc *db.ServerConn, name string) bool {
+	return p.onExplorerConnection(sc) && p.database == name
+}
+
+// databaseChangeRequiresConnection reports whether the engine behind info
+// cannot switch databases with USE (Azure SQL Database and Synapse): there a
+// database change means a new connection, so Use Database stays disabled.
 func databaseChangeRequiresConnection(info *gosmo.ServerInfo) bool {
 	return info.IsDatabaseScoped() || info != nil && info.EngineEdition == gosmo.EngineAzureSynapse
 }
 
+// canUseDatabase reports whether Use Database on node can run in p now: p is
+// idle on sc's identity and open, node is an online database other than p's
+// current one, and the engine switches databases with USE.
 func (p *QueryPanel) canUseDatabase(sc *db.ServerConn, node *explorerNode) bool {
 	return p.onExplorerConnection(sc) && sc.IsOpen() && !p.executing &&
 		p.connectingTo == "" && !node.data.IsOffline && node.data.DBName != "" &&
@@ -27,6 +44,9 @@ func (p *QueryPanel) canUseDatabase(sc *db.ServerConn, node *explorerNode) bool 
 		!databaseChangeRequiresConnection(p.conn.Server.Info())
 }
 
+// useDatabaseMenuItem is a database node's Use Database context-menu item: it
+// switches the active query panel to node's database, checked while that is
+// already the panel's database.
 func (a *App) useDatabaseMenuItem(sc *db.ServerConn, node *explorerNode) controls.MenuItem {
 	return controls.MenuItem{
 		Label: "Use Database",
@@ -34,8 +54,7 @@ func (a *App) useDatabaseMenuItem(sc *db.ServerConn, node *explorerNode) control
 			return a.activeQueryPanel().canUseDatabase(sc, node)
 		},
 		Checked: func() bool {
-			p := a.activeQueryPanel()
-			return p.onExplorerConnection(sc) && p.database == node.data.DBName
+			return activeDatabase(a.activeQueryPanel(), sc, node.data.DBName)
 		},
 		Note: "Changing databases requires a new connection on this engine.",
 		NoteWhen: func() bool {
@@ -52,6 +71,8 @@ func (a *App) useDatabaseMenuItem(sc *db.ServerConn, node *explorerNode) control
 	}
 }
 
+// changeDatabase runs USE database on p's session and takes the database the
+// server reports afterwards as p's, reporting a failure in an alert.
 func (p *QueryPanel) changeDatabase(database string) {
 	p.editor.CloseCompletion()
 	p.launchSession("changing the query database", fmt.Sprintf("Changing database to %s...", database), nil,

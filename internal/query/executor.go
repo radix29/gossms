@@ -350,7 +350,8 @@ func WithEachBatchOnce() Option {
 // connection in the database the pool logs in to (gosmo's
 // Server.InitialDatabase for a pool gosmo opened). A failing batch is reported
 // in Messages and execution continues. The connection is discarded rather than
-// pooled when the script leaves its database or the run fails or is cancelled.
+// pooled when the script leaves its database, its database cannot be read, or
+// the run is cancelled.
 // Cancelling ctx stops between and inside batches and returns the partial
 // Result. Every row is retained in Result.Sets unless WithMaxRows caps it; see
 // cellArena. A caller needing another database runs under a Session (Open).
@@ -359,7 +360,7 @@ func Execute(ctx context.Context, db *sql.DB, script string, opts ...Option) *Re
 	r := newRun(opts)
 	res := r.res
 
-	conn, err := gosmo.AcquireConn(ctx, db, "")
+	pc, err := gosmo.AcquireConn(ctx, db, "")
 	if err != nil {
 		res.addError(err)
 		res.Elapsed = time.Since(start)
@@ -368,26 +369,24 @@ func Execute(ctx context.Context, db *sql.DB, script string, opts ...Option) *Re
 	// The pool's reset on next checkout clears SET options and transactions but
 	// not the session's database: pooled inside one, an idle session holds a
 	// shared database lock for up to ConnMaxIdleTime, failing someone else's
-	// RESTORE, SET OFFLINE or SET SINGLE_USER. So the connection goes back to
-	// the pool only when the run ends where the checkout started.
-	startDB, _ := currentDatabase(ctx, conn)
-	endDB := ""
-	defer func() {
-		if startDB == "" || endDB != startDB {
-			gosmo.DiscardConn(conn)
-		}
-		conn.Close()
-	}()
+	// RESTORE, SET OFFLINE or SET SINGLE_USER. Release pools the connection
+	// only when the run ends where the checkout started; on a cancelled run its
+	// read fails, so the connection is discarded. The deferred call covers a
+	// panic and is a no-op after the one below.
+	defer func() { _, _ = pc.Release(ctx) }()
 
 	// Plan capture and row sinks are Session-only (both need a connection that
 	// survives the run), so the capture-off failure a Session treats as fatal
 	// cannot arise here; the pool's reset on next checkout clears any SET option.
-	if ran, _ := runScript(ctx, conn, script, planCaptureNone, nil, r); ran {
+	ran, _ := runScript(ctx, pc.Conn, script, planCaptureNone, nil, r)
+	// Read after the run, so a mid-script USE is visible in Result.Database.
+	endDB, relErr := pc.Release(ctx)
+	if ran {
 		if ctx.Err() != nil {
 			res.Messages = append(res.Messages, cancelledMessage)
 		} else {
-			if name, err := currentDatabase(ctx, conn); err == nil {
-				res.Database, endDB = name, name
+			if relErr == nil {
+				res.Database = endDB
 			}
 			if r.shouldReportSuccess(planCaptureNone) {
 				res.addNotice("Commands completed successfully.")
@@ -485,14 +484,6 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 		}
 	}
 	return true, nil
-}
-
-// currentDatabase reads DB_NAME() off the connection the batches ran on, so a
-// mid-script USE is visible.
-func currentDatabase(ctx context.Context, conn *sql.Conn) (string, error) {
-	var name string
-	err := conn.QueryRowContext(ctx, "SELECT DB_NAME()").Scan(&name)
-	return name, err
 }
 
 // runBatch executes one GO batch and drains the sqlexp message stream into r.res.
