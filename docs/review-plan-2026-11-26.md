@@ -2,8 +2,8 @@
 
 A review of gossms, `~/go/gosmo` and `~/go/tuikit` after the first
 2026-11-26 plan closed (`4326e0e`, gosmo `03bb1f2`, tuikit `71e53f9`).
-W1 (B1, gosmo) and W2 (B2) are done. Close an item by deleting it; delete this file with the
-last one. gosmo and tuikit may break back-compat where an item says so.
+W1 (B1, gosmo), W2 (B2) and W3 (B3, tuikit) are done. Close an item by
+deleting it; delete this file with the last one. gosmo and tuikit may break back-compat where an item says so.
 
 **Method.** `go vet`, `staticcheck`, `deadcode -test` and
 `go test -race -count=1 ./...` in all three repos; the thirteen fuzz targets
@@ -34,9 +34,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W3 — B3** (tuikit, breaking): `DataGrid` carries view state across a
-  column-set change by column, not by index; then gossms drops the Activity
-  Monitor procedure tab's equal-columns guard.
 - **W4 — A1** (gosmo, breaking): `AcquireConn` reports the session's
   database and owns the release, closing gosmo's open thread on parked
   sessions; `query.Execute` loses two round trips and its hand-written
@@ -49,51 +46,6 @@ Each step: build in the library first when one is involved (`go test ./...`
 there), then `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
 then `go test ./...`, then drive the built binary (`docs/testing.md`). Nobody
 commits but the user.
-
----
-
-## Bugs
-
-### B3 — tuikit/gossms: a column added or hidden in the XEvent viewer moves widths and the cursor onto another column
-
-**Where:** `~/go/tuikit/controls/datagrid.go`, `setSourcePreserving`
-(widths via `ColumnWidthOverrides`/`restoreOverrideWidths`, `selCol`,
-`selAnchorCol`, `sortCol`, `aligns`, all by index); callers
-`internal/tui/xevent_viewer_rows.go` (`applyBatch`'s `grew` case,
-`rebuild`, `catchUpAfterOverlay`).
-
-**What:** `xevent.Store.Columns` is name, timestamp, *fields in arrival
-order*, then actions. A new field arriving once actions exist is inserted
-before them, and hiding a column removes one mid-list; both rebuild through
-`SetSourceKeepingSelection`, which keeps everything by index. Reproduced
-with a scratch grid: columns `name, timestamp, f1, act1`, `act1` dragged to
-40 and the cursor on it; after `SetSourceKeepingSelection` with `f2` inserted,
-the cursor is on `f2` and `f2` is 40 wide. A Shift-extended block keeps its
-column range by index too, so Copy then takes cells of a column the user
-never selected — the class of bug `SetSourceKeepingSelection`'s own doc
-comment was written against, for rows. The Activity Monitor procedure tab
-already knew (`activity_monitor_proctab.go`, `applyResult`: "widths and sort
-are kept by index, so a changed column set starts afresh") and guards with
-`slices.Equal`; the XEvent viewer does not.
-
-**Fix (tuikit, breaking):** `setSourcePreserving` maps old columns to new
-by header text, the n-th occurrence of a name to its n-th occurrence (a
-result can repeat a name), and carries each per-column item through the map:
-override widths, alignments, the sort indicator, `selCol` and
-`selAnchorCol` (a column that vanished: the cursor clamps to the nearest
-surviving column to its left, a block collapses, the indicator clears).
-Change `ColumnWidthOverrides` to return the widths keyed the same way (or
-make `restoreOverrideWidths` take the old header list) — whichever keeps
-the exported surface smallest; note it in tuikit `CHANGELOG.md` *Migrating*.
-Row state (scroll, marks, block rows) is unchanged. Then delete the
-proctab's equal-columns branch (one `SetSourcePreservingView` call does both
-cases) and its comment. **Tests (tuikit):** insert mid-list, remove
-mid-list, rename (no match → defaults), duplicate names; each asserts widths,
-cursor column, block columns. **Drive:** Watch Live Data on a session whose
-events bring a new field after an action column exists (an
-`sql_statement_completed` + `rpc_completed` pair with different actions
-works), widen an action column, put the cursor on it, wait for the new
-field; then hide a column left of the cursor.
 
 ---
 

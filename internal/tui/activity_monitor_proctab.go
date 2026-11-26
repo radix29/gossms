@@ -495,7 +495,6 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 		pt.setStatus(qualified + " failed")
 		return
 	}
-	prev := pt.result
 	pt.result = res
 	if len(res.Sets) == 0 {
 		pt.grid.SetData(nil, nil)
@@ -506,18 +505,14 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 	// Re-applied per result, like QueryPanel.renderActiveTab, so Options' max
 	// cell length reaches this grid.
 	pt.grid.SetMaxCellWidth(pt.am.app.cfg.MaxCellLength + 2)
-	// Preserving the view, not SetSource: same columns, so keep dragged
-	// widths; different sessions, so don't keep the cursor row. The set itself
+	// Preserving the view, not SetSource: keep dragged widths and the sort
+	// arrow; different sessions, so don't keep the cursor row. The set itself
 	// is the source, so its NULLs draw dimmed. An option can change the
-	// columns (Additional Info adds one mid-row), and widths and sort are kept
-	// by index, so a changed column set starts afresh.
-	if prev != nil && len(prev.Sets) > 0 && slices.Equal(prev.Sets[0].Columns, set.Columns) {
-		pt.grid.SetSourcePreservingView(set.Columns, set)
-	} else {
-		pt.grid.SetSource(set.Columns, set)
-	}
-	// After either branch: SetSource clears the alignments, and a changed
-	// column set (an option toggled) has its numeric columns elsewhere.
+	// columns (Additional Info adds one mid-row); the grid keeps each
+	// column's state by name, so the others keep theirs.
+	pt.grid.SetSourcePreservingView(set.Columns, set)
+	// Re-derived each time: a changed column set (an option toggled) has its
+	// numeric columns elsewhere.
 	pt.grid.SetColumnAlignments(resultColumnAligns(set))
 	pt.grid.SetSelectedRow(0)
 	pt.setStatus(fmt.Sprintf("%d row(s)  %s  (%s)",

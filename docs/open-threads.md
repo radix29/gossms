@@ -180,6 +180,18 @@ Settled design: `docs/decisions.md` § Format Document.
   Windows transient (a handle open without FILE_SHARE_DELETE, on either
   path); `WithLock`'s create no longer has this (it checks the lock exists).
 
+## Grid view state by column: what is left
+
+- **An XEvent header that changes with the column set misleads the map.**
+  tuikit's `DataGrid` carries widths, alignment, sort and cursor by header text
+  (2026-11-26), and `xevent.Header` suffixes an action " (action)" only once a
+  field of the same name exists. A field arriving after an action of its name
+  (e.g. `database_id` field and `sqlserver.database_id` action) renames the
+  action's header, and the field takes the old one, so the action's dragged
+  width moves onto the field. Fix needs a column identity apart from the
+  header (a key slice through the preserving setters), not worth it unless
+  seen.
+
 ## Code size: what is left
 
 - **Five property-page builders run past 200 lines:**
