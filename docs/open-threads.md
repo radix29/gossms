@@ -199,14 +199,6 @@ Settled design: `docs/decisions.md` § Format Document.
   Windows transient (a handle open without FILE_SHARE_DELETE, on either
   path); `WithLock`'s create no longer has this (it checks the lock exists).
 
-## Plan view: what is left
-
-- **Collapsing a tree row can leave the Tree tab scrolled past its top.**
-  `rebuildTreeRows` resets `treeSt.scroll` only when it exceeds `len(rows)`,
-  not `len(rows)-treePaneRect.H`: scrolled to 1, collapse a subtree so every
-  row fits, and the first row stays hidden with no scrollbar drawn (the wheel
-  brings it back). Pre-existing; seen while driving B2 (2026-11-24).
-
 ## Code size: what is left
 
 - **Five property-page builders run past 200 lines:**

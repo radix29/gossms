@@ -43,8 +43,6 @@ Severity is ordered by what a user can lose, not by effort.
 
 ## Recommended implementation order
 
-- **W3 — B3**: Plan view Tree tab scroll clamp after a collapse (an open
-  thread with a known one-line cause).
 - **W4 — I1**: move the Object Explorer active-database check out of `Draw`
   into `handleEvent`'s post-step, and give the "is this the active database"
   test one home; document `query_panel_database.go` in the same change.
@@ -59,33 +57,12 @@ Severity is ordered by what a user can lose, not by effort.
 - **W8 — N1**: nits (gosmo `scanCapabilityRows` nested-map helper,
   `query.Execute`'s doc comment).
 - **W9**: move what stays undone to `docs/open-threads.md` (and close the
-  three open threads W3 and W5 resolve), then delete this file.
+  two open threads W5 resolves), then delete this file.
 
 Each step: build in the library first when one is involved (`go test ./...`
 there), then `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
 then `go test ./...`, then drive the built binary (`docs/testing.md`). Nobody
 commits but the user.
-
----
-
-## Bugs
-
-### B3 — Plan view: a collapse can leave the Tree tab scrolled past its top
-
-Already in `docs/open-threads.md` § Plan view; listed here because the cause
-is known and the fix is one line.
-
-**Where:** `internal/tui/planview/tree.go`, the end of `rebuildTreeRows`
-(`if v.treeSt.scroll > len(v.treeSt.rows) { v.treeSt.scroll = 0 }`).
-
-**Fix:** clamp to the last full page:
-`v.treeSt.scroll = core.Clamp(v.treeSt.scroll, 0, max(0, len(v.treeSt.rows)-v.treePaneRect.H))`,
-checking that `treePaneRect` is laid out when `rebuildTreeRows` runs (if the
-first build precedes `layoutTree`, an `H` of 0 keeps today's behaviour, and
-`ensureVisible` still clamps on the next move). Test: scroll to 1, collapse
-a subtree so every row fits, assert `scroll == 0`. Drive: open an actual
-plan's Tree tab in tmux, scroll one row, collapse the root's first child.
-Delete the open-thread entry.
 
 ---
 
