@@ -38,6 +38,13 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"DECLARE @x int = 1; SET @x = (SELECT COUNT(*) FROM t); PRINT @x", read},
 		{"IF 1 = 1 BEGIN PRINT 'a' END ELSE PRINT 'b'", read},
 		{"BEGIN TRY SELECT 1/0 END TRY BEGIN CATCH THROW; END CATCH", read},
+		// A column named receive has the column's shape, not the verb's.
+		{"SELECT receive FROM t", read},
+		{"SELECT a, receive FROM t", read},
+		{"SELECT DISTINCT receive, a FROM t ORDER BY receive", read},
+		{"SELECT a FROM t WHERE receive = 1 AND x.receive IS NULL", read},
+		{"SELECT ISNULL(receive, 0) AS r FROM t", read},
+		{"SELECT a AS receive", read},
 		{"RAISERROR('x', 10, 1) WITH NOWAIT", read},
 		{"THROW 50000, 'x', 1", read},
 		{"WAITFOR DELAY '00:00:01'", read},
@@ -113,6 +120,11 @@ func TestClassifyScriptClass(t *testing.T) {
 		{"DECLARE @n bigint = NEXT VALUE FOR s", write},
 		{"SET @n = NEXT VALUE FOR s", write},
 		{"RECEIVE TOP (1) * FROM q", write},
+		{"RECEIVE * FROM q", write},
+		{"RECEIVE conversation_handle FROM q", write},
+		{"IF 1 = 1 RECEIVE [message_body] FROM q", write},
+		{"SELECT 1 RECEIVE * FROM q", write},             // merged into the SELECT
+		{"SELECT a FROM t WHERE receive * 2 > 1", write}, // ambiguous: the verb, the safe side
 		{"BEGIN DIALOG @h FROM SERVICE s TO SERVICE 't'", write},
 		{"FOO BAR", write}, // unknown at batch start: an implicit EXEC of FOO
 		{"SELECT 1; FOO BAR", write},

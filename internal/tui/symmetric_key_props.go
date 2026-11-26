@@ -374,24 +374,7 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 	passConfirm.SetDirtyTracked(false)
 	hint := propsheet.Hint()
 
-	decOpts := symKeyDecryptorOptions(k, cat)
-	decLabels := []string{noneItem}
-	decDefault := 0
-	if len(decOpts) > 0 {
-		decLabels = make([]string, len(decOpts))
-		decDefault = -1
-		for i, o := range decOpts {
-			decLabels[i] = o.label
-			if decDefault < 0 && !o.needsPassword {
-				decDefault = i
-			}
-		}
-		decDefault = max(decDefault, 0)
-	}
-	decSelect := propsheet.Select("Decrypt by", decLabels, decDefault)
-	decSelect.SetDirtyTracked(false)
-	decPass := propsheet.Password("Decryption password", 20)
-	decPass.SetDirtyTracked(false)
+	decOpts, decSelect, decPass := symKeyDecryptorRows(k, cat)
 
 	var removeBtn *widgets.Button
 	// The server refuses to remove the last encryption (Msg 15558); counting
@@ -502,8 +485,38 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 			"the master key protects needs no password; a password, or a private key protected by one, is typed here. "+
 			"Opening the key with a certificate or asymmetric key, and removing an encryption by one, needs CONTROL on it."),
 	)
+	return f, symKeyEncryptionApply(edits, decOpts, decSelect, decPass, ref)
+}
 
-	apply := func(ctx context.Context) error {
+// symKeyDecryptorRows is the Encryption page's decryptor: the ways the key
+// opens here, the one chosen, and its password.
+func symKeyDecryptorRows(k *gosmo.SymmetricKey, cat *symKeyCatalog) ([]symKeyDecOption, *propsheet.SelectRow, *propsheet.TextRow) {
+	decOpts := symKeyDecryptorOptions(k, cat)
+	decLabels := []string{noneItem}
+	decDefault := 0
+	if len(decOpts) > 0 {
+		decLabels = make([]string, len(decOpts))
+		decDefault = -1
+		for i, o := range decOpts {
+			decLabels[i] = o.label
+			if decDefault < 0 && !o.needsPassword {
+				decDefault = i
+			}
+		}
+		decDefault = max(decDefault, 0)
+	}
+	decSelect := propsheet.Select("Decrypt by", decLabels, decDefault)
+	decSelect.SetDirtyTracked(false)
+	decPass := propsheet.Password("Decryption password", 20)
+	decPass.SetDirtyTracked(false)
+	return decOpts, decSelect, decPass
+}
+
+// symKeyEncryptionApply adds and removes the Encryption page's encryptions,
+// opening the key with the decryptor chosen.
+func symKeyEncryptionApply(edits *propsheet.PendingEdits[*symKeyEncEdit], decOpts []symKeyDecOption,
+	decSelect *propsheet.SelectRow, decPass *propsheet.TextRow, ref *gosmo.SymmetricKey) propApply {
+	return func(ctx context.Context) error {
 		var adds, removes []*symKeyEncEdit
 		for _, e := range edits.All() {
 			switch {
@@ -554,5 +567,4 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 		}
 		return nil
 	}
-	return f, apply
 }

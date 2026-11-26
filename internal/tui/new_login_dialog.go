@@ -12,7 +12,7 @@ import (
 
 // nloginDBRoles is one online database's assignable role names. "public" is
 // excluded: membership is implicit and ALTER ROLE public ADD MEMBER is a syntax
-// error (same exclusion as pageLoginUserMapping).
+// error (same exclusion as loginUserMappingEdits).
 type nloginDBRoles struct {
 	dbName    string
 	roleNames []string

@@ -283,9 +283,16 @@ func (a *App) setAgentOperatorEnabled(sc *db.ServerConn, node *explorerNode, ena
 
 func (a *App) deleteAgentJob(sc *db.ServerConn, node *explorerNode) {
 	name := node.data.Name
-	a.deleteAgentEntity(sc, node, "Delete Job",
-		fmt.Sprintf("Delete SQL Server Agent job %q? This cannot be undone.", name),
-		sc.Server.JobRef(name).Drop)
+	msg := fmt.Sprintf("Delete SQL Server Agent job %q? This cannot be undone.", name)
+	// A system job is offered Delete, as in SSMS, but asks for its name to be
+	// typed (docs/decisions.md § Delete/Rename): SQL Server or a feature
+	// created it, and nothing in goSSMS recreates it.
+	typed := ""
+	if node.data.IsSystem {
+		typed = name
+		msg += " SQL Server created this job for Policy-Based Management; nothing in goSSMS recreates it."
+	}
+	a.deleteAgentEntity(sc, node, "Delete Job", msg, typed, sc.Server.JobRef(name).Drop)
 }
 
 func (a *App) deleteAgentSchedule(sc *db.ServerConn, node *explorerNode) {
@@ -297,7 +304,7 @@ func (a *App) deleteAgentSchedule(sc *db.ServerConn, node *explorerNode) {
 		what += " (" + d + ")"
 	}
 	a.deleteAgentEntity(sc, node, "Delete Schedule",
-		fmt.Sprintf("Delete schedule %s? A schedule still attached to a job can't be deleted until it's detached.", what),
+		fmt.Sprintf("Delete schedule %s? A schedule still attached to a job can't be deleted until it's detached.", what), "",
 		func(ctx context.Context) error {
 			sch, err := findAgentSchedule(ctx, sc, id)
 			if err != nil {
@@ -310,13 +317,13 @@ func (a *App) deleteAgentSchedule(sc *db.ServerConn, node *explorerNode) {
 func (a *App) deleteAgentAlert(sc *db.ServerConn, node *explorerNode) {
 	name := node.data.Name
 	a.deleteAgentEntity(sc, node, "Delete Alert",
-		fmt.Sprintf("Delete alert %q? This cannot be undone.", name),
+		fmt.Sprintf("Delete alert %q? This cannot be undone.", name), "",
 		sc.Server.AlertRef(name).Drop)
 }
 
 func (a *App) deleteAgentOperator(sc *db.ServerConn, node *explorerNode) {
 	name := node.data.Name
 	a.deleteAgentEntity(sc, node, "Delete Operator",
-		fmt.Sprintf("Delete operator %q? This cannot be undone.", name),
+		fmt.Sprintf("Delete operator %q? This cannot be undone.", name), "",
 		sc.Server.OperatorRef(name).Drop)
 }

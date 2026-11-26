@@ -89,3 +89,38 @@ func TestAgentMenuReportsAJobDeletedUnderneath(t *testing.T) {
 		})
 	}
 }
+
+// A system job (syspolicy_purge_history) is offered Delete, as in SSMS, but
+// asks for its name to be typed, as SQL Server's own XEvent sessions do; a user
+// job keeps the one-Yes confirmation. Confirm with the name untyped does nothing.
+func TestDeletingASystemJobNeedsItsNameTyped(t *testing.T) {
+	const sysJob = "syspolicy_purge_history"
+	a := newTestApp()
+	sc, inst := newGConn(t)
+	node := agentJobTestNode(sc)
+	node.label, node.data.Name, node.data.IsSystem = sysJob, sysJob, true
+
+	a.deleteAgentJob(sc, node)
+	if a.confirmDialog().Visible() || !a.confirmTypedDialog().Visible() {
+		t.Fatal("deleting a system job should ask for the name to be typed")
+	}
+	enter := tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)
+	a.confirmTypedDialog().HandleKey(enter)
+	if !a.confirmTypedDialog().Visible() {
+		t.Fatal("Confirm with the name untyped closed the dialog")
+	}
+	for _, r := range sysJob {
+		a.confirmTypedDialog().HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+	}
+	a.confirmTypedDialog().HandleKey(enter)
+	waitAndDrain(t, a)
+	if stmts := inst.Statements(); len(stmts) != 1 || !strings.Contains(stmts[0], "sp_delete_job @job_name = N'"+sysJob+"'") {
+		t.Fatalf("statements = %q, want the job's sp_delete_job", stmts)
+	}
+
+	user := agentJobTestNode(sc)
+	a.deleteAgentJob(sc, user)
+	if a.confirmTypedDialog().Visible() || !a.confirmDialog().Visible() {
+		t.Error("a user job should keep the one-Yes confirmation")
+	}
+}

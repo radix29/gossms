@@ -111,12 +111,19 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, noun string
 
 // deleteAgentEntity confirms, then runs run (a gosmo Drop/Delete) in the
 // background and refreshes the parent folder on success. Shared by every Agent
-// entity.
-func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, message string, run func(ctx context.Context) error) {
+// entity. A non-empty typed is the name the user must type to confirm (a
+// system job, as for SQL Server's own XEvent sessions); otherwise one Yes.
+func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, message, typed string, run func(ctx context.Context) error) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.confirmDialog().ShowConfirm(title, message, func(confirmed bool) {
+	confirm := a.confirmDialog().ShowConfirm
+	if typed != "" {
+		confirm = func(title, message string, onConfirm func(bool)) {
+			a.confirmTypedDialog().ShowTypedConfirm(title, message, typed, onConfirm)
+		}
+	}
+	confirm(title, message, func(confirmed bool) {
 		if !confirmed {
 			return
 		}

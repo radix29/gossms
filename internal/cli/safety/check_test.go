@@ -154,6 +154,7 @@ func TestCheckMaxRowsAffectedBlindSpots(t *testing.T) {
 		{"DROP TABLE IF EXISTS #a, #b", false},
 		// A column of the name is counted like any other.
 		{"UPDATE t SET receive = 1 WHERE id = 1", false},
+		{"UPDATE t SET a = receive + 1", false},
 		{"UPDATE t SET a = 1 WHERE receive IS NULL", false},
 		{"UPDATE t SET a = x.receive FROM t JOIN x ON x.id = t.id", false},
 		{"UPDATE t SET writetext = 1", false},

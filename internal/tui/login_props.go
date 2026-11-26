@@ -425,210 +425,225 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			mappings, err := l.UserMappingsIn(ctx, dbs)
+			edits, err := loginUserMappingEdits(ctx, l, dbs, *loginName)
 			if err != nil {
 				return nil, nil, err
 			}
-			mappingByDB := make(map[string]*gosmo.LoginUserMapping, len(mappings))
-			for _, m := range mappings {
-				mappingByDB[m.Database] = m
-			}
+			return loginUserMappingForm(edits), loginUserMappingApply(sc, loginName, edits), nil
+		},
+	}
+}
 
-			// One round trip per ONLINE database on top of the one batch UserMappings reads
-			// them in, so this page is N+2 latencies deep. A database whose roles can't be
-			// read drops out of the list as an offline one does: one unreadable
-			// availability-group secondary must not fail a page with every other database
-			// to show.
-			edits, err := eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (*mapEdit, error) {
-				m, isMapped := mappingByDB[d.Name]
-				user := *loginName
-				schema := "dbo"
-				if isMapped {
-					user = m.User
-					if m.DefaultSchema != "" {
-						schema = m.DefaultSchema
-					}
-				}
-				roles, err := d.Roles(ctx)
-				if err != nil {
-					return nil, err
-				}
-				var roleNames []string
-				var origRoles []bool
-				for _, r := range roles {
-					// public's membership is implicit and ALTER ROLE public ADD/DROP MEMBER is a
-					// syntax error; same exclusion as user_props.go's Membership page.
-					if r.Name == "public" {
-						continue
-					}
-					roleNames = append(roleNames, r.Name)
-					origRoles = append(origRoles, isMapped && slices.Contains(m.Roles, r.Name))
-				}
-				return &mapEdit{
-					dbName: d.Name, origMapped: isMapped, mapped: isMapped,
-					user: user, origSchema: schema, schema: schema,
-					roleNames: roleNames, origRoles: origRoles,
-					roles: append([]bool(nil), origRoles...),
-				}, nil
-			})
-			if err != nil {
-				return nil, nil, err
-			}
+// loginUserMappingEdits is the User Mapping page's rows, one per online
+// database, as the login is mapped there now.
+func loginUserMappingEdits(ctx context.Context, l *gosmo.Login, dbs []*gosmo.Database, loginName string) ([]*mapEdit, error) {
+	mappings, err := l.UserMappingsIn(ctx, dbs)
+	if err != nil {
+		return nil, err
+	}
+	mappingByDB := make(map[string]*gosmo.LoginUserMapping, len(mappings))
+	for _, m := range mappings {
+		mappingByDB[m.Database] = m
+	}
 
-			rowsFor := func() [][]string {
-				rows := make([][]string, len(edits))
-				for i, e := range edits {
-					// e.schema, not e.origSchema: the redraw after each commit must report what
-					// the editor just wrote; the loaded value left an edited schema invisible until
-					// Apply.
-					rows[i] = []string{mapCell(e.mapped), e.dbName, e.user, e.schema}
-				}
-				return rows
+	// One round trip per ONLINE database on top of the one batch UserMappings reads
+	// them in, so this page is N+2 latencies deep. A database whose roles can't be
+	// read drops out of the list as an offline one does: one unreadable
+	// availability-group secondary must not fail a page with every other database
+	// to show.
+	return eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (*mapEdit, error) {
+		m, isMapped := mappingByDB[d.Name]
+		user := loginName
+		schema := "dbo"
+		if isMapped {
+			user = m.User
+			if m.DefaultSchema != "" {
+				schema = m.DefaultSchema
 			}
-			grid := propsheet.NewCellToggleGrid(userMappingColumns, 0, func() int { return len(edits) },
-				func(row int) { edits[row].mapped = !edits[row].mapped }, rowsFor)
+		}
+		roles, err := d.Roles(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var roleNames []string
+		var origRoles []bool
+		for _, r := range roles {
+			// public's membership is implicit and ALTER ROLE public ADD/DROP MEMBER is a
+			// syntax error; same exclusion as user_props.go's Membership page.
+			if r.Name == "public" {
+				continue
+			}
+			roleNames = append(roleNames, r.Name)
+			origRoles = append(origRoles, isMapped && slices.Contains(m.Roles, r.Name))
+		}
+		return &mapEdit{
+			dbName: d.Name, origMapped: isMapped, mapped: isMapped,
+			user: user, origSchema: schema, schema: schema,
+			roleNames: roleNames, origRoles: origRoles,
+			roles: append([]bool(nil), origRoles...),
+		}, nil
+	})
+}
 
-			dbStatic := propsheet.Static("Database", "")
-			schemaText := propsheet.Text("Default schema", "", 20)
-			rolesGrid := propsheet.NewToggleGrid([]string{"Member", "Role"}, []int{0}, 8)
+// loginUserMappingForm is the User Mapping page's form: the databases in a
+// grid, and the selected one's default schema and role membership below it.
+func loginUserMappingForm(edits []*mapEdit) *propsheet.Form {
+	rowsFor := func() [][]string {
+		rows := make([][]string, len(edits))
+		for i, e := range edits {
+			// e.schema, not e.origSchema: the redraw after each commit must report what
+			// the editor just wrote; the loaded value left an edited schema invisible until
+			// Apply.
+			rows[i] = []string{mapCell(e.mapped), e.dbName, e.user, e.schema}
+		}
+		return rows
+	}
+	grid := propsheet.NewCellToggleGrid(userMappingColumns, 0, func() int { return len(edits) },
+		func(row int) { edits[row].mapped = !edits[row].mapped }, rowsFor)
 
-			selected := -1
-			commitCurrent := func() {
-				if selected < 0 || selected >= len(edits) {
-					return
-				}
-				e := edits[selected]
-				e.schema = schemaText.Value()
-				vals := rolesGrid.Values()
-				for i := range e.roles {
-					if i < len(vals) {
-						e.roles[i] = vals[i][0]
-					}
+	dbStatic := propsheet.Static("Database", "")
+	schemaText := propsheet.Text("Default schema", "", 20)
+	rolesGrid := propsheet.NewToggleGrid([]string{"Member", "Role"}, []int{0}, 8)
+
+	selected := -1
+	commitCurrent := func() {
+		if selected < 0 || selected >= len(edits) {
+			return
+		}
+		e := edits[selected]
+		e.schema = schemaText.Value()
+		vals := rolesGrid.Values()
+		for i := range e.roles {
+			if i < len(vals) {
+				e.roles[i] = vals[i][0]
+			}
+		}
+	}
+	syncFromSelection := func() {
+		selected = grid.SelectedRow()
+		if selected < 0 || selected >= len(edits) {
+			dbStatic.SetValue("")
+			schemaText.SetValue("")
+			rolesGrid.SetRows(nil, nil)
+			return
+		}
+		e := edits[selected]
+		dbStatic.SetValue(e.dbName)
+		schemaText.SetValue(e.schema)
+		setRoleToggles(rolesGrid, e.roleNames, e.roles)
+	}
+	reload := propsheet.BindGridDetail(grid, userMappingColumns, rowsFor, commitCurrent, syncFromSelection)
+
+	mappingRow := propsheet.NewGridRow(grid, 10)
+	mappingRow.DirtyFn = func() bool {
+		for _, e := range edits {
+			if e.mapped != e.origMapped || e.schema != e.origSchema {
+				return true
+			}
+			for i := range e.roles {
+				if e.roles[i] != e.origRoles[i] {
+					return true
 				}
 			}
-			syncFromSelection := func() {
-				selected = grid.SelectedRow()
-				if selected < 0 || selected >= len(edits) {
-					dbStatic.SetValue("")
-					schemaText.SetValue("")
-					rolesGrid.SetRows(nil, nil)
-					return
-				}
-				e := edits[selected]
-				dbStatic.SetValue(e.dbName)
-				schemaText.SetValue(e.schema)
-				setRoleToggles(rolesGrid, e.roleNames, e.roles)
-			}
-			reload := propsheet.BindGridDetail(grid, userMappingColumns, rowsFor, commitCurrent, syncFromSelection)
+		}
+		return false
+	}
+	mappingRow.RevertFn = func() {
+		for _, e := range edits {
+			e.mapped = e.origMapped
+			e.schema = e.origSchema
+			e.roles = append([]bool(nil), e.origRoles...)
+		}
+		// reload, never syncFromSelection directly: reload redraws and reloads the
+		// editor *without* committing first. The schema box and role toggles still hold
+		// the pre-revert values, so a commit would write the selected row straight back
+		// to what Revert undid.
+		reload()
+	}
 
-			mappingRow := propsheet.NewGridRow(grid, 10)
-			mappingRow.DirtyFn = func() bool {
-				for _, e := range edits {
-					if e.mapped != e.origMapped || e.schema != e.origSchema {
-						return true
-					}
-					for i := range e.roles {
-						if e.roles[i] != e.origRoles[i] {
-							return true
-						}
-					}
-				}
-				return false
-			}
-			mappingRow.RevertFn = func() {
-				for _, e := range edits {
-					e.mapped = e.origMapped
-					e.schema = e.origSchema
-					e.roles = append([]bool(nil), e.origRoles...)
-				}
-				// reload, never syncFromSelection directly: reload redraws and reloads the
-				// editor *without* committing first. The schema box and role toggles still hold
-				// the pre-revert values, so a commit would write the selected row straight back
-				// to what Revert undid.
-				reload()
-			}
+	f := propsheet.NewForm(
+		propsheet.Section("Users mapped to this login"),
+		mappingRow,
+		propsheet.Note("Space/Enter (or click) on Map toggles a database's user mapping. A newly mapped database uses the login's own name as the username."),
+		propsheet.Section("Selected mapping"),
+		dbStatic, schemaText,
+		propsheet.Section("Database role membership"),
+		rolesGrid,
+		propsheet.Note("Schema/role changes only take effect for a mapped database. Space/Enter (or click) on Member toggles role membership."),
+	)
+	f.SetCommit(commitCurrent)
+	return f
+}
 
-			f := propsheet.NewForm(
-				propsheet.Section("Users mapped to this login"),
-				mappingRow,
-				propsheet.Note("Space/Enter (or click) on Map toggles a database's user mapping. A newly mapped database uses the login's own name as the username."),
-				propsheet.Section("Selected mapping"),
-				dbStatic, schemaText,
-				propsheet.Section("Database role membership"),
-				rolesGrid,
-				propsheet.Note("Schema/role changes only take effect for a mapped database. Space/Enter (or click) on Member toggles role membership."),
-			)
-			f.SetCommit(commitCurrent)
-
-			apply := func(ctx context.Context) error {
-				l, err := findLogin(ctx, sc, *loginName)
+// loginUserMappingApply writes the User Mapping page's edits: the mappings
+// first, then each mapped database's default schema and role membership.
+func loginUserMappingApply(sc *db.ServerConn, loginName *string, edits []*mapEdit) propApply {
+	return func(ctx context.Context) error {
+		l, err := findLogin(ctx, sc, *loginName)
+		if err != nil {
+			return err
+		}
+		for _, e := range edits {
+			if e.mapped == e.origMapped {
+				continue
+			}
+			if e.mapped {
+				// The schema goes into the CREATE USER, as New Login does: a separate
+				// ALTER would have to read the user back first, and under Script
+				// Changes the CREATE is only collected, so that read found no user.
+				if err := l.MapToDatabase(ctx, e.dbName, e.user, e.schema); err != nil {
+					return err
+				}
+			} else {
+				if err := l.UnmapFromDatabase(ctx, e.dbName); err != nil {
+					return err
+				}
+			}
+		}
+		for _, e := range edits {
+			if !e.mapped {
+				continue
+			}
+			if e.origMapped && e.schema != e.origSchema {
+				d, err := sc.Server.DatabaseByName(ctx, e.dbName)
 				if err != nil {
 					return err
 				}
-				for _, e := range edits {
-					if e.mapped == e.origMapped {
-						continue
-					}
-					if e.mapped {
-						// The schema goes into the CREATE USER, as New Login does: a separate
-						// ALTER would have to read the user back first, and under Script
-						// Changes the CREATE is only collected, so that read found no user.
-						if err := l.MapToDatabase(ctx, e.dbName, e.user, e.schema); err != nil {
-							return err
-						}
-					} else {
-						if err := l.UnmapFromDatabase(ctx, e.dbName); err != nil {
-							return err
-						}
-					}
+				// UserRef: ALTER USER needs only the name.
+				if err := d.UserRef(e.user).SetDefaultSchema(ctx, e.schema); err != nil {
+					return err
 				}
-				for _, e := range edits {
-					if !e.mapped {
-						continue
-					}
-					if e.origMapped && e.schema != e.origSchema {
-						d, err := sc.Server.DatabaseByName(ctx, e.dbName)
-						if err != nil {
-							return err
-						}
-						// UserRef: ALTER USER needs only the name.
-						if err := d.UserRef(e.user).SetDefaultSchema(ctx, e.schema); err != nil {
-							return err
-						}
-					}
-					var rolesChanged bool
-					for i := range e.roles {
-						if e.roles[i] != e.origRoles[i] {
-							rolesChanged = true
-							break
-						}
-					}
-					if !rolesChanged {
-						continue
-					}
-					d, err := sc.Server.DatabaseByName(ctx, e.dbName)
-					if err != nil {
+			}
+			var rolesChanged bool
+			for i := range e.roles {
+				if e.roles[i] != e.origRoles[i] {
+					rolesChanged = true
+					break
+				}
+			}
+			if !rolesChanged {
+				continue
+			}
+			d, err := sc.Server.DatabaseByName(ctx, e.dbName)
+			if err != nil {
+				return err
+			}
+			for i, name := range e.roleNames {
+				if e.roles[i] == e.origRoles[i] {
+					continue
+				}
+				if e.roles[i] {
+					if err := d.RoleRef(name).AddMember(ctx, e.user); err != nil {
 						return err
 					}
-					for i, name := range e.roleNames {
-						if e.roles[i] == e.origRoles[i] {
-							continue
-						}
-						if e.roles[i] {
-							if err := d.RoleRef(name).AddMember(ctx, e.user); err != nil {
-								return err
-							}
-						} else {
-							if err := d.RoleRef(name).RemoveMember(ctx, e.user); err != nil {
-								return err
-							}
-						}
+				} else {
+					if err := d.RoleRef(name).RemoveMember(ctx, e.user); err != nil {
+						return err
 					}
 				}
-				return nil
 			}
-			return f, apply, nil
-		},
+		}
+		return nil
 	}
 }
 

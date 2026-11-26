@@ -6,7 +6,7 @@ Work knowingly left undone is in `docs/open-threads.md`.
 
 ## Azure SQL Managed Instance
 
-Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
+Supported. Live gaps: `docs/open-threads.md` V2–V6, V8, V9.
 
 - **MI reports `ProductVersion` `12.0.2000.8`** while running engine 18.0, so
   every gosmo `colSince`/`VersionMajor` gate degrades or refuses features it
@@ -87,11 +87,6 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
   row). New Login creates all five kinds, but `ALTER LOGIN` can't change it —
   drop-and-recreate loses the SID and orphans mapped users. Deliberate.
 - **No principal-browse picker** — Windows logins are typed `DOMAIN\name`.
-- **Entra logins stay unverifiable here.** `CREATE LOGIN ... FROM EXTERNAL
-  PROVIDER WITH OBJECT_ID` parses (win10cli returns the same Msg 37525 for it
-  and the bare form). On `t-qmi-01` the bare form, run by hand as SQL-auth
-  sysadmin, created working user and service-principal logins; the dialog's
-  `WITH OBJECT_ID` form hasn't been executed.
 - **The schema-object tree families listed here are read-only** — no create, no edit; they still
   have Script as, Delete, and (where SQL Server has it) Rename and Move to
   Schema:
@@ -119,7 +114,7 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
   services/contracts are authored with their application.
   Details easy to undo:
   - No rename in the family (no `sp_rename` class for any of the seven).
-  - `azureRefusedScriptVerbs` withholds the remote service binding's CREATE and
+  - `scripting.azureRefused` withholds the remote service binding's CREATE and
     DROP And CREATE on Azure (compile-time Msg 41906), not its DROP. Withheld
     verbs draw greyed with `N/A`, no submenu arrow, unreachable by key or mouse
     (verified on MI with a fabricated node).
@@ -135,8 +130,12 @@ Supported. Live gaps: `docs/open-threads.md` V2–V6, V8.
     queue with no activation; **`RouteChanges` can change but never clear** a
     setting (`= NULL` doesn't parse, empty is refused — drop and recreate), so
     Route Properties refuses an emptied row with a message.
-- **Refusals on state, not rights, are not gated.** The gate answers what the
-  *login* may do; these depend on state that changes under an open tree.
+- **Refusals on state that changes under an open tree are not gated.** The
+  gate answers what the *login* may do; state another session can change
+  between load and click is read at the click instead. State that is the
+  object's own and stable, or that makes the action impossible until the user
+  changes it, may withhold an item: Remove Private Key without a private key,
+  Send Test E-Mail while Database Mail is stopped.
   - *Start/Stop Job* aren't greyed: they read state first and refuse in the
     app's words ("Job X is already running"/"is not running"), refreshing the
     node — the read is free, and gating would hide a legit Stop for a job
@@ -602,7 +601,9 @@ Peer credentials, easy to undo:
 - **Agent objects keep their own Delete** (`agent_menu.go`, per-type wording);
   only Rename is shared. Likewise AGs. **A system Agent job still offers
   `Delete Job...`** (SSMS does; msdb allows) though Rename is off every system
-  object.
+  object, **and asks for the name to be typed**, as SQL Server's own XEvent
+  sessions do (§ Extended Events): nothing in goSSMS recreates it
+  (`deleteAgentJob`; `TestDeletingASystemJobNeedsItsNameTyped`).
 - **Neither audit object offers tree Rename.** A server audit specification has
   no `MODIFY NAME` (parse error). An audit renames only while disabled, so it
   lives on Properties, where the disable shows in Script Changes.
@@ -1454,10 +1455,11 @@ lossless round trip with `data import`. Hence a switch,
 
 ## By design — not issues, do not re-raise
 
-**SSMS parity rule:** match SSMS unless that loses data or safety. Entries below that
-keep a harmless SSMS wart (a log's 2097152 MB) or break parity (float digits,
-Results To File on error, typed confirmation for system XE sessions) each state
-their reason.
+**SSMS parity rule:** match SSMS unless that loses data or safety, or a stated
+usability reason outweighs it. Entries in this file that keep a harmless SSMS
+wart (a log's 2097152 MB) or break parity (float digits, Results To File on
+error, typed confirmation for system objects, the XEvent Profiler's place, one
+Query Store metric across views) each state their reason.
 
 ### Explorer, Details pane and dialogs
 
@@ -1548,13 +1550,10 @@ their reason.
   Server Log, New Server Role, Service Broker, CLR, FileTables, ML libraries,
   database audits) to edition 5 only; edition 12 gets just the
   `IsDatabaseScoped` branch (no Resource Governor, Database Mail,
-  Replication or server XEvents). Settled by `cc66edf` (PR #67), whose stated
-  intent was to preserve Fabric SQL database's existing behaviour, and kept
-  on 2026-11-26 when a review proposed folding edition 12 into the Azure
-  branch on gosmo's `IsDatabaseScoped` doc alone. No edition-12 server has
-  ever been connected (`docs/open-threads.md` § Environment), so the
-  documentation is not reason enough; change it only on a live walk by the
-  Fabric contributor. Pinned by the `fabric-sql-database` rows in
+  Replication or server XEvents). Folding edition 12 into the Azure branch
+  on gosmo's `IsDatabaseScoped` doc alone was declined: no edition-12 server
+  has ever been connected (`docs/open-threads.md` § Environment); change it
+  only on a live walk by the Fabric contributor. Pinned by the `fabric-sql-database` rows in
   `TestExplorerRootSupportUsesEditionNotConnectionHostname` and
   `TestExplorerFeatureMenusKeepManagedInstanceAndFabricDistinct`.
 
@@ -1812,7 +1811,9 @@ their reason.
     (stat only: reading the token opens handles that block the holder's remove
     on Windows); past `lockMaxWait` (10 s) a moving queue gives a distinct
     "busy" error. Raising `lockWait` was declined (a wedged live holder would
-    stall every saver); ageing the marker was declined (same handle problem). A
+    stall every saver); ageing the marker was declined (same handle problem).
+    So a live holder that runs past `lockWait` under load fails its waiters
+    as "locked" — from outside it is a stuck holder. A
     lock seen absent is progress, and release retries a failed remove for up to
     `lockWait` because antivirus can hold the new lock open.
 - **`widgets.InputField.HandleKey` keeps its exception to the `HandleKey`
@@ -1827,7 +1828,7 @@ their reason.
   every press first, and `controls.ValueViewer` takes every press while open,
   as it already did on its own panel — the `core.Overlay` contract, kept modal.
 - **`sqlparse.unquoteIdent` keeps its own unquoter.**
-  `safety.unquote` now goes through gosmo's `tsql.Spans`/`Span.Unescape`,
+  `safety.unquote` goes through gosmo's `tsql.Spans`/`Span.Unescape`,
   which reads an unterminated identifier to the end where `tsql.UnquoteName`
   returns it unchanged. `sqlparse` is a leaf (only `tuikit` + stdlib,
   `ARCHITECTURE.md` § Package map), it unquotes closed identifiers only (the
@@ -1847,7 +1848,7 @@ their reason.
   - *Max-size text*: the CLI's (`cli/cmd/db_files.go`, unit-aware, says
     "unlimited") and Database Properties › Files' (whole-MB-else-KB,
     "Unlimited") are different formats, not one.
-  - *The remaining A7 near-twins*: full-text list pages and rule/default pages
+  - *The remaining near-twins*: full-text list pages and rule/default pages
     already share their form builder; the key-signature pair shares
     `keySignaturesPage`; the detail-browser pairs are the `filterObjects` +
     rows loop used ~45 times with different columns. Each helper would need

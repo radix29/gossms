@@ -125,6 +125,19 @@ func (v *XEventViewer) headers() []string {
 	return out
 }
 
+// columnKeys names the current columns' identities for the grid, beside
+// headers: a header changes with the column set (an action gains " (action)"
+// once a field of its name arrives), so the grid carries a dragged width, the
+// sort arrow and the cursor by key, or the field took the action's old header
+// and its state with it.
+func (v *XEventViewer) columnKeys() []string {
+	out := make([]string, len(v.columns))
+	for i, c := range v.columns {
+		out[i] = c.Key()
+	}
+	return out
+}
+
 // rebuildRows rebuilds shown from the whole store and hands the grid the new
 // column set, keeping its cursor and scroll: after a filter change, a Clear or
 // a Resume.
@@ -167,10 +180,10 @@ func (v *XEventViewer) rebuild(anchor xeAnchor, sameRows bool) {
 	}
 	v.invalidateDetailCache()
 	if sameRows {
-		v.grid.SetSourceKeepingSelection(v.headers(), xeRowSource{v})
+		v.grid.SetSourceKeepingSelectionKeyed(v.headers(), v.columnKeys(), xeRowSource{v})
 	} else {
 		// Collapses onto the clamped old index; then onto anchor's event.
-		v.grid.SetSourcePreservingView(v.headers(), xeRowSource{v})
+		v.grid.SetSourcePreservingViewKeyed(v.headers(), v.columnKeys(), xeRowSource{v})
 		if anchor.event != 0 {
 			if i := slices.IndexFunc(v.shown, func(e *xevent.Event) bool { return e.ID == anchor.event }); i >= 0 {
 				_, col := v.grid.SelectedCell()
@@ -235,7 +248,7 @@ func (v *XEventViewer) applyBatch(b xeBatch) {
 		// Same rows plus appended ones (trimShown already shifted the
 		// selection), so a multi-row selection stays on them.
 		v.columns = v.visibleColumns()
-		v.grid.SetSourceKeepingSelection(v.headers(), xeRowSource{v})
+		v.grid.SetSourceKeepingSelectionKeyed(v.headers(), v.columnKeys(), xeRowSource{v})
 	case before < 200:
 		// Column widths are sized from the first rows; past those, a new row
 		// changes nothing.
@@ -258,7 +271,7 @@ func (v *XEventViewer) catchUpAfterOverlay() {
 		v.regroup()
 	} else {
 		// Rows only appended while the overlay was up: same rows.
-		v.grid.SetSourceKeepingSelection(v.headers(), xeRowSource{v})
+		v.grid.SetSourceKeepingSelectionKeyed(v.headers(), v.columnKeys(), xeRowSource{v})
 	}
 	v.updateStatus()
 }

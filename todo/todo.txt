@@ -39,7 +39,7 @@ review gossms, gosmo and tuikit and check for bugs. try to find 3 bugs. you can 
 review tuikit and check for bugs. try to find 3 bugs. you can change tuikit and gossms and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them. add a recommended implementation order list.
 
 
-show me the top 20 know bugs,issues etc if thre are any in both projects. show only issues that can be fixed. create a plan file in docs/ to fix them
+show me the top 20 know bugs,issues etc if thre are any in all three projects. show only issues that can be fixed. create a plan file in docs/ to fix them
 
 optimize and compact claude.md , architecture.md, etc in gossms, gosmo and tuikit projects
 

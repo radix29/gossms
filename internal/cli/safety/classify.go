@@ -575,7 +575,8 @@ func raiserrorLogs(toks []token, i int) bool {
 // EXEC inside it (INSERT … EXEC). NEXT VALUE FOR is write: a SELECT of it
 // advances the sequence, for good. The floor is the three-word phrase, so a
 // column named next stays read. Read contexts are exempt: FOR UPDATE, a
-// trigger's UPDATE(col), a MERGE join or union hint, FETCH … INTO. (A foreign
+// trigger's UPDATE(col), a MERGE join or union hint, FETCH … INTO, a column
+// named receive (receiveColumn). (A foreign
 // key's ON DELETE/UPDATE needs none: it only stands in DDL, which outranks.)
 func floor(st *Statement, toks []token) {
 	fetch := toks[0].is("FETCH")
@@ -637,6 +638,8 @@ func floor(st *Statement, toks []token) {
 			continue
 		case fetch && w == "INTO": // FETCH NEXT FROM c INTO @v
 			continue
+		case w == "RECEIVE" && receiveColumn(toks, i): // SELECT receive FROM t
+			continue
 		case w == "UPDATE" && next.is("STATISTICS"):
 			// UPDATE STATISTICS the splitter did not cut at is ddl, as the leader
 			// rule makes it: it changes optimizer state, not rows.
@@ -671,18 +674,13 @@ func floor(st *Statement, toks []token) {
 
 // uncountedVerb reports whether toks[i], the verb name, is RECEIVE, WRITETEXT
 // or UPDATETEXT used as one (FlagUncounted), not a column of that name. The
-// floor raises a bare column named receive to write regardless (fail-safe);
-// the flag would also make --max-rows-affected refuse a plain counted
+// flag would make --max-rows-affected refuse a plain counted
 // UPDATE t SET receive = 1, so it takes the verb's shape:
 //
 //   - WRITETEXT/UPDATETEXT [BULK] table.column …: a dotted name of two or
 //     more parts follows. A column of that name is followed by FROM, a
 //     comma, an operator — never a dotted name.
-//   - RECEIVE [TOP (n)] columns FROM queue: TOP, *, or a word or quoted
-//     name follows, and the word is not a select list's (after SELECT, a
-//     comma, SET, BY, DISTINCT or a dot). A word that only continues an
-//     expression (FROM, AS, IS, AND …) is a column's. What remains
-//     ambiguous (receive * 2) counts as the verb, the safe side.
+//   - RECEIVE: whatever receiveColumn does not call a column.
 func uncountedVerb(toks []token, i int, name string) bool {
 	at := func(k int) token {
 		if k >= 0 && k < len(toks) {
@@ -699,17 +697,43 @@ func uncountedVerb(toks []token, i int, name string) bool {
 		n, _, ok := readName(toks, j)
 		return ok && len(n.parts) >= 2
 	case "RECEIVE":
-		prev, next := at(i-1), at(i+1)
-		if prev.punct(".") || prev.punct(",") || prev.is("SELECT") || prev.is("SET") ||
-			prev.is("BY") || prev.is("DISTINCT") {
-			return false
+		return !receiveColumn(toks, i)
+	}
+	return false
+}
+
+// receiveColumn reports whether toks[i], the word RECEIVE, has a column's
+// shape rather than the verb's (RECEIVE [TOP (n)] columns FROM queue, whose
+// next token is TOP, *, or a word or quoted name). floor and uncountedVerb
+// both ask it, so the two can't drift. It is a column:
+//
+//   - in a select list or an assignment: after SELECT, DISTINCT, a comma, SET,
+//     BY or a dot;
+//   - followed by a word that only continues an expression
+//     (receiveColumnFollowers: FROM, AS, IS, AND …), by punctuation other
+//     than * (an operator, a dot, a parenthesis, a comma), or by nothing.
+//
+// What remains ambiguous (receive * 2, receive @h, receive 1) is the verb,
+// the safe side.
+func receiveColumn(toks []token, i int) bool {
+	at := func(k int) token {
+		if k >= 0 && k < len(toks) {
+			return toks[k]
 		}
-		switch {
-		case next.is("TOP") || next.punct("*") || next.kind == sqltext.KindQuotedIdent:
-			return true
-		case next.kind == sqltext.KindWord:
-			return !receiveColumnFollowers[next.word]
-		}
+		return token{}
+	}
+	prev, next := at(i-1), at(i+1)
+	if prev.punct(".") || prev.punct(",") || prev.is("SELECT") || prev.is("SET") ||
+		prev.is("BY") || prev.is("DISTINCT") {
+		return true
+	}
+	switch next.kind {
+	case sqltext.KindEnd:
+		return true
+	case sqltext.KindWord:
+		return receiveColumnFollowers[next.word]
+	case sqltext.KindPunct:
+		return !next.punct("*")
 	}
 	return false
 }

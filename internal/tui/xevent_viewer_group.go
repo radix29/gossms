@@ -138,7 +138,7 @@ func (v *XEventViewer) rebuildDisplay() {
 	}
 	walk(v.groups)
 	v.invalidateDetailCache()
-	v.grid.SetSourcePreservingView(v.headers(), xeRowSource{v})
+	v.grid.SetSourcePreservingViewKeyed(v.headers(), v.columnKeys(), xeRowSource{v})
 }
 
 // xeAnchor is what the cursor is on, to find again after the rows moved: a

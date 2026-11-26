@@ -346,6 +346,36 @@ func TestXEventViewerColumnsGrowAndHiddenOnesPersist(t *testing.T) {
 	}
 }
 
+// A database_id field arriving after the sqlserver.database_id action renames
+// the action's header "database_id (action)" and gives the field the old one;
+// the action's dragged width stays with the action, not with its old header.
+func TestXEventViewerRenamedActionKeepsItsWidth(t *testing.T) {
+	v := newTestXEventViewer(t, 100)
+	a := xeTestEvent("a", 1)
+	a.Actions = []xevent.Value{{Name: "database_id", Value: "5"}}
+	v.applyBatch(xeBatch{events: []xevent.Event{a}})
+	if got := v.headers(); !slices.Equal(got, []string{"name", "timestamp", "database_id"}) {
+		t.Fatalf("headers %v", got)
+	}
+	v.grid.SetColumnWidth(2, 33)
+	b := xeTestEvent("b", 2, "database_id", "6")
+	b.Actions = []xevent.Value{{Name: "database_id", Value: "6"}}
+	v.applyBatch(xeBatch{events: []xevent.Event{b}})
+	headers := v.headers()
+	act := slices.Index(headers, "database_id (action)")
+	field := slices.Index(headers, "database_id")
+	if act < 0 || field < 0 {
+		t.Fatalf("headers %v, want both database_id columns", headers)
+	}
+	w := v.grid.ColumnWidthOverrides()
+	if w[act] != 33 {
+		t.Errorf("action override = %d, want 33 (headers %v, overrides %v)", w[act], headers, w)
+	}
+	if w[field] != 0 {
+		t.Errorf("field override = %d, want 0: it took the action's width", w[field])
+	}
+}
+
 func TestXEventViewerKeepsTheLastColumn(t *testing.T) {
 	v := newTestXEventViewer(t, 100)
 	v.toggleColumn("timestamp")
