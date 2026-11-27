@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"slices"
 	"strings"
 	"testing"
@@ -122,6 +123,29 @@ func sqlErrorResult(number int32, msg string, line int32) *query.Result {
 			{Text: se.Header(), IsError: true, Line: int(line), SQL: se},
 			{Text: msg, IsError: true, Line: int(line)},
 		},
+	}
+}
+
+// The script reaches the session byte for byte: a CRLF or lone CR inside a
+// literal is the literal's text. readSQL once folded every line end to LF, so
+// LEN('a<CRLF>b') ran as 3 and a Windows file's multi-line literal stored and
+// matched LF.
+func TestQueryRunSendsLineEndsAsRead(t *testing.T) {
+	script := "SELECT LEN('a\r\nb'), LEN('a\rb')\r\n"
+	// --file's path through readSQL is TestReadSQLKeepsLineEnds (runTree reads
+	// no files).
+	for _, src := range [][]string{
+		{"--sql", script},
+		{"--sql-base64", base64.StdEncoding.EncodeToString([]byte(script))},
+	} {
+		sess := &fakeSession{t: t}
+		d, _ := queryDeps(t, sess)
+		if r := runQuery(t, d, append([]string{"query", "run", "-p", "dev"}, src...)...); r.exit != 0 {
+			t.Fatalf("%s: exit %d\n%s%s", src[0], r.exit, r.stdout, r.stderr)
+		}
+		if !slices.Contains(sess.executed, script) {
+			t.Errorf("%s: executed %q, want %q among them", src[0], sess.executed, script)
+		}
 	}
 }
 

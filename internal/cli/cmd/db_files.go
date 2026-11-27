@@ -76,7 +76,7 @@ func dbFilesCommand(d Deps) *spec.Command {
 		Options: append(ConnectOptions(),
 			allOption(), unitOption(),
 			spec.Option{Name: optFileType, Type: spec.TypeEnum, Enum: fileTypeNames(), Help: "Only files of this type"},
-			spec.Option{Name: optFileGroup, Type: spec.TypeString, Help: "Only files in this filegroup (case-insensitive)"},
+			spec.Option{Name: optFileGroup, Type: spec.TypeString, Help: "Only files in this filegroup (under its database's collation)"},
 			spec.Option{Name: optSortBy, Type: spec.TypeEnum, Enum: []string{"name", "size", "used", "free-pct"},
 				Help: "Order the files: name, size or used (largest first), free-pct (fullest first)"},
 			spec.Option{Name: optMaxFreePct, Type: spec.TypeInt, Help: "Only files with at most this percentage free inside them, 0 to 100"},
@@ -256,11 +256,17 @@ func (d Deps) dbFiles(ctx context.Context, inv *spec.Invocation) (*output.Result
 
 	typ, _ := inv.Values[optFileType].(string)
 	fg, _ := inv.Values[optFileGroup].(string)
+	// A filegroup name compares under its database's catalog collation: in a
+	// _CS_ database fg and FG are two filegroups.
+	collations := make(map[int]string, len(dbs))
+	for _, t := range dbs {
+		collations[t.DB.ID] = catalogCollation(t.DB)
+	}
 	rows = slices.DeleteFunc(rows, func(r fileRow) bool {
 		if typ != "" && fileTypeName(r.File.Type) != typ {
 			return true
 		}
-		if fg != "" && (!r.Inside || !strings.EqualFold(r.File.FileGroup, fg)) {
+		if fg != "" && (!r.Inside || !gosmo.SameName(collations[r.DatabaseID], r.File.FileGroup, fg)) {
 			return true
 		}
 		free, ok := r.freePct()

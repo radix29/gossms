@@ -291,7 +291,7 @@ func (d *BackupDialog) autoDest() string {
 	if d.now != nil {
 		now = d.now
 	}
-	name := dbName + "_" + kind + "_" + now().Format("20060102_150405") + ext
+	name := gosmo.FileNameSafe(dbName) + "_" + kind + "_" + now().Format("20060102_150405") + ext
 	dir := ""
 	if d.backupDir != nil {
 		dir = *d.backupDir

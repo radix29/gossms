@@ -545,3 +545,78 @@ func TestSecurityGrantDatabaseCaseSensitive(t *testing.T) {
 		t.Errorf("exact spelling: %v", err)
 	}
 }
+
+// caseServer is newSecServer with the database under collation, a table
+// dbo.cs_t whose columns a and A differ by case only, and tables dbo.T,
+// SELECT granted to etl_user, and dbo.t, nothing granted.
+func caseServer(t *testing.T, collation string) *secServer {
+	s := newSecServer(t)
+	s.collation = collation
+	for _, o := range []struct {
+		id   int
+		name string
+	}{{13, "cs_t"}, {14, "T"}, {15, "t"}} {
+		s.objects = append(s.objects, &gosmo.ObjectInfo{ObjectID: o.id, Schema: "dbo", Name: o.name, Type: "U",
+			TypeDesc: "USER_TABLE", Created: catalogAt, Modified: catalogAt})
+	}
+	col := func(name string, ordinal int) *gosmo.Column {
+		return &gosmo.Column{Name: name, OrdinalPosition: ordinal, DataType: "int", TypeSchema: "sys"}
+	}
+	s.columns[13] = []*gosmo.Column{col("a", 1), col("A", 2)}
+	s.columns[14] = []*gosmo.Column{col("id", 1)}
+	s.columns[15] = []*gosmo.Column{col("id", 1)}
+	s.dbPerms["etl_user"] = append(s.dbPerms["etl_user"], &gosmo.PrincipalSecurable{SecurableType: gosmo.SecurableTable,
+		Schema: "dbo", Name: "T", Permission: "SELECT", State: gosmo.PermissionGrant})
+	return s
+}
+
+// TestSecurityColumnsCaseSensitive: --columns keeps names that differ by case
+// apart until the database's collation says they are one column — a and A
+// are two in a _CS_ database, so DENY covers both — and a table-valued
+// function's columns, which are not resolved, fold under the same rule.
+func TestSecurityColumnsCaseSensitive(t *testing.T) {
+	for _, tc := range []struct {
+		collation, argv, tsql string
+	}{
+		{"Latin1_General_CS_AS", "--on dbo.cs_t --columns a,A", "DENY SELECT ([a], [A]) ON [dbo].[cs_t] TO [etl_user]"},
+		{"Latin1_General_CS_AS", "--on dbo.cs_t --columns a,a", "DENY SELECT ([a]) ON [dbo].[cs_t] TO [etl_user]"},
+		{"Latin1_General_CI_AS", "--on Customers --columns email,EMAIL", "DENY SELECT ([Email]) ON [dbo].[Customers] TO [etl_user]"},
+		{"Latin1_General_CS_AS", "--on mtvf_Rows --columns x,X", "DENY SELECT ([x], [X]) ON [Sales].[mtvf_Rows] TO [etl_user]"},
+		{"Latin1_General_CI_AS", "--on mtvf_Rows --columns x,X", "DENY SELECT ([x]) ON [Sales].[mtvf_Rows] TO [etl_user]"},
+	} {
+		cat := caseServer(t, tc.collation)
+		res, _, err := runPerm(t, cat, "deny SELECT "+tc.argv+" --to etl_user --allow admin")
+		if err != nil {
+			t.Errorf("%s %s: %v", tc.collation, tc.argv, err)
+			continue
+		}
+		if !slices.Equal(cat.writes, []string{tc.tsql}) {
+			t.Errorf("%s %s: wrote %q, want %q", tc.collation, tc.argv, cat.writes, tc.tsql)
+		}
+		if len(res.Warnings) != 0 {
+			t.Errorf("%s %s: warnings %q", tc.collation, tc.argv, res.Warnings)
+		}
+	}
+}
+
+// TestSecurityReadBackCaseSensitive: in a _CS_ database dbo.T is not dbo.t.
+// A REVOKE on t neither shows T's grant as t's nor reads it as the REVOKE
+// not landing.
+func TestSecurityReadBackCaseSensitive(t *testing.T) {
+	cat := caseServer(t, "Latin1_General_CS_AS")
+	res, _, err := runPerm(t, cat, "revoke SELECT --on dbo.t --from etl_user --allow admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rowsOf(res.Sets[0]); len(got) != 0 {
+		t.Errorf("rows %q, want none: T's grant is not t's", got)
+	}
+	if len(res.Warnings) != 0 {
+		t.Errorf("warnings %q", res.Warnings)
+	}
+	// Under a case-insensitive collation the same rows are one table's.
+	set := output.Set{Rows: [][]*string{{new("TABLE"), new("dbo"), new("T"), nil, new("SELECT"), new("GRANT")}}}
+	if got := entriesOn(set, gosmo.Securable{Class: gosmo.SecurableTable, Schema: "dbo", Name: "t"}, "Latin1_General_CI_AS"); len(got.Rows) != 1 {
+		t.Errorf("CI: %d rows, want 1", len(got.Rows))
+	}
+}

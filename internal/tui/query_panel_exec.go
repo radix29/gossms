@@ -7,6 +7,7 @@ import (
 
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/showplan"
+	"github.com/radix29/gossms/internal/textenc"
 	"github.com/radix29/gossms/internal/tui/planview"
 )
 
@@ -27,9 +28,22 @@ func (p *QueryPanel) Execute() {
 // line it starts on (query.WithLineOffset), so error lines match the editor's.
 func (p *QueryPanel) scriptToRun() (script string, firstLine int) {
 	if sel := p.editor.SelectedText(); sel != "" {
-		return sel, p.editor.SelectionTopRow()
+		return p.forServer(sel), p.editor.SelectionTopRow()
 	}
-	return p.editor.Text(), 0
+	return p.forServer(p.editor.Text()), 0
+}
+
+// forServer writes the editor's LF-separated text with the line ending of the
+// file the panel was opened from, as Save writes it: tuikit's editor folds
+// every line end to LF on load, and a CRLF file sent as LF would store LF in
+// a literal spanning lines and in a module's definition, where SSMS (and
+// `gossms query run`, which sends a script as read) stores the file's CRLF. A
+// panel with no file sends LF, what it saves. Error lines are unaffected for
+// LF and CRLF (sqltext counts a CRLF as one line, as the server does); in a
+// CR-only file the server sees one line per batch, the trade
+// sqltext.Batch.StartLine records.
+func (p *QueryPanel) forServer(text string) string {
+	return textenc.WithEOL(text, p.fileEOL)
 }
 
 // ExecuteSelection runs only the editor's selected text, setting a status message
@@ -38,7 +52,7 @@ func (p *QueryPanel) scriptToRun() (script string, firstLine int) {
 func (p *QueryPanel) ExecuteSelection() {
 	p.editor.CloseCompletion()
 	if sel := p.editor.SelectedText(); sel != "" {
-		p.runQuery(sel, p.editor.SelectionTopRow())
+		p.runQuery(p.forServer(sel), p.editor.SelectionTopRow())
 		return
 	}
 	p.app.setStatus("No selection to execute")

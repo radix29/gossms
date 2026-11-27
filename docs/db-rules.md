@@ -184,6 +184,8 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   names. A lookup that falls back to a case-blind match only when the exact
   one misses and only when it is unique (the CLI's `matchName`) is a
   convenience over catalog spelling, not a comparison, and may keep it.
+  In `internal/cli/cmd`, `TestCLIComparesNamesUnderCollation` fails on any
+  `EqualFold` outside its allowlist, each entry with its reason.
 - **Never give a procedure installed outside `master` an `sp_` prefix** — `sp_`
   falls back to `master`: `CREATE OR ALTER dbo.sp_x` in tempdb fails "Invalid
   object name", and `DROP PROCEDURE IF EXISTS dbo.sp_x` in tempdb **deleted
@@ -211,6 +213,13 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   classifier (`sqltext.lineComment`, gosmo `tsql.Spans`) and let an object
   name inject T-SQL into a Generate Scripts warning comment (2026-11-10, 17).
   Write any name or message into a comment through `tsql.CommentSafe`.
+- **A name that becomes part of a server file name goes through
+  `gosmo.FileNameSafe`, then `gosmo.JoinServerPath`.** A database or snapshot
+  name may hold `\ / : * ? " < > |`. On Windows a `:` does not fail: BACKUP
+  and CREATE DATABASE … AS SNAPSHOT succeeded, writing the file into an NTFS
+  stream of a 0-byte file that `dir` shows empty, and DROP left that file
+  behind (17, 2026-11-27). Back Up, Restore's tail log and standby file, the
+  CLI's backup default and gosmo's sparse files all do this now.
 
 - **A statement the server ignores answers with a warning, and gosmo's exec
   drops warnings** — a nil error is not "it happened". `ALTER FULLTEXT INDEX

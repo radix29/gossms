@@ -39,7 +39,8 @@ func FuzzClassify(f *testing.F) {
 			return
 		}
 		sc := Classify(script)
-		lines := strings.Count(script, "\n") + 1
+		// Lines as lexBatch numbers them: CRLF, a lone CR and LF end one each.
+		lines := strings.Count(script, "\n") + strings.Count(script, "\r") - strings.Count(script, "\r\n") + 1
 		top := spec.ClassRead
 		for _, st := range sc.Statements {
 			if Rank(st.Class) < 0 {
@@ -110,5 +111,7 @@ var fuzzSeeds = []string{
 	"DISABLE TRIGGER", "DROP TRIGGER t ON", "ENABLE TRIGGER x ON ALL", "ADD SENSITIVITY", "COPY INTO",
 	"DROP DATABASE IF EXISTS d; ALTER DATABASE SCOPED CONFIGURATION SET MAXDOP = 1",
 	"SELECT 1 -- c\rDROP TABLE t", "DECLARE @t TABLE(a int) -- c\rINSERT INTO @t VALUES(1)",
+	"SELECT 1DELETE FROM t", "SELECT 1e5DROP TABLE t", "SELECT 1e5SHUTDOWN", "SELECT 1a", "SELECT 1eDELETE FROM t",
+	"SELECT $1e5DELETE FROM t", "SELECT 0x1DELETE FROM t", "SELECT 1.2.3e+DROP TABLE t",
 	"a:", ":", "[", "EXEC", "EXEC @", "EXEC @x =", "SET", "UPDATE TOP (", "CREATE OR", "DROP X IF",
 }

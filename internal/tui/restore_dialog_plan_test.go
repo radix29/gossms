@@ -359,3 +359,30 @@ func TestRestorePlanScriptStopAtInTheTail(t *testing.T) {
 		t.Errorf("the tail log is not restored to the point:\n%s", tail)
 	}
 }
+
+// The tail-log device and the standby file are named after a database, a
+// sysname that may hold `\ / : * ? " < > |`. The form has no field for the
+// tail-log path, so a "\" in the name named a missing directory and a ":" an
+// NTFS stream, with no way for the user to correct it. Each is one element
+// under the backup directory.
+func TestRestoreGeneratedPathsAreFileNameSafe(t *testing.T) {
+	at := time.Date(2026, 11, 27, 10, 30, 0, 0, time.UTC)
+	tail := tailLogDevice(`C:\Backup`, `a\b`, at)
+	if want := `C:\Backup\a_b_LogBackup_2026-11-27_10-30-00.bak`; tail != want {
+		t.Errorf("tailLogDevice = %q, want %q", tail, want)
+	}
+
+	sc, _ := newGConn(t)
+	d := restoreFormWithOptions()
+	d.sc = sc
+	d.fTarget.SetValue("x?y")
+	d.autoFillStandby()
+	dir := sc.Server.Info().DefaultBackupPath
+	got := d.fStandby.Value()
+	if want := gosmo.JoinServerPath(dir, "ROLLBACK_UNDO_x_y.BAK"); got != want {
+		t.Errorf("standby file = %q, want %q", got, want)
+	}
+	if gosmo.ServerPathDir(got) != gosmo.ServerPathDir(gosmo.JoinServerPath(dir, "f")) {
+		t.Errorf("standby file %q is not directly in the backup directory %q", got, dir)
+	}
+}

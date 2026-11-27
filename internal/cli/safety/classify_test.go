@@ -403,6 +403,39 @@ func TestClassifyLineCommentEndsAtCR(t *testing.T) {
 	}
 }
 
+// A statement glued to a number is a statement of its own, as on the server
+// (SQL Server ends a number at its first rune that cannot continue it): a
+// lexer that ran the number on through "DELETE" passed these as reads.
+func TestClassifyStatementGluedToNumber(t *testing.T) {
+	for _, tt := range []struct {
+		script  string
+		want    spec.Class
+		leaders []string
+	}{
+		{"SELECT 1DELETE FROM t", write, []string{"SELECT", "DELETE"}},
+		{"SELECT 1e5DROP TABLE t", ddl, []string{"SELECT", "DROP TABLE"}},
+		{"SELECT 1e+5DELETE FROM t", write, []string{"SELECT", "DELETE"}},
+		{"SELECT 1eDELETE FROM t", write, []string{"SELECT", "DELETE"}},
+		{"SELECT 1.DELETE FROM t", write, []string{"SELECT", "DELETE"}},
+		{"SELECT 0x1SELECT 2 UPDATE t SET a = 1", write, []string{"SELECT", "SELECT", "UPDATE"}},
+		{"SELECT 1e5SHUTDOWN", admin, nil},
+		{"SELECT 1e5KILL 55", admin, nil},
+		{"SELECT $1DELETE FROM t", write, []string{"SELECT", "DELETE"}},
+		{"SELECT .5e1DELETE FROM t", write, []string{"SELECT", "DELETE"}},
+		// A word after a number is an alias, as before.
+		{"SELECT 1a", read, []string{"SELECT"}},
+	} {
+		sc := Classify(tt.script)
+		var leaders []string
+		for _, st := range sc.Statements {
+			leaders = append(leaders, st.Leader)
+		}
+		if sc.Class != tt.want || tt.leaders != nil && !slices.Equal(leaders, tt.leaders) {
+			t.Errorf("Classify(%q) = %s %q, want %s %q", tt.script, sc.Class, leaders, tt.want, tt.leaders)
+		}
+	}
+}
+
 // Statement boundaries, lines, batches and repeat counts.
 func TestClassifyStatementsAndLines(t *testing.T) {
 	script := "SELECT 1\n\nUPDATE Sales.Customer SET a = 1\nGO\n-- note\nDELETE FROM [dbo].[t]; INSERT INTO t VALUES (1)\nGO 3\nEXEC sp_who2"
@@ -863,4 +896,17 @@ func leaderSwitchCases(t *testing.T) []string {
 		t.Fatalf("found %d leaderRule cases; has the switch changed shape?", len(out))
 	}
 	return out
+}
+
+// A statement's line counts a CRLF as one line end and a lone CR or LF as one
+// each (sqltext.Batch.StartLine's rule), across batches too.
+func TestClassifyLinesCountEveryLineEnd(t *testing.T) {
+	sc := Classify("SELECT 1\rDROP TABLE t\r\nDELETE u\nGO\rUPDATE v SET a = 1")
+	var got []int
+	for _, st := range sc.Statements {
+		got = append(got, st.Line)
+	}
+	if want := []int{1, 2, 3, 5}; !slices.Equal(got, want) {
+		t.Errorf("lines %v, want %v", got, want)
+	}
 }

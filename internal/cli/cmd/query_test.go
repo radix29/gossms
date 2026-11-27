@@ -58,23 +58,23 @@ func TestReadSQLDecodesAndRefusesLossy(t *testing.T) {
 	}
 }
 
-// A CR-only (classic Mac) script's GO is a separator: readSQL folds line
-// endings to LF, which sqltext.SplitBatches needs. Unfolded, GO reached the
-// server as T-SQL ("Incorrect syntax near 'GO'"). The audit hash is still of
-// the script as read.
-func TestReadSQLFoldsLoneCR(t *testing.T) {
-	in := "select 1\rGO\rselect 2"
+// readSQL returns the script as read: line ends inside a literal are the
+// literal's text, so a CRLF or lone CR is not folded to LF (it once was, and a
+// CRLF literal stored and matched LF). A CR-only (classic Mac) script's GO is
+// still a separator: sqltext.SplitBatches ends a line at a lone CR itself.
+func TestReadSQLKeepsLineEnds(t *testing.T) {
+	in := "select 'a\r\nb'\rGO\rselect 2"
 	inv := &spec.Invocation{
 		Values:   map[string]any{optFile: "x.sql", optSQL: "", optSQLBase64: ""},
 		Given:    map[string]bool{optFile: true},
 		ReadFile: func(string) ([]byte, error) { return []byte(in), nil },
 	}
 	got, err := readSQL(inv)
-	if err != nil || got != "select 1\nGO\nselect 2" {
-		t.Fatalf("readSQL = %q, %v", got, err)
+	if err != nil || got != in {
+		t.Fatalf("readSQL = %q, %v; want %q", got, err, in)
 	}
-	if n := len(sqltext.SplitBatches(got)); n != 2 {
-		t.Errorf("%d batches, want 2", n)
+	if bs := sqltext.SplitBatches(got); len(bs) != 2 || bs[0].Text != "select 'a\r\nb'\r" {
+		t.Errorf("batches %#v, want 2, the first verbatim", bs)
 	}
 	if inv.Audit.SQLSha256 != audit.Hash(in) {
 		t.Error("audit hash is not of the script as read")

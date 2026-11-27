@@ -31,17 +31,21 @@ func lexBatch(text string, startLine int) ([]token, []int) {
 	var toks []token
 	starts := map[int]bool{0: true}
 	cutter := sqltext.NewStatementCutter(func(pos int) { starts[pos] = true })
-	line, depth := startLine+1, 0
+	lines := lineCounter{line: startLine + 1}
+	depth := 0
 	var st sqltext.State
 	for i := 0; ; {
 		t, next := sqltext.Next(buf, i, len(buf), st)
 		if t.Kind == sqltext.KindEnd {
 			break
 		}
+		// The white space Next skipped before the token can hold line ends too
+		// (a lone CR is white space to it).
+		lines.feed(buf[i:t.Start])
+		tokLine := lines.line
+		lines.feed(buf[t.Start:t.End])
 		st, i = next, t.End
 		raw := string(buf[t.Start:t.End])
-		tokLine := line
-		line += strings.Count(raw, "\n")
 		switch t.Kind {
 		case sqltext.KindNewline, sqltext.KindComment:
 			continue
@@ -152,4 +156,24 @@ func nameParts(toks []token, i int) ([]string, int) {
 		n.words[k] = strings.ToLower(w)
 	}
 	return n.words, next
+}
+
+// lineCounter numbers lines as sqltext.Batch.StartLine does: a CRLF, a lone CR
+// and an LF each end one. It carries a CR across feeds, so a CRLF split
+// between two feeds counts once.
+type lineCounter struct {
+	line    int
+	afterCR bool
+}
+
+func (c *lineCounter) feed(rs []rune) {
+	for _, r := range rs {
+		switch {
+		case r == '\r':
+			c.line++
+		case r == '\n' && !c.afterCR:
+			c.line++
+		}
+		c.afterCR = r == '\r'
+	}
 }

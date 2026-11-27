@@ -53,8 +53,19 @@ const (
 	// the cursor sits on at the first keystroke of "#t". "#@x" is no name, so it
 	// lexes as "#" and "@x".
 	KindWord
-	// KindNumber starts with a digit and runs on through word runes and '.':
-	// 42, 1.5, 0x1F, 1e5.
+	// KindNumber is a numeric literal, starting with an ASCII digit (the server
+	// rejects "SELECT ٢"; a non-ASCII digit lexes as a word): 42, 1.5, 1.,
+	// 1e5, 1e+5, 0x1F. It ends where SQL Server's does, at the first rune that
+	// cannot continue it, and the next token starts there: 0x then hex digits;
+	// otherwise digits, an optional '.' and digits, then an optional exponent,
+	// e or E and an optional sign, its digits optional too (the server reads
+	// "1e" as 1.0 and "1eSELECT 2" as two statements). After a leading '$'
+	// (money) there is no exponent and no hex: "$1e5" is $1 and the alias e5.
+	// A number that ran on through word runes hid the statement glued to it:
+	// "SELECT 1DELETE FROM t" and "SELECT 1e5DROP TABLE t" run the write on
+	// the server, and the CLI's --allow gate passed both as reads. A leading
+	// '.' (".5") stays a punct before the number "5"; nothing reads the pair as
+	// one value.
 	KindNumber
 	// KindString is a '...' literal; a doubled quote stays inside it.
 	KindString
@@ -135,12 +146,8 @@ func Next(buf []rune, i, limit int, st State) (Token, State) {
 				j++
 			}
 			return Token{KindWord, i, wordEnd(buf, j, limit)}, State{}
-		case isDigit(c):
-			j := i + 1
-			for j < limit && (IsWordRune(buf[j]) || buf[j] == '.') {
-				j++
-			}
-			return Token{KindNumber, i, j}, State{}
+		case isASCIIDigit(c):
+			return Token{KindNumber, i, numberEnd(buf, i, limit)}, State{}
 		case IsWordRune(c):
 			return Token{KindWord, i, wordEnd(buf, i+1, limit)}, State{}
 		case c >= utf8.RuneSelf && unicode.IsSpace(c):
@@ -167,7 +174,7 @@ func LineEnd(line []rune, st State) State {
 }
 
 // IsWordRune reports whether r can start a T-SQL word: a Unicode letter or
-// digit, or '_'. A word starting with a digit is a number. Inside a word
+// digit, or '_'. A word starting with an ASCII digit is a number. Inside a word
 // IsWordContinue applies instead.
 func IsWordRune(r rune) bool {
 	if r < utf8.RuneSelf {
@@ -201,11 +208,39 @@ func WordStart(line []rune, end int) int {
 	return start
 }
 
-func isDigit(r rune) bool {
-	if r < utf8.RuneSelf {
-		return r >= '0' && r <= '9'
+// numberEnd returns the end of the number starting at the ASCII digit buf[i]
+// (see KindNumber). gosmo's tsql.Spans skips a number by the same rule, so the
+// two agree on where a "--" after an exponent sign is a comment
+// (FuzzLexersAgree).
+func numberEnd(buf []rune, i, limit int) int {
+	digits := func(j int, ok func(rune) bool) int {
+		for j < limit && ok(buf[j]) {
+			j++
+		}
+		return j
 	}
-	return unicode.IsDigit(r)
+	money := i > 0 && buf[i-1] == '$'
+	if !money && buf[i] == '0' && i+1 < limit && buf[i+1]|0x20 == 'x' {
+		return digits(i+2, isHexDigit)
+	}
+	j := digits(i+1, isASCIIDigit)
+	if j < limit && buf[j] == '.' {
+		j = digits(j+1, isASCIIDigit)
+	}
+	if money || j >= limit || buf[j]|0x20 != 'e' {
+		return j
+	}
+	j++
+	if j < limit && (buf[j] == '+' || buf[j] == '-') {
+		j++
+	}
+	return digits(j, isASCIIDigit)
+}
+
+func isASCIIDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+func isHexDigit(r rune) bool {
+	return isASCIIDigit(r) || (r|0x20 >= 'a' && r|0x20 <= 'f')
 }
 
 func wordEnd(buf []rune, j, limit int) int {

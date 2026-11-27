@@ -17,6 +17,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/tuikit/controls/editor"
+	"github.com/radix29/tuikit/dialogs"
 	"github.com/radix29/tuikit/theme"
 )
 
@@ -1332,6 +1333,46 @@ func TestScriptToRunStartsOnTheSelectionsLine(t *testing.T) {
 	qp.editor.HandleKey(shiftUp) // select upwards to row 2
 	if text, first := qp.scriptToRun(); first != 2 || text != "select 3\n" {
 		t.Errorf("backward selection: scriptToRun = %q, %d; want %q, 2", text, first, "select 3\n")
+	}
+}
+
+// The editor holds LF whatever the file had; what Execute sends carries the
+// opened file's own line ending back (forServer), so a literal spanning lines
+// stores CRLF from a CRLF file, as SSMS and `query run` send it. A panel with
+// no file sends LF.
+func TestScriptToRunKeepsTheFilesLineEnding(t *testing.T) {
+	for _, tt := range []struct{ name, file, want string }{
+		{"crlf", "select 'a\r\nb'\r\nGO\r\n", "select 'a\r\nb'\r\nGO\r\n"},
+		{"cr", "select 'a\rb'\r", "select 'a\rb'\r"},
+		{"lf", "select 'a\nb'\n", "select 'a\nb'\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newTestApp()
+			installDialog(a, dialogs.NewFileDialog())
+			path := filepath.Join(t.TempDir(), "q.sql")
+			if err := os.WriteFile(path, []byte(tt.file), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			a.openQueryFile()
+			a.fileDialog().OnChoose(path)
+			qp := a.activeQueryPanel()
+			if qp == nil {
+				t.Fatal("no query panel opened")
+			}
+			if text, _ := qp.scriptToRun(); text != tt.want {
+				t.Errorf("scriptToRun = %q, want %q", text, tt.want)
+			}
+			qp.SetBounds(0, 0, 80, 24)
+			qp.editor.SelectAll()
+			if text, _ := qp.scriptToRun(); text != tt.want {
+				t.Errorf("selection: scriptToRun = %q, want %q", text, tt.want)
+			}
+		})
+	}
+	qp := NewQueryPanel(newTestApp(), "Query 1")
+	qp.editor.SetText("select 'a\nb'")
+	if text, _ := qp.scriptToRun(); text != "select 'a\nb'" {
+		t.Errorf("no file: scriptToRun = %q, want LF", text)
 	}
 }
 

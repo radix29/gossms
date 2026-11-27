@@ -657,6 +657,29 @@ func TestDBFilesFiltersKeepWarningsInStep(t *testing.T) {
 	}
 }
 
+// --filegroup compares under the database's catalog collation: in a _CS_
+// database fg and FG are two filegroups; in a _CI_ one, any case matches.
+func TestDBFilesFilegroupCaseSensitive(t *testing.T) {
+	s := newFilesServer(t)
+	s.dbs = append(s.dbs, &gosmo.Database{Name: "cs", ID: 9, State: gosmo.DatabaseOnline, Collation: "Latin1_General_CS_AS"})
+	s.access[9] = true
+	s.files["cs"] = []*gosmo.DatabaseFileInfo{
+		{FileID: 1, Name: "cs", PhysicalName: "/data/cs.mdf", Type: gosmo.FileRows, FileGroup: "PRIMARY", SizeKB: 1024, MaxSizeKB: -1},
+		{FileID: 3, Name: "cs_lower", PhysicalName: "/data/cs_lower.ndf", Type: gosmo.FileRows, FileGroup: "fg", SizeKB: 1024, MaxSizeKB: -1},
+		{FileID: 4, Name: "cs_upper", PhysicalName: "/data/cs_upper.ndf", Type: gosmo.FileRows, FileGroup: "FG", SizeKB: 1024, MaxSizeKB: -1},
+	}
+	res, err := runDBFiles(t, s, "cs --filegroup fg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := column(res.Sets[0], "logical_name"); !slices.Equal(got, []string{"cs_lower"}) {
+		t.Errorf("--filegroup fg in a _CS_ database: %q", got)
+	}
+	if res, err = runDBFiles(t, s, "cs --filegroup Fg"); err != nil || len(res.Sets[0].Rows) != 0 {
+		t.Errorf("--filegroup Fg in a _CS_ database: %v %d rows", err, len(res.Sets[0].Rows))
+	}
+}
+
 // Without VIEW SERVER STATE: volume_free_pct NULL and one warning naming the
 // permission, exit 0.
 func TestDBFilesNoViewServerState(t *testing.T) {

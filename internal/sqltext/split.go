@@ -7,9 +7,12 @@ type Batch struct {
 	Text  string
 	Count int
 
-	// StartLine is the 0-based script line Text starts on. SQL Server numbers an
-	// error's line from the batch's first line, so adding it gives the script line
-	// (see query.WithLineOffset).
+	// StartLine is the 0-based script line Text starts on, a CRLF, a lone CR
+	// and an LF each ending one line, as an editor shows them. SQL Server numbers
+	// an error's line from the batch's first line, so adding it gives the script
+	// line (see query.WithLineOffset). The server itself counts LFs only (on 17,
+	// "SELECT 1<CR>SELECT 1/0" fails on line 1), so the two agree on any LF or
+	// CRLF script; a lone CR inside a batch is the one place they part.
 	StartLine int
 }
 
@@ -20,6 +23,11 @@ type Batch struct {
 // so a GO line inside a string, quoted/bracketed identifier or (nesting) block
 // comment is batch text. An unterminated literal or comment runs to the end of
 // the script, which goes to the server as one batch for it to reject.
+//
+// A line ends at a CRLF, a lone CR or an LF, so a CR-only (classic Mac)
+// script's GO is a separator too. Each batch's Text is a verbatim slice of the
+// script: its line ends, and those inside its literals, reach the server as
+// written.
 //
 // Lines are decoded into one reused buffer, so a large script costs its longest
 // line rather than a []rune copy of the whole.
@@ -39,11 +47,14 @@ func SplitBatches(script string) []Batch {
 	batchStart, batchLine := 0, 0
 	for pos, lineNo := 0, 0; pos < len(script); lineNo++ {
 		// pos is the byte offset of a line start, and next of the line after it.
-		end := strings.IndexByte(script[pos:], '\n')
+		end := strings.IndexAny(script[pos:], "\r\n")
 		next := len(script)
 		if end >= 0 {
 			end += pos
 			next = end + 1
+			if script[end] == '\r' && next < len(script) && script[next] == '\n' {
+				next++
+			}
 		} else {
 			end = len(script)
 		}

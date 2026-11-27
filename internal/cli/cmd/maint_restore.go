@@ -35,11 +35,6 @@ const (
 // restoreStats is the STATS = n every maint restore sends, as backupStats.
 const restoreStats = 10
 
-// systemDatabaseNames are the databases maint restore refuses as a target:
-// restoring one is single-user-mode work (master), or replaces what the
-// instance runs on.
-var systemDatabaseNames = []string{"master", "msdb", "model", "tempdb"}
-
 func restoreCommand(d Deps) *spec.Command {
 	return &spec.Command{
 		Path:    []string{"maint", "restore"},
@@ -160,9 +155,6 @@ func parseRestore(inv *spec.Invocation) (*restoreRequest, error) {
 		return nil, usageError("the database to restore to is missing", "Name it: maint restore <database> --from …, or add --verify-only.")
 	case strings.TrimSpace(r.target) == "":
 		return nil, usageError("the database name is empty", "")
-	case slices.ContainsFunc(systemDatabaseNames, func(s string) bool { return strings.EqualFold(s, r.target) }):
-		return nil, output.NewError(output.CodeBlocked, gosmo.QuoteName(r.target)+" is a system database: maint restore does not restore one",
-			"Restoring master needs the instance in single-user mode, and msdb or model the services that use them stopped: a human's work, by hand.")
 	}
 	if confirm, _ := inv.Values[optConfirm].(string); inv.Given[optConfirm] && confirm != r.target {
 		return nil, output.NewError(output.CodeBlocked, fmt.Sprintf("--confirm %q is not the database's name as given", confirm),
@@ -226,6 +218,23 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 		return res, output.NewError(output.CodeUnsupported, "Azure SQL Database takes no RESTORE from a backup file",
 			"Restore through the Azure portal or CLI (point-in-time restore), or import a .bacpac.")
 	}
+	// The target, read first: a system database is refused before the media
+	// is. By its reserved id (IsSystem), not its name: on a case-sensitive
+	// server MASTER is a user database.
+	var target *gosmo.Database
+	if !r.verifyOnly {
+		target, err = sc.Server.DatabaseByName(ctx, r.target)
+		switch {
+		case errors.Is(err, gosmo.ErrNotFound):
+			target, err = nil, nil
+		case err != nil:
+			return res, readError(err)
+		}
+		if target != nil && target.IsSystem() {
+			return res, output.NewError(output.CodeBlocked, gosmo.QuoteName(target.Name)+" is a system database: maint restore does not restore one",
+				"Restoring master needs the instance in single-user mode, and msdb or model the services that use them stopped: a human's work, by hand.")
+		}
+	}
 	headers, err := sc.Server.BackupHeaders(ctx, r.devices...)
 	if err != nil {
 		return res, restoreError(mediaReadError(err), r.target)
@@ -243,13 +252,6 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 			"Its files are the database's, placed by the full backup restored before it: leave --with-move and --move-to-default out.")
 	}
 
-	target, err := sc.Server.DatabaseByName(ctx, r.target)
-	switch {
-	case errors.Is(err, gosmo.ErrNotFound):
-		target, err = nil, nil
-	case err != nil:
-		return res, readError(err)
-	}
 	res.Database = r.target
 	if target != nil {
 		if err := restoreOverChecks(ctx, inv, sc.Server, target, h.SetType.PlacesFiles()); err != nil {
@@ -285,7 +287,11 @@ func (d Deps) maintRestore(ctx context.Context, inv *spec.Invocation) (*output.R
 	}
 	planned := plannedPaths(files, r.opts.RelocateFiles, held, target)
 	res.Sets = append(res.Sets, restoreFilesSet(files, planned, h.SetType.PlacesFiles()))
-	if err := pathCollisions(r.opts.Database, files, planned, held); err != nil {
+	targetID := 0
+	if target != nil {
+		targetID = target.ID
+	}
+	if err := pathCollisions(targetID, files, planned, held); err != nil {
 		return res, err
 	}
 
@@ -372,7 +378,7 @@ func restoreOverChecks(ctx context.Context, inv *spec.Invocation, srv *gosmo.Ser
 	if err != nil {
 		return readError(err)
 	}
-	if strings.EqualFold(current, target.Name) {
+	if current == target.Name { // both the catalog's spelling
 		return usageError(name+" is the connection's own database", "Connect to another database to restore it: add -d master.")
 	}
 	ag, err := availabilityGroupOf(ctx, srv, srv.Info(), target.Name)
@@ -421,9 +427,15 @@ func plannedPaths(files []*gosmo.BackupFile, moves []gosmo.RelocateFile, held []
 		if target == nil {
 			continue
 		}
-		if i := slices.IndexFunc(held, func(h *gosmo.InstanceFile) bool {
-			return h.DatabaseID == target.ID && strings.EqualFold(h.Name, f.LogicalName)
-		}); i >= 0 {
+		// Exact first, then ignoring case: the backup's logical names are
+		// the database's own, as it was backed up.
+		i := slices.IndexFunc(held, func(h *gosmo.InstanceFile) bool { return h.DatabaseID == target.ID && h.Name == f.LogicalName })
+		if i < 0 {
+			i = slices.IndexFunc(held, func(h *gosmo.InstanceFile) bool {
+				return h.DatabaseID == target.ID && strings.EqualFold(h.Name, f.LogicalName)
+			})
+		}
+		if i >= 0 {
 			out[f.LogicalName] = held[i].PhysicalName
 		}
 	}
@@ -435,11 +447,12 @@ func plannedPaths(files []*gosmo.BackupFile, moves []gosmo.RelocateFile, held []
 
 // pathCollisions refuses a restore whose planned paths collide: two files
 // on one path, or a path that held (InstanceFiles) gives to a database other
-// than target (the server fails it with Msg 1834 or 3176). Paths
+// than the one of id target, 0 for a new database (the server fails it with
+// Msg 1834 or 3176). Paths
 // are compared without case, as on Windows: on Linux this refuses a little
 // more than the server would. Files the login cannot see (sys.master_files'
 // metadata visibility) are not checked.
-func pathCollisions(target string, files []*gosmo.BackupFile, planned map[string]string, held []*gosmo.InstanceFile) error {
+func pathCollisions(target int, files []*gosmo.BackupFile, planned map[string]string, held []*gosmo.InstanceFile) error {
 	seen := map[string]string{}
 	for _, f := range files {
 		p := strings.ToLower(planned[f.LogicalName])
@@ -450,7 +463,7 @@ func pathCollisions(target string, files []*gosmo.BackupFile, planned map[string
 		seen[p] = f.LogicalName
 	}
 	for _, h := range held {
-		if strings.EqualFold(h.DatabaseName, target) {
+		if h.DatabaseID == target {
 			continue
 		}
 		if logical, ok := seen[strings.ToLower(h.PhysicalName)]; ok {
@@ -472,7 +485,7 @@ func verifyBackup(ctx context.Context, inv *spec.Invocation, res *output.Result,
 		{Key: "sourceDatabase", Value: h.DatabaseName},
 		{Key: "checksum", Value: boolText(checksum)},
 	}
-	if r.target != "" && !strings.EqualFold(r.target, h.DatabaseName) {
+	if r.target != "" && !gosmo.SameName(serverCollation(srv), r.target, h.DatabaseName) {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("The set is a backup of %s, not of %s.", gosmo.QuoteName(h.DatabaseName), gosmo.QuoteName(r.target)))
 	}
 	if checksum && !h.HasChecksums {

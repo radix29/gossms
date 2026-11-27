@@ -188,10 +188,11 @@ func newMaintServer(t *testing.T, current string, objects ...*gosmo.ObjectInfo) 
 	return s
 }
 
-// db is s's database name, any case; nil when there is none.
+// db is s's database name, compared as the server's collation does (Info:
+// any case unless it is case-sensitive); nil when there is none.
 func (s *maintServer) db(name string) *gosmo.Database {
 	for _, d := range s.dbs {
-		if strings.EqualFold(d.Name, name) {
+		if gosmo.SameName(s.Info.Collation, d.Name, name) {
 			return d
 		}
 	}

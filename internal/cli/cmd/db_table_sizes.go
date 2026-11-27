@@ -34,7 +34,7 @@ func dbTableSizesCommand(d Deps) *spec.Command {
 			"sys.partitions and sys.allocation_units, so no VIEW DATABASE STATE is needed; the login sees the " +
 			"tables it has metadata visibility of. --sort-by orders largest first (default reserved), schema " +
 			"and table name breaking ties; --top keeps that many rows (default 20, 0 for every table); " +
-			"--schema keeps the one schema, case-insensitively, as object list's. A memory-optimized table's " +
+			"--schema keeps the one schema, compared under the database's collation. A memory-optimized table's " +
 			"four sizes are NULL, as sp_spaceused prints them (SQL Server 2016's prints 0 KB and 0 rows; rows " +
 			"here is still its row count), with a warning, and it sorts last on a size. A " +
 			"database that cannot be read fails: exit 8 for its state, 9 for the login's access. A snapshot's " +
@@ -43,7 +43,7 @@ func dbTableSizesCommand(d Deps) *spec.Command {
 		Options: append(ConnectOptions(),
 			spec.Option{Name: optTop, Type: spec.TypeInt, Default: strconv.Itoa(defaultTop),
 				Help: "Keep this many tables, the largest first; 0 for every table"},
-			spec.Option{Name: optSchema, Type: spec.TypeString, Help: "Only tables in this schema (case-insensitive)"},
+			spec.Option{Name: optSchema, Type: spec.TypeString, Help: "Only tables in this schema (under the database's collation)"},
 			spec.Option{Name: optSortBy, Type: spec.TypeEnum, Enum: tableSortKeys, Default: tableSortKeys[0],
 				Help: "Order the tables, largest first: reserved, rows, data, index or unused"},
 			unitOption(),
