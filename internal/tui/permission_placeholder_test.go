@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -132,6 +133,47 @@ func TestAnAccessibleDatabaseStillExpands(t *testing.T) {
 	}
 	if len(children) != 8 {
 		t.Fatalf("got %d children, want the eight object folders", len(children))
+	}
+}
+
+func TestDatabaseScopedExplorerDoesNotTrustMasterAccessProbe(t *testing.T) {
+	for _, edition := range []gosmo.EngineEdition{gosmo.EngineAzureSQLDatabase, gosmo.EngineFabricSQLDatabase} {
+		for _, access := range []driver.Value{nil, int64(0)} {
+			t.Run(edition.String()+"/"+fmt.Sprint(access), func(t *testing.T) {
+				responses := capabilityResponses(false, nil, nil, []string{"SELECT"}, nil)
+				responses[0].rows = [][]driver.Value{{access}}
+				responses = append(responses, treeFamilyDatabaseRow(),
+					tablesPresenceResp(false, false, false, false),
+					tablesListResp(tableRow(1, "dbo", "Orders")))
+				sc, inst := newGConnOnAzure(t, int(edition), responses...)
+				node := &explorerNode{data: nodeData{Type: NodeDatabase, DBName: "appdb", conn: sc}}
+				l := loaderCtx{ctx: t.Context(), sc: sc}
+				folders, err := loadDatabaseChildren(l, node)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, label := range []string{"Tables", "Views", "Programmability"} {
+					if !slices.Contains(labelsOfNodes(folders), label) {
+						t.Fatalf("database folders = %v, missing %s", labelsOfNodes(folders), label)
+					}
+				}
+				if !sc.CachedDatabaseCapabilities("appdb").Has("SELECT") {
+					t.Fatal("folder expansion failed open instead of completing the database probe")
+				}
+				tables := loadFamily(t, sc, NodeTables)
+				if !slices.Contains(labelsOfNodes(tables), "dbo.Orders") {
+					t.Fatalf("Tables = %v, want the target database's table", labelsOfNodes(tables))
+				}
+				if got := len(inst.Reads("HAS_DBACCESS")); got != 0 {
+					t.Fatalf("asked master about target accessibility %d times", got)
+				}
+				for _, q := range inst.Queries() {
+					if strings.Contains(q.Text, "FROM   sys.tables t") && q.Database != "appdb" {
+						t.Fatalf("table metadata read in %q, want appdb", q.Database)
+					}
+				}
+			})
+		}
 	}
 }
 
