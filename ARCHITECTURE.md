@@ -310,7 +310,7 @@ gossms/
 │       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row, same Enabled-predicate gating
 │       ├── tree_node.go          # NodeType enum, nodeData
 │       ├── tree_node_kinds.go    # nodeKinds: one row per NodeType — folder/leaf/expandable, display name, Emoji and Symbols glyphs — behind isContainerNode, hasChildren, nodeTypeName
-│       ├── tree_node_icons.go    # style-aware icon lookup (Emoji/Symbols/Portable/None): nodeIcon and its state substitutions (offline database, stopped session, publication kind)
+│       ├── tree_node_icons.go    # style-aware icon lookup (Emoji/Symbols/Portable/None): nodeIcon and its state substitutions (stopped session, publication kind) and dimmed
 │       ├── object_explorer.go    # explorerNode (SQL Server data + loaders) over controls.TreeModel, which drives controls.TreeView
 │       ├── explorer_loaders.go   # childLoader and nodeMenus registries (NodeType → fetch func, NodeType → menu builder) + shared loader helpers
 │       ├── explorer_features.go  # local engine-support flags for Object Explorer folders, Details and menus; cached server metadata, separate from permissions and SQL syntax

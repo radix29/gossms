@@ -289,8 +289,8 @@ type nodeData struct {
 	// alert or operator, a server trigger, a server audit or audit specification,
 	// a security policy, an endpoint (STARTED), and an event session (running;
 	// nodeIcon draws a stopped one hollow). Set at load time so the context menu
-	// can offer a single "Enable"/"Disable" toggle (see nodeIcon's IsOffline for
-	// the same one-flag idiom). A NodeIndex sets it when the index is not
+	// can offer a single "Enable"/"Disable" toggle (IsOffline is the same
+	// one-flag idiom for a database). A NodeIndex sets it when the index is not
 	// disabled.
 	IsEnabled bool
 	// LoginDisabled is a NodeLogin's ALTER LOGIN … DISABLE state (gosmo

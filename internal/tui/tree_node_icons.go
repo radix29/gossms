@@ -7,8 +7,8 @@ import (
 
 // tree_node_icons.go is the Object Explorer's glyphs: nodeIcon, which picks
 // one for a node from its type and state in a style (Emoji, Symbols,
-// Portable), and the substitutions a node's state makes (offline database,
-// stopped session, publication kind). Each type's own glyphs, and whether it
+// Portable), and the substitutions a node's state makes (stopped session,
+// publication kind). Each type's own glyphs, and whether it
 // is a folder, are nodeKinds' columns (tree_node_kinds.go).
 
 // nodeIcon returns the icon glyph for a node, in the given icon style.
@@ -38,9 +38,6 @@ func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	}
 	if d.Type == NodeFunction && d.FuncType == gosmo.FunctionTypeExternal && style != config.IconStyleEmoji {
 		return 'λ'
-	}
-	if d.Type == NodeDatabase && d.IsOffline {
-		return offlineDatabaseIcon(style)
 	}
 	if d.Type == NodeEventSession && !d.IsEnabled {
 		return stoppedEventSessionIcon(style)
@@ -77,8 +74,7 @@ func publicationIcon(t gosmo.PublicationType, style config.IconStyle) rune {
 }
 
 // stoppedEventSessionIcon returns the glyph substituted for a NodeEventSession
-// that is not running — the hollow twin of the running one, the same idiom as
-// offlineDatabaseIcon. The label says nothing about the state, as SSMS's
+// that is not running — the hollow twin of the running one. The label says nothing about the state, as SSMS's
 // doesn't: a session list is mostly stopped sessions, and a suffix on each
 // would crowd out the names.
 func stoppedEventSessionIcon(style config.IconStyle) rune {
@@ -86,17 +82,6 @@ func stoppedEventSessionIcon(style config.IconStyle) rune {
 		return '⏹'
 	}
 	return '✧'
-}
-
-// offlineDatabaseIcon returns the glyph substituted for a NodeDatabase
-// that's currently offline — a hollow pentagon in the geometric styles
-// (vs. the filled '⬟' an online database uses), a "powered off" glyph
-// for Emoji.
-func offlineDatabaseIcon(style config.IconStyle) rune {
-	if style == config.IconStyleEmoji {
-		return '📴'
-	}
-	return '⬠'
 }
 
 // primaryKeyIcon returns the glyph substituted for a primary-key column's
@@ -165,9 +150,14 @@ func objectIconPortable(t NodeType) rune {
 // dimmed reports whether the node is an enable-able object that is currently
 // off, which the tree draws in the muted foreground (TreeNode.Dim). It is an
 // allowlist because IsEnabled is false for every type that never sets it. A
-// stopped event session is not here: its hollow glyph already says so.
+// stopped event session is not here: its hollow glyph already says so. A
+// database (or snapshot) not ONLINE keeps its own glyph and is dimmed instead,
+// as a disabled job is — OFFLINE, RESTORING, RECOVERING alike, since none can
+// be browsed.
 func (d nodeData) dimmed() bool {
 	switch d.Type {
+	case NodeDatabase, NodeDatabaseSnapshot:
+		return d.IsOffline
 	case NodeLogin:
 		return d.LoginDisabled
 	case NodeServerTrigger, NodeEndpoint, NodeBrokerQueue, NodePlanGuide,
