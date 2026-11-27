@@ -1,6 +1,7 @@
 package sqlparse
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/radix29/gossms/internal/sqltext"
@@ -56,6 +57,10 @@ type dmlSplitter struct {
 	prevToken               Token
 	fromSeen, querySource   bool
 	systemTime              bool
+	security, securityTail  bool
+	securityOn              bool
+	securityWord            Token
+	securityPending         bool
 
 	// with is a top-level WITH whose role the token after it decides: a '('
 	// makes it a hint or a WITH column list, anything else a CTE clause.
@@ -68,8 +73,25 @@ type dmlSplitter struct {
 // when the next token shows what it is. A token that would start a statement
 // right after such a WITH (no valid script has one) continues the WITH's.
 func (s *dmlSplitter) feed(t Token) (Token, bool) {
+	if s.securityPending {
+		s.securityPending = false
+		if !t.Quoted && slices.Contains(securityPermissionStarts, strings.ToUpper(t.Text)) {
+			leader := s.securityWord
+			s.security, s.securityTail = true, false
+			s.securityOn = false
+			s.started, s.fromSeen, s.querySource = true, false, false
+			s.pendingMainSelect, s.pendingFromSelect = false, false
+			s.prevKeyword, s.prevPrevKw = strings.ToUpper(leader.Text), ""
+			s.advance(t)
+			return leader, true
+		}
+	}
 	if s.withPending {
 		s.withPending = false
+		if s.security && !t.Quoted && strings.EqualFold(t.Text, "GRANT") {
+			s.advance(t)
+			return Token{}, false
+		}
 		if t.Kind != TokenParenOpen {
 			// advance may overwrite s.with — t can be another WITH — and
 			// may set a WITH pending; t continues this statement either way.
@@ -78,6 +100,7 @@ func (s *dmlSplitter) feed(t Token) (Token, bool) {
 			s.pendingFromSelect = false
 			s.started = true
 			s.fromSeen, s.querySource = false, true
+			s.security = false
 			s.advance(t)
 			s.withPending = false
 			return with, true
@@ -92,6 +115,13 @@ func (s *dmlSplitter) feed(t Token) (Token, bool) {
 // joinHintPrefixes are the keywords a MERGE join hint follows ("INNER MERGE
 // JOIN", "LEFT OUTER MERGE JOIN", "FULL MERGE JOIN").
 var joinHintPrefixes = map[string]bool{"INNER": true, "OUTER": true, "LEFT": true, "RIGHT": true, "FULL": true}
+
+var securityPermissionStarts = []string{
+	"ALL", "ADMINISTER", "ALTER", "AUTHENTICATE", "BACKUP", "CHECKPOINT",
+	"CONNECT", "CONTROL", "CREATE", "DELETE", "EXECUTE", "EXTERNAL", "GRANT", "IMPERSONATE",
+	"INSERT", "KILL", "RECEIVE", "REFERENCES", "SELECT", "SEND", "SHOWPLAN",
+	"SHUTDOWN", "SUBSCRIBE", "TAKE", "UNMASK", "UNSAFE", "UPDATE", "VIEW",
+}
 
 // advance is feed for every token but the one after a pending WITH's verdict.
 func (s *dmlSplitter) advance(t Token) bool {
@@ -115,6 +145,29 @@ func (s *dmlSplitter) advance(t Token) bool {
 	}
 	if s.depth != 0 {
 		return false
+	}
+	word := strings.ToUpper(t.Text)
+	if !t.Quoted && prev.Kind != TokenDot && (word == "GRANT" || word == "DENY" || word == "REVOKE") &&
+		!(s.security && (strings.EqualFold(prev.Text, "WITH") || strings.EqualFold(prev.Text, "REVOKE"))) {
+		s.securityWord, s.securityPending = t, true
+		return false
+	}
+	if s.security {
+		if !t.Quoted && word == "ON" {
+			s.securityOn = true
+		}
+		recipient := !s.securityTail && !t.Quoted && (word == "TO" || word == "FROM")
+		if recipient {
+			s.securityTail = true
+		}
+		if s.securityTail && !t.Quoted && word == "WITH" {
+			s.with, s.withPending = t, true
+			return false
+		}
+		if !s.securityTail || recipient || !sqltext.IsDMLLeader(word) && !sqltext.EndsDML(word) && word != "FROM" {
+			return false
+		}
+		s.security = false
 	}
 	if !prev.Quoted && strings.EqualFold(prev.Text, "FOR") && !t.Quoted &&
 		(strings.EqualFold(t.Text, "JSON") || strings.EqualFold(t.Text, "XML")) {
@@ -218,8 +271,57 @@ func NarrowToDMLStatement(tokens []Token, batchStart, batchEnd, upTo int) (start
 func NarrowStatementForward(lines [][]rune, buf []rune, cursorRow, batchStart, from, upTo int, prefix []Token) (start, end int, tail []Token) {
 	start, end = batchStart, len(buf)
 	var s dmlSplitter
+	routineDefinition, controlBody := false, false
+	caseDepth := 0
+	feed := func(t Token) (Token, bool) {
+		word := strings.ToUpper(t.Text)
+		if s.depth == 0 && !t.Quoted {
+			prev := strings.ToUpper(s.prevToken.Text)
+			switch word {
+			case "CREATE", "ALTER":
+				routineDefinition = false
+			case "PROC", "PROCEDURE", "FUNCTION", "TRIGGER":
+				routineDefinition = !s.prevToken.Quoted && (prev == "CREATE" || prev == "ALTER")
+			case "CASE":
+				caseDepth++
+			case "IF", "WHILE", "ELSE":
+				controlBody = caseDepth == 0
+			case "END":
+				if caseDepth > 0 {
+					caseDepth--
+				} else {
+					controlBody = false
+					s.security = false
+				}
+			}
+			bodyStart := controlBody || !s.prevToken.Quoted && (prev == "BEGIN" || routineDefinition && prev == "AS")
+			headerPrev := s.prevToken
+			if bodyStart {
+				headerPrev = Token{}
+			}
+			if slices.Contains([]string{"GRANT", "DENY", "REVOKE"}, word) &&
+				(securityLineLeader(buf, t.Start) || bodyStart) &&
+				securityHeaderStart(buf, headerPrev, t) &&
+				!(s.security && (strings.EqualFold(s.prevToken.Text, "WITH") || strings.EqualFold(s.prevToken.Text, "REVOKE"))) {
+				controlBody, routineDefinition = false, false
+				s.security, s.securityTail, s.securityOn, s.securityPending = true, false, false, false
+				s.started, s.fromSeen, s.querySource = true, false, false
+				s.pendingMainSelect, s.pendingFromSelect = false, false
+				s.prevToken, s.prevKeyword, s.prevPrevKw = t, word, ""
+				return t, true
+			}
+			if sqltext.IsDMLLeader(word) || word == "EXEC" || word == "EXECUTE" {
+				controlBody = false
+			}
+			if s.security && !s.securityTail && s.securityOn && sqltext.IsDMLLeader(word) && securityLineLeader(buf, t.Start) &&
+				!strings.EqualFold(s.prevToken.Text, "ON") {
+				s.security = false
+			}
+		}
+		return s.feed(t)
+	}
 	for _, t := range prefix {
-		if st, ok := s.feed(t); ok && st.Start <= upTo && st.Start > start {
+		if st, ok := feed(t); ok && st.Start <= upTo && st.Start > start {
 			start = st.Start
 		}
 	}
@@ -231,7 +333,7 @@ func NarrowStatementForward(lines [][]rune, buf []rune, cursorRow, batchStart, f
 	scan := func() {
 		for ; seen < len(tail) && !found; seen++ {
 			t := tail[seen]
-			st, leader := s.feed(t)
+			st, leader := feed(t)
 			switch {
 			case leader && st.Start <= upTo:
 				if st.Start > start {
@@ -239,7 +341,8 @@ func NarrowStatementForward(lines [][]rune, buf []rune, cursorRow, batchStart, f
 				}
 			case leader:
 				end, found = st.Start, true
-			case t.Start > upTo && s.depth == 0 && t.Kind == TokenKeyword && sqltext.EndsDML(t.Text):
+			case t.Start > upTo && s.depth == 0 && (!s.security || s.securityTail) &&
+				t.Kind == TokenKeyword && sqltext.EndsDML(t.Text):
 				end, found = t.Start, true
 			}
 		}
@@ -264,4 +367,65 @@ func NarrowStatementForward(lines [][]rune, buf []rune, cursorRow, batchStart, f
 		}
 	}
 	return start, end, tail
+}
+
+func securityLineLeader(buf []rune, at int) bool {
+	start := at
+	for start > 0 && buf[start-1] != '\n' {
+		start--
+	}
+
+	for start <= at {
+		tok, _ := sqltext.Next(buf, start, len(buf), sqltext.State{})
+		if tok.Start == at {
+			return true
+		}
+		if tok.Kind != sqltext.KindComment || tok.End <= start {
+			return false
+		}
+		start = tok.End
+	}
+	return false
+}
+
+func securityHeaderStart(buf []rune, prev, verb Token) bool {
+	if prev.Kind == TokenComma || prev.Kind == TokenDot || prev.Kind == TokenParenOpen {
+		return false
+	}
+	if !prev.Quoted && slices.Contains([]string{"SELECT", "AS", "SET", "WHERE", "HAVING", "QUALIFY",
+		"ON", "BY", "AND", "OR", "NOT", "WHEN", "THEN", "ELSE"}, strings.ToUpper(prev.Text)) {
+		at := prev.Start + len([]rune(prev.Text))
+		for at < verb.Start {
+			tok, _ := sqltext.Next(buf, at, verb.Start, sqltext.State{})
+			if tok.Kind == sqltext.KindEnd {
+				return false
+			}
+			at = tok.End
+			if tok.Kind != sqltext.KindComment && tok.Kind != sqltext.KindNewline {
+				break
+			}
+		}
+	}
+	at := verb.Start + len([]rune(verb.Text))
+	for at < len(buf) {
+		tok, _ := sqltext.Next(buf, at, len(buf), sqltext.State{})
+		if tok.Kind == sqltext.KindEnd {
+			return true
+		}
+		at = tok.End
+		if tok.Kind == sqltext.KindComment || tok.Kind == sqltext.KindNewline {
+			continue
+		}
+		if tok.Kind != sqltext.KindWord {
+			return false
+		}
+		word := strings.ToUpper(string(buf[tok.Start:tok.End]))
+		if word == "END" || word == "ELSE" {
+			return true
+		}
+		return slices.ContainsFunc(securityPermissionStarts, func(start string) bool {
+			return strings.HasPrefix(start, word)
+		})
+	}
+	return true
 }

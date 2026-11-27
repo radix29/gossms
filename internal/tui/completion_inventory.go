@@ -33,7 +33,8 @@ type completionCaches struct {
 	// linked caches each server+login's linked servers, their databases and the
 	// remote catalogs a four-part name has reached, keyed like sysInventories
 	// (completion_linked.go).
-	linked map[string]*linkedDirectory
+	linked   map[string]*linkedDirectory
+	security map[string]*securityInventory
 }
 
 // completionInventory is one database's cached metadata snapshot for SQL editor
@@ -241,6 +242,7 @@ func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 		delete(a.completion.directories, serverKey)
 	}
 	a.purgeLinkedCompletion(serverKey)
+	a.purgeSecurityCompletion(serverKey)
 	// A query panel keeps its own connection, so its popup may be waiting on a load
 	// just abandoned: re-asking starts a fresh one on that panel's connection, or
 	// closes the popup if it has none.
@@ -267,6 +269,7 @@ func (p *QueryPanel) refreshCompletionCache() {
 	p.app.refreshCompletionDirectory(p.conn)
 	p.app.refreshCrossDatabaseInventories(p.conn)
 	p.app.purgeLinkedCompletion(sysCompletionInventoryKey(p.conn.Opts))
+	p.app.refreshSecurityCompletion(p.conn)
 	p.app.setStatus(fmt.Sprintf("Refreshing autocomplete inventory for %s...", p.database))
 }
 

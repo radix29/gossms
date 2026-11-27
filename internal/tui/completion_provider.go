@@ -213,6 +213,9 @@ func (p *QueryPanel) baseCompletionCandidates(req editor.CompletionRequest) (ite
 		return items, pos.replaceFrom, post
 	}
 	p.scopeCompletionPosition(pos)
+	if items, handled := p.securityCompletionCandidates(pos, &post); handled {
+		return items, pos.replaceFrom, post
+	}
 	if items, done := p.positionalCandidates(pos, &post); done {
 		return items, pos.replaceFrom, post
 	}

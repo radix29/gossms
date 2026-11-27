@@ -65,7 +65,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 		if f.window {
 			s.choices = []string{"PARTITION BY", "ORDER BY"}
 		} else if !f.predicate {
-			s.choices = []string{"SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "CREATE", "ALTER", "DROP", "TRUNCATE", "EXEC", "EXECUTE"}
+			s.choices = []string{"SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "CREATE", "ALTER", "DROP", "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "DENY", "REVOKE"}
 			if fabric {
 				s.choices = append(s.choices, "FROM")
 			}
