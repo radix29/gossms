@@ -26,6 +26,9 @@ type catalogServer struct {
 	objects []*gosmo.ObjectInfo
 	// columns is each table's or view's columns, by object id.
 	columns map[int][]*gosmo.Column
+	// collation is the current database's collation and catalog
+	// collation; "" is DatabaseRow's Latin1_General_CI_AS.
+	collation string
 }
 
 var catalogAt = time.Date(2026, 3, 14, 9, 12, 44, 0, time.UTC)
@@ -90,7 +93,11 @@ func (s *catalogServer) rules() {
 		if !strings.EqualFold(argString(q, 0), s.current) {
 			return nil
 		}
-		return [][]any{clitest.DatabaseRow(s.current, 5, catalogAt)}
+		row := clitest.DatabaseRow(s.current, 5, catalogAt)
+		if s.collation != "" {
+			row[5], row[6] = s.collation, s.collation
+		}
+		return [][]any{row}
 	}, "FROM sys.databases", "WHERE name = @p1")
 	// ObjectByName and ObjectsNamed: the catalog compares names exactly.
 	s.on(func(q gosmotest.Query) [][]any {

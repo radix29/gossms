@@ -278,7 +278,10 @@ func newPermissionRequest(inv *spec.Invocation, verb gosmo.PermissionVerb) (perm
 			if c = strings.TrimSpace(gosmo.UnquoteName(strings.TrimSpace(c))); c == "" {
 				return req, usageError("--columns: an empty column name", "")
 			}
-			if !slices.ContainsFunc(req.columns, func(x string) bool { return strings.EqualFold(x, c) }) {
+			// Exactly: in a case-sensitive database a and A are two
+			// columns. resolveColumns folds the rest once the collation is
+			// known.
+			if !slices.Contains(req.columns, c) {
 				req.columns = append(req.columns, c)
 			}
 		}
@@ -368,10 +371,15 @@ func (d Deps) securityPermissionWrite(verb gosmo.PermissionVerb) spec.Handler {
 			res.Warnings = append(res.Warnings, "The principal's permissions were not read back: "+readError(err).Message)
 			return res, werr
 		}
-		set = entriesOn(set, sec)
+		// The server scope has no database, and no names to compare.
+		collation := ""
+		if dbase != nil {
+			collation = catalogCollation(dbase)
+		}
+		set = entriesOn(set, sec, collation)
 		res.Sets = []output.Set{set}
 		if werr == nil && !dryRun(inv) {
-			if missed := unlanded(set, req, sec); len(missed) > 0 {
+			if missed := unlanded(set, req, sec, collation); len(missed) > 0 {
 				res.Warnings = append(res.Warnings, fmt.Sprintf("The server recorded no change for %s: SQL Server ignores, "+
 					"with an informational message only, a %s to sa, dbo, the securable's owner or the caller itself.",
 					strings.Join(missed, ", "), verb))
@@ -411,8 +419,9 @@ func permissionFields(req permissionRequest, sec gosmo.Securable, p principal, s
 }
 
 // entriesOn is set (explicitPermissionsSet's) narrowed to the rows on sec:
-// its class, schema and name, column rows included.
-func entriesOn(set output.Set, sec gosmo.Securable) output.Set {
+// its class, schema and name under collation (the database's catalog one),
+// column rows included. In a case-sensitive database T's rows are not t's.
+func entriesOn(set output.Set, sec gosmo.Securable, collation string) output.Set {
 	cell := func(c *string) string {
 		if c == nil {
 			return ""
@@ -420,7 +429,8 @@ func entriesOn(set output.Set, sec gosmo.Securable) output.Set {
 		return *c
 	}
 	set.Rows = slices.DeleteFunc(set.Rows, func(r []*string) bool {
-		return cell(r[0]) != string(sec.Class) || !strings.EqualFold(cell(r[1]), sec.Schema) || !strings.EqualFold(cell(r[2]), sec.Name)
+		return cell(r[0]) != string(sec.Class) || !gosmo.SameName(collation, cell(r[1]), sec.Schema) ||
+			!gosmo.SameName(collation, cell(r[2]), sec.Name)
 	})
 	set.TotalRowCount = len(set.Rows)
 	return set
@@ -429,11 +439,12 @@ func entriesOn(set output.Set, sec gosmo.Securable) output.Set {
 // unlanded is the permissions of req that set, read back after the change,
 // does not show as asked: a GRANT or DENY with no entry in its state, a
 // REVOKE whose entry stays (with --grant-option-only, a grant option that
-// stays). On columns, every column must show it.
-func unlanded(set output.Set, req permissionRequest, sec gosmo.Securable) []string {
+// stays). On columns, every column must show it, matched under collation: a
+// table-valued function's columns are as typed, the rows' are the catalog's.
+func unlanded(set output.Set, req permissionRequest, sec gosmo.Securable, collation string) []string {
 	state := func(perm, column string) string {
 		for _, r := range set.Rows {
-			if *r[4] == perm && (column == "" && r[3] == nil || r[3] != nil && strings.EqualFold(*r[3], column)) {
+			if *r[4] == perm && (column == "" && r[3] == nil || r[3] != nil && gosmo.SameName(collation, *r[3], column)) {
 				return *r[5]
 			}
 		}
@@ -651,8 +662,8 @@ func resolveType(ctx context.Context, dbase *gosmo.Database, on onSpec) (gosmo.S
 }
 
 // resolveColumns is asked as sec's column names, each a column of the table
-// or view read in its catalog spelling. A table-valued function's columns
-// are left to the server.
+// or view read in its catalog spelling, each once. A table-valued function's
+// columns are left to the server, de-duplicated under the catalog collation.
 func resolveColumns(ctx context.Context, dbase *gosmo.Database, sec gosmo.Securable, asked []string) ([]string, error) {
 	var cols []*gosmo.Column
 	switch sec.Class {
@@ -673,7 +684,15 @@ func resolveColumns(ctx context.Context, dbase *gosmo.Database, sec gosmo.Secura
 			return nil, readError(err)
 		}
 	default:
-		return asked, nil
+		// Left to the server, folded only as the database's collation
+		// would: a and A are one column unless it is case-sensitive.
+		out := make([]string, 0, len(asked))
+		for _, a := range asked {
+			if !slices.ContainsFunc(out, func(x string) bool { return gosmo.SameName(catalogCollation(dbase), x, a) }) {
+				out = append(out, a)
+			}
+		}
+		return out, nil
 	}
 	names := make([]string, len(cols))
 	for i, c := range cols {
