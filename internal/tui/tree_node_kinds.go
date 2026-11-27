@@ -201,7 +201,7 @@ var nodeKinds = [nodeTypeCount]nodeKind{
 	NodeDatabaseRoles:               {kindFolder, "Database Roles", 0, 0},
 	NodeDatabaseRole:                {kindLeaf, "Database Role", '🎭', '♟'},
 	NodeApplicationRoles:            {kindFolder, "Application Roles", 0, 0},
-	NodeApplicationRole:             {kindLeaf, "Application Role", '🎫', '♟'},
+	NodeApplicationRole:             {kindLeaf, "Application Role", '🎫', '♞'},
 	NodeSchemas:                     {kindFolder, "Schemas", 0, 0},
 	NodeSchema:                      {kindLeaf, "Schema", '🧩', '▧'},
 	NodeTriggers:                    {kindFolder, "Triggers", 0, 0},
