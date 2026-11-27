@@ -6,7 +6,8 @@ import (
 )
 
 // explorerFeatures describes engine support, not login permissions or runtime
-// state. It is local to Object Explorer, its Details folders and its menus.
+// state. Object Explorer, its Details folders and menus, Tools and the toolbar
+// share it.
 type explorerFeatures uint64
 
 const (
@@ -65,6 +66,8 @@ const (
 	oeShrink
 	oeActivityMonitor
 	oeCreateServerRole
+	// Tools preserve legacy permission gates independently of Explorer folders.
+	oeMonitorTools
 	oeFeatureEnd
 )
 
@@ -90,7 +93,7 @@ func explorerSupport(sc *db.ServerConn) explorerFeatures {
 		info = sc.Server.Info()
 	}
 	if sc.IsFabricDW() {
-		f &^= oeInstanceFeatures | oeQueryStore | oeServiceBroker | oeStorage |
+		f &^= oeInstanceFeatures | oeMonitorTools | oeQueryStore | oeServiceBroker | oeStorage |
 			oeExternalResources | oeDatabaseTriggers | oeCLR | oeTypes | oeRules |
 			oeDefaults | oePlanGuides | oeSequences | oeSynonyms | oeAsymmetricKeys |
 			oeCertificates | oeSymmetricKeys | oeDatabaseAudits | oeDatabaseCredentials |

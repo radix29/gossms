@@ -13,7 +13,9 @@ import (
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/tuikit/controls"
 	"github.com/radix29/tuikit/dialogs"
+	"github.com/radix29/tuikit/tuikittest"
 )
 
 func TestUseDatabasePreservesQuerySessionAndResults(t *testing.T) {
@@ -181,8 +183,28 @@ func TestUseDatabaseMenuGuards(t *testing.T) {
 			if item.Label != "Use Database" || item.Enabled() {
 				t.Fatal("ineligible database switch was enabled")
 			}
-			if (reason == "Azure SQL" || reason == "Fabric SQL" || reason == "Synapse dedicated") && !item.NoteWhen() {
+			if reason == "Synapse dedicated" && !item.NoteWhen() {
 				t.Fatal("the connection-required explanation was hidden")
+			}
+			if reason == "Azure SQL" || reason == "Fabric SQL" {
+				if item.NoteWhen() {
+					t.Fatal("the connection-required explanation widens the database-scoped menu")
+				}
+				node.data.DBName = active.database
+				if !item.Checked() {
+					t.Fatal("the current database lost its checkmark")
+				}
+				s := tuikittest.NewScreen(100, 4)
+				menu := controls.ContextMenu{}
+				menu.Show(0, 0, []controls.MenuItem{item})
+				menu.DrawOverlay(s)
+				if _, _, found := s.Find(controls.MenuTick); !found {
+					t.Fatalf("disabled current database has no checkmark:\n%s", s.Snapshot())
+				}
+				top := strings.Split(s.Snapshot(), "\n")[0]
+				if len([]rune(strings.TrimRight(top, " "))) > 32 {
+					t.Fatalf("Use Database menu is too wide:\n%s", s.Snapshot())
+				}
 			}
 			item.Action()
 			if a.activeQueryPanel() != active || active.conn != conn || active.session != session ||

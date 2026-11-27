@@ -55,8 +55,8 @@ func TestExplorerActiveDatabaseMarker(t *testing.T) {
 		a.explorer.tree.Select(master)
 		a.explorer.Draw(s)
 		x, y, _ := s.Find("master")
-		if got, want := s.StyleAt(x, y), theme.StyleSelected(); !got.HasBold() || got.GetForeground() != want.GetForeground() || got.GetBackground() != want.GetBackground() {
-			t.Fatal("the selected current database lost its bold or the selection colors")
+		if got, want := s.StyleAt(x, y), theme.StyleTreeCurrentSelected(); !got.HasBold() || got.GetForeground() != want.GetForeground() || got.GetBackground() != want.GetBackground() {
+			t.Fatal("the selected current database lost its current selection style")
 		}
 		a.explorer.tree.Select(root)
 		a.explorer.tree.OnSelect = onSelect

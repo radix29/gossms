@@ -3,8 +3,120 @@ package tui
 import (
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/tuikit/controls"
+	"github.com/radix29/tuikit/theme"
+	"github.com/radix29/tuikit/tuikittest"
 )
+
+func TestToolsMenuAndToolbarPreserveLegacyGates(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		edition gosmo.EngineEdition
+		denied  bool
+		enabled [4]bool
+	}{
+		{"Disconnected", 0, false, [4]bool{false, true, false, false}},
+		{"SQL Server", gosmo.EngineEnterprise, false, [4]bool{true, true, true, true}},
+		{"Azure SQL", gosmo.EngineAzureSQLDatabase, false, [4]bool{true, true, false, false}},
+		{"Managed Instance", gosmo.EngineAzureManagedInst, false, [4]bool{true, true, true, true}},
+		{"Fabric SQL database", gosmo.EngineFabricSQLDatabase, false, [4]bool{true, true, false, false}},
+		{"Fabric Warehouse", gosmo.EngineAzureSynapseSrvls, false, [4]bool{false, false, false, false}},
+		{"SQL Server denied", gosmo.EngineEnterprise, true, [4]bool{false, true, true, false}},
+		{"Azure SQL denied", gosmo.EngineAzureSQLDatabase, true, [4]bool{false, true, false, false}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newTestApp()
+			if tt.edition != 0 {
+				var responses []fakeResponse
+				if tt.denied {
+					responses = capabilityResponses(true, nil, []string{"VIEW SERVER STATE", "ALTER ANY EVENT SESSION"}, nil, nil)
+				}
+				sc, _ := newGConnOnAzure(t, int(tt.edition), responses...)
+				sc.Opts.Server = tt.name
+				addTestConnOf(a, sc)
+				if tt.denied {
+					sc.ProbeCapabilities(sc.Server.Context())
+				}
+			}
+			menus := a.buildMenus()
+			for i, label := range []string{"Activity Monitor", "XEvent Profiler", "Replication Monitor"} {
+				item := findMenuBarItem(t, menus, "Tools", label)
+				if enabled := item.Enabled == nil || item.Enabled(); enabled != tt.enabled[i] {
+					t.Errorf("%s enabled = %v, want %v", label, enabled, tt.enabled[i])
+				}
+				if label == "XEvent Profiler" {
+					for _, sub := range item.Sub {
+						if sub.Enabled() != tt.enabled[3] {
+							t.Errorf("%s enabled = %v, want %v", sub.Label, sub.Enabled(), tt.enabled[3])
+						}
+					}
+				}
+			}
+			for _, label := range []string{"Server Properties", "Database Properties", "Query List", "Background Tasks", "Options"} {
+				findMenuBarItem(t, menus, "Tools", label)
+			}
+			monitorPresent := false
+			for _, button := range a.buildToolbar() {
+				if button.Tooltip == "Activity Monitor" {
+					monitorPresent = true
+					if button.Enabled() != tt.enabled[0] {
+						t.Errorf("toolbar Activity Monitor enabled = %v, want %v", button.Enabled(), tt.enabled[0])
+					}
+				}
+			}
+			if !monitorPresent {
+				t.Error("toolbar Activity Monitor is missing")
+			}
+		})
+	}
+}
+
+func TestToolsMenuAndToolbarRefreshForSelectedConnection(t *testing.T) {
+	a := newTestApp()
+	a.buildUI()
+	a.detailBrowser = nil
+	sql, _ := newGConn(t)
+	sql.Opts.Server = "SQL Server"
+	addTestConnOf(a, sql)
+	sqlNode := a.explorer.Selected()
+	addTestFabricConn(t, a, "Fabric Warehouse")
+	fabricNode := a.explorer.Selected()
+	for _, node := range []*explorerNode{sqlNode, fabricNode, sqlNode} {
+		a.explorer.tree.Select(node)
+		a.menuBar.Close()
+		s := tuikittest.NewScreen(160, 32)
+		a.setScreen(s)
+		a.layoutAll()
+		a.menuBar.Open()
+		for range 4 {
+			a.menuBar.HandleKey(tcell.NewEventKey(tcell.KeyRight, "", tcell.ModNone))
+		}
+		a.menuBar.Draw(s)
+		a.toolbar.Draw(s)
+		a.menuBar.DrawOverlay(s)
+		for _, label := range []string{"Activity Monitor", "XEvent Profiler", "Replication Monitor"} {
+			x, y, present := s.Find(label)
+			if !present {
+				t.Fatalf("%s: %s disappeared:\n%s", node.label, label, s.Snapshot())
+			}
+			if _, style, _ := s.Get(x, y); (style == theme.StyleDisabled()) != node.data.conn.IsFabricDW() {
+				t.Fatalf("%s: wrong disabled style for %s:\n%s", node.label, label, s.Snapshot())
+			}
+		}
+		if _, _, present := s.Find("Background Tasks"); !present {
+			t.Fatalf("Background Tasks disappeared:\n%s", s.Snapshot())
+		}
+		x, y, present := s.Find("📈")
+		if !present {
+			t.Fatalf("%s: Activity Monitor toolbar button disappeared:\n%s", node.label, s.Snapshot())
+		}
+		if _, style, _ := s.Get(x, y); (style == theme.StyleDisabled()) != node.data.conn.IsFabricDW() {
+			t.Fatalf("%s: wrong Activity Monitor toolbar style:\n%s", node.label, s.Snapshot())
+		}
+	}
+}
 
 // findMenuBarItem locates a buildMenus() item by its owning menu's label
 // and its own label, failing the test if either isn't found — the shared

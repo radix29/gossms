@@ -128,7 +128,8 @@ var xeProfilerRights = [][]gate.Right{{gate.EventSessionCreate}, {gate.EventSess
 // xeProfilerAllowed reports whether sc's login may launch a Profiler session.
 // Never on Azure SQL Database, which has no server-scoped sessions to create.
 func xeProfilerAllowed(sc *db.ServerConn) bool {
-	return !databaseScopedXEvents(sc) && gate.AllowsAllOn(sc, "", "", "", xeProfilerRights...)
+	return explorerSupport(sc).has(oeMonitorTools) &&
+		!databaseScopedXEvents(sc) && gate.AllowsAllOn(sc, "", "", "", xeProfilerRights...)
 }
 
 // xeProfilerNeedsRight is the status line when the gate refuses.
@@ -136,6 +137,8 @@ const xeProfilerNeedsRight = "XEvent Profiler needs ALTER ANY EVENT SESSION"
 
 // xeProfilerNoServerScope is the status line on Azure SQL Database.
 const xeProfilerNoServerScope = "XEvent Profiler creates a server-scoped session, which Azure SQL Database does not have — create one under the database's Extended Events folder instead"
+
+const xeProfilerUnavailable = "XEvent Profiler is not available on this connection"
 
 // launchXEventProfilerNamed is a leaf's Enter and Launch Session.
 func (a *App) launchXEventProfilerNamed(sc *db.ServerConn, label string) {
@@ -160,6 +163,10 @@ func (a *App) launchXEventProfilerActive(k xeProfilerKind) {
 // SSMS leaves it.
 func (a *App) launchXEventProfiler(sc *db.ServerConn, k xeProfilerKind) {
 	if !a.requireConn(sc) {
+		return
+	}
+	if !explorerSupport(sc).has(oeMonitorTools) {
+		a.setStatus(xeProfilerUnavailable)
 		return
 	}
 	if databaseScopedXEvents(sc) {
@@ -215,14 +222,16 @@ func (a *App) xeProfilerMenu() controls.MenuItem {
 			Note:    "needs ALTER ANY EVENT SESSION",
 			NoteWhen: func() bool {
 				sc := a.activeServerConn()
-				return len(a.connections) > 0 && !databaseScopedXEvents(sc) && !xeProfilerAllowed(sc)
+				return len(a.connections) > 0 && explorerSupport(sc).has(oeMonitorTools) &&
+					!databaseScopedXEvents(sc) && !xeProfilerAllowed(sc)
 			}}
 		if i == 0 {
 			item.Shortcut = "Alt+P"
 		}
 		sub = append(sub, item)
 	}
-	return controls.MenuItem{Label: "XEvent Profiler", Sub: sub}
+	return controls.MenuItem{Label: "XEvent Profiler", Sub: sub,
+		Enabled: func() bool { return explorerSupport(a.activeServerConn()).has(oeMonitorTools) }}
 }
 
 // requestCloseXEventViewer closes an Extended Events viewer. One the XEvent

@@ -19,7 +19,8 @@ which owns them; the entries here say how goSSMS applies them.
   `Dialog*` foregrounds (`DialogText`, `DialogTextDim`, `DialogLine`,
   `DialogAccent`, `DialogError`, …), on `MenuBar` the `Menu*` ones, on
   `GridHeader` `GridHeaderText`; text on an accent ground (`BorderActive`,
-  `TreeSelected`, `GridSelected`) is `SelectedText`, not `color.White`, and a
+  `TreeSelected`, `GridSelected`) is `SelectedText`, not `color.White` (a
+  current tree selection has its own pair, `StyleTreeCurrentSelected`), and a
   ground with its own text role uses it (`StatusBarText`, `ButtonActiveText`,
   `MenuSelectedText`, `EditorMatchText`, `GridStatusText`, `AlertText`) — white on the mc
   themes' cyan status bar, grid selection and focused button read 2.9:1. A new
