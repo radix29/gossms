@@ -250,10 +250,11 @@ func DetectEOL(s string) EOL {
 	return LF
 }
 
-// NormalizeEOL turns every line ending in s — CRLF, and a lone CR, which SQL
-// Server and gossms's lexer both treat as a line break — into LF, the form the
-// editor holds and the batch splitter (sqltext.SplitBatches) expects: left as
-// CR, a CR-only script's GO is not a separator and reaches the server.
+// NormalizeEOL turns every line ending in s — CRLF, and a lone CR — into LF,
+// the form tuikit's editor holds after load. It rewrites line breaks inside
+// string literals too, so it is never applied to a script on its way to the
+// server: the command line sends a script as read, and sqltext.SplitBatches
+// ends a line at CRLF and a lone CR itself.
 func NormalizeEOL(s string) string {
 	if !strings.Contains(s, "\r") {
 		return s

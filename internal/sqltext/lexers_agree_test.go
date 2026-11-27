@@ -120,6 +120,8 @@ func FuzzLexersAgree(f *testing.F) {
 		"N'x'", "n'x'", "IN'x'", "@N'x'", "ÄN'x'", "SELECT N'a', N'b'",
 		// Non-ASCII and invalid UTF-8 around delimiters.
 		"名前 '値' [列] /* 註 */ -- 注", "'\xff' [\xfe] \x80", "\u2028'x'\u00a0[y]",
+		// Numbers ending at a delimiter.
+		"SELECT 1DELETE 1e5'x' 0x1F[y] 1.e--c\n$1e5/*z*/ 1N'x'",
 	} {
 		f.Add(s)
 	}

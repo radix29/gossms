@@ -75,6 +75,46 @@ func TestNextTokens(t *testing.T) {
 	}
 }
 
+// A number ends where SQL Server's does (checked on 17), and what follows it
+// starts the next token: "SELECT 1DELETE FROM t" is two statements there, so
+// one KindNumber "1DELETE" hid the write from the CLI's classifier.
+func TestNextNumberEndsWhereTheServerDoes(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want []string
+	}{
+		{"1DELETE", []string{"n:1", "w:DELETE"}},
+		{"1e5DROP", []string{"n:1e5", "w:DROP"}},
+		{"1e+5DELETE 1E-5x", []string{"n:1e+5", "w:DELETE", "n:1E-5", "w:x"}},
+		{"1.SELECT 1.5e1SELECT", []string{"n:1.", "w:SELECT", "n:1.5e1", "w:SELECT"}},
+		// The exponent's digits are optional: "1e" is 1.0, "1else" is 1e
+		// aliased lse, "1e+SELECT 2" two statements.
+		{"1e 1else 1e+SELECT 1E-x", []string{"n:1e", "n:1e", "w:lse", "n:1e+", "w:SELECT", "n:1E-", "w:x"}},
+		{"1.e5 1.e", []string{"n:1.e5", "n:1.e"}},
+		// One '.' and one exponent each: the rest is the next token.
+		{"1.2.3 1e5.5 1e5e", []string{"n:1.2", "p:.", "n:3", "n:1e5", "p:.", "n:5", "n:1e5", "w:e"}},
+		// Hex: 0x then hex digits only; "0x1DELETE" is 0x1DE and the alias LETE.
+		{"0x1F 0X1f 0x 0xSELECT 0x1g 0x1DELETE", []string{"n:0x1F", "n:0X1f", "n:0x", "n:0x", "w:SELECT", "n:0x1", "w:g", "n:0x1DE", "w:LETE"}},
+		// Money: no exponent, no hex. "$1e5" is $1 aliased e5.
+		{"$1e5 $1.5DELETE $0x1", []string{"p:$", "n:1", "w:e5", "p:$", "n:1.5", "w:DELETE", "p:$", "n:0", "w:x1"}},
+		// A leading '.' stays a punct before its number.
+		{".5e1DELETE", []string{"p:.", "n:5e1", "w:DELETE"}},
+		{"1_ 1a 1$ 1d", []string{"n:1", "w:_", "n:1", "w:a", "n:1", "p:$", "n:1", "w:d"}},
+		// A word with digits in it is still one word.
+		{"x1e5 t1DELETE", []string{"w:x1e5", "w:t1DELETE"}},
+		// Digits are ASCII: the server rejects "1٢" and "٢", so a non-ASCII
+		// digit is a word rune, as in gosmo's tsql.Spans.
+		{"1٢ ٢1e--5", []string{"n:1", "w:٢", "w:٢1e", "c:--5"}},
+		// An exponent's sign is the number's: "1e--5" is 1e- then -5 (the
+		// server returns -4), and "1e---c" ends in a comment.
+		{"1e--5 1e---c", []string{"n:1e-", "p:-", "n:5", "n:1e-", "c:--c"}},
+	} {
+		if got, _ := lexAll(tt.in, State{}); !slices.Equal(got, tt.want) {
+			t.Errorf("lex %q:\n got %q\nwant %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 // A token left open is continued from the state alone.
 func TestNextResumes(t *testing.T) {
 	tests := []struct {

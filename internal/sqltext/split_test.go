@@ -17,6 +17,19 @@ func TestSplitBatches(t *testing.T) {
 		{"only GO", "GO\nGO 5\n", nil},
 		{"two batches", "select 1\nGO\nselect 2", []Batch{{"select 1\n", 1, 0}, {"select 2", 1, 0}}},
 		{"CRLF", "select 1\r\nGO\r\nselect 2\r\n", []Batch{{"select 1\r\n", 1, 0}, {"select 2\r\n", 1, 0}}},
+		// A lone CR ends a line too (a classic Mac file), and every line end
+		// stays in the batch's text as written.
+		{"CR only", "select 1\rGO\rselect 2\r", []Batch{{"select 1\r", 1, 0}, {"select 2\r", 1, 0}}},
+		{"CR-only GO with count", "select 1\rGO 3\r", []Batch{{"select 1\r", 3, 0}}},
+		{"CR GO at the end, no terminator", "select 1\rGO", []Batch{{"select 1\r", 1, 0}}},
+		{"mixed line ends", "select 1\r\nGO\rselect 2\nGO\r\nselect 3",
+			[]Batch{{"select 1\r\n", 1, 0}, {"select 2\n", 1, 0}, {"select 3", 1, 0}}},
+		{"CRLF and CR inside a literal kept", "select 'a\r\nb', 'c\rd'\r\nGO\r\n",
+			[]Batch{{"select 'a\r\nb', 'c\rd'\r\n", 1, 0}}},
+		{"CR GO inside a literal", "select 'a\rGO\rb'\rGO\rselect 2",
+			[]Batch{{"select 'a\rGO\rb'\r", 1, 0}, {"select 2", 1, 0}}},
+		{"line comment ends at a lone CR", "select 1 -- x\rGO\rselect 2",
+			[]Batch{{"select 1 -- x\r", 1, 0}, {"select 2", 1, 0}}},
 		// The review-plan Q1 rows: batch.Split got every one of these wrong.
 		{"digit in trailing comment", "select 1\nGO -- step 2\nselect 3",
 			[]Batch{{"select 1\n", 1, 0}, {"select 3", 1, 0}}},
@@ -70,7 +83,7 @@ func withoutStartLines(bs []Batch) []Batch {
 // the start of line StartLine: the line a server error's "Line 1" is.
 func assertStartLines(t *testing.T, script string, bs []Batch) {
 	t.Helper()
-	lines := strings.SplitAfter(script, "\n")
+	lines := editorLines(script)
 	for _, b := range bs {
 		if b.StartLine < 0 || b.StartLine >= len(lines) {
 			t.Errorf("script %q: batch %q has StartLine %d of %d lines", script, b.Text, b.StartLine, len(lines))
@@ -79,6 +92,37 @@ func assertStartLines(t *testing.T, script string, bs []Batch) {
 		if from := strings.Join(lines[b.StartLine:], ""); !strings.HasPrefix(from, b.Text) {
 			t.Errorf("script %q: batch %q does not start on line %d (%q)", script, b.Text, b.StartLine, from)
 		}
+	}
+}
+
+// editorLines is script cut after each line end, a CRLF, a lone CR or an LF:
+// the lines StartLine counts.
+func editorLines(script string) []string {
+	var lines []string
+	for start, i := 0, 0; ; i++ {
+		if i == len(script) {
+			return append(lines, script[start:])
+		}
+		switch {
+		case script[i] == '\r' && i+1 < len(script) && script[i+1] == '\n':
+			i++
+			fallthrough
+		case script[i] == '\r' || script[i] == '\n':
+			lines = append(lines, script[start:i+1])
+			start = i + 1
+		}
+	}
+}
+
+// StartLine counts a CRLF as one line and a lone CR or LF as one each.
+func TestSplitBatchesStartLineEOLs(t *testing.T) {
+	script := "print 1\r\nGO\r\rGO\nselect 1\r\nGO\rselect 2"
+	var got []int
+	for _, b := range SplitBatches(script) {
+		got = append(got, b.StartLine)
+	}
+	if want := []int{0, 4, 6}; !slices.Equal(got, want) {
+		t.Errorf("StartLines = %v, want %v", got, want)
 	}
 }
 

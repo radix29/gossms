@@ -186,21 +186,12 @@ func lexSQL(ctx context.Context, src string) (*sqlLexed, error) {
 }
 
 // joins reports whether b, lexed right after a with nothing between, is part
-// of the same layout token: a compound operator, or the sign and exponent of
-// a decimal number the lexer cut at "e+" (1.5e+10, not 0x1e + 5).
+// of the same layout token: a compound operator. A number needs no join: the
+// lexer keeps an exponent's sign and digits in it (1.5e+10), and joining
+// anything more onto it would change what the server reads.
 func joins(a, b *sqlTok) bool {
-	switch {
-	case a.kind == sqltext.KindPunct && b.kind == sqltext.KindPunct && len(a.text) == 1:
-		return sqlCompound[a.text+b.text]
-	case a.kind == sqltext.KindNumber && b.kind == sqltext.KindPunct && (b.text == "+" || b.text == "-"):
-		last := a.text[len(a.text)-1]
-		hex := len(a.text) > 1 && (a.text[1] == 'x' || a.text[1] == 'X')
-		return (last == 'e' || last == 'E') && !hex
-	case a.kind == sqltext.KindNumber && b.kind == sqltext.KindNumber:
-		last := a.text[len(a.text)-1]
-		return last == '+' || last == '-'
-	}
-	return false
+	return a.kind == sqltext.KindPunct && b.kind == sqltext.KindPunct && len(a.text) == 1 &&
+		sqlCompound[a.text+b.text]
 }
 
 func unterminated(open rune) string {

@@ -26,21 +26,20 @@ func sqlInputOptions() []spec.Option {
 	}
 }
 
-// readSQL is the script from the one SQL input option given. Its hash is
-// the audit log's sqlSha256, taken before line endings are folded so it
-// stays the hash of the script as read.
+// readSQL is the script from the one SQL input option given, as read: its
+// hash is the audit log's sqlSha256, and it is the text that runs.
 //
-// The script comes back with every line ending as LF: the batch splitter
-// (sqltext.SplitBatches) finds GO only after an LF, so a CR-only (classic
-// Mac) script's GO would otherwise reach the server as T-SQL. The editor
-// folds them the same way on load.
+// Line endings are left alone. Folding them to LF (as readSQL once did, so the
+// batch splitter saw a CR-only script's GO) also rewrote the line breaks inside
+// string literals and quoted identifiers: a CRLF literal stored or matched LF,
+// silently. sqltext.SplitBatches knows CRLF and a lone CR itself.
 func readSQL(inv *spec.Invocation) (string, error) {
 	script, err := readSQLSource(inv)
 	if err != nil {
 		return "", err
 	}
 	inv.Audit.SQLSha256 = audit.Hash(script)
-	return textenc.NormalizeEOL(script), nil
+	return script, nil
 }
 
 func readSQLSource(inv *spec.Invocation) (string, error) {

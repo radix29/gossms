@@ -27,6 +27,8 @@ func FuzzLexer(f *testing.F) {
 		"WITH c AS (SELECT 1) SELECT * FROM c\nINSERT t SELECT 1 DELETE t",
 		"FROM t JOIN u ON t.id = u.id SELECT t.a UNION ALL FROM v SELECT a ORDER BY ALL DESC",
 		"[x\nGO\ny]", "'x\nGO\ny'", "/*\nGO\n*/", "GO 99999999999999999999",
+		"SELECT 1DELETE FROM t", "SELECT 1e5DROP TABLE t", "SELECT 1e5SHUTDOWN", "SELECT 1a",
+		"1e 1else 1e+SELECT 0x1DELETE $1e5 .5e1x 1.2.3 1٢",
 	} {
 		f.Add(s)
 	}

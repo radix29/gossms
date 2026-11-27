@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/sqltext"
-	"github.com/radix29/gossms/internal/textenc"
 )
 
 // FuzzFormatSQL checks the SQL formatter on arbitrary text: it never panics,
@@ -34,7 +33,7 @@ func FuzzFormatSQL(f *testing.F) {
 		}
 	}
 	for _, s := range []string{
-		"", "GO", "select 1\ngo 3\nselect 2", "select N'x', $(v), 1e+5, a-1, -1",
+		"", "GO", "select 1\ngo 3\nselect 2", "select N'x', $(v), 1e+5, a-1, -1", "select 1delete from t", "select 1e--5, 1e-- c",
 		"if 1=1 if 2=2 print 1 else print 2 else print 3",
 		"select a -- c\n, b from t", "begin end", "case when", "end else",
 		"create proc p @a int output as select 1", "select go from t",
@@ -86,12 +85,11 @@ func fuzzCorpusString(b string) (string, bool) {
 	return s, err == nil
 }
 
-// batchCounts is s's GO batches as gossms runs them: line endings folded to
-// LF first (the editor on load, the CLI on --file), so a lone CR ends a GO
-// line here as it does in the formatter's lexer.
+// batchCounts is s's GO batches as gossms runs them: SplitBatches ends a line
+// at a lone CR as the formatter's lexer does.
 func batchCounts(s string) string {
 	var b strings.Builder
-	for _, bt := range sqltext.SplitBatches(textenc.NormalizeEOL(s)) {
+	for _, bt := range sqltext.SplitBatches(s) {
 		b.WriteString(strconv.Itoa(bt.Count) + ",")
 	}
 	return b.String()
@@ -184,6 +182,24 @@ func TestFormatSQLKeepsTokensVerbatim(t *testing.T) {
 	}
 	if !strings.Contains(got, keep[5]+"\n") {
 		t.Errorf("code followed a line comment on its line:\n%s", got)
+	}
+}
+
+// A number ends where the server's does, so a statement glued to one is laid
+// out as a statement, and an exponent's sign stays in its number: 1e--5 is
+// 1e- then -5 (-4 on the server), never 1e then a comment.
+func TestFormatSQLNumberEnds(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		{"select 1delete from t", "SELECT 1\nDELETE FROM t"},
+		{"select 1e5, 1e+5, 1E-5, 1e, 0x1F from t", "SELECT\n    1e5\n  , 1e+5\n  , 1E-5\n  , 1e\n  , 0x1F\nFROM t"},
+	} {
+		if got := formatSQLOrFail(t, tc.src); got != tc.want {
+			t.Errorf("Format(%q) =\n%s\nwant\n%s", tc.src, got, tc.want)
+		}
+	}
+	got := formatSQLOrFail(t, "select 1e--5")
+	if err := Verify(t.Context(), LangSQL, "select 1e--5", got); err != nil || got != "SELECT 1e- - 5" {
+		t.Errorf("Format(%q) = %q, %v", "select 1e--5", got, err)
 	}
 }
 
