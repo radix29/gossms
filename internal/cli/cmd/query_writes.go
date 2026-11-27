@@ -44,10 +44,12 @@ func checkWriteTargets(ctx context.Context, srv *gosmo.Server, sc *safety.Script
 	if err != nil {
 		return nil, err
 	}
-	c := &targetCheck{srv: srv, dbs: map[string]*gosmo.Database{}, seen: map[string][]string{}}
+	coll := serverCollation(srv)
+	c := &targetCheck{srv: srv, collation: coll, dbs: map[string]*gosmo.Database{},
+		seen: map[string][]string{}, tables: map[string][]string{}}
 	runDBs := []string{run}
 	for _, name := range safety.UseDatabases(script) {
-		if !slices.ContainsFunc(runDBs, func(d string) bool { return strings.EqualFold(d, name) }) {
+		if !slices.ContainsFunc(runDBs, func(d string) bool { return gosmo.SameName(coll, d, name) }) {
 			runDBs = append(runDBs, name)
 		}
 	}
@@ -67,16 +69,25 @@ func checkWriteTargets(ctx context.Context, srv *gosmo.Server, sc *safety.Script
 // targetCheck is one run's check: the databases read so far, and each
 // target's reasons by verb and name, so a table written ten times is read
 // once.
+//
+// Database names compare under the server collation, as everywhere else on the
+// command line: on a case-sensitive server Sales and sales are two databases.
+// seen is keyed on a write's name exactly as written, since whether t and T are
+// one table is the database's collation's call (a _CS_ database holds both);
+// tables, keyed on the resolved table, shares the read across spellings that do
+// name one table.
 type targetCheck struct {
-	srv  *gosmo.Server
-	dbs  map[string]*gosmo.Database // by lower-cased name; nil: no such database
-	seen map[string][]string
+	srv       *gosmo.Server
+	collation string                     // the server's, which database names compare under
+	dbs       map[string]*gosmo.Database // by gosmo.NameKey; nil: no such database
+	seen      map[string][]string        // by verb and the parts as written
+	tables    map[string][]string        // by verb, database and object_id
 }
 
 // database is the database name, nil when the server has none by that name
 // (a USE of a database this server lacks fails when it runs).
 func (c *targetCheck) database(ctx context.Context, name string) (*gosmo.Database, error) {
-	key := strings.ToLower(name)
+	key := gosmo.NameKey(c.collation, name)
 	if d, ok := c.dbs[key]; ok {
 		return d, nil
 	}
@@ -94,7 +105,7 @@ func (c *targetCheck) database(ctx context.Context, name string) (*gosmo.Databas
 // write is why w's target fails the check, nil when it passes. runDBs is the
 // databases a name without a database part may be in.
 func (c *targetCheck) write(ctx context.Context, w safety.Write, runDBs []string) ([]string, error) {
-	key := w.Verb + "\x00" + strings.ToLower(strings.Join(w.Parts, "\x00"))
+	key := w.Verb + "\x00" + strings.Join(w.Parts, "\x00")
 	if r, ok := c.seen[key]; ok {
 		return r, nil
 	}
@@ -171,7 +182,15 @@ func (c *targetCheck) object(ctx context.Context, verb string, d *gosmo.Database
 	qn := gosmo.QualifiedName(o.Schema, o.Name)
 	switch o.Type {
 	case "U":
-		return tableReasons(ctx, verb, d, o)
+		key := fmt.Sprintf("%s\x00%s\x00%d", verb, d.Name, o.ObjectID)
+		if r, ok := c.tables[key]; ok {
+			return r, nil
+		}
+		r, err := tableReasons(ctx, verb, d, o)
+		if err == nil {
+			c.tables[key] = r
+		}
+		return r, err
 	case "SN":
 		if !synonymOK {
 			return []string{fmt.Sprintf("synonym %s names another synonym", qn)}, nil
