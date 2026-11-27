@@ -36,6 +36,9 @@ func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	if d.Type == NodeColumn && d.IsPrimaryKey {
 		return primaryKeyIcon(style)
 	}
+	if d.Type == NodeDatabase && d.conn.IsFabricDW() && style != config.IconStyleEmoji {
+		return '⬟'
+	}
 	if d.Type == NodeFunction && d.FuncType == gosmo.FunctionTypeExternal && style != config.IconStyleEmoji {
 		return 'λ'
 	}
