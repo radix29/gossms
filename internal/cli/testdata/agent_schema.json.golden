@@ -3903,7 +3903,7 @@
           "default": null,
           "negation": null,
           "env": null,
-          "help": "Only files in this filegroup (case-insensitive)"
+          "help": "Only files in this filegroup (under its database's collation)"
         },
         {
           "name": "--sort-by",
@@ -4367,7 +4367,7 @@
     {
       "path": "db table-sizes",
       "summary": "List a database's largest tables: rows, reserved, data, index and unused space",
-      "description": "One row per user table (sys.tables), read inside the database in one round trip, in sp_spaceused's per-object arithmetic so each row matches `EXEC sp_spaceused 'schema.table'` exactly: data counts the table's in-row data pages and its LOB and row-overflow pages, index the rest of the used pages, and reserved and index include the table's XML, spatial and full-text index internal tables. rows is the heap's or clustered index's row count. The figures come from sys.partitions and sys.allocation_units, so no VIEW DATABASE STATE is needed; the login sees the tables it has metadata visibility of. --sort-by orders largest first (default reserved), schema and table name breaking ties; --top keeps that many rows (default 20, 0 for every table); --schema keeps the one schema, case-insensitively, as object list's. A memory-optimized table's four sizes are NULL, as sp_spaceused prints them (SQL Server 2016's prints 0 KB and 0 rows; rows here is still its row count), with a warning, and it sorts last on a size. A database that cannot be read fails: exit 8 for its state, 9 for the login's access. A snapshot's figures are its source's as of the snapshot's creation, with a warning.",
+      "description": "One row per user table (sys.tables), read inside the database in one round trip, in sp_spaceused's per-object arithmetic so each row matches `EXEC sp_spaceused 'schema.table'` exactly: data counts the table's in-row data pages and its LOB and row-overflow pages, index the rest of the used pages, and reserved and index include the table's XML, spatial and full-text index internal tables. rows is the heap's or clustered index's row count. The figures come from sys.partitions and sys.allocation_units, so no VIEW DATABASE STATE is needed; the login sees the tables it has metadata visibility of. --sort-by orders largest first (default reserved), schema and table name breaking ties; --top keeps that many rows (default 20, 0 for every table); --schema keeps the one schema, compared under the database's collation. A memory-optimized table's four sizes are NULL, as sp_spaceused prints them (SQL Server 2016's prints 0 KB and 0 rows; rows here is still its row count), with a warning, and it sorts last on a size. A database that cannot be read fails: exit 8 for its state, 9 for the login's access. A snapshot's figures are its source's as of the snapshot's creation, with a warning.",
       "operationClass": "read",
       "arguments": [
         {
@@ -4564,7 +4564,7 @@
           "default": null,
           "negation": null,
           "env": null,
-          "help": "Only tables in this schema (case-insensitive)"
+          "help": "Only tables in this schema (under the database's collation)"
         },
         {
           "name": "--sort-by",

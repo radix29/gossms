@@ -76,7 +76,7 @@ func dbFilesCommand(d Deps) *spec.Command {
 		Options: append(ConnectOptions(),
 			allOption(), unitOption(),
 			spec.Option{Name: optFileType, Type: spec.TypeEnum, Enum: fileTypeNames(), Help: "Only files of this type"},
-			spec.Option{Name: optFileGroup, Type: spec.TypeString, Help: "Only files in this filegroup (case-insensitive)"},
+			spec.Option{Name: optFileGroup, Type: spec.TypeString, Help: "Only files in this filegroup (under its database's collation)"},
 			spec.Option{Name: optSortBy, Type: spec.TypeEnum, Enum: []string{"name", "size", "used", "free-pct"},
 				Help: "Order the files: name, size or used (largest first), free-pct (fullest first)"},
 			spec.Option{Name: optMaxFreePct, Type: spec.TypeInt, Help: "Only files with at most this percentage free inside them, 0 to 100"},
