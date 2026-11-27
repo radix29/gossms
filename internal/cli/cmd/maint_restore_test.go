@@ -271,7 +271,7 @@ func TestMaintRestoreRefusals(t *testing.T) {
 	}{
 		{"app --allow admin", nil, output.CodeUsageError, 0, "--from is required"},
 		{"--from /b/app.bak --allow admin", nil, output.CodeUsageError, 0, "the database to restore to is missing"},
-		{"MSDB --from /b/app.bak --allow admin", nil, output.CodeBlocked, 0, "is a system database"},
+
 		{"app --from /b/app.bak --confirm APP --allow admin", nil, output.CodeBlocked, 0, `--confirm "APP" is not`},
 		{"x --from /b/app.bak --file-number 0 --allow admin", nil, output.CodeUsageError, 0, "not a backup set number"},
 		{"x --from /b/app.bak --with-move app --allow admin", nil, output.CodeUsageError, 0, "is not <logical name>=<path>"},
@@ -288,6 +288,7 @@ func TestMaintRestoreRefusals(t *testing.T) {
 		{"x --from /b/multi.bak --move-to-default --allow admin", nil, output.CodeUsageError, 1, "holds 2 backup sets"},
 		{"x --from /b/multi.bak --file-number 3 --allow admin", nil, output.CodeNotFound, 1, "it holds set 1, 2"},
 		{"x --from /b/multi.bak --file-number 2 --move-to-default --allow admin", nil, output.CodeUsageError, 1, "places no files"},
+		{"MODEL --from /b/app.bak --allow admin", nil, output.CodeBlocked, 1, "[model] is a system database"},
 		{"app --from /b/app.bak --allow admin --dry-run", nil, output.CodeBlocked, 1, "[app] exists"},
 		{"APP --from /b/app.bak --confirm APP --allow admin", func(c *maintServer) { c.current = "app" },
 			output.CodeUsageError, 1, "the connection's own database"},
@@ -369,5 +370,69 @@ func TestMaintRestoreServerRefusals(t *testing.T) {
 	_, _, err := runRestore(t, cat, "x --from Z:\\nope.bak --allow admin")
 	if e, ok := err.(*output.Error); !ok || e.SQL == nil || e.SQL.Number != 3201 || !strings.Contains(e.Hint, "service account") {
 		t.Errorf("media read: %+v", err)
+	}
+}
+
+// newCaseSensitiveRestoreServer is newRestoreServer's on a
+// Latin1_General_CS_AS server that also holds Sales (id 20) and sales
+// (id 21), two databases, each with its own files and a backup file of its
+// own.
+func newCaseSensitiveRestoreServer(t *testing.T) *maintServer {
+	cat := newRestoreServer(t)
+	cat.Info.Collation = "Latin1_General_CS_AS"
+	cat.dbs = append(cat.dbs,
+		&gosmo.Database{Name: "Sales", ID: 20, State: gosmo.DatabaseOnline, RecoveryModel: gosmo.RecoveryModelSimple},
+		&gosmo.Database{Name: "sales", ID: 21, State: gosmo.DatabaseOnline, RecoveryModel: gosmo.RecoveryModelSimple})
+	cat.files = append(cat.files,
+		&gosmo.InstanceFile{DatabaseID: 20, DatabaseName: "Sales", FileID: 1, Name: "sales", PhysicalName: restoreData + "/Sales_1.mdf", Type: "ROWS"},
+		&gosmo.InstanceFile{DatabaseID: 20, DatabaseName: "Sales", FileID: 2, Name: "sales_log", PhysicalName: restoreData + "/Sales_1.ldf", Type: "LOG"},
+		&gosmo.InstanceFile{DatabaseID: 21, DatabaseName: "sales", FileID: 1, Name: "sales", PhysicalName: restoreData + "/sales_2.mdf", Type: "ROWS"},
+		&gosmo.InstanceFile{DatabaseID: 21, DatabaseName: "sales", FileID: 2, Name: "sales_log", PhysicalName: restoreData + "/sales_2.ldf", Type: "LOG"})
+	for _, db := range []string{"Sales", "sales"} {
+		dev := "/b/" + db + ".bak"
+		cat.media[dev] = []*gosmo.BackupHeader{{DatabaseName: db, SetType: gosmo.BackupSetDatabase, Position: 1,
+			BackupStart: agentDate("2026-11-03 10:00:00"), BackupFinish: agentDate("2026-11-03 10:00:05"), BackupSize: 1 << 20}}
+		cat.fileLists[dev] = map[int][]*gosmo.BackupFile{0: {
+			{LogicalName: "sales", PhysicalName: "/x/" + db + ".mdf", Type: gosmo.BackupFileData, FileGroupName: "PRIMARY", Size: 1 << 20},
+			{LogicalName: "sales_log", PhysicalName: "/x/" + db + ".ldf", Type: gosmo.BackupFileLog, Size: 1 << 20},
+		}}
+	}
+	return cat
+}
+
+// TestMaintRestoreCaseSensitive: on a case-sensitive server, database names
+// compare exactly — MASTER is a user database, restoring over Sales while
+// connected to sales is allowed, sales's restore is checked against Sales's
+// files, and a set of Sales verified for sales is a warning.
+func TestMaintRestoreCaseSensitive(t *testing.T) {
+	cat := newCaseSensitiveRestoreServer(t)
+	if _, _, err := runRestore(t, cat, "MASTER --from /b/sales.bak --move-to-default --allow admin --dry-run"); err != nil {
+		t.Errorf("MASTER, a user database here: %v", err)
+	}
+
+	cat = newCaseSensitiveRestoreServer(t)
+	cat.current = "sales"
+	res, _, err := runRestore(t, cat, "Sales --from /b/Sales.bak --confirm Sales --allow admin --dry-run")
+	if err != nil {
+		t.Fatalf("over Sales connected to sales: %v", err)
+	}
+	if files := resultSet(t, res, "files"); files[0][5] != restoreData+"/Sales_1.mdf" {
+		t.Errorf("over Sales, files %q: want Sales's own paths", files)
+	}
+
+	cat = newCaseSensitiveRestoreServer(t)
+	_, _, err = runRestore(t, cat, "sales --from /b/sales.bak --confirm sales --with-move sales="+restoreData+
+		"/Sales_1.mdf --with-move sales_log=/x/l.ldf --allow admin --dry-run")
+	if e, ok := err.(*output.Error); !ok || e.Code != output.CodeBlocked || !strings.Contains(e.Message, "[Sales]'s file sales") {
+		t.Errorf("sales onto Sales's file: %v", err)
+	}
+
+	cat = newCaseSensitiveRestoreServer(t)
+	res, _, err = runRestore(t, cat, "sales --from /b/Sales.bak --verify-only --allow admin --dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "backup of [Sales], not of [sales]") {
+		t.Errorf("verify Sales's set for sales: warnings %q", res.Warnings)
 	}
 }

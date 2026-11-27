@@ -581,7 +581,7 @@ func principalNotFound(ctx context.Context, srv *gosmo.Server, dbase *gosmo.Data
 		hint = fmt.Sprintf("%s is a login: %s.", gosmo.QuoteName(name), words.toServer)
 		if users, err := dbase.Users(ctx); err == nil {
 			for _, u := range users {
-				if u.LoginName != "" && strings.EqualFold(u.LoginName, name) {
+				if u.LoginName != "" && gosmo.SameName(serverCollation(srv), u.LoginName, name) {
 					hint = fmt.Sprintf("Login %s is user %s in this database: name %s, or %s.",
 						gosmo.QuoteName(name), gosmo.QuoteName(u.Name), u.Name, words.toServer)
 					break

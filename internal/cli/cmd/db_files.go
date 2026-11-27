@@ -256,11 +256,17 @@ func (d Deps) dbFiles(ctx context.Context, inv *spec.Invocation) (*output.Result
 
 	typ, _ := inv.Values[optFileType].(string)
 	fg, _ := inv.Values[optFileGroup].(string)
+	// A filegroup name compares under its database's catalog collation: in a
+	// _CS_ database fg and FG are two filegroups.
+	collations := make(map[int]string, len(dbs))
+	for _, t := range dbs {
+		collations[t.DB.ID] = catalogCollation(t.DB)
+	}
 	rows = slices.DeleteFunc(rows, func(r fileRow) bool {
 		if typ != "" && fileTypeName(r.File.Type) != typ {
 			return true
 		}
-		if fg != "" && (!r.Inside || !strings.EqualFold(r.File.FileGroup, fg)) {
+		if fg != "" && (!r.Inside || !gosmo.SameName(collations[r.DatabaseID], r.File.FileGroup, fg)) {
 			return true
 		}
 		free, ok := r.freePct()

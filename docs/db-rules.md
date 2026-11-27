@@ -184,6 +184,8 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   names. A lookup that falls back to a case-blind match only when the exact
   one misses and only when it is unique (the CLI's `matchName`) is a
   convenience over catalog spelling, not a comparison, and may keep it.
+  In `internal/cli/cmd`, `TestCLIComparesNamesUnderCollation` fails on any
+  `EqualFold` outside its allowlist, each entry with its reason.
 - **Never give a procedure installed outside `master` an `sp_` prefix** — `sp_`
   falls back to `master`: `CREATE OR ALTER dbo.sp_x` in tempdb fails "Invalid
   object name", and `DROP PROCEDURE IF EXISTS dbo.sp_x` in tempdb **deleted

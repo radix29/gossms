@@ -88,8 +88,17 @@ support); this section covers only the environment.
   to `sales`, with a trigger on a table in `Sales` only, refuses
   `UPDATE x SET a=1; USE Sales; UPDATE x SET a=1` naming that trigger
   (`checkWriteTargets`, pinned offline by
-  `TestWriteTargetsCaseSensitiveServer`). (`db table-sizes --schema` compares under the
-  *database's* collation — a `_CS_` user database on any instance checks it.)
+  `TestWriteTargetsCaseSensitiveServer`). The backup and restore commands
+  (pinned offline by `TestMaintBackupCaseSensitive` and
+  `TestMaintRestoreCaseSensitive`) too: with `Sales` and `sales` both
+  backed up, `maint backup-history sales --last` reports `sales`'s row;
+  `backup-history --all` lists a user database `TempDB`; `maint restore
+  MASTER --from … --dry-run` is not refused as master; `maint restore Sales`
+  connected to `sales` is not refused as the connection's own database;
+  `maint restore sales --with-move` onto a `Sales` file is refused; `maint
+  restore sales --verify-only` of a `Sales` set warns. (`db table-sizes
+  --schema` and `db files --filegroup` compare under the *database's*
+  collation — a `_CS_` user database on any instance checks them.)
 
 - **No SQL database in Fabric (EngineEdition 12) has ever been connected.**
   gosmo counts it as Azure (version gates treat its 12.x as newest) and as

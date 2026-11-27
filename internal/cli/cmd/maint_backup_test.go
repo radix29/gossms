@@ -549,3 +549,58 @@ func TestBackupFileNameIsFileNameSafe(t *testing.T) {
 		t.Errorf("backupFileName = %q, want %q", got, want)
 	}
 }
+
+// TestMaintBackupCaseSensitive: on a case-sensitive server Sales and sales
+// are two databases, and TempDB is a user database — --last reports the one
+// named, the read-back takes only the backed-up database's set, and the
+// all-database history keeps TempDB.
+func TestMaintBackupCaseSensitive(t *testing.T) {
+	fixBackupClock(t)
+	setup := func() *maintServer {
+		cat := newBackupServer(t)
+		cat.Info.Collation = "Latin1_General_CS_AS"
+		cat.dbs = append(cat.dbs,
+			&gosmo.Database{Name: "Sales", ID: 20, State: gosmo.DatabaseOnline, RecoveryModel: gosmo.RecoveryModelSimple},
+			&gosmo.Database{Name: "sales", ID: 21, State: gosmo.DatabaseOnline, RecoveryModel: gosmo.RecoveryModelSimple},
+			&gosmo.Database{Name: "TempDB", ID: 22, State: gosmo.DatabaseOnline, RecoveryModel: gosmo.RecoveryModelSimple})
+		for _, db := range []string{"Sales", "sales", "TempDB"} {
+			cat.history[db] = []*gosmo.BackupInfo{{DatabaseName: db, SetType: gosmo.BackupSetDatabase,
+				BackupStart: agentDate("2026-11-03 02:00:00"), BackupFinish: agentDate("2026-11-03 02:00:01"),
+				Devices: []string{"/b/" + db + ".bak"}}}
+		}
+		return cat
+	}
+
+	res, _, err := runMaint(t, setup(), "backup-history sales --last --type full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := historyCells(res); len(got) != 1 || !strings.HasPrefix(got[0], "sales|") || !strings.Contains(got[0], "/b/sales.bak") ||
+		res.Database != "sales" {
+		t.Errorf("--last sales: %q, header %q", got, res.Database)
+	}
+	if _, _, err := runMaint(t, setup(), "backup-history SALES --last"); err == nil {
+		t.Errorf("--last SALES, no such database: no error")
+	}
+
+	cat := setup()
+	if _, _, err := runMaint(t, cat, "backup-history --all"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(cat.historyFor, "TempDB") {
+		t.Errorf("history read for %q: TempDB, a user database, left out", cat.historyFor)
+	}
+
+	// The file holds Sales's set and the backup of sales wrote none: no set
+	// of sales to read back.
+	cat = setup()
+	cat.noMedia = true
+	cat.media["/b/x.bak"] = []*gosmo.BackupHeader{{DatabaseName: "Sales", SetType: gosmo.BackupSetDatabase, Position: 1}}
+	res, _, err = runMaint(t, cat, "backup sales --to /b/x.bak --allow admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "holds no set") {
+		t.Errorf("read back Sales's set as sales's: warnings %q", res.Warnings)
+	}
+}

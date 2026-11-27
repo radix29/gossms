@@ -345,7 +345,7 @@ func backupSetFields(ctx context.Context, srv *gosmo.Server, opts gosmo.BackupOp
 	}
 	var h *gosmo.BackupHeader
 	for _, x := range headers {
-		if strings.EqualFold(x.DatabaseName, opts.Database) && x.SetType == backupTypes[typ].set &&
+		if x.DatabaseName == opts.Database && x.SetType == backupTypes[typ].set &&
 			(h == nil || x.Position > h.Position) {
 			h = x
 		}
@@ -488,7 +488,7 @@ func backupHistoryRows(ctx context.Context, srv *gosmo.Server, name string, keep
 		}
 		names = names[:0]
 		for _, d := range dbs {
-			if !d.IsSnapshot() && !strings.EqualFold(d.Name, "tempdb") {
+			if !d.IsSnapshot() && d.ID != 2 { // tempdb, by its reserved id: a user database may be named TempDB
 				names = append(names, d.Name)
 			}
 		}
@@ -525,7 +525,21 @@ func lastBackupRows(ctx context.Context, srv *gosmo.Server, name, typ string, ke
 		return nil, readError(err)
 	}
 	if name != "" {
-		i := slices.IndexFunc(all, func(b *gosmo.DatabaseLastBackups) bool { return strings.EqualFold(b.DatabaseName, name) })
+		// Exact first, then a unique match under the server collation: on a
+		// case-sensitive server Sales and sales are two databases.
+		i := slices.IndexFunc(all, func(b *gosmo.DatabaseLastBackups) bool { return b.DatabaseName == name })
+		if i < 0 {
+			coll := serverCollation(srv)
+			for j, b := range all {
+				if gosmo.SameName(coll, b.DatabaseName, name) {
+					if i >= 0 {
+						i = -1
+						break
+					}
+					i = j
+				}
+			}
+		}
 		if i < 0 {
 			if _, err := namedDatabase(ctx, srv, name, res); err != nil {
 				return nil, err
