@@ -6,7 +6,72 @@ import (
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/db"
 )
+
+func TestDatabaseIconsDistinguishFabricWarehouse(t *testing.T) {
+	sqlServer, _ := newGConn(t)
+	azure, _ := newGConnOnAzure(t, int(gosmo.EngineAzureSQLDatabase))
+	managedInstance, _ := newGConnOnAzure(t, int(gosmo.EngineAzureManagedInst))
+	fabricSQL, _ := newGConnOnAzure(t, int(gosmo.EngineFabricSQLDatabase))
+	for _, tt := range []struct {
+		name string
+		conn *db.ServerConn
+		want rune
+	}{
+		{"unknown", nil, '⬢'},
+		{"unconnected", &db.ServerConn{}, '⬢'},
+		{"SQL Server", sqlServer, '⬢'},
+		{"Azure SQL", azure, '⬢'},
+		{"Managed Instance", managedInstance, '⬢'},
+		{"Fabric SQL database", fabricSQL, '⬢'},
+		{"Fabric Warehouse", fabricConn(t), '⬟'},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newTestApp()
+			for _, style := range config.AllIconStyles() {
+				a.cfg.IconStyle = style
+				for _, offline := range []bool{false, true} {
+					n := &explorerNode{data: nodeData{Type: NodeDatabase, conn: tt.conn, IsOffline: offline}}
+					want := tt.want
+					if style == config.IconStyleEmoji {
+						want = '🛢'
+					} else if style == config.IconStyleNone {
+						want = 0
+					}
+					row := a.explorer.row(n, 1)
+					if row.Icon != want || row.Dim != offline {
+						t.Errorf("style %v, offline %v: icon %q, dim %v; want %q, %v",
+							style, offline, row.Icon, row.Dim, want, offline)
+					}
+				}
+			}
+		})
+	}
+	if got := nodeIcon(nodeData{Type: NodeAvailabilityDatabase}, config.IconStyleSymbols, false); got != '⬢' {
+		t.Errorf("availability database icon = %q, want ⬢", got)
+	}
+}
+
+func TestDatabaseCompletionIconsDistinguishFabricWarehouse(t *testing.T) {
+	for _, fabric := range []bool{false, true} {
+		qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		qp.app.cfg.IconStyle = config.IconStyleSymbols
+		want := '⬢'
+		if fabric {
+			qp.conn.Server = fabricConn(t).Server
+			want = '⬟'
+		}
+		items := qp.databaseItems("test")
+		if len(items) != 1 || items[0].Icon != want {
+			t.Errorf("Fabric %v: database completions %v, want one with icon %q", fabric, items, want)
+		}
+		linked := qp.linkedDatabaseItems(&linkedServer{name: "remote", databases: map[string]string{"linkeddb": "linkeddb"}}, "")
+		if len(linked) != 1 || linked[0].Icon != '⬢' {
+			t.Errorf("Fabric %v: linked database completions %v, want the ordinary database icon", fabric, linked)
+		}
+	}
+}
 
 func TestFunctionIconsDistinguishExternalFunctions(t *testing.T) {
 	for _, style := range []config.IconStyle{config.IconStyleSymbols, config.IconStylePortable, config.IconStyleEmoji, config.IconStyleNone} {

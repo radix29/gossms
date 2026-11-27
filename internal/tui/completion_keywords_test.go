@@ -10,6 +10,65 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
+func TestSQLKeywordCompletionNewStatementWithoutSemicolon(t *testing.T) {
+	for _, tt := range []struct{ sql, keyword string }{
+		{"SELECT TOP 10 * FROM dbo.Date\n\nSE|", "SELECT"},
+		{"SELECT * FROM dbo.Customers\n  se|", "SELECT"},
+		{"SELECT 1\n\nSE|", "SELECT"},
+		{"SELECT Name FROM dbo.Customers WHERE Id = 1\n\nSE|", "SELECT"},
+		{"SELECT Name FROM dbo.Customers ORDER BY Name DESC\n\nSE|", "SELECT"},
+		{"SELECT * FROM dbo.Customers\n-- next statement\nSE|", "SELECT"},
+		{"SELECT * FROM dbo.Customers\n\nGR|", "GRANT"},
+	} {
+		t.Run(tt.sql, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			lines, row, col := linesAndCursor(t, tt.sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if !containsLabel(items, tt.keyword) {
+				t.Fatalf("items %v missing new statement keyword %q", labels(items), tt.keyword)
+			}
+		})
+	}
+}
+
+func TestSQLKeywordCompletionNewStatementPreservesContinuations(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT * FROM dbo.Customers se|",
+		"SELECT * FROM\n\nSE|",
+		"SELECT Name,\n\nSE|",
+		"SELECT * FROM dbo.Customers WHERE Id =\n\nSE|",
+		"SELECT (SELECT Name FROM dbo.Customers\n\nSE|)",
+		"SELECT CASE WHEN Id = 1 THEN Name\n\nSE| FROM dbo.Customers",
+		"SELECT * FROM dbo.Customers\n\n-- SE|",
+	} {
+		t.Run(sql, func(t *testing.T) {
+			qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+			lines, row, col := linesAndCursor(t, sql)
+			items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+			if containsLabel(items, "SELECT") {
+				t.Fatalf("items %v treat an alias or unfinished expression as a new statement", labels(items))
+			}
+		})
+	}
+}
+
+func TestSQLKeywordCompletionNewStatementEditor(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	const previous = "SELECT TOP 10 * FROM dbo.Date\n\n"
+	qp.editor.SetText(previous)
+	qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyEnd, "", tcell.ModCtrl))
+	for _, r := range "SE" {
+		qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+	}
+	if !qp.editor.OverlayActive() {
+		t.Fatal("new statement prefix did not open the completion popup")
+	}
+	qp.editor.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+	if got, want := qp.editor.Text(), previous+"SELECT "; got != want {
+		t.Fatalf("completion produced %q, want %q", got, want)
+	}
+}
+
 func TestSQLKeywordCompletionContexts(t *testing.T) {
 	for _, tt := range []struct {
 		sql, label, text string

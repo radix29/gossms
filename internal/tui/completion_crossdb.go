@@ -238,7 +238,7 @@ func (p *QueryPanel) databaseItems(pl string) []editor.CompletionItem {
 		if ok, partial := nameMatch(e.name, pl); ok {
 			items = append(items, editor.CompletionItem{
 				Text: gosmo.QuoteNameIfNeeded(e.name), Label: e.name, Detail: "database",
-				Icon: nodeIcon(nodeData{Type: NodeDatabase}, p.app.cfg.IconStyle, false), Partial: partial,
+				Icon: nodeIcon(nodeData{Type: NodeDatabase, conn: p.conn}, p.app.cfg.IconStyle, false), Partial: partial,
 			})
 		}
 	}

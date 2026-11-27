@@ -65,10 +65,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 		if f.window {
 			s.choices = []string{"PARTITION BY", "ORDER BY"}
 		} else if !f.predicate {
-			s.choices = []string{"SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "CREATE", "ALTER", "DROP", "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "DENY", "REVOKE"}
-			if fabric {
-				s.choices = append(s.choices, "FROM")
-			}
+			s.choices = statementKeywordChoices(fabric)
 		}
 	} else {
 		s.last = f.tokens[len(f.tokens)-1]
@@ -94,6 +91,7 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 	if statement != "" && statement != "SELECT" || f.predicate && cc.selectStart < 0 && !cc.hasFrom {
 		s.choices = dmlClauseChoices(s.choices, f.tokens, statement, statementStart, clause, s.sourceComplete)
 	}
+	s.nextStatementChoices(prefix)
 	choices, sourceComplete := s.choices, s.sourceComplete
 	if len(choices) == 0 {
 		return nil, sourceComplete
@@ -169,6 +167,38 @@ func (p *QueryPanel) keywordCandidates(buf []rune, tokens []sqlparse.Token, quer
 			AppendSpace: !columnType && clause != "DATEPART", Soft: prefix == ""})
 	}
 	return items, sourceComplete
+}
+
+func statementKeywordChoices(fabric bool) []string {
+	choices := []string{"SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "CREATE", "ALTER", "DROP", "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "DENY", "REVOKE"}
+	if fabric {
+		choices = append(choices, "FROM")
+	}
+	return choices
+}
+
+func (s *keywordScope) nextStatementChoices(prefix string) {
+	direction := s.clause == "ORDER" && (keywordIs(s.last, "ASC") || keywordIs(s.last, "DESC"))
+	if prefix == "" || s.statement != "SELECT" || !(s.complete || direction) ||
+		s.cc.only || s.cc.caseDepth > 0 || s.cc.queryDepth > 0 || s.cc.parenthesized ||
+		s.f.window || s.f.predicate || s.f.subquery {
+		return
+	}
+	for i := s.from - 1; i >= 0; i-- {
+		if s.buf[i] == '\n' {
+			// A partial leader may start a statement, but a newline alone
+			// must not discard the current query's continuation choices.
+			for _, word := range statementKeywordChoices(s.fabric) {
+				if strings.HasPrefix(word, strings.ToUpper(prefix)) && !slices.Contains(s.choices, word) {
+					s.choices = append(s.choices, word)
+				}
+			}
+			return
+		}
+		if !keywordWhitespace(s.buf[i]) {
+			return
+		}
+	}
 }
 
 // keywordScope is one keywordCandidates request as the clause rules see it:
