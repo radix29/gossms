@@ -4,8 +4,25 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 )
+
+func TestFunctionIconsDistinguishExternalFunctions(t *testing.T) {
+	for _, style := range []config.IconStyle{config.IconStyleSymbols, config.IconStylePortable, config.IconStyleEmoji, config.IconStyleNone} {
+		for _, kind := range []gosmo.FunctionType{gosmo.FunctionTypeScalar, gosmo.FunctionTypeExternal} {
+			want := 'ƒ'
+			if style == config.IconStyleNone {
+				want = 0
+			} else if kind == gosmo.FunctionTypeExternal && style != config.IconStyleEmoji {
+				want = 'λ'
+			}
+			if got := nodeIcon(nodeData{Type: NodeFunction, FuncType: kind}, style, false); got != want {
+				t.Errorf("function %s, style %v: got %q, want %q", kind, style, got, want)
+			}
+		}
+	}
+}
 
 // TestAgentJobsIconIsStopwatchNotFolder checks NodeAgentJobs ("SQL Server
 // Agent") gets its own distinct glyph rather than the generic folder icon

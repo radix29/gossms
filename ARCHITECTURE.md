@@ -379,6 +379,8 @@ gossms/
 │       ├── completion_load.go       # the one lazy-load lifecycle every IntelliSense cache shares: latest + timeout, panic eviction, closed-connection eviction, popup refresh
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
 │       ├── completion_keywords.go   # contextual SQL keywords, aggregates and multiword clauses/windows, connection-scoped Fabric syntax
+│       ├── completion_security.go   # GRANT/DENY/REVOKE grammar: permission lists, securables, columns, principals and options
+│       ├── completion_security_load.go # lazy permission vocabulary and typed security catalogs, shared async cache lifecycle
 │       ├── completion_ddl.go        # CREATE/ALTER/DROP headers: table column types, routine signatures and their first body keywords
 │       ├── completion_datatypes.go  # data-type positions elsewhere: DECLARE, CAST/CONVERT, ALTER TABLE columns, CREATE TYPE … FROM
 │       ├── completion_builtins.go   # the built-in function table (kind, call shape, version, Fabric) and the keyword lists indexed from it

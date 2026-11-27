@@ -247,3 +247,72 @@ func TestDMLEndersAreKeywords(t *testing.T) {
 		t.Errorf("%+v: a bracketed [create] must be a quoted identifier", q)
 	}
 }
+
+func TestSecurityStatementBounds(t *testing.T) {
+	for _, tc := range []struct {
+		sql       string
+		reference bool
+	}{
+		{"[[START]]GRANT SELECT ON dbo.t TO u | WITH GRANT OPTION\n[[END]]SELECT 1", true},
+		{"GRANT SELECT ON dbo.t TO u WITH GRANT OPTION\n[[START]]SELECT | 1[[END]]", true},
+		{"GRANT SELECT ON dbo.t TO u\n[[START]]WITH c AS (SELECT 1 AS n) SELECT | n FROM c[[END]]", true},
+		{"[[START]]REVOKE GRANT OPTION FOR SELECT ON dbo.t FROM u | CASCADE\n[[END]]SELECT 1", true},
+		{"SELECT 1\n[[START]]GRANT SELECT | ON dbo.t TO u[[END]]", true},
+		{"UPDATE dbo.t SET n = 1\n[[START]]DENY UPDATE | ON dbo.t TO u[[END]]", true},
+		{"SELECT 1\n[[START]]REVOKE SELECT | ON dbo.t FROM u[[END]]", true},
+		{"SELECT 1\n[[START]]GRANT |[[END]]", false},
+		{"CREATE PROCEDURE p AS [[START]]GRANT |[[END]]", false},
+		{"CREATE OR ALTER PROCEDURE p AS [[START]]DENY |[[END]]", false},
+		{"BEGIN\n[[START]]GRANT |\nEND[[END]]", false},
+		{"BEGIN [[START]]GRANT |[[END]]", false},
+		{"IF 1=1 [[START]]GRANT |[[END]]", false},
+		{"IF 1=1 SELECT 1 ELSE [[START]]GRANT |[[END]]", false},
+		{"[[START]]SELECT CASE WHEN 1=1 THEN\n grant\n ELSE\n deny\n END FROM dbo.t WHERE | n = 1[[END]]", true},
+		{"IF EXISTS (SELECT 1) [[START]]DENY |[[END]]", false},
+		{"WHILE 1=1 [[START]]REVOKE |[[END]]", false},
+		{"IF 1=1 [[START]]SELECT n AS\n grant,\n | n FROM dbo.t[[END]]", true},
+		{"[[START]]SELECT * FROM dbo.t\nrevoke\nINNER JOIN dbo.u ON u.n = revoke.n WHERE | n = 1[[END]]", true},
+		{"[[START]]SELECT * FROM dbo.t\ndeny\nORDER BY | n[[END]]", true},
+		{"[[START]]SELECT * FROM dbo.t\ngrant\nGROUP BY | n[[END]]", true},
+		{"[[START]]SELECT * FROM dbo.t\nrevoke\nUNION SELECT | 1[[END]]", true},
+		{"[[START]]SELECT * FROM dbo.t\ndeny\nOPTION | (RECOMPILE)[[END]]", true},
+		{"[[START]]SELECT * FROM dbo.t\nrevoke\nFOR XML | PATH[[END]]", true},
+		{"[[START]]SELECT n,\n grant,\n | n FROM dbo.t[[END]]", true},
+		{"[[START]]SELECT (GRANT SELECT ON dbo.t TO u) | FROM dbo.t[[END]]", true},
+		{"[[START]]SELECT [grant], | n FROM dbo.t[[END]]", true},
+		{"[[START]]SELECT * FROM (SELECT [deny] FROM dbo.t) q WHERE | n = 1[[END]]", true},
+		{"GRANT SELECT ON dbo.t\n[[START]]SELECT | n FROM dbo.t[[END]]", false},
+	} {
+		t.Run(tc.sql, func(t *testing.T) {
+			clean := func(s string) string {
+				for _, marker := range []string{"[[START]]", "[[END]]", "|"} {
+					s = strings.ReplaceAll(s, marker, "")
+				}
+				return s
+			}
+			offset := func(marker string) int {
+				i := strings.Index(tc.sql, marker)
+				if i < 0 {
+					t.Fatalf("missing marker %s", marker)
+				}
+				return len([]rune(clean(tc.sql[:i])))
+			}
+			wantStart, wantEnd, upTo := offset("[[START]]"), offset("[[END]]"), offset("|")
+			lines := splitRunes(clean(tc.sql))
+			buf := flattenFresh(lines)
+			row := strings.Count(string(buf[:upTo]), "\n")
+			pre := ScanPrefix(lines, buf, row, upTo)
+			start, end, _ := NarrowStatementForward(lines, buf, row, pre.BatchStart, upTo, upTo, pre.Tokens)
+			if start != wantStart || end != wantEnd {
+				t.Fatalf("forward bounds %d..%d, want %d..%d", start, end, wantStart, wantEnd)
+			}
+			if tc.reference {
+				all, _, _, _ := TokenizeRange(buf, pre.BatchStart, len(buf), false)
+				start, end := NarrowToDMLStatement(all, pre.BatchStart, len(buf), upTo)
+				if start != wantStart || end != wantEnd {
+					t.Fatalf("token bounds %d..%d, want %d..%d", start, end, wantStart, wantEnd)
+				}
+			}
+		})
+	}
+}

@@ -486,6 +486,14 @@ Warehouse/SQL analytics endpoints. Known database compatibility levels also
 filter chunking; service policies, permissions and external-model setup remain
 the server's authority.
 
+Security-statement completion covers `GRANT`, `DENY` and `REVOKE`: permission
+lists, `ON <class>::` securables, object columns, users/roles/logins, `TO`/`FROM`,
+and grant/revoke options. SQL Server/Azure SQL permission names come from
+`sys.fn_builtin_permissions`; Fabric Warehouse uses its documented vocabulary
+and omits server-level permissions. Security metadata loads lazily and refreshes
+with Ctrl+R. Suggestions reflect visible metadata, not authorization; SQL Server
+still validates permissions, and an unlisted principal can be entered manually.
+
 Saved passwords are encrypted with AES-256-GCM using `gossms.key` in the same
 folder; delete both files to reset. Editing a connection's server, port, user,
 authentication or encryption settings by hand invalidates its saved password.

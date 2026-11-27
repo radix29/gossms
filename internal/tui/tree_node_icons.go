@@ -36,6 +36,9 @@ func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	if d.Type == NodeColumn && d.IsPrimaryKey {
 		return primaryKeyIcon(style)
 	}
+	if d.Type == NodeFunction && d.FuncType == gosmo.FunctionTypeExternal && style != config.IconStyleEmoji {
+		return 'λ'
+	}
 	if d.Type == NodeDatabase && d.IsOffline {
 		return offlineDatabaseIcon(style)
 	}
@@ -86,14 +89,14 @@ func stoppedEventSessionIcon(style config.IconStyle) rune {
 }
 
 // offlineDatabaseIcon returns the glyph substituted for a NodeDatabase
-// that's currently offline — a hollow hexagon in the geometric styles
-// (vs. the filled '⬢' an online database uses), a "powered off" glyph
+// that's currently offline — a hollow pentagon in the geometric styles
+// (vs. the filled '⬟' an online database uses), a "powered off" glyph
 // for Emoji.
 func offlineDatabaseIcon(style config.IconStyle) rune {
 	if style == config.IconStyleEmoji {
 		return '📴'
 	}
-	return '⬡'
+	return '⬠'
 }
 
 // primaryKeyIcon returns the glyph substituted for a primary-key column's
