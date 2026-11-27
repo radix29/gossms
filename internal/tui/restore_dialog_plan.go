@@ -80,9 +80,12 @@ func planError(err error) string {
 
 // tailLogDevice is where the tail-log backup of dbName goes: SSMS's
 // <db>_LogBackup_<timestamp>.bak in the server's default backup folder, the folder
-// BACKUP writes to. A new file per restore, so it holds one set.
+// BACKUP writes to. A new file per restore, so it holds one set. The name is
+// made FileNameSafe: the form has no field for this path, so a ":" in the
+// database name hid the tail log in an NTFS stream of a 0-byte file, and a
+// "\" named a missing directory, with no way for the user to correct it.
 func tailLogDevice(backupDir, dbName string, now time.Time) string {
-	return gosmo.JoinServerPath(backupDir, dbName+"_LogBackup_"+now.Format("2006-01-02_15-04-05")+".bak")
+	return gosmo.JoinServerPath(backupDir, gosmo.FileNameSafe(dbName)+"_LogBackup_"+now.Format("2006-01-02_15-04-05")+".bak")
 }
 
 // checkPlanFields refuses, before any read, a plan the form cannot run: none to

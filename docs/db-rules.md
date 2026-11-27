@@ -211,6 +211,13 @@ Object Explorer filters, query execution. Each is a bug that shipped.
   classifier (`sqltext.lineComment`, gosmo `tsql.Spans`) and let an object
   name inject T-SQL into a Generate Scripts warning comment (2026-11-10, 17).
   Write any name or message into a comment through `tsql.CommentSafe`.
+- **A name that becomes part of a server file name goes through
+  `gosmo.FileNameSafe`, then `gosmo.JoinServerPath`.** A database or snapshot
+  name may hold `\ / : * ? " < > |`. On Windows a `:` does not fail: BACKUP
+  and CREATE DATABASE … AS SNAPSHOT succeeded, writing the file into an NTFS
+  stream of a 0-byte file that `dir` shows empty, and DROP left that file
+  behind (17, 2026-11-27). Back Up, Restore's tail log and standby file, the
+  CLI's backup default and gosmo's sparse files all do this now.
 
 - **A statement the server ignores answers with a warning, and gosmo's exec
   drops warnings** — a nil error is not "it happened". `ALTER FULLTEXT INDEX

@@ -539,3 +539,13 @@ func TestMaintBackupHistoryUsage(t *testing.T) {
 		}
 	}
 }
+
+// The default backup file is named after the database, a sysname that may
+// hold characters no file name takes; each becomes "_" (gosmo.FileNameSafe),
+// and the time is UTC.
+func TestBackupFileNameIsFileNameSafe(t *testing.T) {
+	at := time.Date(2026, 11, 27, 10, 30, 0, 0, time.FixedZone("x", 2*3600))
+	if got, want := backupFileName(`a:b/c\d`, "log", at), "a_b_c_d_log_20261127_083000.trn"; got != want {
+		t.Errorf("backupFileName = %q, want %q", got, want)
+	}
+}

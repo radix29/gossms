@@ -1,8 +1,8 @@
 # Review plan, 2026-11-27 (second pass)
 
 A review of gossms, `~/go/gosmo` and `~/go/tuikit` at gossms `52ecafe`, gosmo
-`b52e8a2`, tuikit `14b91e7`. Three bugs. B1 and B3 are gossms only; B2 needs
-one gosmo change (an exported helper, so no caller breaks). tuikit needs none.
+`b52e8a2`, tuikit `14b91e7`. Three bugs; B1 and B2 are closed. B3 is
+gossms only. tuikit needs none.
 Close an item by deleting it, and delete this file with the last one.
 
 **Method.** `go test ./...` is green in all three repos. I read the last week
@@ -26,95 +26,16 @@ Severity is ordered by what a user can lose.
 
 ## Recommended implementation order
 
-1. **B2, gosmo half** — export `gosmo.FileNameSafe`, apply it to the snapshot
-   name in `snapshotFilePath`. Build and test in `~/go/gosmo` first
-   (`dev-with-local-gosmo` skill; the `replace` is active).
-2. **B2, gossms half** — Back Up's default destination, Restore's tail-log
-   device and standby file, and the CLI's `backupFileName` all use it.
-3. **B3** — the backup/restore commands compare database names under the
+1. **B3** — the backup/restore commands compare database names under the
    server collation (or by id), then the guard test that stops the rule
    being broken again.
-4. **Docs** — add the new case-sensitive checks to `docs/open-threads.md` §
+2. **Docs** — add the new case-sensitive checks to `docs/open-threads.md` §
    Environment (the CS-server list), point `docs/db-rules.md`'s collation
    rule at the guard test, then delete this file.
 
 Each step: `gofmt -w . && go vet ./... && staticcheck ./... && deadcode -test ./...`,
-then `go test ./...` (and the same in `~/go/gosmo` for step 1), then drive
-the built binary (`docs/testing.md`). Live steps use disposable objects only,
+then `go test ./...`, then drive the built binary (`docs/testing.md`). Live steps use disposable objects only,
 and only with your go-ahead. Nobody commits but the user.
-
----
-
-## B2: gosmo + gossms: server file names are built from raw database and snapshot names
-
-**Where:**
-
-- gosmo `database_snapshot.go:212` and `:214` (`snapshotFilePath`): the sparse
-  file is `<stem>_<snapshot name>.ss`, the snapshot name unchanged. The
-  logical name beside it already goes through `fileNameSafe`.
-- gossms `internal/tui/backup_dialog.go:294` (`autoDest`): Back Up's default
-  destination is `<db>_FULL_<stamp>.bak`.
-- gossms `internal/tui/restore_dialog_plan.go:85` (`tailLogDevice`): the
-  tail-log backup a restore plan takes first is `<db>_LogBackup_<stamp>.bak`.
-  The form has no field for it; the user cannot correct it.
-- gossms `internal/tui/restore_dialog.go:446` (`autoFillStandby`): the standby
-  file default is `ROLLBACK_UNDO_<target>.BAK`.
-
-**What:** a database or snapshot name is a sysname and may hold `\ / : * ? "
-< > |`. gosmo documents what that does to a path in `RestoreRelocation.Moves`
-(`restore_plan.go:131`): a separator makes a subdirectory and a colon an NTFS
-stream. Restore relocation and the CLI's `maint backup` (`backupFileName`,
-`maint_backup.go:204`) already replace those characters with `_`. These four
-places do not.
-
-The likely trigger is a time in a snapshot name. New Database Snapshot
-offers `<source>_snapshot` and says SSMS adds a timestamp. A user who types
-`Sales_snapshot_2026-11-27 10:30` gets the default sparse file
-`…\Sales_Sales_snapshot_2026-11-27 10:30.ss`. On Windows, `10:30.ss` is then
-a stream name, so the CREATE DATABASE … AS SNAPSHOT fails. With `/` in the
-name (`2026/11/27`), the path names directories that do not exist. For a
-database whose name holds one of these characters, Back Up's default
-destination fails the same way, and so does every restore with "Take
-tail-log backup" checked, before the restore starts.
-
-The exact server message is not recorded yet; the verify step captures it.
-Whether Windows instead accepts `name:stream` and writes the tail log into
-an alternate data stream (hidden from `dir`) is open. If it does, it is worse
-than an error, so the verify step checks that too.
-
-**Fix:**
-
-- gosmo: rename `fileNameSafe` to exported `FileNameSafe` and move it to
-  `server_path.go`, beside `JoinServerPath`. It is the rule for "a name that
-  becomes one path element on the server". Apply it to `snapshotName` in
-  both `snapshotFilePath` branches. `RestoreRelocation.Moves` keeps calling
-  it. CHANGELOG entry under Unreleased.
-- gossms: `autoDest`, `tailLogDevice` and `autoFillStandby` wrap the name in
-  `gosmo.FileNameSafe`. The "is it still the generated value" checks compare
-  whole generated strings, so they keep working.
-- gossms CLI: `backupFileName` calls `gosmo.FileNameSafe` and drops its own
-  copy of the same map.
-
-**Tests:**
-
-- gosmo `snapshotFilePath`: `Sales/2026:1` gives `…_Sales_2026_1.ss`, and two
-  names that differ only by an unsafe character (`a:b`, `a/b`) still get
-  distinct paths through the `taken` fallback.
-- gossms: `autoDest` with database `a:b/c`, `tailLogDevice` with `a\b`, and
-  `autoFillStandby` with target `x?y` each give one path element under the
-  backup directory (`gosmo.ServerPathDir` is the directory passed in).
-- The CLI's existing `backupFileName` tests pass unchanged.
-
-**Verify (live, win10cli, disposable objects, with your go-ahead):**
-
-- Before the fix, capture the failure: on a disposable source database, run
-  New Database Snapshot with name `gossms_b2 10:30` and Default File Paths.
-  Record the server's message, and whether a file named `…gossms_b2 10` was
-  left in the data folder (`dir /r` shows streams).
-- After the fix, the same dialog creates the snapshot. Back Up of a
-  disposable database created with an explicit FILENAME and named
-  `gossms_b2:x` succeeds to the default destination. Restore with tail-log
-  over it succeeds. Drop everything, and delete the files.
 
 ---
 

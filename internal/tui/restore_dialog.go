@@ -443,7 +443,7 @@ func (d *RestoreDialog) autoFillStandby() {
 	if strings.TrimSpace(cur) != "" && cur != d.lastAutoStandby {
 		return
 	}
-	name := "ROLLBACK_UNDO_" + strings.TrimSpace(d.fTarget.Value()) + ".BAK"
+	name := "ROLLBACK_UNDO_" + gosmo.FileNameSafe(strings.TrimSpace(d.fTarget.Value())) + ".BAK"
 	d.lastAutoStandby = gosmo.JoinServerPath(d.sc.Server.Info().DefaultBackupPath, name)
 	d.fStandby.SetValue(d.lastAutoStandby)
 }

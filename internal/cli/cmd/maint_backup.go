@@ -199,16 +199,10 @@ func backupRequest(inv *spec.Invocation) (gosmo.BackupOptions, error) {
 }
 
 // backupFileName is the default file a backup of db of type typ is written
-// to at t: <db>_<type>_<UTC yyyymmdd_hhmmss><ext>, the characters no file
-// system takes made _.
+// to at t: <db>_<type>_<UTC yyyymmdd_hhmmss><ext>, the name made
+// gosmo.FileNameSafe.
 func backupFileName(db, typ string, t time.Time) string {
-	safe := strings.Map(func(r rune) rune {
-		if r < ' ' || strings.ContainsRune(`\/:*?"<>|`, r) {
-			return '_'
-		}
-		return r
-	}, db)
-	return fmt.Sprintf("%s_%s_%s%s", safe, typ, t.UTC().Format("20060102_150405"), backupTypes[typ].ext)
+	return fmt.Sprintf("%s_%s_%s%s", gosmo.FileNameSafe(db), typ, t.UTC().Format("20060102_150405"), backupTypes[typ].ext)
 }
 
 // SQL Server's refusals of a BACKUP that maint backup explains. A refused

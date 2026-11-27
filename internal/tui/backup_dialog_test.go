@@ -205,3 +205,20 @@ func TestBackupHideAbandonsTheDestCheck(t *testing.T) {
 		t.Error("a destination check that landed after Hide started the backup")
 	}
 }
+
+// A database name is a sysname and may hold `\ / : * ? " < > |`. Put into
+// the default destination unchanged, a ":" made the path an NTFS stream: the
+// BACKUP succeeded with the set hidden in a stream of a 0-byte file (seen
+// live), and a "/" named a missing directory. The generated file is one element under the backup directory.
+func TestBackupAutoDestIsFileNameSafe(t *testing.T) {
+	d := backupForm("a:b/c")
+	d.backupDir = new(`C:\Backup`)
+	d.now = func() time.Time { return time.Date(2026, 11, 27, 10, 30, 0, 0, time.Local) }
+	got := d.autoDest()
+	if want := `C:\Backup\a_b_c_FULL_20261127_103000.bak`; got != want {
+		t.Errorf("autoDest = %q, want %q", got, want)
+	}
+	if dir := gosmo.ServerPathDir(got); dir != `C:\Backup` {
+		t.Errorf("autoDest %q is in %q, not the backup directory", got, dir)
+	}
+}
