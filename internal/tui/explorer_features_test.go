@@ -226,7 +226,7 @@ func TestExplorerFeatureMenusKeepManagedInstanceAndFabricDistinct(t *testing.T) 
 
 func TestAzureSQLExplorerSupportDoesNotGrantPermissions(t *testing.T) {
 	sc, _ := newGConnOnAzure(t, int(gosmo.EngineAzureSQLDatabase),
-		capabilityResponses(false, nil, nil, nil, nil)...)
+		capabilityResponses(true, nil, nil, nil, []string{"ALTER ANY USER", "ALTER", "CONTROL"})...)
 	sc.ProbeCapabilities(sc.Server.Context())
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 	a := newTestApp()
