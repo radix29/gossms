@@ -58,7 +58,8 @@ func (a *App) useDatabaseMenuItem(sc *db.ServerConn, node *explorerNode) control
 		},
 		Note: "Changing databases requires a new connection on this engine.",
 		NoteWhen: func() bool {
-			return sc != nil && sc.Server != nil && databaseChangeRequiresConnection(sc.Server.Info())
+			return sc != nil && sc.Server != nil && !sc.Server.Info().IsDatabaseScoped() &&
+				databaseChangeRequiresConnection(sc.Server.Info())
 		},
 		Action: func() {
 			p := a.activeQueryPanel()

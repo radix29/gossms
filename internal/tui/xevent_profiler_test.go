@@ -23,6 +23,23 @@ import (
 // leftovers folded in — View Target Data newest file first, a live event_file
 // finding its file deleted by rollover, the event limit from Options.
 
+func TestXEventProfilerShortcutRefusesFabricDW(t *testing.T) {
+	a := newTestApp()
+	a.buildUI()
+	a.detailBrowser = nil
+	sc, inst := newGConnFabric(t, true)
+	sc.Opts.Server = "warehouse"
+	addTestConnOf(a, sc)
+	before := len(inst.Queries())
+	a.handleKey(tcell.NewEventKey(tcell.KeyRune, "p", tcell.ModAlt))
+	if a.statusText != xeProfilerUnavailable {
+		t.Fatalf("status = %q, want %q", a.statusText, xeProfilerUnavailable)
+	}
+	if len(inst.Queries()) != before || len(inst.Statements()) != 0 {
+		t.Fatal("disabled profiler shortcut issued SQL")
+	}
+}
+
 func TestXEProfilerSpecIsTheTemplateUnderOurNameWithATarget(t *testing.T) {
 	for _, k := range xeProfilerKinds {
 		spec := k.spec(false)

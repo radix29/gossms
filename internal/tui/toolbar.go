@@ -6,10 +6,8 @@ import (
 )
 
 // buildToolbar assembles the icon-only toolbar embedded in the menu bar
-// row, right-aligned (see App.layoutAll/App.draw). Called once at startup and
-// again by the toggles (toggleActualExecutionPlan, toggleLiveQueryStatistics,
-// toggleOutputColumnMeta), whose buttons carry their ON/OFF state in the
-// label itself.
+// row, right-aligned (see App.layoutAll/App.draw). Built once; availability
+// and toggle state are read live.
 //
 // On a terminal too narrow for every button beside the menu labels, the
 // toolbar hides them by DropRank (highest first): the toggles, then Est.Plan,
@@ -39,6 +37,7 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() }, DropRank: 4,
 			Enabled: func() bool {
 				return len(a.connections) > 0 &&
+					explorerSupport(a.activeServerConn()).has(oeMonitorTools) &&
 					gate.Allows(a.activeServerConn(), "", gate.ViewServerState)
 			}},
 	}

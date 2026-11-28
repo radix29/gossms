@@ -158,13 +158,15 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Activity Monitor", Action: func() { a.showActivityMonitor() },
 				Enabled: func() bool {
 					return len(a.connections) > 0 &&
+						explorerSupport(a.activeServerConn()).has(oeMonitorTools) &&
 						gate.Allows(a.activeServerConn(), "", gate.ViewServerState)
 				}},
 			a.xeProfilerMenu(),
 			{Label: "Replication Monitor", Action: func() { a.showReplicationMonitor() },
 				Enabled: func() bool {
 					sc := a.activeServerConn()
-					return sc != nil && sc.Server != nil && !replicationHidden(sc.Server.Info())
+					return sc != nil && sc.Server != nil && !replicationHidden(sc.Server.Info()) &&
+						explorerSupport(sc).has(oeMonitorTools)
 				}},
 			{Label: "Query List", Action: func() { a.showQueryList() }},
 			{Label: "Background Tasks", Action: func() { a.tasksDialog().Show() }},
